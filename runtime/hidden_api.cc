@@ -14,17 +14,21 @@
  * limitations under the License.
  */
 
-#include <log/log_event_list.h>
+#include <metricslogger/metrics_logger.h>
 
 #include "hidden_api.h"
 
 #include <nativehelper/scoped_local_ref.h>
 
-#include "art_field-inl.h"
-#include "art_method-inl.h"
 #include "base/dumpable.h"
 #include "thread-current-inl.h"
 #include "well_known_classes.h"
+
+using android::metricslogger::ComplexEventLogger;
+using android::metricslogger::ACTION_HIDDEN_API_ACCESSED;
+using android::metricslogger::FIELD_HIDDEN_API_ACCESS_METHOD;
+using android::metricslogger::FIELD_HIDDEN_API_ACCESS_DENIED;
+using android::metricslogger::FIELD_HIDDEN_API_SIGNATURE;
 
 namespace art {
 namespace hiddenapi {
@@ -32,6 +36,9 @@ namespace hiddenapi {
 // Set to true if we should always print a warning in logcat for all hidden API accesses, not just
 // dark grey and black. This can be set to true for developer preview / beta builds, but should be
 // false for public release builds.
+// Note that when flipping this flag, you must also update the expectations of test 674-hiddenapi
+// as it affects whether or not we warn for light grey APIs that have been added to the exemptions
+// list.
 static constexpr bool kLogAllAccesses = true;
 
 static inline std::ostream& operator<<(std::ostream& os, AccessMethod value) {
@@ -67,10 +74,6 @@ static_assert(
     "EnforcementPolicy values ordering not correct");
 
 namespace detail {
-
-// This is the ID of the event log event. It is duplicated from
-// system/core/logcat/event.logtags
-constexpr int EVENT_LOG_TAG_art_hidden_api_access = 20004;
 
 MemberSignature::MemberSignature(ArtField* field) {
   class_name_ = field->GetDeclaringClass()->GetDescriptor(&tmp_);
@@ -130,6 +133,25 @@ void MemberSignature::WarnAboutAccess(AccessMethod access_method,
   LOG(WARNING) << "Accessing hidden " << (type_ == kField ? "field " : "method ")
                << Dumpable<MemberSignature>(*this) << " (" << list << ", " << access_method << ")";
 }
+// Convert an AccessMethod enum to a value for logging from the proto enum.
+// This method may look odd (the enum values are current the same), but it
+// prevents coupling the internal enum to the proto enum (which should never
+// be changed) so that we are free to change the internal one if necessary in
+// future.
+inline static int32_t GetEnumValueForLog(AccessMethod access_method) {
+  switch (access_method) {
+    case kNone:
+      return android::metricslogger::ACCESS_METHOD_NONE;
+    case kReflection:
+      return android::metricslogger::ACCESS_METHOD_REFLECTION;
+    case kJNI:
+      return android::metricslogger::ACCESS_METHOD_JNI;
+    case kLinking:
+      return android::metricslogger::ACCESS_METHOD_LINKING;
+    default:
+      DCHECK(false);
+  }
+}
 
 void MemberSignature::LogAccessToEventLog(AccessMethod access_method, Action action_taken) {
   if (access_method == kLinking) {
@@ -138,24 +160,39 @@ void MemberSignature::LogAccessToEventLog(AccessMethod access_method, Action act
     // not to log these in the event log.
     return;
   }
-  uint32_t flags = 0;
+  ComplexEventLogger log_maker(ACTION_HIDDEN_API_ACCESSED);
+  log_maker.AddTaggedData(FIELD_HIDDEN_API_ACCESS_METHOD, GetEnumValueForLog(access_method));
   if (action_taken == kDeny) {
-    flags |= kAccessDenied;
+    log_maker.AddTaggedData(FIELD_HIDDEN_API_ACCESS_DENIED, 1);
   }
-  if (type_ == kField) {
-    flags |= kMemberIsField;
-  }
-  android_log_event_list ctx(EVENT_LOG_TAG_art_hidden_api_access);
-  ctx << access_method;
-  ctx << flags;
-  ctx << class_name_;
-  ctx << member_name_;
-  ctx << type_signature_;
-  ctx << LOG_ID_EVENTS;
+  std::ostringstream signature_str;
+  Dump(signature_str);
+  log_maker.AddTaggedData(FIELD_HIDDEN_API_SIGNATURE, signature_str.str());
+  log_maker.Record();
+}
+
+static ALWAYS_INLINE bool CanUpdateMemberAccessFlags(ArtField*) {
+  return true;
+}
+
+static ALWAYS_INLINE bool CanUpdateMemberAccessFlags(ArtMethod* method) {
+  return !method->IsIntrinsic();
 }
 
 template<typename T>
-Action GetMemberActionImpl(T* member, Action action, AccessMethod access_method) {
+static ALWAYS_INLINE void MaybeWhitelistMember(Runtime* runtime, T* member)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  if (CanUpdateMemberAccessFlags(member) && runtime->ShouldDedupeHiddenApiWarnings()) {
+    member->SetAccessFlags(HiddenApiAccessFlags::EncodeForRuntime(
+        member->GetAccessFlags(), HiddenApiAccessFlags::kWhitelist));
+  }
+}
+
+template<typename T>
+Action GetMemberActionImpl(T* member,
+                           HiddenApiAccessFlags::ApiList api_list,
+                           Action action,
+                           AccessMethod access_method) {
   DCHECK_NE(action, kAllow);
 
   // Get the signature, we need it later.
@@ -175,18 +212,14 @@ Action GetMemberActionImpl(T* member, Action action, AccessMethod access_method)
       // Avoid re-examining the exemption list next time.
       // Note this results in no warning for the member, which seems like what one would expect.
       // Exemptions effectively adds new members to the whitelist.
-      if (runtime->ShouldDedupeHiddenApiWarnings()) {
-        member->SetAccessFlags(HiddenApiAccessFlags::EncodeForRuntime(
-                member->GetAccessFlags(), HiddenApiAccessFlags::kWhitelist));
-      }
+      MaybeWhitelistMember(runtime, member);
       return kAllow;
     }
 
     if (access_method != kNone) {
       // Print a log message with information about this class member access.
       // We do this if we're about to block access, or the app is debuggable.
-      member_signature.WarnAboutAccess(access_method,
-          HiddenApiAccessFlags::DecodeFromRuntime(member->GetAccessFlags()));
+      member_signature.WarnAboutAccess(access_method, api_list);
     }
   }
 
@@ -211,10 +244,7 @@ Action GetMemberActionImpl(T* member, Action action, AccessMethod access_method)
   if (access_method != kNone) {
     // Depending on a runtime flag, we might move the member into whitelist and
     // skip the warning the next time the member is accessed.
-    if (runtime->ShouldDedupeHiddenApiWarnings()) {
-      member->SetAccessFlags(HiddenApiAccessFlags::EncodeForRuntime(
-          member->GetAccessFlags(), HiddenApiAccessFlags::kWhitelist));
-    }
+    MaybeWhitelistMember(runtime, member);
 
     // If this action requires a UI warning, set the appropriate flag.
     if (action == kAllowButWarnAndToast || runtime->ShouldAlwaysSetHiddenApiWarningFlag()) {
@@ -227,9 +257,11 @@ Action GetMemberActionImpl(T* member, Action action, AccessMethod access_method)
 
 // Need to instantiate this.
 template Action GetMemberActionImpl<ArtField>(ArtField* member,
+                                              HiddenApiAccessFlags::ApiList api_list,
                                               Action action,
                                               AccessMethod access_method);
 template Action GetMemberActionImpl<ArtMethod>(ArtMethod* member,
+                                               HiddenApiAccessFlags::ApiList api_list,
                                                Action action,
                                                AccessMethod access_method);
 }  // namespace detail

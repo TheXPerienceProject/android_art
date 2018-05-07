@@ -17,6 +17,8 @@
 #ifndef ART_RUNTIME_HIDDEN_API_H_
 #define ART_RUNTIME_HIDDEN_API_H_
 
+#include "art_field-inl.h"
+#include "art_method-inl.h"
 #include "base/mutex.h"
 #include "dex/hidden_api_access_flags.h"
 #include "mirror/class-inl.h"
@@ -24,10 +26,6 @@
 #include "runtime.h"
 
 namespace art {
-
-class ArtField;
-class ArtMethod;
-
 namespace hiddenapi {
 
 // Hidden API enforcement policy
@@ -54,13 +52,11 @@ enum Action {
   kDeny
 };
 
-// Do not change the values of items in this enum, as they are written to the
-// event log for offline analysis. Any changes will interfere with that analysis.
 enum AccessMethod {
-  kNone = 0,  // internal test that does not correspond to an actual access by app
-  kReflection = 1,
-  kJNI = 2,
-  kLinking = 3,
+  kNone,  // internal test that does not correspond to an actual access by app
+  kReflection,
+  kJNI,
+  kLinking,
 };
 
 // Do not change the values of items in this enum, as they are written to the
@@ -72,17 +68,17 @@ enum AccessContextFlags {
   kAccessDenied  = 1 << 1,
 };
 
-inline Action GetActionFromAccessFlags(uint32_t access_flags) {
+inline Action GetActionFromAccessFlags(HiddenApiAccessFlags::ApiList api_list) {
+  if (api_list == HiddenApiAccessFlags::kWhitelist) {
+    return kAllow;
+  }
+
   EnforcementPolicy policy = Runtime::Current()->GetHiddenApiEnforcementPolicy();
   if (policy == EnforcementPolicy::kNoChecks) {
     // Exit early. Nothing to enforce.
     return kAllow;
   }
 
-  HiddenApiAccessFlags::ApiList api_list = HiddenApiAccessFlags::DecodeFromRuntime(access_flags);
-  if (api_list == HiddenApiAccessFlags::kWhitelist) {
-    return kAllow;
-  }
   // if policy is "just warn", always warn. We returned above for whitelist APIs.
   if (policy == EnforcementPolicy::kJustWarn) {
     return kAllowButWarn;
@@ -138,7 +134,10 @@ class MemberSignature {
 };
 
 template<typename T>
-Action GetMemberActionImpl(T* member, Action action, AccessMethod access_method)
+Action GetMemberActionImpl(T* member,
+                           HiddenApiAccessFlags::ApiList api_list,
+                           Action action,
+                           AccessMethod access_method)
     REQUIRES_SHARED(Locks::mutator_lock_);
 
 // Returns true if the caller is either loaded by the boot strap class loader or comes from
@@ -173,7 +172,15 @@ inline Action GetMemberAction(T* member,
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(member != nullptr);
 
-  Action action = GetActionFromAccessFlags(member->GetAccessFlags());
+  // Decode hidden API access flags.
+  // NB Multiple threads might try to access (and overwrite) these simultaneously,
+  // causing a race. We only do that if access has not been denied, so the race
+  // cannot change Java semantics. We should, however, decode the access flags
+  // once and use it throughout this function, otherwise we may get inconsistent
+  // results, e.g. print whitelist warnings (b/78327881).
+  HiddenApiAccessFlags::ApiList api_list = member->GetHiddenApiAccessFlags();
+
+  Action action = GetActionFromAccessFlags(member->GetHiddenApiAccessFlags());
   if (action == kAllow) {
     // Nothing to do.
     return action;
@@ -187,7 +194,7 @@ inline Action GetMemberAction(T* member,
   }
 
   // Member is hidden and caller is not in the platform.
-  return detail::GetMemberActionImpl(member, action, access_method);
+  return detail::GetMemberActionImpl(member, api_list, action, access_method);
 }
 
 inline bool IsCallerInPlatformDex(ObjPtr<mirror::Class> caller)
