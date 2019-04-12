@@ -22,21 +22,22 @@
 #include <vector>
 
 #include "art_field-inl.h"
-#include "debug/dwarf/debug_abbrev_writer.h"
-#include "debug/dwarf/debug_info_entry_writer.h"
 #include "debug/elf_compilation_unit.h"
 #include "debug/elf_debug_loc_writer.h"
 #include "debug/method_debug_info.h"
 #include "dex/code_item_accessors-inl.h"
 #include "dex/dex_file-inl.h"
 #include "dex/dex_file.h"
+#include "dwarf/debug_abbrev_writer.h"
+#include "dwarf/debug_info_entry_writer.h"
+#include "elf/elf_builder.h"
 #include "heap_poisoning.h"
 #include "linear_alloc.h"
-#include "linker/elf_builder.h"
 #include "mirror/array.h"
 #include "mirror/class-inl.h"
 #include "mirror/class.h"
 #include "oat_file.h"
+#include "obj_ptr-inl.h"
 
 namespace art {
 namespace debug {
@@ -59,7 +60,7 @@ class ElfDebugInfoWriter {
   using Elf_Addr = typename ElfTypes::Addr;
 
  public:
-  explicit ElfDebugInfoWriter(linker::ElfBuilder<ElfTypes>* builder)
+  explicit ElfDebugInfoWriter(ElfBuilder<ElfTypes>* builder)
       : builder_(builder),
         debug_abbrev_(&debug_abbrev_buffer_) {
   }
@@ -80,7 +81,7 @@ class ElfDebugInfoWriter {
   }
 
  private:
-  linker::ElfBuilder<ElfTypes>* builder_;
+  ElfBuilder<ElfTypes>* builder_;
   std::vector<uint8_t> debug_abbrev_buffer_;
   dwarf::DebugAbbrevWriter<> debug_abbrev_;
   std::vector<uint8_t> debug_loc_;
@@ -303,7 +304,7 @@ class ElfCompilationUnitWriter {
           WriteTypeDeclaration(type->GetDescriptor(nullptr));
         }
       } else if (type->IsArrayClass()) {
-        mirror::Class* element_type = type->GetComponentType();
+        ObjPtr<mirror::Class> element_type = type->GetComponentType();
         uint32_t component_size = type->GetComponentSize();
         uint32_t data_offset = mirror::Array::DataOffset(component_size).Uint32Value();
         uint32_t length_offset = mirror::Array::LengthOffset().Uint32Value();

@@ -844,18 +844,17 @@ struct MonitorVisitor : public art::StackVisitor, public art::SingleRootVisitor 
     return true;
   }
 
-  static void AppendOwnedMonitors(art::mirror::Object* owned_monitor, void* arg)
+  static void AppendOwnedMonitors(art::ObjPtr<art::mirror::Object> owned_monitor, void* arg)
       REQUIRES_SHARED(art::Locks::mutator_lock_) {
     art::Locks::mutator_lock_->AssertSharedHeld(art::Thread::Current());
     MonitorVisitor* visitor = reinterpret_cast<MonitorVisitor*>(arg);
-    art::ObjPtr<art::mirror::Object> mon(owned_monitor);
     // Filter out duplicates.
     for (const art::Handle<art::mirror::Object>& monitor : visitor->monitors) {
-      if (monitor.Get() == mon.Ptr()) {
+      if (monitor.Get() == owned_monitor) {
         return;
       }
     }
-    visitor->monitors.push_back(visitor->hs.NewHandle(mon));
+    visitor->monitors.push_back(visitor->hs.NewHandle(owned_monitor));
     visitor->stack_depths.push_back(visitor->current_stack_depth);
   }
 
@@ -1061,8 +1060,14 @@ jvmtiError StackUtil::NotifyFramePop(jvmtiEnv* env, jthread thread, jint depth) 
     art::ShadowFrame* shadow_frame = visitor.GetOrCreateShadowFrame(&needs_instrument);
     {
       art::WriterMutexLock lk(self, tienv->event_info_mutex_);
-      // Mark shadow frame as needs_notify_pop_
-      shadow_frame->SetNotifyPop(true);
+      if (LIKELY(!shadow_frame->NeedsNotifyPop())) {
+        // Ensure we won't miss exceptions being thrown if we get jit-compiled. We only do this for
+        // the first NotifyPopFrame.
+        target->IncrementForceInterpreterCount();
+
+        // Mark shadow frame as needs_notify_pop_
+        shadow_frame->SetNotifyPop(true);
+      }
       tienv->notify_frames.insert(shadow_frame);
     }
     // Make sure can we will go to the interpreter and use the shadow frames.

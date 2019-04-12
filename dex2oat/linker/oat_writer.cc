@@ -54,12 +54,9 @@
 #include "gc/space/space.h"
 #include "handle_scope-inl.h"
 #include "image_writer.h"
-#include "linker/buffered_output_stream.h"
-#include "linker/file_output_stream.h"
 #include "linker/index_bss_mapping_encoder.h"
 #include "linker/linker_patch.h"
 #include "linker/multi_oat_relative_patcher.h"
-#include "linker/output_stream.h"
 #include "mirror/array.h"
 #include "mirror/class_loader.h"
 #include "mirror/dex_cache-inl.h"
@@ -69,6 +66,9 @@
 #include "quicken_info.h"
 #include "scoped_thread_state_change-inl.h"
 #include "stack_map.h"
+#include "stream/buffered_output_stream.h"
+#include "stream/file_output_stream.h"
+#include "stream/output_stream.h"
 #include "utils/dex_cache_arrays_layout-inl.h"
 #include "vdex_file.h"
 #include "verifier/verifier_deps.h"
@@ -380,6 +380,7 @@ OatWriter::OatWriter(const CompilerOptions& compiler_options,
     image_writer_(nullptr),
     extract_dex_files_into_vdex_(true),
     dex_files_(nullptr),
+    primary_oat_file_(false),
     vdex_size_(0u),
     vdex_dex_files_offset_(0u),
     vdex_dex_shared_data_offset_(0u),
@@ -671,8 +672,8 @@ bool OatWriter::WriteAndOpenDexFiles(
      return false;
   }
 
-  std::vector<MemMap> dex_files_map;
-  std::vector<std::unique_ptr<const DexFile>> dex_files;
+  // Record whether this is the primary oat file.
+  primary_oat_file_ = (key_value_store != nullptr);
 
   // Initialize VDEX and OAT headers.
 
@@ -687,6 +688,8 @@ bool OatWriter::WriteAndOpenDexFiles(
   std::unique_ptr<BufferedOutputStream> vdex_out =
       std::make_unique<BufferedOutputStream>(std::make_unique<FileOutputStream>(vdex_file));
   // Write DEX files into VDEX, mmap and open them.
+  std::vector<MemMap> dex_files_map;
+  std::vector<std::unique_ptr<const DexFile>> dex_files;
   if (!WriteDexFiles(vdex_out.get(), vdex_file, update_input_vdex, copy_dex_files) ||
       !OpenDexFiles(vdex_file, verify, &dex_files_map, &dex_files)) {
     return false;
@@ -1319,16 +1322,18 @@ class OatWriter::LayoutReserveOffsetCodeMethodVisitor : public OrderedMethodVisi
     // Update quick method header.
     DCHECK_LT(method_offsets_index_, oat_class->method_headers_.size());
     OatQuickMethodHeader* method_header = &oat_class->method_headers_[method_offsets_index_];
-    uint32_t code_info_offset = method_header->GetVmapTableOffset();
+    uint32_t vmap_table_offset = method_header->GetVmapTableOffset();
+    // The code offset was 0 when the mapping/vmap table offset was set, so it's set
+    // to 0-offset and we need to adjust it by code_offset.
     uint32_t code_offset = quick_code_offset - thumb_offset;
     CHECK(!compiled_method->GetQuickCode().empty());
     // If the code is compiled, we write the offset of the stack map relative
-    // to the code. The offset was previously stored relative to start of file.
-    if (code_info_offset != 0u) {
-      DCHECK_LT(code_info_offset, code_offset);
-      code_info_offset = code_offset - code_info_offset;
+    // to the code.
+    if (vmap_table_offset != 0u) {
+      vmap_table_offset += code_offset;
+      DCHECK_LT(vmap_table_offset, code_offset);
     }
-    *method_header = OatQuickMethodHeader(code_info_offset);
+    *method_header = OatQuickMethodHeader(vmap_table_offset, code_size);
 
     if (!deduped) {
       // Update offsets. (Checksum is updated when writing.)
@@ -1344,7 +1349,7 @@ class OatWriter::LayoutReserveOffsetCodeMethodVisitor : public OrderedMethodVisi
 
       // Record debug information for this function if we are doing that.
       debug::MethodDebugInfo& info = writer_->method_info_[debug_info_idx];
-      DCHECK(info.custom_name.empty());
+      info.custom_name = (access_flags & kAccNative) ? "art_jni_trampoline" : "";
       info.dex_file = method_ref.dex_file;
       info.class_def_index = class_def_index;
       info.dex_method_index = method_ref.index;
@@ -1460,9 +1465,9 @@ class OatWriter::InitMapMethodVisitor : public OatDexMethodVisitor {
           // Deduplicate the inner BitTable<>s within the CodeInfo.
           return offset_ + dedupe_bit_table_.Dedupe(map.data());
         });
-        // Code offset is not initialized yet, so set file offset for now.
+        // Code offset is not initialized yet, so set the map offset to 0u-offset.
         DCHECK_EQ(oat_class->method_offsets_[method_offsets_index_].code_offset_, 0u);
-        oat_class->method_headers_[method_offsets_index_].SetVmapTableOffset(offset);
+        oat_class->method_headers_[method_offsets_index_].SetVmapTableOffset(0u - offset);
       }
       ++method_offsets_index_;
     }
@@ -2006,6 +2011,10 @@ bool OatWriter::VisitDexMethods(DexMethodVisitor* visitor) {
 size_t OatWriter::InitOatHeader(uint32_t num_dex_files,
                                 SafeMap<std::string, std::string>* key_value_store) {
   TimingLogger::ScopedTiming split("InitOatHeader", timings_);
+  // Check that oat version when runtime was compiled matches the oat version
+  // when dex2oat was compiled. We have seen cases where they got out of sync.
+  constexpr std::array<uint8_t, 4> dex2oat_oat_version = OatHeader::kOatVersion;
+  OatHeader::CheckOatVersion(dex2oat_oat_version);
   oat_header_.reset(OatHeader::Create(GetCompilerOptions().GetInstructionSet(),
                                       GetCompilerOptions().GetInstructionSetFeatures(),
                                       num_dex_files,
@@ -2179,10 +2188,7 @@ size_t OatWriter::InitOatCode(size_t offset) {
   offset = RoundUp(offset, kPageSize);
   oat_header_->SetExecutableOffset(offset);
   size_executable_offset_alignment_ = offset - old_offset;
-  // TODO: Remove unused trampoline offsets from the OatHeader (requires oat version change).
-  oat_header_->SetInterpreterToInterpreterBridgeOffset(0);
-  oat_header_->SetInterpreterToCompiledCodeBridgeOffset(0);
-  if (GetCompilerOptions().IsBootImage()) {
+  if (GetCompilerOptions().IsBootImage() && primary_oat_file_) {
     InstructionSet instruction_set = compiler_options_.GetInstructionSet();
     const bool generate_debug_info = GetCompilerOptions().GenerateAnyDebugInfo();
     size_t adjusted_offset = offset;
@@ -2307,9 +2313,6 @@ void OatWriter::InitBssLayout(InstructionSet instruction_set) {
   }
 
   DCHECK_EQ(bss_size_, 0u);
-  if (GetCompilerOptions().IsBootImage()) {
-    DCHECK(bss_string_entries_.empty());
-  }
   if (bss_method_entries_.empty() &&
       bss_type_entries_.empty() &&
       bss_string_entries_.empty()) {
@@ -3062,7 +3065,7 @@ size_t OatWriter::WriteOatDexFiles(OutputStream* out, size_t file_offset, size_t
 }
 
 size_t OatWriter::WriteCode(OutputStream* out, size_t file_offset, size_t relative_offset) {
-  if (GetCompilerOptions().IsBootImage()) {
+  if (GetCompilerOptions().IsBootImage() && primary_oat_file_) {
     InstructionSet instruction_set = compiler_options_.GetInstructionSet();
 
     #define DO_TRAMPOLINE(field) \

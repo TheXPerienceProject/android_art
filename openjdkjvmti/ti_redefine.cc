@@ -67,7 +67,7 @@
 #include "mirror/array-alloc-inl.h"
 #include "mirror/class-alloc-inl.h"
 #include "mirror/class-inl.h"
-#include "mirror/class_ext.h"
+#include "mirror/class_ext-inl.h"
 #include "mirror/object.h"
 #include "mirror/object_array-alloc-inl.h"
 #include "mirror/object_array-inl.h"
@@ -80,7 +80,7 @@
 #include "ti_breakpoint.h"
 #include "ti_class_loader.h"
 #include "transform.h"
-#include "verifier/method_verifier.h"
+#include "verifier/class_verifier.h"
 #include "verifier/verifier_enums.h"
 
 namespace openjdkjvmti {
@@ -468,11 +468,11 @@ jvmtiError Redefiner::AddRedefinition(ArtJvmTiEnv* env, const ArtClassDefinition
   return OK;
 }
 
-art::mirror::Class* Redefiner::ClassRedefinition::GetMirrorClass() {
+art::ObjPtr<art::mirror::Class> Redefiner::ClassRedefinition::GetMirrorClass() {
   return driver_->self_->DecodeJObject(klass_)->AsClass();
 }
 
-art::mirror::ClassLoader* Redefiner::ClassRedefinition::GetClassLoader() {
+art::ObjPtr<art::mirror::ClassLoader> Redefiner::ClassRedefinition::GetClassLoader() {
   return GetMirrorClass()->GetClassLoader();
 }
 
@@ -1119,17 +1119,17 @@ bool Redefiner::ClassRedefinition::CheckVerification(const RedefinitionDataIter&
   std::string error;
   // TODO Make verification log level lower
   art::verifier::FailureKind failure =
-      art::verifier::MethodVerifier::VerifyClass(driver_->self_,
-                                                 dex_file_.get(),
-                                                 hs.NewHandle(iter.GetNewDexCache()),
-                                                 hs.NewHandle(GetClassLoader()),
-                                                 /*class_def=*/ dex_file_->GetClassDef(0),
-                                                 /*callbacks=*/ nullptr,
-                                                 /*allow_soft_failures=*/ true,
-                                                 /*log_level=*/
-                                                 art::verifier::HardFailLogMode::kLogWarning,
-                                                 art::Runtime::Current()->GetTargetSdkVersion(),
-                                                 &error);
+      art::verifier::ClassVerifier::VerifyClass(driver_->self_,
+                                                dex_file_.get(),
+                                                hs.NewHandle(iter.GetNewDexCache()),
+                                                hs.NewHandle(GetClassLoader()),
+                                                /*class_def=*/ dex_file_->GetClassDef(0),
+                                                /*callbacks=*/ nullptr,
+                                                /*allow_soft_failures=*/ true,
+                                                /*log_level=*/
+                                                art::verifier::HardFailLogMode::kLogWarning,
+                                                art::Runtime::Current()->GetTargetSdkVersion(),
+                                                &error);
   switch (failure) {
     case art::verifier::FailureKind::kNoFailure:
     case art::verifier::FailureKind::kSoftFailure:
@@ -1239,7 +1239,7 @@ bool Redefiner::ClassRedefinition::FinishRemainingAllocations(
 }
 
 void Redefiner::ClassRedefinition::UnregisterJvmtiBreakpoints() {
-  BreakpointUtil::RemoveBreakpointsInClass(driver_->env_, GetMirrorClass());
+  BreakpointUtil::RemoveBreakpointsInClass(driver_->env_, GetMirrorClass().Ptr());
 }
 
 void Redefiner::ClassRedefinition::UnregisterBreakpoints() {

@@ -40,7 +40,7 @@
 #include "jit/profiling_info.h"
 #include "jni/jni_internal.h"
 #include "mirror/class-inl.h"
-#include "mirror/class_ext.h"
+#include "mirror/class_ext-inl.h"
 #include "mirror/executable.h"
 #include "mirror/object-inl.h"
 #include "mirror/object_array-inl.h"
@@ -105,7 +105,7 @@ ArtMethod* ArtMethod::FromReflectedMethod(const ScopedObjectAccessAlreadyRunnabl
   return executable->GetArtMethod();
 }
 
-mirror::DexCache* ArtMethod::GetObsoleteDexCache() {
+ObjPtr<mirror::DexCache> ArtMethod::GetObsoleteDexCache() {
   DCHECK(!Runtime::Current()->IsAotCompiler()) << PrettyMethod();
   DCHECK(IsObsolete());
   ObjPtr<mirror::ClassExt> ext(GetDeclaringClass()->GetExtData());
@@ -212,7 +212,7 @@ ArtMethod* ArtMethod::FindOverriddenMethod(PointerSize pointer_size) {
       result = GetInterfaceMethodIfProxy(pointer_size);
       DCHECK(result != nullptr);
     } else {
-      mirror::IfTable* iftable = GetDeclaringClass()->GetIfTable();
+      ObjPtr<mirror::IfTable> iftable = GetDeclaringClass()->GetIfTable();
       for (size_t i = 0; i < iftable->Count() && result == nullptr; i++) {
         ObjPtr<mirror::Class> interface = iftable->GetInterface(i);
         for (ArtMethod& interface_method : interface->GetVirtualMethods(pointer_size)) {
@@ -322,7 +322,9 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
   // If the runtime is not yet started or it is required by the debugger, then perform the
   // Invocation by the interpreter, explicitly forcing interpretation over JIT to prevent
   // cycling around the various JIT/Interpreter methods that handle method invocation.
-  if (UNLIKELY(!runtime->IsStarted() || Dbg::IsForcedInterpreterNeededForCalling(self, this))) {
+  if (UNLIKELY(!runtime->IsStarted() ||
+               (self->IsForceInterpreter() && !IsNative() && !IsProxyMethod() && IsInvokable()) ||
+               Dbg::IsForcedInterpreterNeededForCalling(self, this))) {
     if (IsStatic()) {
       art::interpreter::EnterInterpreterFromInvoke(
           self, this, nullptr, args, result, /*stay_in_interpreter=*/ true);
@@ -517,8 +519,7 @@ static const OatFile::OatMethod FindOatMethodFor(ArtMethod* method,
 }
 
 bool ArtMethod::EqualParameters(Handle<mirror::ObjectArray<mirror::Class>> params) {
-  auto* dex_cache = GetDexCache();
-  auto* dex_file = dex_cache->GetDexFile();
+  const DexFile* dex_file = GetDexFile();
   const auto& method_id = dex_file->GetMethodId(GetDexMethodIndex());
   const auto& proto_id = dex_file->GetMethodPrototype(method_id);
   const dex::TypeList* proto_params = dex_file->GetProtoParameters(proto_id);

@@ -205,7 +205,8 @@ Heap::Heap(size_t initial_size,
            bool use_generational_cc,
            uint64_t min_interval_homogeneous_space_compaction_by_oom,
            bool dump_region_info_before_gc,
-           bool dump_region_info_after_gc)
+           bool dump_region_info_after_gc,
+           space::ImageSpaceLoadingOrder image_space_loading_order)
     : non_moving_space_(nullptr),
       rosalloc_space_(nullptr),
       dlmalloc_space_(nullptr),
@@ -302,6 +303,7 @@ Heap::Heap(size_t initial_size,
       blocking_gc_count_rate_histogram_("blocking gc count rate histogram", 1U,
                                         kGcCountRateMaxBucketCount),
       alloc_tracking_enabled_(false),
+      alloc_record_depth_(AllocRecordObjectMap::kDefaultAllocStackDepth),
       backtrace_lock_(nullptr),
       seen_backtrace_count_(0u),
       unique_backtrace_count_(0u),
@@ -370,6 +372,10 @@ Heap::Heap(size_t initial_size,
                                        boot_class_path_locations,
                                        image_file_name,
                                        image_instruction_set,
+                                       image_space_loading_order,
+                                       runtime->ShouldRelocate(),
+                                       /*executable=*/ !runtime->IsAotCompiler(),
+                                       is_zygote,
                                        heap_reservation_size,
                                        &boot_image_spaces,
                                        &heap_reservation)) {
@@ -1422,11 +1428,6 @@ void Heap::Trim(Thread* self) {
   TrimSpaces(self);
   // Trim arenas that may have been used by JIT or verifier.
   runtime->GetArenaPool()->TrimMaps();
-  {
-    // TODO: Move this to a callback called when startup is finished (b/120671223).
-    ScopedTrace trace2("Delete thread pool");
-    runtime->DeleteThreadPool();
-  }
 }
 
 class TrimIndirectReferenceTableClosure : public Closure {
@@ -3226,7 +3227,7 @@ class VerifyReferenceCardVisitor {
 
           // Print which field of the object is dead.
           if (!obj->IsObjectArray()) {
-            mirror::Class* klass = is_static ? obj->AsClass() : obj->GetClass();
+            ObjPtr<mirror::Class> klass = is_static ? obj->AsClass() : obj->GetClass();
             CHECK(klass != nullptr);
             for (ArtField& field : (is_static ? klass->GetSFields() : klass->GetIFields())) {
               if (field.GetOffset().Int32Value() == offset.Int32Value()) {
@@ -3236,7 +3237,7 @@ class VerifyReferenceCardVisitor {
               }
             }
           } else {
-            mirror::ObjectArray<mirror::Object>* object_array =
+            ObjPtr<mirror::ObjectArray<mirror::Object>> object_array =
                 obj->AsObjectArray<mirror::Object>();
             for (int32_t i = 0; i < object_array->GetLength(); ++i) {
               if (object_array->Get(i) == ref) {

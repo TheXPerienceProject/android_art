@@ -10,6 +10,7 @@ msg() {
 
 ANDROID_ROOT="/system"
 ANDROID_RUNTIME_ROOT="/apex/com.android.runtime"
+ANDROID_TZDATA_ROOT="/apex/com.android.tzdata"
 ARCHITECTURES_32="(arm|x86|mips|none)"
 ARCHITECTURES_64="(arm64|x86_64|mips64|none)"
 ARCHITECTURES_PATTERN="${ARCHITECTURES_32}"
@@ -38,6 +39,8 @@ BIONIC="n"
 CREATE_ANDROID_ROOT="n"
 USE_ZIPAPEX="n"
 ZIPAPEX_LOC=""
+USE_EXTRACTED_ZIPAPEX="n"
+EXTRACTED_ZIPAPEX_LOC=""
 INTERPRETER="n"
 JIT="n"
 INVOKE_WITH=""
@@ -219,6 +222,7 @@ while true; do
         HOST="y"
         ANDROID_ROOT="${ANDROID_HOST_OUT}"
         ANDROID_RUNTIME_ROOT="${ANDROID_HOST_OUT}/com.android.runtime"
+        ANDROID_TZDATA_ROOT="${ANDROID_HOST_OUT}/com.android.tzdata"
         shift
     elif [ "x$1" = "x--bionic" ]; then
         BIONIC="y"
@@ -226,6 +230,11 @@ while true; do
         # the frameworks/libcore with linux_bionic so we need to use the normal
         # host ones which are in a different location.
         CREATE_ANDROID_ROOT="y"
+        shift
+    elif [ "x$1" = "x--runtime-extracted-zipapex" ]; then
+        shift
+        USE_EXTRACTED_ZIPAPEX="y"
+        EXTRACTED_ZIPAPEX_LOC="$1"
         shift
     elif [ "x$1" = "x--runtime-zipapex" ]; then
         shift
@@ -286,6 +295,7 @@ while true; do
         HOST="y"
         ANDROID_ROOT="${ANDROID_HOST_OUT}"
         ANDROID_RUNTIME_ROOT="${ANDROID_HOST_OUT}/com.android.runtime"
+        ANDROID_TZDATA_ROOT="${ANDROID_HOST_OUT}/com.android.tzdata"
         shift
     elif [ "x$1" = "x--gdb" ]; then
         USE_GDB="y"
@@ -312,6 +322,7 @@ while true; do
         shift
     elif [ "x$1" = "x--baseline" ]; then
         FLAGS="${FLAGS} -Xcompiler-option --baseline"
+        COMPILE_FLAGS="${COMPILE_FLAGS} --baseline"
         shift
     elif [ "x$1" = "x--jvm" ]; then
         USE_JVM="y"
@@ -348,6 +359,10 @@ while true; do
     elif [ "x$1" = "x--android-runtime-root" ]; then
         shift
         ANDROID_RUNTIME_ROOT="$1"
+        shift
+    elif [ "x$1" = "x--android-tzdata-root" ]; then
+        shift
+        ANDROID_TZDATA_ROOT="$1"
         shift
     elif [ "x$1" = "x--instruction-set-features" ]; then
         shift
@@ -797,6 +812,15 @@ if [ "$USE_ZIPAPEX" = "y" ]; then
   setupapex_cmdline="unzip -o -u ${zip_options} ${ZIPAPEX_LOC} apex_payload.zip -d ${DEX_LOCATION}"
   installapex_cmdline="unzip -o -u ${zip_options} ${DEX_LOCATION}/apex_payload.zip -d ${DEX_LOCATION}/zipapex"
   BIN_DIR=$DEX_LOCATION/zipapex/bin
+elif [ "$USE_EXTRACTED_ZIPAPEX" = "y" ]; then
+  # Just symlink the zipapex binaries
+  BIN_DIR=$DEX_LOCATION/zipapex/bin
+  # Force since some tests manually run this file twice.
+  ln_options=""
+  if [ "$DEV_MODE" = "y" ]; then
+    ln_options="--verbose"
+  fi
+  installapex_cmdline="ln -s -f ${ln_options} ${EXTRACTED_ZIPAPEX_LOC} ${DEX_LOCATION}/zipapex"
 fi
 
 # PROFILE takes precedence over RANDOM_PROFILE, since PROFILE tests require a
@@ -825,7 +849,7 @@ if [ "$PREBUILD" = "y" ]; then
   mkdir_locations="${mkdir_locations} ${DEX_LOCATION}/oat/$ISA"
   if [ "$APP_IMAGE" = "y" ]; then
     # Pick a base that will force the app image to get relocated.
-    app_image="--base=0x4000 --app-image-file=$DEX_LOCATION/oat/$ISA/$TEST_NAME.art"
+    app_image="--base=0x4000 --app-image-file=$DEX_LOCATION/oat/$ISA/$TEST_NAME.art --resolve-startup-const-strings=true"
   fi
 
   dex2oat_binary=${DEX2OAT_DEBUG_BINARY}
@@ -993,6 +1017,7 @@ if [ "$HOST" = "n" ]; then
              export DEX_LOCATION=$DEX_LOCATION && \
              export ANDROID_ROOT=$ANDROID_ROOT && \
              export ANDROID_RUNTIME_ROOT=$ANDROID_RUNTIME_ROOT && \
+             export ANDROID_TZDATA_ROOT=$ANDROID_TZDATA_ROOT && \
              export ANDROID_LOG_TAGS=$ANDROID_LOG_TAGS && \
              rm -rf ${DEX_LOCATION}/dalvik-cache/ && \
              mkdir -p ${mkdir_locations} && \
@@ -1038,7 +1063,8 @@ else
     export ANDROID_DATA="$DEX_LOCATION"
     export ANDROID_ROOT="${ANDROID_ROOT}"
     export ANDROID_RUNTIME_ROOT="${ANDROID_RUNTIME_ROOT}"
-    if [ "$USE_ZIPAPEX" = "y" ]; then
+    export ANDROID_TZDATA_ROOT="${ANDROID_TZDATA_ROOT}"
+    if [ "$USE_ZIPAPEX" = "y" ] || [ "$USE_EXRACTED_ZIPAPEX" = "y" ]; then
       # Put the zipapex files in front of the ld-library-path
       export LD_LIBRARY_PATH="${ANDROID_DATA}/zipapex/${LIBRARY_DIRECTORY}:${ANDROID_ROOT}/${TEST_DIRECTORY}"
       export DYLD_LIBRARY_PATH="${ANDROID_DATA}/zipapex/${LIBRARY_DIRECTORY}:${ANDROID_ROOT}/${TEST_DIRECTORY}"

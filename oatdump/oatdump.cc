@@ -59,18 +59,15 @@
 #include "dex/type_lookup_table.h"
 #include "dexlayout.h"
 #include "disassembler.h"
+#include "elf/elf_builder.h"
 #include "gc/accounting/space_bitmap-inl.h"
 #include "gc/space/image_space.h"
 #include "gc/space/large_object_space.h"
 #include "gc/space/space-inl.h"
 #include "image-inl.h"
 #include "imtable-inl.h"
-#include "subtype_check.h"
 #include "index_bss_mapping.h"
 #include "interpreter/unstarted_runtime.h"
-#include "linker/buffered_output_stream.h"
-#include "linker/elf_builder.h"
-#include "linker/file_output_stream.h"
 #include "mirror/array-inl.h"
 #include "mirror/class-inl.h"
 #include "mirror/dex_cache-inl.h"
@@ -82,6 +79,9 @@
 #include "scoped_thread_state_change-inl.h"
 #include "stack.h"
 #include "stack_map.h"
+#include "stream/buffered_output_stream.h"
+#include "stream/file_output_stream.h"
+#include "subtype_check.h"
 #include "thread_list.h"
 #include "vdex_file.h"
 #include "verifier/method_verifier.h"
@@ -150,10 +150,10 @@ class OatSymbolizer final {
     if (elf_file == nullptr) {
       return false;
     }
-    std::unique_ptr<linker::BufferedOutputStream> output_stream =
-        std::make_unique<linker::BufferedOutputStream>(
-            std::make_unique<linker::FileOutputStream>(elf_file.get()));
-    builder_.reset(new linker::ElfBuilder<ElfTypes>(isa, features.get(), output_stream.get()));
+    std::unique_ptr<BufferedOutputStream> output_stream =
+        std::make_unique<BufferedOutputStream>(
+            std::make_unique<FileOutputStream>(elf_file.get()));
+    builder_.reset(new ElfBuilder<ElfTypes>(isa, output_stream.get()));
 
     builder_->Start();
 
@@ -176,9 +176,6 @@ class OatSymbolizer final {
       text->End();
     }
 
-    if (isa == InstructionSet::kMips || isa == InstructionSet::kMips64) {
-      builder_->WriteMIPSabiflagsSection();
-    }
     builder_->PrepareDynamicSection(elf_file->GetPath(),
                                     rodata_size,
                                     text_size,
@@ -202,8 +199,6 @@ class OatSymbolizer final {
         info.code_size = 0;  /* The symbol lasts until the next symbol. */        \
         method_debug_infos_.push_back(std::move(info));                           \
       }
-    DO_TRAMPOLINE(InterpreterToInterpreterBridge)
-    DO_TRAMPOLINE(InterpreterToCompiledCodeBridge)
     DO_TRAMPOLINE(JniDlsymLookup);
     DO_TRAMPOLINE(QuickGenericJniTrampoline);
     DO_TRAMPOLINE(QuickImtConflictTrampoline);
@@ -332,7 +327,7 @@ class OatSymbolizer final {
 
  private:
   const OatFile* oat_file_;
-  std::unique_ptr<linker::ElfBuilder<ElfTypes>> builder_;
+  std::unique_ptr<ElfBuilder<ElfTypes>> builder_;
   std::vector<debug::MethodDebugInfo> method_debug_infos_;
   std::unordered_set<uint32_t> seen_offsets_;
   const std::string output_name_;
@@ -454,10 +449,6 @@ class OatDumper {
     os << StringPrintf("\n\n");
 
     DUMP_OAT_HEADER_OFFSET("EXECUTABLE", GetExecutableOffset);
-    DUMP_OAT_HEADER_OFFSET("INTERPRETER TO INTERPRETER BRIDGE",
-                           GetInterpreterToInterpreterBridgeOffset);
-    DUMP_OAT_HEADER_OFFSET("INTERPRETER TO COMPILED CODE BRIDGE",
-                           GetInterpreterToCompiledCodeBridgeOffset);
     DUMP_OAT_HEADER_OFFSET("JNI DLSYM LOOKUP",
                            GetJniDlsymLookupOffset);
     DUMP_OAT_HEADER_OFFSET("QUICK GENERIC JNI TRAMPOLINE",
@@ -1247,45 +1238,65 @@ class OatDumper {
     }
     {
       vios->Stream() << "CODE: ";
-      const void* code = oat_method.GetQuickCode();
-      uint32_t aligned_code_begin = AlignCodeOffset(code_offset);
-      uint64_t aligned_code_end = aligned_code_begin + code_size;
-      if (AddStatsObject(code)) {
-        stats_.Child("Code")->AddBytes(code_size);
-      }
-
-      if (options_.absolute_addresses_) {
-        vios->Stream() << StringPrintf("%p ", code);
-      }
-      vios->Stream() << StringPrintf("(code_offset=0x%08x size=%u)%s\n",
-                                     code_offset,
-                                     code_size,
-                                     code != nullptr ? "..." : "");
-
-      ScopedIndentation indent2(vios);
-      if (aligned_code_begin > oat_file_.Size()) {
+      uint32_t code_size_offset = oat_method.GetQuickCodeSizeOffset();
+      if (code_size_offset > oat_file_.Size()) {
+        ScopedIndentation indent2(vios);
         vios->Stream() << StringPrintf("WARNING: "
-                                       "start of code at 0x%08x is past end of file 0x%08zx.",
-                                       aligned_code_begin, oat_file_.Size());
+                                       "code size offset 0x%08x is past end of file 0x%08zx.",
+                                       code_size_offset, oat_file_.Size());
         success = false;
-      } else if (aligned_code_end > oat_file_.Size()) {
-        vios->Stream() << StringPrintf(
-            "WARNING: "
-            "end of code at 0x%08" PRIx64 " is past end of file 0x%08zx. "
-            "code size is 0x%08x.\n",
-            aligned_code_end, oat_file_.Size(),
-            code_size);
-        success = false;
-      } else if (code_size > kMaxCodeSize) {
-        vios->Stream() << StringPrintf(
-            "WARNING: "
-            "code size %d is bigger than max expected threshold of %d. "
-            "code size is 0x%08x.\n",
-            code_size, kMaxCodeSize,
-            code_size);
-        success = false;
-      } else if (options_.disassemble_code_) {
-        DumpCode(vios, oat_method, code_item_accessor, !success, 0);
+      } else {
+        const void* code = oat_method.GetQuickCode();
+        uint32_t aligned_code_begin = AlignCodeOffset(code_offset);
+        uint64_t aligned_code_end = aligned_code_begin + code_size;
+        if (AddStatsObject(code)) {
+          stats_.Child("Code")->AddBytes(code_size);
+        }
+
+        if (options_.absolute_addresses_) {
+          vios->Stream() << StringPrintf("%p ", code);
+        }
+        vios->Stream() << StringPrintf("(code_offset=0x%08x size_offset=0x%08x size=%u)%s\n",
+                                       code_offset,
+                                       code_size_offset,
+                                       code_size,
+                                       code != nullptr ? "..." : "");
+
+        ScopedIndentation indent2(vios);
+        if (aligned_code_begin > oat_file_.Size()) {
+          vios->Stream() << StringPrintf("WARNING: "
+                                         "start of code at 0x%08x is past end of file 0x%08zx.",
+                                         aligned_code_begin, oat_file_.Size());
+          success = false;
+        } else if (aligned_code_end > oat_file_.Size()) {
+          vios->Stream() << StringPrintf(
+              "WARNING: "
+              "end of code at 0x%08" PRIx64 " is past end of file 0x%08zx. "
+              "code size is 0x%08x loaded from offset 0x%08x.\n",
+              aligned_code_end, oat_file_.Size(),
+              code_size, code_size_offset);
+          success = false;
+          if (options_.disassemble_code_) {
+            if (code_size_offset + kPrologueBytes <= oat_file_.Size()) {
+              DumpCode(vios, oat_method, code_item_accessor, true, kPrologueBytes);
+            }
+          }
+        } else if (code_size > kMaxCodeSize) {
+          vios->Stream() << StringPrintf(
+              "WARNING: "
+              "code size %d is bigger than max expected threshold of %d. "
+              "code size is 0x%08x loaded from offset 0x%08x.\n",
+              code_size, kMaxCodeSize,
+              code_size, code_size_offset);
+          success = false;
+          if (options_.disassemble_code_) {
+            if (code_size_offset + kPrologueBytes <= oat_file_.Size()) {
+              DumpCode(vios, oat_method, code_item_accessor, true, kPrologueBytes);
+            }
+          }
+        } else if (options_.disassemble_code_) {
+          DumpCode(vios, oat_method, code_item_accessor, !success, 0);
+        }
       }
     }
     vios->Stream() << std::flush;
@@ -1808,7 +1819,7 @@ class ImageDumper {
               = image_root_object->AsObjectArray<mirror::Object>();
           ScopedIndentation indent2(&vios_);
           for (int j = 0; j < image_root_object_array->GetLength(); j++) {
-            mirror::Object* value = image_root_object_array->Get(j);
+            ObjPtr<mirror::Object> value = image_root_object_array->Get(j);
             size_t run = 0;
             for (int32_t k = j + 1; k < image_root_object_array->GetLength(); k++) {
               if (value == image_root_object_array->Get(k)) {
@@ -1922,10 +1933,13 @@ class ImageDumper {
       indent_os << "\n";
       // TODO: Dump fields.
       // Dump methods after.
-      DumpArtMethodVisitor visitor(this);
-      image_header_.VisitPackedArtMethods(&visitor,
-                                          image_space_.Begin(),
-                                          image_header_.GetPointerSize());
+      image_header_.VisitPackedArtMethods([&](ArtMethod& method)
+          REQUIRES_SHARED(Locks::mutator_lock_) {
+        std::ostream& indent_os = vios_.Stream();
+        indent_os << &method << " " << " ArtMethod: " << method.PrettyMethod() << "\n";
+        DumpMethod(&method, indent_os);
+        indent_os << "\n";
+      },  image_space_.Begin(), image_header_.GetPointerSize());
       // Dump the large objects separately.
       heap->GetLargeObjectsSpace()->GetLiveBitmap()->Walk(dump_visitor);
       indent_os << "\n";
@@ -2011,21 +2025,6 @@ class ImageDumper {
   }
 
  private:
-  class DumpArtMethodVisitor : public ArtMethodVisitor {
-   public:
-    explicit DumpArtMethodVisitor(ImageDumper* image_dumper) : image_dumper_(image_dumper) {}
-
-    void Visit(ArtMethod* method) override REQUIRES_SHARED(Locks::mutator_lock_) {
-      std::ostream& indent_os = image_dumper_->vios_.Stream();
-      indent_os << method << " " << " ArtMethod: " << ArtMethod::PrettyMethod(method) << "\n";
-      image_dumper_->DumpMethod(method, indent_os);
-      indent_os << "\n";
-    }
-
-   private:
-    ImageDumper* const image_dumper_;
-  };
-
   static void PrettyObjectValue(std::ostream& os,
                                 ObjPtr<mirror::Class> type,
                                 ObjPtr<mirror::Object> value)
@@ -2034,12 +2033,15 @@ class ImageDumper {
     if (value == nullptr) {
       os << StringPrintf("null   %s\n", type->PrettyDescriptor().c_str());
     } else if (type->IsStringClass()) {
-      mirror::String* string = value->AsString();
-      os << StringPrintf("%p   String: %s\n", string,
+      ObjPtr<mirror::String> string = value->AsString();
+      os << StringPrintf("%p   String: %s\n",
+                         string.Ptr(),
                          PrintableString(string->ToModifiedUtf8().c_str()).c_str());
     } else if (type->IsClassClass()) {
-      mirror::Class* klass = value->AsClass();
-      os << StringPrintf("%p   Class: %s\n", klass, mirror::Class::PrettyDescriptor(klass).c_str());
+      ObjPtr<mirror::Class> klass = value->AsClass();
+      os << StringPrintf("%p   Class: %s\n",
+                         klass.Ptr(),
+                         mirror::Class::PrettyDescriptor(klass).c_str());
     } else {
       os << StringPrintf("%p   %s\n", value.Ptr(), type->PrettyDescriptor().c_str());
     }
@@ -2157,17 +2159,19 @@ class ImageDumper {
 
     std::ostream& os = vios_.Stream();
 
-    mirror::Class* obj_class = obj->GetClass();
+    ObjPtr<mirror::Class> obj_class = obj->GetClass();
     if (obj_class->IsArrayClass()) {
       os << StringPrintf("%p: %s length:%d\n", obj, obj_class->PrettyDescriptor().c_str(),
                          obj->AsArray()->GetLength());
     } else if (obj->IsClass()) {
-      mirror::Class* klass = obj->AsClass();
-      os << StringPrintf("%p: java.lang.Class \"%s\" (", obj,
+      ObjPtr<mirror::Class> klass = obj->AsClass();
+      os << StringPrintf("%p: java.lang.Class \"%s\" (",
+                         obj,
                          mirror::Class::PrettyDescriptor(klass).c_str())
          << klass->GetStatus() << ")\n";
     } else if (obj_class->IsStringClass()) {
-      os << StringPrintf("%p: java.lang.String %s\n", obj,
+      os << StringPrintf("%p: java.lang.String %s\n",
+                         obj,
                          PrintableString(obj->AsString()->ToModifiedUtf8().c_str()).c_str());
     } else {
       os << StringPrintf("%p: %s\n", obj, obj_class->PrettyDescriptor().c_str());
@@ -2176,9 +2180,9 @@ class ImageDumper {
     DumpFields(os, obj, obj_class);
     const PointerSize image_pointer_size = image_header_.GetPointerSize();
     if (obj->IsObjectArray()) {
-      auto* obj_array = obj->AsObjectArray<mirror::Object>();
+      ObjPtr<mirror::ObjectArray<mirror::Object>> obj_array = obj->AsObjectArray<mirror::Object>();
       for (int32_t i = 0, length = obj_array->GetLength(); i < length; i++) {
-        mirror::Object* value = obj_array->Get(i);
+        ObjPtr<mirror::Object> value = obj_array->Get(i);
         size_t run = 0;
         for (int32_t j = i + 1; j < length; j++) {
           if (value == obj_array->Get(j)) {
@@ -2193,7 +2197,7 @@ class ImageDumper {
           os << StringPrintf("%d to %zd: ", i, i + run);
           i = i + run;
         }
-        mirror::Class* value_class =
+        ObjPtr<mirror::Class> value_class =
             (value == nullptr) ? obj_class->GetComponentType() : value->GetClass();
         PrettyObjectValue(os, value_class, value);
       }
@@ -3203,9 +3207,9 @@ class IMTDumper {
 
     std::cerr << " Interfaces:" << std::endl;
     // Run through iftable, find methods that slot here, see if they fit.
-    mirror::IfTable* if_table = klass->GetIfTable();
+    ObjPtr<mirror::IfTable> if_table = klass->GetIfTable();
     for (size_t i = 0, num_interfaces = klass->GetIfTableCount(); i < num_interfaces; ++i) {
-      mirror::Class* iface = if_table->GetInterface(i);
+      ObjPtr<mirror::Class> iface = if_table->GetInterface(i);
       std::string iface_name;
       std::cerr << "  " << iface->GetDescriptor(&iface_name) << std::endl;
 
@@ -3284,9 +3288,9 @@ class IMTDumper {
           std::cerr << "    " << p_name << std::endl;
         } else {
           // Run through iftable, find methods that slot here, see if they fit.
-          mirror::IfTable* if_table = klass->GetIfTable();
+          ObjPtr<mirror::IfTable> if_table = klass->GetIfTable();
           for (size_t i = 0, num_interfaces = klass->GetIfTableCount(); i < num_interfaces; ++i) {
-            mirror::Class* iface = if_table->GetInterface(i);
+            ObjPtr<mirror::Class> iface = if_table->GetInterface(i);
             size_t num_methods = iface->NumDeclaredVirtualMethods();
             if (num_methods > 0) {
               for (ArtMethod& iface_method : iface->GetMethods(pointer_size)) {

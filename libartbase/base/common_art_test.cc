@@ -158,6 +158,17 @@ void CommonArtTestImpl::SetUpAndroidRootEnvVars() {
       setenv("ANDROID_RUNTIME_ROOT", android_runtime_root.c_str(), 1);
     }
 
+    // Environment variable ANDROID_TZDATA_ROOT is set on the device, but not
+    // necessarily on the host. It needs to be set so that various libraries
+    // like icu4c can find their data files.
+    const char* android_tzdata_root_from_env = getenv("ANDROID_TZDATA_ROOT");
+    if (android_tzdata_root_from_env == nullptr) {
+      // Use ${ANDROID_HOST_OUT}/com.android.tzdata for ANDROID_TZDATA_ROOT.
+      std::string android_tzdata_root = android_host_out_from_env;
+      android_tzdata_root += "/com.android.tzdata";
+      setenv("ANDROID_TZDATA_ROOT", android_tzdata_root.c_str(), 1);
+    }
+
     setenv("LD_LIBRARY_PATH", ":", 0);  // Required by java.lang.System.<clinit>.
   }
 }
@@ -327,11 +338,11 @@ static std::string GetDexFileName(const std::string& jar_prefix, bool host) {
   return StringPrintf("%s/framework/%s%s.jar", path.c_str(), jar_prefix.c_str(), suffix.c_str());
 }
 
-std::vector<std::string> CommonArtTestImpl::GetLibCoreDexFileNames() {
+std::vector<std::string> CommonArtTestImpl::GetLibCoreModuleNames() const {
   // Note: This must start with the CORE_IMG_JARS in Android.common_path.mk
   // because that's what we use for compiling the core.art image.
   // It may contain additional modules from TEST_CORE_JARS.
-  static const char* const kLibcoreModules[] = {
+  return {
       // CORE_IMG_JARS modules.
       "core-oj",
       "core-libart",
@@ -341,17 +352,26 @@ std::vector<std::string> CommonArtTestImpl::GetLibCoreDexFileNames() {
       // Additional modules.
       "conscrypt",
   };
+}
 
+std::vector<std::string> CommonArtTestImpl::GetLibCoreDexFileNames(
+    const std::vector<std::string>& modules) const {
   std::vector<std::string> result;
-  result.reserve(arraysize(kLibcoreModules));
-  for (const char* module : kLibcoreModules) {
+  result.reserve(modules.size());
+  for (const std::string& module : modules) {
     result.push_back(GetDexFileName(module, IsHost()));
   }
   return result;
 }
 
-std::vector<std::string> CommonArtTestImpl::GetLibCoreDexLocations() {
-  std::vector<std::string> result = GetLibCoreDexFileNames();
+std::vector<std::string> CommonArtTestImpl::GetLibCoreDexFileNames() const {
+  std::vector<std::string> modules = GetLibCoreModuleNames();
+  return GetLibCoreDexFileNames(modules);
+}
+
+std::vector<std::string> CommonArtTestImpl::GetLibCoreDexLocations(
+    const std::vector<std::string>& modules) const {
+  std::vector<std::string> result = GetLibCoreDexFileNames(modules);
   if (IsHost()) {
     // Strip the ANDROID_BUILD_TOP directory including the directory separator '/'.
     const char* host_dir = getenv("ANDROID_BUILD_TOP");
@@ -368,6 +388,11 @@ std::vector<std::string> CommonArtTestImpl::GetLibCoreDexLocations() {
     }
   }
   return result;
+}
+
+std::vector<std::string> CommonArtTestImpl::GetLibCoreDexLocations() const {
+  std::vector<std::string> modules = GetLibCoreModuleNames();
+  return GetLibCoreDexLocations(modules);
 }
 
 std::string CommonArtTestImpl::GetClassPathOption(const char* option,
@@ -430,15 +455,19 @@ std::vector<std::unique_ptr<const DexFile>> CommonArtTestImpl::OpenDexFiles(cons
   return dex_files;
 }
 
+std::unique_ptr<const DexFile> CommonArtTestImpl::OpenDexFile(const char* filename) {
+  std::vector<std::unique_ptr<const DexFile>> dex_files(OpenDexFiles(filename));
+  CHECK_EQ(dex_files.size(), 1u) << "Expected only one dex file";
+  return std::move(dex_files[0]);
+}
+
 std::vector<std::unique_ptr<const DexFile>> CommonArtTestImpl::OpenTestDexFiles(
     const char* name) {
   return OpenDexFiles(GetTestDexFileName(name).c_str());
 }
 
 std::unique_ptr<const DexFile> CommonArtTestImpl::OpenTestDexFile(const char* name) {
-  std::vector<std::unique_ptr<const DexFile>> vector = OpenTestDexFiles(name);
-  EXPECT_EQ(1U, vector.size());
-  return std::move(vector[0]);
+  return OpenDexFile(GetTestDexFileName(name).c_str());
 }
 
 std::string CommonArtTestImpl::GetCoreFileLocation(const char* suffix) {
