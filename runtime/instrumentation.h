@@ -75,15 +75,11 @@ struct InstrumentationListener {
   virtual ~InstrumentationListener() {}
 
   // Call-back for when a method is entered.
-  virtual void MethodEntered(Thread* thread,
-                             Handle<mirror::Object> this_object,
-                             ArtMethod* method,
-                             uint32_t dex_pc) REQUIRES_SHARED(Locks::mutator_lock_) = 0;
+  virtual void MethodEntered(Thread* thread, ArtMethod* method)
+      REQUIRES_SHARED(Locks::mutator_lock_) = 0;
 
   virtual void MethodExited(Thread* thread,
-                            Handle<mirror::Object> this_object,
                             ArtMethod* method,
-                            uint32_t dex_pc,
                             OptionalFrame frame,
                             MutableHandle<mirror::Object>& return_value)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -92,9 +88,7 @@ struct InstrumentationListener {
   // value (if appropriate) or use the alternate MethodExited callback instead if they need to
   // go through a suspend point.
   virtual void MethodExited(Thread* thread,
-                            Handle<mirror::Object> this_object,
                             ArtMethod* method,
-                            uint32_t dex_pc,
                             OptionalFrame frame,
                             JValue& return_value)
       REQUIRES_SHARED(Locks::mutator_lock_) = 0;
@@ -398,27 +392,22 @@ class Instrumentation {
 
   // Inform listeners that a method has been entered. A dex PC is provided as we may install
   // listeners into executing code and get method enter events for methods already on the stack.
-  void MethodEnterEvent(Thread* thread,
-                        ObjPtr<mirror::Object> this_object,
-                        ArtMethod* method,
-                        uint32_t dex_pc) const
+  void MethodEnterEvent(Thread* thread, ArtMethod* method) const
       REQUIRES_SHARED(Locks::mutator_lock_) {
     if (UNLIKELY(HasMethodEntryListeners())) {
-      MethodEnterEventImpl(thread, this_object, method, dex_pc);
+      MethodEnterEventImpl(thread, method);
     }
   }
 
   // Inform listeners that a method has been exited.
   template<typename T>
   void MethodExitEvent(Thread* thread,
-                       ObjPtr<mirror::Object> this_object,
                        ArtMethod* method,
-                       uint32_t dex_pc,
                        OptionalFrame frame,
                        T& return_value) const
       REQUIRES_SHARED(Locks::mutator_lock_) {
     if (UNLIKELY(HasMethodExitListeners())) {
-      MethodExitEventImpl(thread, this_object, method, dex_pc, frame, return_value);
+      MethodExitEventImpl(thread, method, frame, return_value);
     }
   }
 
@@ -597,16 +586,11 @@ class Instrumentation {
   // exclusive access to mutator lock which you can't get if the runtime isn't started.
   void SetEntrypointsInstrumented(bool instrumented) NO_THREAD_SAFETY_ANALYSIS;
 
-  void MethodEnterEventImpl(Thread* thread,
-                            ObjPtr<mirror::Object> this_object,
-                            ArtMethod* method,
-                            uint32_t dex_pc) const
+  void MethodEnterEventImpl(Thread* thread, ArtMethod* method) const
       REQUIRES_SHARED(Locks::mutator_lock_);
   template <typename T>
   void MethodExitEventImpl(Thread* thread,
-                           ObjPtr<mirror::Object> this_object,
                            ArtMethod* method,
-                           uint32_t dex_pc,
                            OptionalFrame frame,
                            T& return_value) const
       REQUIRES_SHARED(Locks::mutator_lock_);

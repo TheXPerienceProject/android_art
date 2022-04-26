@@ -55,18 +55,13 @@ class TestInstrumentationListener final : public instrumentation::Instrumentatio
 
   virtual ~TestInstrumentationListener() {}
 
-  void MethodEntered(Thread* thread ATTRIBUTE_UNUSED,
-                     Handle<mirror::Object> this_object ATTRIBUTE_UNUSED,
-                     ArtMethod* method ATTRIBUTE_UNUSED,
-                     uint32_t dex_pc ATTRIBUTE_UNUSED)
-      override REQUIRES_SHARED(Locks::mutator_lock_) {
+  void MethodEntered(Thread* thread ATTRIBUTE_UNUSED, ArtMethod* method ATTRIBUTE_UNUSED) override
+      REQUIRES_SHARED(Locks::mutator_lock_) {
     received_method_enter_event = true;
   }
 
   void MethodExited(Thread* thread ATTRIBUTE_UNUSED,
-                    Handle<mirror::Object> this_object ATTRIBUTE_UNUSED,
                     ArtMethod* method ATTRIBUTE_UNUSED,
-                    uint32_t dex_pc ATTRIBUTE_UNUSED,
                     instrumentation::OptionalFrame frame ATTRIBUTE_UNUSED,
                     MutableHandle<mirror::Object>& return_value ATTRIBUTE_UNUSED)
       override REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -74,9 +69,7 @@ class TestInstrumentationListener final : public instrumentation::Instrumentatio
   }
 
   void MethodExited(Thread* thread ATTRIBUTE_UNUSED,
-                    Handle<mirror::Object> this_object ATTRIBUTE_UNUSED,
                     ArtMethod* method ATTRIBUTE_UNUSED,
-                    uint32_t dex_pc ATTRIBUTE_UNUSED,
                     instrumentation::OptionalFrame frame ATTRIBUTE_UNUSED,
                     JValue& return_value ATTRIBUTE_UNUSED)
       override REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -392,11 +385,11 @@ class InstrumentationTest : public CommonRuntimeTest {
       REQUIRES_SHARED(Locks::mutator_lock_) {
     switch (event_type) {
       case instrumentation::Instrumentation::kMethodEntered:
-        instr->MethodEnterEvent(self, obj, method, dex_pc);
+        instr->MethodEnterEvent(self, method);
         break;
       case instrumentation::Instrumentation::kMethodExited: {
         JValue value;
-        instr->MethodExitEvent(self, obj, method, dex_pc, {}, value);
+        instr->MethodExitEvent(self, method, {}, value);
         break;
       }
       case instrumentation::Instrumentation::kMethodUnwind:

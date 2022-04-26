@@ -241,9 +241,13 @@ Jit* Jit::Create(JitCodeCache* code_cache, JitOptions* options) {
   // With 'perf', we want a 1-1 mapping between an address and a method.
   // We aren't able to keep method pointers live during the instrumentation method entry trampoline
   // so we will just disable jit-gc if we are doing that.
+  // JitAtFirstUse compiles the methods synchronously on mutator threads. While this should work
+  // in theory it is causing deadlocks in some jvmti tests related to Jit GC. Hence, disabling
+  // Jit GC for now (b/147208992).
   if (code_cache->GetGarbageCollectCode()) {
     code_cache->SetGarbageCollectCode(!jit_compiler_->GenerateDebugInfo() &&
-        !Runtime::Current()->GetInstrumentation()->AreExitStubsInstalled());
+        !Runtime::Current()->GetInstrumentation()->AreExitStubsInstalled() &&
+        !jit->JitAtFirstUse());
   }
 
   VLOG(jit) << "JIT created with initial_capacity="
@@ -298,6 +302,19 @@ bool Jit::CompileMethod(ArtMethod* method,
                         bool prejit) {
   DCHECK(Runtime::Current()->UseJitCompilation());
   DCHECK(!method->IsRuntimeMethod());
+
+  // If the baseline flag was explicitly passed in the compiler options, change the compilation kind
+  // from optimized to baseline.
+  if (jit_compiler_->IsBaselineCompiler() && compilation_kind == CompilationKind::kOptimized) {
+    compilation_kind = CompilationKind::kBaseline;
+  }
+
+  // If we're asked to compile baseline, but we cannot allocate profiling infos,
+  // change the compilation kind to optimized.
+  if ((compilation_kind == CompilationKind::kBaseline) &&
+      !GetCodeCache()->CanAllocateProfilingInfo()) {
+    compilation_kind = CompilationKind::kOptimized;
+  }
 
   RuntimeCallbacks* cb = Runtime::Current()->GetRuntimeCallbacks();
   // Don't compile the method if it has breakpoints.
@@ -1330,6 +1347,8 @@ bool Jit::CompileMethodFromProfile(Thread* self,
       // We explicitly check for the stub. The trampoline is for methods backed by
       // a .oat file that has a compiled version of the method.
       (entry_point == GetQuickResolutionStub())) {
+    VLOG(jit) << "JIT Zygote processing method " << ArtMethod::PrettyMethod(method)
+              << " from profile";
     method->SetPreCompiled();
     if (!add_to_queue) {
       CompileMethod(method, self, CompilationKind::kOptimized, /* prejit= */ true);
@@ -1425,11 +1444,6 @@ uint32_t Jit::CompileMethodsFromProfile(
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   uint32_t added_to_queue = 0u;
   for (const DexFile* dex_file : dex_files) {
-    if (LocationIsOnArtModule(dex_file->GetLocation().c_str())) {
-      // The ART module jars are already preopted.
-      continue;
-    }
-
     std::set<dex::TypeIndex> class_types;
     std::set<uint16_t> all_methods;
     if (!profile_info.GetClassesAndMethods(*dex_file,
@@ -1696,8 +1710,12 @@ void Jit::PostForkChildAction(bool is_system_server, bool is_zygote) {
   jit_compiler_->ParseCompilerOptions();
 
   // Adjust the status of code cache collection: the status from zygote was to not collect.
+  // JitAtFirstUse compiles the methods synchronously on mutator threads. While this should work
+  // in theory it is causing deadlocks in some jvmti tests related to Jit GC. Hence, disabling
+  // Jit GC for now (b/147208992).
   code_cache_->SetGarbageCollectCode(!jit_compiler_->GenerateDebugInfo() &&
-      !Runtime::Current()->GetInstrumentation()->AreExitStubsInstalled());
+      !Runtime::Current()->GetInstrumentation()->AreExitStubsInstalled() &&
+      !JitAtFirstUse());
 
   if (is_system_server && HasImageWithProfile()) {
     // Disable garbage collection: we don't want it to delete methods we're compiling

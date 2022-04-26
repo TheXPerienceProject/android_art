@@ -294,22 +294,14 @@ static inline JValue Execute(
     ArtMethod *method = shadow_frame.GetMethod();
 
     if (UNLIKELY(instrumentation->HasMethodEntryListeners())) {
-      instrumentation->MethodEnterEvent(self,
-                                        shadow_frame.GetThisObject(accessor.InsSize()),
-                                        method,
-                                        0);
+      instrumentation->MethodEnterEvent(self, method);
       if (UNLIKELY(shadow_frame.GetForcePopFrame())) {
         // The caller will retry this invoke or ignore the result. Just return immediately without
         // any value.
         DCHECK(Runtime::Current()->AreNonStandardExitsEnabled());
         JValue ret = JValue();
         PerformNonStandardReturn<MonitorState::kNoMonitorsLocked>(
-            self,
-            shadow_frame,
-            ret,
-            instrumentation,
-            accessor.InsSize(),
-            0);
+            self, shadow_frame, ret, instrumentation, accessor.InsSize());
         return ret;
       }
       if (UNLIKELY(self->IsExceptionPending())) {
@@ -321,12 +313,7 @@ static inline JValue Execute(
         if (UNLIKELY(shadow_frame.GetForcePopFrame())) {
           DCHECK(Runtime::Current()->AreNonStandardExitsEnabled());
           PerformNonStandardReturn<MonitorState::kNoMonitorsLocked>(
-              self,
-              shadow_frame,
-              ret,
-              instrumentation,
-              accessor.InsSize(),
-              0);
+              self, shadow_frame, ret, instrumentation, accessor.InsSize());
         }
         return ret;
       }
@@ -553,7 +540,7 @@ void EnterInterpreterFromDeoptimize(Thread* self,
       const Instruction* instr = &accessor.InstructionAt(dex_pc);
       if (deopt_method_type == DeoptimizationMethodType::kKeepDexPc ||
           shadow_frame->GetForceRetryInstruction()) {
-        DCHECK(frame_cnt == 0 || (frame_cnt == 1 && shadow_frame->GetForceRetryInstruction()))
+        DCHECK(frame_cnt == 0 || shadow_frame->GetForceRetryInstruction())
             << "frame_cnt: " << frame_cnt
             << " force-retry: " << shadow_frame->GetForceRetryInstruction();
         // Need to re-execute the dex instruction.

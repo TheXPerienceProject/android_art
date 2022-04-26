@@ -203,6 +203,7 @@ class JitCompilerInterface {
       REQUIRES_SHARED(Locks::mutator_lock_) = 0;
   virtual bool GenerateDebugInfo() = 0;
   virtual void ParseCompilerOptions() = 0;
+  virtual bool IsBaselineCompiler() const;
 
   virtual std::vector<uint8_t> PackElfFileForJIT(ArrayRef<const JITCodeEntry*> elf_files,
                                                  ArrayRef<const void*> removed_symbols,
@@ -283,6 +284,10 @@ class Jit {
 
   uint16_t OSRMethodThreshold() const {
     return options_->GetOsrThreshold();
+  }
+
+  int GetZygoteThreadPoolPthreadPriority() const {
+    return options_->GetZygoteThreadPoolPthreadPriority();
   }
 
   uint16_t HotMethodThreshold() const {

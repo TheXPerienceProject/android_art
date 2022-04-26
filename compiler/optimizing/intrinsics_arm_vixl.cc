@@ -4786,14 +4786,16 @@ static void GenerateVarHandleCompareAndSetOrExchange(HInvoke* invoke,
         seq_cst_barrier ? MemBarrierKind::kAnyAny : MemBarrierKind::kLoadAny);
   }
 
+  if (byte_swap && value_type == DataType::Type::kInt64) {
+    // Undo byte swapping in `expected` and `new_value`. We do not have the
+    // information whether the value in these registers shall be needed later.
+    GenerateReverseBytesInPlaceForEachWord(assembler, expected);
+    GenerateReverseBytesInPlaceForEachWord(assembler, new_value);
+  }
   if (!return_success) {
     if (byte_swap) {
       if (value_type == DataType::Type::kInt64) {
         GenerateReverseBytesInPlaceForEachWord(assembler, old_value);
-        // Undo byte swapping in `expected` and `new_value`. We do not have the
-        // information whether the value in these registers shall be needed later.
-        GenerateReverseBytesInPlaceForEachWord(assembler, expected);
-        GenerateReverseBytesInPlaceForEachWord(assembler, new_value);
       } else {
         GenerateReverseBytes(assembler, value_type, old_value, out);
       }
@@ -5371,6 +5373,9 @@ UNIMPLEMENTED_INTRINSIC(ARMVIXL, FP16Greater)
 UNIMPLEMENTED_INTRINSIC(ARMVIXL, FP16GreaterEquals)
 UNIMPLEMENTED_INTRINSIC(ARMVIXL, FP16Less)
 UNIMPLEMENTED_INTRINSIC(ARMVIXL, FP16LessEquals)
+UNIMPLEMENTED_INTRINSIC(ARMVIXL, FP16Compare)
+UNIMPLEMENTED_INTRINSIC(ARMVIXL, FP16Min)
+UNIMPLEMENTED_INTRINSIC(ARMVIXL, FP16Max)
 UNIMPLEMENTED_INTRINSIC(ARMVIXL, MathMultiplyHigh)
 
 UNIMPLEMENTED_INTRINSIC(ARMVIXL, StringStringIndexOf);

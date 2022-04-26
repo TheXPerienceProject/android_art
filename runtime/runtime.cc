@@ -89,6 +89,7 @@
 #include "handle_scope-inl.h"
 #include "hidden_api.h"
 #include "image-inl.h"
+#include "indirect_reference_table.h"
 #include "instrumentation.h"
 #include "intern_table-inl.h"
 #include "interpreter/interpreter.h"
@@ -497,6 +498,8 @@ Runtime::~Runtime() {
   monitor_pool_ = nullptr;
   delete class_linker_;
   class_linker_ = nullptr;
+  delete small_irt_allocator_;
+  small_irt_allocator_ = nullptr;
   delete heap_;
   heap_ = nullptr;
   delete intern_table_;
@@ -706,7 +709,9 @@ void Runtime::PostZygoteFork() {
     // Ensure that the threads in the JIT pool have been created with the right
     // priority.
     if (kIsDebugBuild && jit->GetThreadPool() != nullptr) {
-      jit->GetThreadPool()->CheckPthreadPriority(jit->GetThreadPoolPthreadPriority());
+      jit->GetThreadPool()->CheckPthreadPriority(
+          IsZygote() ? jit->GetZygoteThreadPoolPthreadPriority()
+                     : jit->GetThreadPoolPthreadPriority());
     }
   }
   // Reset all stats.
@@ -1662,15 +1667,20 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   }
   linear_alloc_.reset(CreateLinearAlloc());
 
+  small_irt_allocator_ = new SmallIrtAllocator();
+
   BlockSignals();
   InitPlatformSignalHandlers();
 
   // Change the implicit checks flags based on runtime architecture.
   switch (kRuntimeISA) {
+    case InstructionSet::kArm64:
+      // TODO: Investigate implicit suspend check regressions. Bug: 209235730, 213121241.
+      implicit_suspend_checks_ = false;
+      FALLTHROUGH_INTENDED;
     case InstructionSet::kArm:
     case InstructionSet::kThumb2:
     case InstructionSet::kX86:
-    case InstructionSet::kArm64:
     case InstructionSet::kX86_64:
       implicit_null_checks_ = true;
       // Historical note: Installing stack protection was not playing well with Valgrind.
