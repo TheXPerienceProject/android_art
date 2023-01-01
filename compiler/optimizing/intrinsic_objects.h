@@ -41,7 +41,7 @@ template <class T> class ObjectArray;
   V(Character, 0, 127, DataType::Type::kUint16, kShortCacheLastIndex) \
   V(Integer, -128, 127, DataType::Type::kInt32, kCharacterCacheLastIndex)
 
-#define DEFINE_BOXED_CONSTANTS(name, low, high, primitive_type, start_index) \
+#define DEFINE_BOXED_CONSTANTS(name, low, high, unused, start_index) \
   static constexpr size_t k ##name ##CacheLastIndex = start_index + (high - low + 1); \
   static constexpr size_t k ##name ##CacheFirstIndex = start_index;
   BOXED_TYPES(DEFINE_BOXED_CONSTANTS)
@@ -52,14 +52,13 @@ template <class T> class ObjectArray;
 class IntrinsicObjects {
  public:
   enum class PatchType {
-    kIntegerValueOfObject,
-    kIntegerValueOfArray,
+    kValueOfObject,
+    kValueOfArray,
 
-    kLast = kIntegerValueOfArray
+    kLast = kValueOfArray
   };
 
   static uint32_t EncodePatch(PatchType patch_type, uint32_t index = 0u) {
-    DCHECK(patch_type == PatchType::kIntegerValueOfObject || index == 0u);
     return PatchTypeField::Encode(static_cast<uint32_t>(patch_type)) | IndexField::Encode(index);
   }
 
@@ -72,7 +71,7 @@ class IntrinsicObjects {
   }
 
   // Helpers returning addresses of objects, suitable for embedding in generated code.
-#define DEFINE_BOXED_ACCESSES(name, _, __, ___, start_index) \
+#define DEFINE_BOXED_ACCESSES(name, unused1, unused2, unused3, start_index) \
   static ObjPtr<mirror::Object> Get ##name ##ValueOfObject( \
       ObjPtr<mirror::ObjectArray<mirror::Object>> boot_image_live_objects, \
       uint32_t index) REQUIRES_SHARED(Locks::mutator_lock_) { \
@@ -90,16 +89,9 @@ class IntrinsicObjects {
       ObjPtr<mirror::ObjectArray<mirror::Object>> boot_image_live_objects, size_t start_index)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  static size_t GetNumberOfIntrinsicObjects() {
+  static constexpr size_t GetNumberOfIntrinsicObjects() {
     return kNumberOfBoxedCaches;
   }
-
- private:
-  static constexpr size_t kPatchTypeBits =
-      MinimumBitsToStore(static_cast<uint32_t>(PatchType::kLast));
-  static constexpr size_t kIndexBits = BitSizeOf<uint32_t>() - kPatchTypeBits;
-  using PatchTypeField = BitField<uint32_t, 0u, kPatchTypeBits>;
-  using IndexField = BitField<uint32_t, kPatchTypeBits, kIndexBits>;
 
   EXPORT static ObjPtr<mirror::Object> GetValueOfObject(
       ObjPtr<mirror::ObjectArray<mirror::Object>> boot_image_live_objects,
@@ -109,6 +101,13 @@ class IntrinsicObjects {
   EXPORT static MemberOffset GetValueOfArrayDataOffset(
       ObjPtr<mirror::ObjectArray<mirror::Object>> boot_image_live_objects,
       size_t start_index) REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  static constexpr size_t kPatchTypeBits =
+      MinimumBitsToStore(static_cast<uint32_t>(PatchType::kLast));
+  static constexpr size_t kIndexBits = BitSizeOf<uint32_t>() - kPatchTypeBits;
+  using PatchTypeField = BitField<uint32_t, 0u, kPatchTypeBits>;
+  using IndexField = BitField<uint32_t, kPatchTypeBits, kIndexBits>;
 };
 
 }  // namespace art

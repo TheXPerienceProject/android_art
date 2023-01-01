@@ -622,7 +622,11 @@ bool OatFileBase::Setup(int zip_fd,
   }
 
   DCHECK_GE(static_cast<size_t>(pointer_size), alignof(GcRoot<mirror::Object>));
-  if (!IsAligned<kPageSize>(bss_begin_) ||
+  // In certain cases, ELF can be mapped at an address which is page aligned,
+  // however not aligned to kElfSegmentAlignment. While technically this isn't
+  // correct as per requirement in the ELF header, it has to be supported for
+  // now. See also the comment at ImageHeader::RelocateImageReferences.
+  if (!IsAlignedParam(bss_begin_, kPageSize) ||
       !IsAlignedParam(bss_methods_, static_cast<size_t>(pointer_size)) ||
       !IsAlignedParam(bss_roots_, static_cast<size_t>(pointer_size)) ||
       !IsAligned<alignof(GcRoot<mirror::Object>)>(bss_end_)) {
@@ -1417,7 +1421,10 @@ bool DlOpenOatFile::Dlopen(const std::string& elf_filename,
       // Take ownership of the memory used by the shared object. dlopen() does not assume
       // full ownership of this memory and dlclose() shall just remap it as zero pages with
       // PROT_NONE. We need to unmap the memory when destroying this oat file.
-      dlopen_mmaps_.push_back(reservation->TakeReservedMemory(context.max_size));
+      // The reserved memory size is aligned up to kElfSegmentAlignment to ensure
+      // that the next reserved area will be aligned to the value.
+      dlopen_mmaps_.push_back(reservation->TakeReservedMemory(
+          CondRoundUp<kPageSizeAgnostic>(context.max_size, kElfSegmentAlignment)));
     }
 #else
     static_assert(!kIsTargetBuild || kIsTargetLinux || kIsTargetFuchsia,

@@ -118,7 +118,7 @@
 #include "mirror/method.h"
 #include "mirror/method_handle_impl.h"
 #include "mirror/method_handles_lookup.h"
-#include "mirror/method_type.h"
+#include "mirror/method_type-inl.h"
 #include "mirror/object-inl.h"
 #include "mirror/object-refvisitor-inl.h"
 #include "mirror/object.h"
@@ -1191,8 +1191,9 @@ void ClassLinker::RunRootClinits(Thread* self) {
       WellKnownClasses::java_lang_reflect_InvocationTargetException_init,
       // Ensure `Parameter` class is initialized (avoid check at runtime).
       WellKnownClasses::java_lang_reflect_Parameter_init,
-      // Ensure `MethodHandles` class is initialized (avoid check at runtime).
+      // Ensure `MethodHandles` and `MethodType` classes are initialized (avoid check at runtime).
       WellKnownClasses::java_lang_invoke_MethodHandles_lookup,
+      WellKnownClasses::java_lang_invoke_MethodType_makeImpl,
       // Ensure `DirectByteBuffer` class is initialized (avoid check at runtime).
       WellKnownClasses::java_nio_DirectByteBuffer_init,
       // Ensure `FloatingDecimal` class is initialized (avoid check at runtime).
@@ -4005,12 +4006,13 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
       }
     }
   }
-  if (kRuntimeISA != InstructionSet::kRiscv64 && all_parameters_are_reference_or_int &&
-      shorty[0] != 'F' && shorty[0] != 'D') {
-    access_flags |= kAccNterpInvokeFastPathFlag;
-  } else if (kRuntimeISA == InstructionSet::kRiscv64 && all_parameters_are_reference &&
-             shorty[0] != 'F' && shorty[0] != 'D') {
-    access_flags |= kAccNterpInvokeFastPathFlag;
+  if (all_parameters_are_reference_or_int && shorty[0] != 'F' && shorty[0] != 'D') {
+    // FIXME(riscv64): This optimization is currently disabled because riscv64 needs
+    // to distinguish between zero-extended references and sign-extended integers.
+    // We should enable this for references only and fix corresponding nterp fast-paths.
+    if (kRuntimeISA != InstructionSet::kRiscv64) {
+      access_flags |= kAccNterpInvokeFastPathFlag;
+    }
   }
 
   if (UNLIKELY((access_flags & kAccNative) != 0u)) {
@@ -10112,58 +10114,59 @@ ObjPtr<mirror::MethodType> ClassLinker::ResolveMethodType(
     return resolved;
   }
 
-  StackHandleScope<4> hs(self);
+  VariableSizedHandleScope raw_method_type_hs(self);
+  mirror::RawMethodType raw_method_type(&raw_method_type_hs);
+  if (!ResolveMethodType(self, proto_idx, dex_cache, class_loader, raw_method_type)) {
+    DCHECK(self->IsExceptionPending());
+    return nullptr;
+  }
+
+  // The handle scope was filled with return type and paratemer types.
+  DCHECK_EQ(raw_method_type_hs.Size(),
+            dex_cache->GetDexFile()->GetShortyView(proto_idx).length());
+  ObjPtr<mirror::MethodType> method_type = mirror::MethodType::Create(self, raw_method_type);
+  if (method_type != nullptr) {
+    // Ensure all stores for the newly created MethodType are visible, before we attempt to place
+    // it in the DexCache (b/224733324).
+    std::atomic_thread_fence(std::memory_order_release);
+    dex_cache->SetResolvedMethodType(proto_idx, method_type.Ptr());
+  }
+  return method_type;
+}
+
+bool ClassLinker::ResolveMethodType(Thread* self,
+                                    dex::ProtoIndex proto_idx,
+                                    Handle<mirror::DexCache> dex_cache,
+                                    Handle<mirror::ClassLoader> class_loader,
+                                    /*out*/ mirror::RawMethodType method_type) {
+  DCHECK(Runtime::Current()->IsMethodHandlesEnabled());
+  DCHECK(dex_cache != nullptr);
+  DCHECK(dex_cache->GetClassLoader() == class_loader.Get());
 
   // First resolve the return type.
   const DexFile& dex_file = *dex_cache->GetDexFile();
   const dex::ProtoId& proto_id = dex_file.GetProtoId(proto_idx);
-  Handle<mirror::Class> return_type(hs.NewHandle(
-      ResolveType(proto_id.return_type_idx_, dex_cache, class_loader)));
+  ObjPtr<mirror::Class> return_type =
+      ResolveType(proto_id.return_type_idx_, dex_cache, class_loader);
   if (return_type == nullptr) {
     DCHECK(self->IsExceptionPending());
-    return nullptr;
+    return false;
   }
+  method_type.SetRType(return_type);
 
   // Then resolve the argument types.
-  //
-  // TODO: Is there a better way to figure out the number of method arguments
-  // other than by looking at the shorty ?
-  const size_t num_method_args = strlen(dex_file.StringDataByIdx(proto_id.shorty_idx_)) - 1;
-
-  ObjPtr<mirror::Class> array_of_class = GetClassRoot<mirror::ObjectArray<mirror::Class>>(this);
-  Handle<mirror::ObjectArray<mirror::Class>> method_params(hs.NewHandle(
-      mirror::ObjectArray<mirror::Class>::Alloc(self, array_of_class, num_method_args)));
-  if (method_params == nullptr) {
-    DCHECK(self->IsExceptionPending());
-    return nullptr;
-  }
-
   DexFileParameterIterator it(dex_file, proto_id);
-  int32_t i = 0;
-  MutableHandle<mirror::Class> param_class = hs.NewHandle<mirror::Class>(nullptr);
   for (; it.HasNext(); it.Next()) {
     const dex::TypeIndex type_idx = it.GetTypeIdx();
-    param_class.Assign(ResolveType(type_idx, dex_cache, class_loader));
-    if (param_class == nullptr) {
+    ObjPtr<mirror::Class> param_type = ResolveType(type_idx, dex_cache, class_loader);
+    if (param_type == nullptr) {
       DCHECK(self->IsExceptionPending());
-      return nullptr;
+      return false;
     }
-
-    method_params->Set(i++, param_class.Get());
+    method_type.AddPType(param_type);
   }
 
-  DCHECK(!it.HasNext());
-
-  Handle<mirror::MethodType> type = hs.NewHandle(
-      mirror::MethodType::Create(self, return_type, method_params));
-  if (type != nullptr) {
-    // Ensure all stores for the newly created MethodType are visible, before we attempt to place
-    // it in the DexCache (b/224733324).
-    std::atomic_thread_fence(std::memory_order_release);
-    dex_cache->SetResolvedMethodType(proto_idx, type.Get());
-  }
-
-  return type.Get();
+  return true;
 }
 
 ObjPtr<mirror::MethodType> ClassLinker::ResolveMethodType(Thread* self,
