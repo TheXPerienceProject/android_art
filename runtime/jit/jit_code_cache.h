@@ -182,10 +182,13 @@ class JitCodeCache {
  public:
   static constexpr size_t kMaxCapacity = 64 * MB;
   // Put the default to a very low amount for debug builds to stress the code cache
-  // collection.
-  static constexpr size_t kInitialCapacity = kIsDebugBuild ? 8 * KB : 64 * KB;
+  // collection. It should be at least two pages, however, as the storage is split
+  // into data and code sections with sizes that should be aligned to page size each
+  // as that's the unit mspaces use. See also: JitMemoryRegion::Initialize.
+  static constexpr size_t kInitialCapacity = std::max(kIsDebugBuild ? 8 * KB : 64 * KB,
+                                                      2 * kPageSize);
 
-  // By default, do not GC until reaching 256KB.
+  // By default, do not GC until reaching four times the initial capacity.
   static constexpr size_t kReservedCapacity = kInitialCapacity * 4;
 
   // Create the code cache with a code + data capacity equal to "capacity", error message is passed
@@ -407,6 +410,11 @@ class JitCodeCache {
 
   ProfilingInfo* GetProfilingInfo(ArtMethod* method, Thread* self);
   void ResetHotnessCounter(ArtMethod* method, Thread* self);
+  void MaybeUpdateInlineCache(ArtMethod* method,
+                              uint32_t dex_pc,
+                              ObjPtr<mirror::Class> cls,
+                              Thread* self)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   void VisitRoots(RootVisitor* visitor);
 
