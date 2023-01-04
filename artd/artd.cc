@@ -212,11 +212,7 @@ ArtifactsLocation ArtifactsLocationToAidl(OatFileAssistant::Location location) {
   LOG(FATAL) << "Unexpected Location " << location;
 }
 
-Result<void> PrepareArtifactsDir(
-    const std::string& path,
-    const FsPermission& fs_permission,
-    const std::optional<OutputArtifacts::PermissionSettings::SeContext>& se_context =
-        std::nullopt) {
+Result<void> PrepareArtifactsDir(const std::string& path, const FsPermission& fs_permission) {
   std::error_code ec;
   bool created = std::filesystem::create_directory(path, ec);
   if (ec) {
@@ -234,26 +230,12 @@ Result<void> PrepareArtifactsDir(
   }
   OR_RETURN(Chown(path, fs_permission));
 
-  if (kIsTargetAndroid) {
-    int res = 0;
-    if (se_context.has_value()) {
-      res = selinux_android_restorecon_pkgdir(path.c_str(),
-                                              se_context->seInfo.c_str(),
-                                              se_context->uid,
-                                              SELINUX_ANDROID_RESTORECON_RECURSE);
-    } else {
-      res = selinux_android_restorecon(path.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE);
-    }
-    if (res != 0) {
-      return ErrnoErrorf("Failed to restorecon directory '{}'", path);
-    }
-  }
-
   cleanup.Disable();
   return {};
 }
 
-Result<void> PrepareArtifactsDirs(const OutputArtifacts& output_artifacts) {
+Result<void> PrepareArtifactsDirs(const OutputArtifacts& output_artifacts,
+                                  /*out*/ std::string* oat_dir_path) {
   if (output_artifacts.artifactsPath.isInDalvikCache) {
     return {};
   }
@@ -263,10 +245,31 @@ Result<void> PrepareArtifactsDirs(const OutputArtifacts& output_artifacts) {
   std::filesystem::path oat_dir = isa_dir.parent_path();
   DCHECK_EQ(oat_dir.filename(), "oat");
 
-  OR_RETURN(PrepareArtifactsDir(oat_dir,
-                                output_artifacts.permissionSettings.dirFsPermission,
-                                output_artifacts.permissionSettings.seContext));
+  OR_RETURN(PrepareArtifactsDir(oat_dir, output_artifacts.permissionSettings.dirFsPermission));
   OR_RETURN(PrepareArtifactsDir(isa_dir, output_artifacts.permissionSettings.dirFsPermission));
+  *oat_dir_path = oat_dir;
+  return {};
+}
+
+Result<void> Restorecon(
+    const std::string& path,
+    const std::optional<OutputArtifacts::PermissionSettings::SeContext>& se_context) {
+  if (!kIsTargetAndroid) {
+    return {};
+  }
+
+  int res = 0;
+  if (se_context.has_value()) {
+    res = selinux_android_restorecon_pkgdir(path.c_str(),
+                                            se_context->seInfo.c_str(),
+                                            se_context->uid,
+                                            SELINUX_ANDROID_RESTORECON_RECURSE);
+  } else {
+    res = selinux_android_restorecon(path.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE);
+  }
+  if (res != 0) {
+    return ErrnoErrorf("Failed to restorecon directory '{}'", path);
+  }
   return {};
 }
 
@@ -588,6 +591,9 @@ ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profil
   for (const std::string& dex_file : in_dexFiles) {
     OR_RETURN_FATAL(ValidateDexPath(dex_file));
   }
+  if (in_options.forceMerge + in_options.dumpOnly + in_options.dumpClassesAndMethods > 1) {
+    return Fatal("Only one of 'forceMerge', 'dumpOnly', and 'dumpClassesAndMethods' can be set");
+  }
 
   CmdlineBuilder args;
   FdLogger fd_logger;
@@ -622,6 +628,11 @@ ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profil
       OR_RETURN_NON_FATAL(NewFile::Create(output_profile_path, in_outputProfile->fsPermission));
 
   if (in_referenceProfile.has_value()) {
+    if (in_options.forceMerge || in_options.dumpOnly || in_options.dumpClassesAndMethods) {
+      return Fatal(
+          "Reference profile must not be set when 'forceMerge', 'dumpOnly', or "
+          "'dumpClassesAndMethods' is set");
+    }
     std::string reference_profile_path =
         OR_RETURN_FATAL(BuildProfileOrDmPath(*in_referenceProfile));
     if (in_referenceProfile->getTag() == ProfilePath::dexMetadataPath) {
@@ -630,8 +641,12 @@ ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profil
     OR_RETURN_NON_FATAL(CopyFile(reference_profile_path, *output_profile_file));
   }
 
-  // profman is ok with this being an empty file when in_referenceProfile isn't set.
-  args.Add("--reference-profile-file-fd=%d", output_profile_file->Fd());
+  if (in_options.dumpOnly || in_options.dumpClassesAndMethods) {
+    args.Add("--dump-output-to-fd=%d", output_profile_file->Fd());
+  } else {
+    // profman is ok with this being an empty file when in_referenceProfile isn't set.
+    args.Add("--reference-profile-file-fd=%d", output_profile_file->Fd());
+  }
   fd_logger.Add(*output_profile_file);
 
   std::vector<std::unique_ptr<File>> dex_files;
@@ -642,12 +657,16 @@ ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profil
     dex_files.push_back(std::move(dex_file));
   }
 
-  args.AddIfNonEmpty("--min-new-classes-percent-change=%s",
-                     props_->GetOrEmpty("dalvik.vm.bgdexopt.new-classes-percent"))
-      .AddIfNonEmpty("--min-new-methods-percent-change=%s",
-                     props_->GetOrEmpty("dalvik.vm.bgdexopt.new-methods-percent"))
-      .AddIf(in_options.forceMerge, "--force-merge")
-      .AddIf(in_options.forBootImage, "--boot-image-merge");
+  if (in_options.dumpOnly || in_options.dumpClassesAndMethods) {
+    args.Add(in_options.dumpOnly ? "--dump-only" : "--dump-classes-and-methods");
+  } else {
+    args.AddIfNonEmpty("--min-new-classes-percent-change=%s",
+                       props_->GetOrEmpty("dalvik.vm.bgdexopt.new-classes-percent"))
+        .AddIfNonEmpty("--min-new-methods-percent-change=%s",
+                       props_->GetOrEmpty("dalvik.vm.bgdexopt.new-methods-percent"))
+        .AddIf(in_options.forceMerge, "--force-merge")
+        .AddIf(in_options.forBootImage, "--boot-image-merge");
+  }
 
   LOG(INFO) << "Running profman: " << Join(args.Get(), /*separator=*/" ")
             << "\nOpened FDs: " << fd_logger;
@@ -666,7 +685,9 @@ ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profil
   }
 
   ProfmanResult::ProcessingResult expected_result =
-      in_options.forceMerge ? ProfmanResult::kSuccess : ProfmanResult::kCompile;
+      (in_options.forceMerge || in_options.dumpOnly || in_options.dumpClassesAndMethods) ?
+          ProfmanResult::kSuccess :
+          ProfmanResult::kCompile;
   if (result.value() != expected_result) {
     return NonFatal("profman returned an unexpected code: {}"_format(result.value()));
   }
@@ -748,7 +769,8 @@ ndk::ScopedAStatus Artd::dexopt(
     }
   }
 
-  OR_RETURN_NON_FATAL(PrepareArtifactsDirs(in_outputArtifacts));
+  std::string oat_dir_path;
+  OR_RETURN_NON_FATAL(PrepareArtifactsDirs(in_outputArtifacts, &oat_dir_path));
 
   CmdlineBuilder args;
   args.Add(OR_RETURN_FATAL(GetArtExec())).Add("--drop-capabilities");
@@ -870,6 +892,10 @@ ndk::ScopedAStatus Artd::dexopt(
     }
     // TODO(b/260228411): Check uid and gid.
   }
+
+  // Restorecon after the output files are created, so that the SELinux context is applied to all of
+  // them.
+  OR_RETURN_NON_FATAL(Restorecon(oat_dir_path, in_outputArtifacts.permissionSettings.seContext));
 
   AddBootImageFlags(args);
   AddCompilerConfigFlags(
