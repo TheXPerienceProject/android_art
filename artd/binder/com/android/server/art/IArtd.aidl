@@ -29,11 +29,11 @@ interface IArtd {
     long deleteArtifacts(in com.android.server.art.ArtifactsPath artifactsPath);
 
     /**
-     * Returns the optimization status of a dex file.
+     * Returns the dexopt status of a dex file.
      *
      * Throws fatal and non-fatal errors.
      */
-    com.android.server.art.GetOptimizationStatusResult getOptimizationStatus(
+    com.android.server.art.GetDexoptStatusResult getDexoptStatus(
             @utf8InCpp String dexFile, @utf8InCpp String instructionSet,
             @utf8InCpp String classLoaderContext);
 
@@ -140,7 +140,7 @@ interface IArtd {
      *
      * Throws fatal and non-fatal errors.
      */
-    com.android.server.art.DexoptResult dexopt(
+    com.android.server.art.ArtdDexoptResult dexopt(
             in com.android.server.art.OutputArtifacts outputArtifacts,
             @utf8InCpp String dexFile, @utf8InCpp String instructionSet,
             @nullable @utf8InCpp String classLoaderContext, @utf8InCpp String compilerFilter,
@@ -155,4 +155,18 @@ interface IArtd {
      * Returns a cancellation signal which can be used to cancel {@code dexopt} calls.
      */
     com.android.server.art.IArtdCancellationSignal createCancellationSignal();
+
+    /**
+     * Deletes all files that are managed by artd, except those specified in the arguments. Returns
+     * the size of the freed space, in bytes.
+     *
+     * For each entry in `artifactsToKeep`, all three kinds of artifacts (ODEX, VDEX, ART) are
+     * kept. For each entry in `vdexFilesToKeep`, only the VDEX file will be kept. Note that VDEX
+     * files included in `artifactsToKeep` don't have to be listed in `vdexFilesToKeep`.
+     *
+     * Throws fatal errors. Logs and ignores non-fatal errors.
+     */
+    long cleanup(in List<com.android.server.art.ProfilePath> profilesToKeep,
+            in List<com.android.server.art.ArtifactsPath> artifactsToKeep,
+            in List<com.android.server.art.VdexPath> vdexFilesToKeep);
 }

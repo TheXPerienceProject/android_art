@@ -48,6 +48,7 @@ namespace art {
 class ArtField;
 class ArtMethod;
 class ClassHierarchyAnalysis;
+class ClassLoaderContext;
 enum class ClassRoot : uint32_t;
 class ClassTable;
 class DexFile;
@@ -188,6 +189,7 @@ class ClassLinker {
   // properly handle read barriers and object marking.
   bool AddImageSpace(gc::space::ImageSpace* space,
                      Handle<mirror::ClassLoader> class_loader,
+                     ClassLoaderContext* context,
                      std::vector<std::unique_ptr<const DexFile>>* out_dex_files,
                      std::string* error_msg)
       REQUIRES(!Locks::dex_lock_)
@@ -367,14 +369,11 @@ class ClassLinker {
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::dex_lock_, !Roles::uninterruptible_);
 
-  template <InvokeType type, ResolveMode kResolveMode>
-  ArtMethod* GetResolvedMethod(uint32_t method_idx, ArtMethod* referrer)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
   template <ResolveMode kResolveMode>
   ArtMethod* ResolveMethod(Thread* self, uint32_t method_idx, ArtMethod* referrer, InvokeType type)
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::dex_lock_, !Roles::uninterruptible_);
+
   ArtMethod* ResolveMethodWithoutInvokeType(uint32_t method_idx,
                                             Handle<mirror::DexCache> dex_cache,
                                             Handle<mirror::ClassLoader> class_loader)
@@ -766,6 +765,11 @@ class ClassLinker {
   // Get the actual holding class for a copied method. Pretty slow, don't call often.
   ObjPtr<mirror::Class> GetHoldingClassOfCopiedMethod(ArtMethod* method)
       REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Get the class loader holding class for a copied method.
+  ObjPtr<mirror::ClassLoader> GetHoldingClassLoaderOfCopiedMethod(Thread* self, ArtMethod* method)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      REQUIRES(!Locks::classlinker_classes_lock_);
 
   // Returns null if not found.
   // This returns a pointer to the class-table, without requiring any locking - including the

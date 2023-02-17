@@ -33,9 +33,13 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include "aidl/com/android/server/art/ArtConstants.h"
 #include "aidl/com/android/server/art/BnArtd.h"
+#include "android-base/collections.h"
 #include "android-base/errors.h"
 #include "android-base/file.h"
 #include "android-base/logging.h"
@@ -45,31 +49,37 @@
 #include "android-base/strings.h"
 #include "android/binder_auto_utils.h"
 #include "android/binder_status.h"
+#include "base/array_ref.h"
 #include "base/common_art_test.h"
 #include "exec_utils.h"
 #include "fmt/format.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oat_file.h"
 #include "path_utils.h"
 #include "profman/profman_result.h"
+#include "testing.h"
 #include "tools/system_properties.h"
 
 namespace art {
 namespace artd {
 namespace {
 
+using ::aidl::com::android::server::art::ArtConstants;
+using ::aidl::com::android::server::art::ArtdDexoptResult;
 using ::aidl::com::android::server::art::ArtifactsPath;
 using ::aidl::com::android::server::art::DexMetadataPath;
 using ::aidl::com::android::server::art::DexoptOptions;
-using ::aidl::com::android::server::art::DexoptResult;
 using ::aidl::com::android::server::art::FileVisibility;
 using ::aidl::com::android::server::art::FsPermission;
+using ::aidl::com::android::server::art::GetDexoptStatusResult;
 using ::aidl::com::android::server::art::IArtdCancellationSignal;
 using ::aidl::com::android::server::art::OutputArtifacts;
 using ::aidl::com::android::server::art::OutputProfile;
 using ::aidl::com::android::server::art::PriorityClass;
 using ::aidl::com::android::server::art::ProfilePath;
 using ::aidl::com::android::server::art::VdexPath;
+using ::android::base::Append;
 using ::android::base::Error;
 using ::android::base::make_scope_guard;
 using ::android::base::ParseInt;
@@ -98,6 +108,7 @@ using ::testing::Property;
 using ::testing::ResultOf;
 using ::testing::Return;
 using ::testing::SetArgPointee;
+using ::testing::UnorderedElementsAreArray;
 using ::testing::WithArg;
 
 using PrimaryCurProfilePath = ProfilePath::PrimaryCurProfilePath;
@@ -125,26 +136,44 @@ void CheckOtherReadable(const std::string& path, bool expected_value) {
             expected_value);
 }
 
-void WriteToFdFlagImpl(const std::vector<std::string>& args,
-                       const std::string& flag,
-                       const std::string& content,
-                       bool assume_empty) {
+Result<std::vector<std::string>> GetFlagValues(ArrayRef<const std::string> args,
+                                               std::string_view flag) {
+  std::vector<std::string> values;
   for (const std::string& arg : args) {
     std::string_view value(arg);
     if (android::base::ConsumePrefix(&value, flag)) {
-      int fd;
-      ASSERT_TRUE(ParseInt(std::string(value), &fd));
-      if (assume_empty) {
-        ASSERT_EQ(lseek(fd, /*offset=*/0, SEEK_CUR), 0);
-      } else {
-        ASSERT_EQ(ftruncate(fd, /*length=*/0), 0);
-        ASSERT_EQ(lseek(fd, /*offset=*/0, SEEK_SET), 0);
-      }
-      ASSERT_TRUE(WriteStringToFd(content, fd));
-      return;
+      values.emplace_back(value);
     }
   }
-  FAIL() << "Flag '{}' not found"_format(flag);
+  if (values.empty()) {
+    return Errorf("Flag '{}' not found", flag);
+  }
+  return values;
+}
+
+Result<std::string> GetFlagValue(ArrayRef<const std::string> args, std::string_view flag) {
+  std::vector<std::string> flag_values = OR_RETURN(GetFlagValues(args, flag));
+  if (flag_values.size() > 1) {
+    return Errorf("Duplicate flag '{}'", flag);
+  }
+  return flag_values[0];
+}
+
+void WriteToFdFlagImpl(const std::vector<std::string>& args,
+                       std::string_view flag,
+                       std::string_view content,
+                       bool assume_empty) {
+  std::string value = OR_FAIL(GetFlagValue(ArrayRef<const std::string>(args), flag));
+  ASSERT_NE(value, "");
+  int fd;
+  ASSERT_TRUE(ParseInt(value, &fd));
+  if (assume_empty) {
+    ASSERT_EQ(lseek(fd, /*offset=*/0, SEEK_CUR), 0);
+  } else {
+    ASSERT_EQ(ftruncate(fd, /*length=*/0), 0);
+    ASSERT_EQ(lseek(fd, /*offset=*/0, SEEK_SET), 0);
+  }
+  ASSERT_TRUE(WriteStringToFd(content, fd));
 }
 
 // Writes `content` to the FD specified by the `flag`.
@@ -199,17 +228,52 @@ MATCHER_P(FdHasContent, matcher, "") {
   return ExplainMatchResult(matcher, actual_content, result_listener);
 }
 
+template <typename T, typename U>
+Result<std::pair<ArrayRef<const T>, ArrayRef<const T>>> SplitBy(const std::vector<T>& list,
+                                                                const U& separator) {
+  auto it = std::find(list.begin(), list.end(), separator);
+  if (it == list.end()) {
+    return Errorf("'{}' not found", separator);
+  }
+  size_t pos = it - list.begin();
+  return std::make_pair(ArrayRef<const T>(list).SubArray(0, pos),
+                        ArrayRef<const T>(list).SubArray(pos + 1));
+}
+
 // Matches a container that, when split by `separator`, the first part matches `head_matcher`, and
 // the second part matches `tail_matcher`.
 MATCHER_P3(WhenSplitBy, separator, head_matcher, tail_matcher, "") {
-  using Value = const typename std::remove_reference<decltype(arg)>::type::value_type;
-  auto it = std::find(arg.begin(), arg.end(), separator);
-  if (it == arg.end()) {
-    return false;
+  auto [head, tail] = OR_MISMATCH(SplitBy(arg, separator));
+  return ExplainMatchResult(head_matcher, head, result_listener) &&
+         ExplainMatchResult(tail_matcher, tail, result_listener);
+}
+
+MATCHER_P(HasKeepFdsForImpl, fd_flags, "") {
+  auto [head, tail] = OR_MISMATCH(SplitBy(arg, "--"));
+  std::string keep_fds_value = OR_MISMATCH(GetFlagValue(head, "--keep-fds="));
+  std::vector<std::string> keep_fds = Split(keep_fds_value, ":");
+  std::vector<std::string> fd_flag_values;
+  for (std::string_view fd_flag : fd_flags) {
+    for (const std::string& fd_flag_value : OR_MISMATCH(GetFlagValues(tail, fd_flag))) {
+      for (std::string& fd : Split(fd_flag_value, ":")) {
+        fd_flag_values.push_back(std::move(fd));
+      }
+    }
   }
-  size_t pos = it - arg.begin();
-  return ExplainMatchResult(head_matcher, ArrayRef<Value>(arg).SubArray(0, pos), result_listener) &&
-         ExplainMatchResult(tail_matcher, ArrayRef<Value>(arg).SubArray(pos + 1), result_listener);
+  return ExplainMatchResult(UnorderedElementsAreArray(fd_flag_values), keep_fds, result_listener);
+}
+
+// Matches an argument list that has the "--keep-fds=" flag before "--", whose value is a
+// semicolon-separated list that contains exactly the values of the given flags after "--".
+//
+// E.g., if the flags after "--" are "--foo=1", "--bar=2:3", "--baz=4", "--baz=5", and the matcher
+// is `HasKeepFdsFor("--foo=", "--bar=", "--baz=")`, then it requires the "--keep-fds=" flag before
+// "--" to contain exactly 1, 2, 3, 4, and 5.
+template <typename... Args>
+auto HasKeepFdsFor(Args&&... args) {
+  std::vector<std::string_view> fd_flags;
+  Append(fd_flags, std::forward<Args>(args)...);
+  return HasKeepFdsForImpl(fd_flags);
 }
 
 class MockSystemProperties : public tools::SystemProperties {
@@ -271,6 +335,11 @@ class ArtdTest : public CommonArtTest {
     std::filesystem::create_directories(android_data_);
     setenv("ANDROID_DATA", android_data_.c_str(), /*overwrite=*/1);
 
+    // Use an arbitrary existing directory as Android expand.
+    android_expand_ = scratch_path_ + "/mnt/expand";
+    std::filesystem::create_directories(android_expand_);
+    setenv("ANDROID_EXPAND", android_expand_.c_str(), /*overwrite=*/1);
+
     dex_file_ = scratch_path_ + "/a/b.apk";
     isa_ = "arm64";
     artifacts_path_ = ArtifactsPath{
@@ -320,7 +389,8 @@ class ArtdTest : public CommonArtTest {
   }
 
   void RunDexopt(binder_exception_t expected_status = EX_NONE,
-                 Matcher<DexoptResult> aidl_return_matcher = Field(&DexoptResult::cancelled, false),
+                 Matcher<ArtdDexoptResult> aidl_return_matcher = Field(&ArtdDexoptResult::cancelled,
+                                                                       false),
                  std::shared_ptr<IArtdCancellationSignal> cancellation_signal = nullptr) {
     RunDexopt(Property(&ndk::ScopedAStatus::getExceptionCode, expected_status),
               std::move(aidl_return_matcher),
@@ -328,13 +398,14 @@ class ArtdTest : public CommonArtTest {
   }
 
   void RunDexopt(Matcher<ndk::ScopedAStatus> status_matcher,
-                 Matcher<DexoptResult> aidl_return_matcher = Field(&DexoptResult::cancelled, false),
+                 Matcher<ArtdDexoptResult> aidl_return_matcher = Field(&ArtdDexoptResult::cancelled,
+                                                                       false),
                  std::shared_ptr<IArtdCancellationSignal> cancellation_signal = nullptr) {
     InitFilesBeforeDexopt();
     if (cancellation_signal == nullptr) {
       ASSERT_TRUE(artd_->createCancellationSignal(&cancellation_signal).isOk());
     }
-    DexoptResult aidl_return;
+    ArtdDexoptResult aidl_return;
     ndk::ScopedAStatus status = artd_->dexopt(output_artifacts_,
                                               dex_file_,
                                               isa_,
@@ -364,9 +435,12 @@ class ArtdTest : public CommonArtTest {
   std::string scratch_path_;
   std::string art_root_;
   std::string android_data_;
+  std::string android_expand_;
   MockFunction<android::base::LogFunction> mock_logger_;
   ScopedUnsetEnvironmentVariable art_root_env_ = ScopedUnsetEnvironmentVariable("ANDROID_ART_ROOT");
   ScopedUnsetEnvironmentVariable android_data_env_ = ScopedUnsetEnvironmentVariable("ANDROID_DATA");
+  ScopedUnsetEnvironmentVariable android_expand_env_ =
+      ScopedUnsetEnvironmentVariable("ANDROID_EXPAND");
   MockSystemProperties* mock_props_;
   MockExecUtils* mock_exec_utils_;
   MockFunction<int(pid_t, int)> mock_kill_;
@@ -420,6 +494,8 @@ class ArtdTest : public CommonArtTest {
     CreateFile(OatPathToArtPath(oat_path), "old_art");
   }
 };
+
+TEST_F(ArtdTest, ConstantsAreInSync) { EXPECT_EQ(ArtConstants::REASON_VDEX, kReasonVdex); }
 
 TEST_F(ArtdTest, isAlive) {
   bool result = false;
@@ -520,42 +596,58 @@ TEST_F(ArtdTest, deleteArtifactsFileIsDir) {
 }
 
 TEST_F(ArtdTest, dexopt) {
+  dexopt_options_.generateAppImage = true;
+
   EXPECT_CALL(
       *mock_exec_utils_,
       DoExecAndReturnCode(
-          WhenSplitBy(
-              "--",
-              AllOf(Contains(art_root_ + "/bin/art_exec"), Contains("--drop-capabilities")),
-              AllOf(
-                  Contains(art_root_ + "/bin/dex2oat32"),
-                  Contains(Flag("--zip-fd=", FdOf(dex_file_))),
-                  Contains(Flag("--zip-location=", dex_file_)),
-                  Contains(Flag("--oat-location=", scratch_path_ + "/a/oat/arm64/b.odex")),
-                  Contains(Flag("--instruction-set=", "arm64")),
-                  Contains(Flag("--compiler-filter=", "speed")),
-                  Contains(Flag("--profile-file-fd=",
-                                FdOf(android_data_ +
-                                     "/misc/profiles/ref/com.android.foo/primary.prof.12345.tmp"))),
-                  Contains(Flag("--input-vdex-fd=", FdOf(scratch_path_ + "/a/oat/arm64/b.vdex"))),
-                  Contains(Flag("--dm-fd=", FdOf(scratch_path_ + "/a/b.dm"))))),
+          AllOf(WhenSplitBy(
+                    "--",
+                    AllOf(Contains(art_root_ + "/bin/art_exec"), Contains("--drop-capabilities")),
+                    AllOf(Contains(art_root_ + "/bin/dex2oat32"),
+                          Contains(Flag("--zip-fd=", FdOf(dex_file_))),
+                          Contains(Flag("--zip-location=", dex_file_)),
+                          Contains(Flag("--oat-location=", scratch_path_ + "/a/oat/arm64/b.odex")),
+                          Contains(Flag("--instruction-set=", "arm64")),
+                          Contains(Flag("--compiler-filter=", "speed")),
+                          Contains(Flag(
+                              "--profile-file-fd=",
+                              FdOf(android_data_ +
+                                   "/misc/profiles/ref/com.android.foo/primary.prof.12345.tmp"))),
+                          Contains(Flag("--input-vdex-fd=",
+                                        FdOf(scratch_path_ + "/a/oat/arm64/b.vdex"))),
+                          Contains(Flag("--dm-fd=", FdOf(scratch_path_ + "/a/b.dm"))))),
+                HasKeepFdsFor("--zip-fd=",
+                              "--profile-file-fd=",
+                              "--input-vdex-fd=",
+                              "--dm-fd=",
+                              "--oat-fd=",
+                              "--output-vdex-fd=",
+                              "--app-image-fd=",
+                              "--class-loader-context-fds=",
+                              "--swap-fd=")),
           _,
           _))
       .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("--oat-fd=", "oat")),
                       WithArg<0>(WriteToFdFlag("--output-vdex-fd=", "vdex")),
+                      WithArg<0>(WriteToFdFlag("--app-image-fd=", "art")),
                       SetArgPointee<2>(ProcessStat{.wall_time_ms = 100, .cpu_time_ms = 400}),
                       Return(0)));
-  RunDexopt(EX_NONE,
-            AllOf(Field(&DexoptResult::cancelled, false),
-                  Field(&DexoptResult::wallTimeMs, 100),
-                  Field(&DexoptResult::cpuTimeMs, 400),
-                  Field(&DexoptResult::sizeBytes, strlen("oat") + strlen("vdex")),
-                  Field(&DexoptResult::sizeBeforeBytes,
-                        strlen("old_art") + strlen("old_oat") + strlen("old_vdex"))));
+  RunDexopt(
+      EX_NONE,
+      AllOf(Field(&ArtdDexoptResult::cancelled, false),
+            Field(&ArtdDexoptResult::wallTimeMs, 100),
+            Field(&ArtdDexoptResult::cpuTimeMs, 400),
+            Field(&ArtdDexoptResult::sizeBytes, strlen("art") + strlen("oat") + strlen("vdex")),
+            Field(&ArtdDexoptResult::sizeBeforeBytes,
+                  strlen("old_art") + strlen("old_oat") + strlen("old_vdex"))));
 
   CheckContent(scratch_path_ + "/a/oat/arm64/b.odex", "oat");
   CheckContent(scratch_path_ + "/a/oat/arm64/b.vdex", "vdex");
+  CheckContent(scratch_path_ + "/a/oat/arm64/b.art", "art");
   CheckOtherReadable(scratch_path_ + "/a/oat/arm64/b.odex", true);
   CheckOtherReadable(scratch_path_ + "/a/oat/arm64/b.vdex", true);
+  CheckOtherReadable(scratch_path_ + "/a/oat/arm64/b.art", true);
 }
 
 TEST_F(ArtdTest, dexoptClassLoaderContext) {
@@ -683,7 +775,12 @@ TEST_F(ArtdTest, dexoptDexoptOptions) {
                           _,
                           _))
       .WillOnce(Return(0));
-  RunDexopt();
+
+  // `sizeBeforeBytes` should include the size of the old ART file even if no new ART file is
+  // generated.
+  RunDexopt(EX_NONE,
+            Field(&ArtdDexoptResult::sizeBeforeBytes,
+                  strlen("old_art") + strlen("old_oat") + strlen("old_vdex")));
 }
 
 TEST_F(ArtdTest, dexoptDexoptOptions2) {
@@ -702,13 +799,13 @@ TEST_F(ArtdTest, dexoptDexoptOptions2) {
                                       AllOf(Contains(Flag("--compilation-reason=", "bg-dexopt")),
                                             Contains(Flag("-Xtarget-sdk-version:", "456")),
                                             Contains("--debuggable"),
+                                            Contains(Flag("--app-image-fd=", _)),
                                             Contains(Flag("-Xhidden-api-policy:", "enabled")))),
                           _,
                           _))
-      .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("--app-image-fd=", "art")), Return(0)));
-  RunDexopt();
+      .WillOnce(Return(0));
 
-  CheckContent(scratch_path_ + "/a/oat/arm64/b.art", "art");
+  RunDexopt();
 }
 
 TEST_F(ArtdTest, dexoptDefaultFlagsWhenNoSystemProps) {
@@ -952,8 +1049,9 @@ TEST_F(ArtdTest, dexoptFailedToCommit) {
                         return 0;
                       }));
 
-  RunDexopt(EX_SERVICE_SPECIFIC,
-            AllOf(Field(&DexoptResult::sizeBytes, 0), Field(&DexoptResult::sizeBeforeBytes, 0)));
+  RunDexopt(
+      EX_SERVICE_SPECIFIC,
+      AllOf(Field(&ArtdDexoptResult::sizeBytes, 0), Field(&ArtdDexoptResult::sizeBeforeBytes, 0)));
 }
 
 TEST_F(ArtdTest, dexoptCancelledBeforeDex2oat) {
@@ -972,7 +1070,7 @@ TEST_F(ArtdTest, dexoptCancelledBeforeDex2oat) {
 
   cancellation_signal->cancel();
 
-  RunDexopt(EX_NONE, Field(&DexoptResult::cancelled, true), cancellation_signal);
+  RunDexopt(EX_NONE, Field(&ArtdDexoptResult::cancelled, true), cancellation_signal);
 
   CheckContent(scratch_path_ + "/a/oat/arm64/b.odex", "old_oat");
   CheckContent(scratch_path_ + "/a/oat/arm64/b.vdex", "old_vdex");
@@ -1011,8 +1109,9 @@ TEST_F(ArtdTest, dexoptCancelledDuringDex2oat) {
   {
     std::unique_lock<std::mutex> lock(mu);
     // Step 1.
-    t = std::thread(
-        [&] { RunDexopt(EX_NONE, Field(&DexoptResult::cancelled, true), cancellation_signal); });
+    t = std::thread([&] {
+      RunDexopt(EX_NONE, Field(&ArtdDexoptResult::cancelled, true), cancellation_signal);
+    });
     EXPECT_EQ(process_started_cv.wait_for(lock, kTimeout), std::cv_status::no_timeout);
     // Step 3.
     cancellation_signal->cancel();
@@ -1042,7 +1141,7 @@ TEST_F(ArtdTest, dexoptCancelledAfterDex2oat) {
                       }));
   EXPECT_CALL(mock_kill_, Call).Times(0);
 
-  RunDexopt(EX_NONE, Field(&DexoptResult::cancelled, false), cancellation_signal);
+  RunDexopt(EX_NONE, Field(&ArtdDexoptResult::cancelled, false), cancellation_signal);
 
   // This signal should be ignored.
   cancellation_signal->cancel();
@@ -1155,11 +1254,13 @@ TEST_F(ArtdTest, isProfileUsable) {
   EXPECT_CALL(
       *mock_exec_utils_,
       DoExecAndReturnCode(
-          WhenSplitBy("--",
-                      AllOf(Contains(art_root_ + "/bin/art_exec"), Contains("--drop-capabilities")),
-                      AllOf(Contains(art_root_ + "/bin/profman"),
-                            Contains(Flag("--reference-profile-file-fd=", FdOf(profile_file))),
-                            Contains(Flag("--apk-fd=", FdOf(dex_file_))))),
+          AllOf(WhenSplitBy(
+                    "--",
+                    AllOf(Contains(art_root_ + "/bin/art_exec"), Contains("--drop-capabilities")),
+                    AllOf(Contains(art_root_ + "/bin/profman"),
+                          Contains(Flag("--reference-profile-file-fd=", FdOf(profile_file))),
+                          Contains(Flag("--apk-fd=", FdOf(dex_file_))))),
+                HasKeepFdsFor("--reference-profile-file-fd=", "--apk-fd=")),
           _,
           _))
       .WillOnce(Return(ProfmanResult::kSkipCompilationSmallDelta));
@@ -1218,12 +1319,14 @@ TEST_F(ArtdTest, copyAndRewriteProfile) {
   EXPECT_CALL(
       *mock_exec_utils_,
       DoExecAndReturnCode(
-          WhenSplitBy("--",
-                      AllOf(Contains(art_root_ + "/bin/art_exec"), Contains("--drop-capabilities")),
-                      AllOf(Contains(art_root_ + "/bin/profman"),
-                            Contains("--copy-and-update-profile-key"),
-                            Contains(Flag("--profile-file-fd=", FdOf(src_file))),
-                            Contains(Flag("--apk-fd=", FdOf(dex_file_))))),
+          AllOf(WhenSplitBy(
+                    "--",
+                    AllOf(Contains(art_root_ + "/bin/art_exec"), Contains("--drop-capabilities")),
+                    AllOf(Contains(art_root_ + "/bin/profman"),
+                          Contains("--copy-and-update-profile-key"),
+                          Contains(Flag("--profile-file-fd=", FdOf(src_file))),
+                          Contains(Flag("--apk-fd=", FdOf(dex_file_))))),
+                HasKeepFdsFor("--profile-file-fd=", "--reference-profile-file-fd=", "--apk-fd=")),
           _,
           _))
       .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("--reference-profile-file-fd=", "def")),
@@ -1504,16 +1607,18 @@ TEST_F(ArtdTest, mergeProfiles) {
   EXPECT_CALL(
       *mock_exec_utils_,
       DoExecAndReturnCode(
-          WhenSplitBy("--",
-                      AllOf(Contains(art_root_ + "/bin/art_exec"), Contains("--drop-capabilities")),
-                      AllOf(Contains(art_root_ + "/bin/profman"),
-                            Not(Contains(Flag("--profile-file-fd=", FdOf(profile_0_file)))),
-                            Contains(Flag("--profile-file-fd=", FdOf(profile_1_file))),
-                            Contains(Flag("--reference-profile-file-fd=", FdHasContent("abc"))),
-                            Contains(Flag("--apk-fd=", FdOf(dex_file_1))),
-                            Contains(Flag("--apk-fd=", FdOf(dex_file_2))),
-                            Not(Contains("--force-merge")),
-                            Not(Contains("--boot-image-merge")))),
+          AllOf(WhenSplitBy(
+                    "--",
+                    AllOf(Contains(art_root_ + "/bin/art_exec"), Contains("--drop-capabilities")),
+                    AllOf(Contains(art_root_ + "/bin/profman"),
+                          Not(Contains(Flag("--profile-file-fd=", FdOf(profile_0_file)))),
+                          Contains(Flag("--profile-file-fd=", FdOf(profile_1_file))),
+                          Contains(Flag("--reference-profile-file-fd=", FdHasContent("abc"))),
+                          Contains(Flag("--apk-fd=", FdOf(dex_file_1))),
+                          Contains(Flag("--apk-fd=", FdOf(dex_file_2))),
+                          Not(Contains("--force-merge")),
+                          Not(Contains("--boot-image-merge")))),
+                HasKeepFdsFor("--profile-file-fd=", "--reference-profile-file-fd=", "--apk-fd=")),
           _,
           _))
       .WillOnce(DoAll(WithArg<0>(ClearAndWriteToFdFlag("--reference-profile-file-fd=", "merged")),
@@ -1664,10 +1769,11 @@ TEST_F(ArtdTest, mergeProfilesWithOptionsDumpOnly) {
 
   EXPECT_CALL(*mock_exec_utils_,
               DoExecAndReturnCode(
-                  WhenSplitBy("--",
-                              _,
-                              AllOf(Contains("--dump-only"),
-                                    Not(Contains(Flag("--reference-profile-file-fd=", _))))),
+                  AllOf(WhenSplitBy("--",
+                                    _,
+                                    AllOf(Contains("--dump-only"),
+                                          Not(Contains(Flag("--reference-profile-file-fd=", _))))),
+                        HasKeepFdsFor("--profile-file-fd=", "--apk-fd=", "--dump-output-to-fd=")),
                   _,
                   _))
       .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("--dump-output-to-fd=", "dump")),
@@ -1723,6 +1829,123 @@ TEST_F(ArtdTest, mergeProfilesWithOptionsDumpClassesAndMethods) {
   EXPECT_TRUE(result);
   EXPECT_THAT(output_profile.profilePath.id, Not(IsEmpty()));
   CheckContent(output_profile.profilePath.tmpPath, "dump");
+}
+
+TEST_F(ArtdTest, cleanup) {
+  std::vector<std::string> gc_removed_files;
+  std::vector<std::string> gc_kept_files;
+
+  auto CreateGcRemovedFile = [&](const std::string& path) {
+    CreateFile(path);
+    gc_removed_files.push_back(path);
+  };
+
+  auto CreateGcKeptFile = [&](const std::string& path) {
+    CreateFile(path);
+    gc_kept_files.push_back(path);
+  };
+
+  // Unmanaged files.
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/1.odex");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.odex");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.txt");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.txt");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.tmp");
+
+  // Files to keep.
+  CreateGcKeptFile(android_data_ + "/misc/profiles/cur/1/com.android.foo/primary.prof");
+  CreateGcKeptFile(android_data_ + "/misc/profiles/cur/3/com.android.foo/primary.prof");
+  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex");
+  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex");
+  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex");
+  CreateGcKeptFile(
+      android_expand_ +
+      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex");
+  CreateGcKeptFile(
+      android_expand_ +
+      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.vdex");
+  CreateGcKeptFile(
+      android_expand_ +
+      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.art");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.vdex");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.art");
+
+  // Files to remove.
+  CreateGcRemovedFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof");
+  CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/2/com.android.foo/primary.prof");
+  CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/3/com.android.bar/primary.prof");
+  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/extra.odex");
+  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.dex");
+  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.vdex");
+  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.art");
+  CreateGcRemovedFile(
+      android_expand_ +
+      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.odex");
+  CreateGcRemovedFile(
+      android_expand_ +
+      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.vdex");
+  CreateGcRemovedFile(
+      android_expand_ +
+      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.art");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof.123456.tmp");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.vdex");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.art");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex.123456.tmp");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/2.odex.123456.tmp");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.odex");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.art");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex.123456.tmp");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.odex");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.vdex");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art");
+  CreateGcRemovedFile(android_data_ +
+                      "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art.123456.tmp");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.bar/aaa/oat/arm64/1.vdex");
+
+  int64_t aidl_return;
+  ASSERT_TRUE(
+      artd_
+          ->cleanup(
+              {
+                  PrimaryCurProfilePath{
+                      .userId = 1, .packageName = "com.android.foo", .profileName = "primary"},
+                  PrimaryCurProfilePath{
+                      .userId = 3, .packageName = "com.android.foo", .profileName = "primary"},
+              },
+              {
+                  ArtifactsPath{.dexPath = "/system/app/Foo/Foo.apk",
+                                .isa = "arm64",
+                                .isInDalvikCache = true},
+                  ArtifactsPath{
+                      .dexPath =
+                          android_expand_ +
+                          "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/base.apk",
+                      .isa = "arm64",
+                      .isInDalvikCache = false},
+                  ArtifactsPath{.dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/2.apk",
+                                .isa = "arm64",
+                                .isInDalvikCache = false},
+              },
+              {
+                  VdexPath{ArtifactsPath{
+                      .dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/1.apk",
+                      .isa = "arm64",
+                      .isInDalvikCache = false}},
+              },
+              &aidl_return)
+          .isOk());
+
+  for (const std::string& path : gc_removed_files) {
+    EXPECT_FALSE(std::filesystem::exists(path)) << "'{}' should be removed"_format(path);
+  }
+
+  for (const std::string& path : gc_kept_files) {
+    EXPECT_TRUE(std::filesystem::exists(path)) << "'{}' should be kept"_format(path);
+  }
 }
 
 }  // namespace

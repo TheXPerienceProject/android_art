@@ -335,7 +335,7 @@ const void* JitCodeCache::GetSavedEntryPointOfPreCompiledMethod(ArtMethod* metho
   ScopedDebugDisallowReadBarriers sddrb(self);
   if (method->IsPreCompiled()) {
     const void* code_ptr = nullptr;
-    if (method->GetDeclaringClass()->IsBootStrapClassLoaded()) {
+    if (method->GetDeclaringClass<kWithoutReadBarrier>()->IsBootStrapClassLoaded()) {
       code_ptr = zygote_map_.GetCodeFor(method);
     } else {
       MutexLock mu(self, *Locks::jit_lock_);
@@ -1060,22 +1060,6 @@ class MarkCodeClosure final : public Closure {
         /* context= */ nullptr,
         art::StackVisitor::StackWalkKind::kSkipInlinedFrames);
 
-    if (kIsDebugBuild) {
-      // The stack walking code queries the side instrumentation stack if it
-      // sees an instrumentation exit pc, so the JIT code of methods in that stack
-      // must have been seen. We check this below.
-      for (const auto& it : *thread->GetInstrumentationStack()) {
-        // The 'method_' in InstrumentationStackFrame is the one that has return_pc_ in
-        // its stack frame, it is not the method owning return_pc_. We just pass null to
-        // LookupMethodHeader: the method is only checked against in debug builds.
-        OatQuickMethodHeader* method_header =
-            code_cache_->LookupMethodHeader(it.second.return_pc_, /* method= */ nullptr);
-        if (method_header != nullptr) {
-          const void* code = method_header->GetCode();
-          CHECK(bitmap_->Test(FromCodeToAllocation(code)));
-        }
-      }
-    }
     barrier_->Pass(Thread::Current());
   }
 

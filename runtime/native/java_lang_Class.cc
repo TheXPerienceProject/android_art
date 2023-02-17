@@ -129,6 +129,20 @@ static jclass Class_classForName(JNIEnv* env, jclass, jstring javaName, jboolean
   if (initialize) {
     class_linker->EnsureInitialized(soa.Self(), c, true, true);
   }
+
+  // java.lang.ClassValue was added in Android U, and proguarding tools
+  // used that as justification to remove computeValue method implementation.
+  // Usual pattern was to check that Class.forName("java.lang.ClassValue")
+  // call does not throw and use ClassValue-based implementation or fallback
+  // to other solution if it does throw.
+  // So far ClassValue is the only class with such a problem and hence this
+  // ad-hoc check.
+  // See b/259501764.
+  if (!c->CheckIsVisibleWithTargetSdk(soa.Self())) {
+    DCHECK(soa.Self()->IsExceptionPending());
+    return nullptr;
+  }
+
   return soa.AddLocalReference<jclass>(c.Get());
 }
 

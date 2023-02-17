@@ -236,8 +236,11 @@ static bool RemoveNonNullControlDependences(HBasicBlock* block, HBasicBlock* thr
 //         B2  Exit
 //
 // Rationale:
-// Removal of the never taken edge to B2 may expose
-// other optimization opportunities, such as code sinking.
+// Removal of the never taken edge to B2 may expose other optimization opportunities, such as code
+// sinking.
+//
+// Note: The example above is a simple one that uses a `goto` but we could end the block with an If,
+// for example.
 bool HDeadCodeElimination::SimplifyAlwaysThrows() {
   HBasicBlock* exit = graph_->GetExitBlock();
   if (!graph_->HasAlwaysThrowingInvokes() || exit == nullptr) {
@@ -248,69 +251,55 @@ bool HDeadCodeElimination::SimplifyAlwaysThrows() {
 
   // Order does not matter, just pick one.
   for (HBasicBlock* block : graph_->GetReversePostOrder()) {
-    if (block->GetTryCatchInformation() != nullptr) {
+    if (block->IsTryBlock()) {
       // We don't want to perform the simplify always throws optimizations for throws inside of
-      // tries since those throws might not go to the exit block. We do that by checking the
-      // TryCatchInformation of the blocks.
-      //
-      // As a special case the `catch_block` is the first block of the catch and it has
-      // TryCatchInformation. Other blocks in the catch don't have try catch information (as long as
-      // they are not part of an outer try). Knowing if a `catch_block` is part of an outer try is
-      // possible by checking its successors, but other restrictions of the simplify always throws
-      // optimization will block `catch_block` nevertheless (e.g. only one predecessor) so it is not
-      // worth the effort.
-
-      // TODO(solanes): Maybe we can do a `goto catch` if inside of a try catch instead of going to
-      // the exit. If we do so, we have to take into account that we should go to the nearest valid
-      // catch i.e. one that would accept our exception type.
+      // tries since those throws might not go to the exit block.
       continue;
     }
 
-    if (block->GetLastInstruction()->IsGoto() &&
-        block->GetPhis().IsEmpty() &&
-        block->GetPredecessors().size() == 1u) {
-      HBasicBlock* pred = block->GetSinglePredecessor();
-      HBasicBlock* succ = block->GetSingleSuccessor();
-      // Ensure no computations are merged through throwing block. This does not prevent the
-      // optimization per se, but would require an elaborate clean up of the SSA graph.
-      if (succ != exit &&
-          !block->Dominates(pred) &&
-          pred->Dominates(succ) &&
-          succ->GetPredecessors().size() > 1u &&
-          succ->GetPhis().IsEmpty()) {
-        // We iterate to find the first instruction that always throws. If two instructions always
-        // throw, the first one will throw and the second one will never be reached.
-        HInstruction* throwing_instruction = nullptr;
-        for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
-          if (it.Current()->AlwaysThrows()) {
-            throwing_instruction = it.Current();
-            break;
-          }
-        }
-
-        if (throwing_instruction == nullptr) {
-          // No always-throwing instruction found. Continue with the rest of the blocks.
-          continue;
-        }
-
-        // We split the block at the throwing instruction, and the instructions after the throwing
-        // instructions will be disconnected from the graph after `block` points to the exit.
-        // `RemoveDeadBlocks` will take care of removing this new block and its instructions.
-        // Even though `SplitBefore` doesn't guarantee the graph to remain in SSA form, it is fine
-        // since we do not break it.
-        HBasicBlock* new_block = block->SplitBefore(throwing_instruction->GetNext(),
-                                                    /* require_graph_not_in_ssa_form= */ false);
-        DCHECK_EQ(block->GetSingleSuccessor(), new_block);
-        block->ReplaceSuccessor(new_block, exit);
-
-        rerun_dominance_and_loop_analysis = true;
-        MaybeRecordStat(stats_, MethodCompilationStat::kSimplifyThrowingInvoke);
-        // Perform a quick follow up optimization on object != null control dependences
-        // that is much cheaper to perform now than in a later phase.
-        if (RemoveNonNullControlDependences(pred, block)) {
-          MaybeRecordStat(stats_, MethodCompilationStat::kRemovedNullCheck);
-        }
+    // We iterate to find the first instruction that always throws. If two instructions always
+    // throw, the first one will throw and the second one will never be reached.
+    HInstruction* throwing_invoke = nullptr;
+    for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
+      if (it.Current()->IsInvoke() && it.Current()->AsInvoke()->AlwaysThrows()) {
+        throwing_invoke = it.Current();
+        break;
       }
+    }
+
+    if (throwing_invoke == nullptr) {
+      // No always-throwing instruction found. Continue with the rest of the blocks.
+      continue;
+    }
+
+    // If we are already pointing at the exit block we could still remove the instructions
+    // between the always throwing instruction, and the exit block. If we have no other
+    // instructions, just continue since there's nothing to do.
+    if (block->GetSuccessors().size() == 1 &&
+        block->GetSingleSuccessor() == exit &&
+        block->GetLastInstruction()->GetPrevious() == throwing_invoke) {
+      continue;
+    }
+
+    // We split the block at the throwing instruction, and the instructions after the throwing
+    // instructions will be disconnected from the graph after `block` points to the exit.
+    // `RemoveDeadBlocks` will take care of removing this new block and its instructions.
+    // Even though `SplitBefore` doesn't guarantee the graph to remain in SSA form, it is fine
+    // since we do not break it.
+    HBasicBlock* new_block = block->SplitBefore(throwing_invoke->GetNext(),
+                                                /* require_graph_not_in_ssa_form= */ false);
+    DCHECK_EQ(block->GetSingleSuccessor(), new_block);
+    block->ReplaceSuccessor(new_block, exit);
+
+    rerun_dominance_and_loop_analysis = true;
+    MaybeRecordStat(stats_, MethodCompilationStat::kSimplifyThrowingInvoke);
+    // Perform a quick follow up optimization on object != null control dependences
+    // that is much cheaper to perform now than in a later phase.
+    // If there are multiple predecessors, none may end with a HIf as required in
+    // RemoveNonNullControlDependences because we split critical edges.
+    if (block->GetPredecessors().size() == 1u &&
+        RemoveNonNullControlDependences(block->GetSinglePredecessor(), block)) {
+      MaybeRecordStat(stats_, MethodCompilationStat::kRemovedNullCheck);
     }
   }
 
@@ -324,54 +313,45 @@ bool HDeadCodeElimination::SimplifyAlwaysThrows() {
   return false;
 }
 
-// Simplify the pattern:
-//
-//        B1    B2    ...
-//       goto  goto  goto
-//         \    |    /
-//          \   |   /
-//             B3
-//     i1 = phi(input, input)
-//     (i2 = condition on i1)
-//        if i1 (or i2)
-//          /     \
-//         /       \
-//        B4       B5
-//
-// Into:
-//
-//       B1      B2    ...
-//        |      |      |
-//       B4      B5    B?
-//
-// Note that individual edges can be redirected (for example B2->B3
-// can be redirected as B2->B5) without applying this optimization
-// to other incoming edges.
-//
-// This simplification cannot be applied to catch blocks, because
-// exception handler edges do not represent normal control flow.
-// Though in theory this could still apply to normal control flow
-// going directly to a catch block, we cannot support it at the
-// moment because the catch Phi's inputs do not correspond to the
-// catch block's predecessors, so we cannot identify which
-// predecessor corresponds to a given statically evaluated input.
-//
-// We do not apply this optimization to loop headers as this could
-// create irreducible loops. We rely on the suspend check in the
-// loop header to prevent the pattern match.
-//
-// Note that we rely on the dead code elimination to get rid of B3.
 bool HDeadCodeElimination::SimplifyIfs() {
   bool simplified_one_or_more_ifs = false;
   bool rerun_dominance_and_loop_analysis = false;
 
-  for (HBasicBlock* block : graph_->GetReversePostOrder()) {
+  // Iterating in PostOrder it's better for MaybeAddPhi as it can add a Phi for multiple If
+  // instructions in a chain without updating the dominator chain. The branch redirection itself can
+  // work in PostOrder or ReversePostOrder without issues.
+  for (HBasicBlock* block : graph_->GetPostOrder()) {
+    if (block->IsCatchBlock()) {
+      // This simplification cannot be applied to catch blocks, because exception handler edges do
+      // not represent normal control flow. Though in theory this could still apply to normal
+      // control flow going directly to a catch block, we cannot support it at the moment because
+      // the catch Phi's inputs do not correspond to the catch block's predecessors, so we cannot
+      // identify which predecessor corresponds to a given statically evaluated input.
+      continue;
+    }
+
     HInstruction* last = block->GetLastInstruction();
-    HInstruction* first = block->GetFirstInstruction();
-    if (!block->IsCatchBlock() &&
-        last->IsIf() &&
-        block->HasSinglePhi() &&
+    if (!last->IsIf()) {
+      continue;
+    }
+
+    if (block->IsLoopHeader()) {
+      // We do not apply this optimization to loop headers as this could create irreducible loops.
+      continue;
+    }
+
+    // We will add a Phi which allows the simplification to take place in cases where it wouldn't.
+    MaybeAddPhi(block);
+
+    // TODO(solanes): Investigate support for multiple phis in `block`. We can potentially "push
+    // downwards" existing Phis into the true/false branches. For example, let's say we have another
+    // Phi: Phi(x1,x2,x3,x4,x5,x6). This could turn into Phi(x1,x2) in the true branch, Phi(x3,x4)
+    // in the false branch, and remain as Phi(x5,x6) in `block` (for edges that we couldn't
+    // redirect). We might even be able to remove some phis altogether as they will have only one
+    // value.
+    if (block->HasSinglePhi() &&
         block->GetFirstPhi()->HasOnlyOneNonEnvironmentUse()) {
+      HInstruction* first = block->GetFirstInstruction();
       bool has_only_phi_and_if = (last == first) && (last->InputAt(0) == block->GetFirstPhi());
       bool has_only_phi_condition_and_if =
           !has_only_phi_and_if &&
@@ -382,7 +362,6 @@ bool HDeadCodeElimination::SimplifyIfs() {
           first->HasOnlyOneNonEnvironmentUse();
 
       if (has_only_phi_and_if || has_only_phi_condition_and_if) {
-        DCHECK(!block->IsLoopHeader());
         HPhi* phi = block->GetFirstPhi()->AsPhi();
         bool phi_input_is_left = (first->InputAt(0) == phi);
 
@@ -465,6 +444,125 @@ bool HDeadCodeElimination::SimplifyIfs() {
   }
 
   return simplified_one_or_more_ifs;
+}
+
+void HDeadCodeElimination::MaybeAddPhi(HBasicBlock* block) {
+  DCHECK(block->GetLastInstruction()->IsIf());
+  HIf* if_instruction = block->GetLastInstruction()->AsIf();
+  if (if_instruction->InputAt(0)->IsConstant()) {
+    // Constant values are handled in RemoveDeadBlocks.
+    return;
+  }
+
+  if (block->GetNumberOfPredecessors() < 2u) {
+    // Nothing to redirect.
+    return;
+  }
+
+  if (!block->GetPhis().IsEmpty()) {
+    // SimplifyIf doesn't currently work with multiple phis. Adding a phi here won't help that
+    // optimization.
+    return;
+  }
+
+  HBasicBlock* dominator = block->GetDominator();
+  if (!dominator->EndsWithIf()) {
+    return;
+  }
+
+  HInstruction* input = if_instruction->InputAt(0);
+  HInstruction* dominator_input = dominator->GetLastInstruction()->AsIf()->InputAt(0);
+  const bool same_input = dominator_input == input;
+  if (!same_input) {
+    // Try to see if the dominator has the opposite input (e.g. if(cond) and if(!cond)). If that's
+    // the case, we can perform the optimization with the false and true branches reversed.
+    if (!dominator_input->IsCondition() || !input->IsCondition()) {
+      return;
+    }
+
+    HCondition* block_cond = input->AsCondition();
+    HCondition* dominator_cond = dominator_input->AsCondition();
+
+    if (block_cond->GetLeft() != dominator_cond->GetLeft() ||
+        block_cond->GetRight() != dominator_cond->GetRight() ||
+        block_cond->GetOppositeCondition() != dominator_cond->GetCondition()) {
+      return;
+    }
+  }
+
+  if (kIsDebugBuild) {
+    // `block`'s successors should have only one predecessor. Otherwise, we have a critical edge in
+    // the graph.
+    for (HBasicBlock* succ : block->GetSuccessors()) {
+      DCHECK_EQ(succ->GetNumberOfPredecessors(), 1u);
+    }
+  }
+
+  const size_t pred_size = block->GetNumberOfPredecessors();
+  HPhi* new_phi = new (graph_->GetAllocator())
+      HPhi(graph_->GetAllocator(), kNoRegNumber, pred_size, DataType::Type::kInt32);
+
+  for (size_t index = 0; index < pred_size; index++) {
+    HBasicBlock* pred = block->GetPredecessors()[index];
+    const bool dominated_by_true =
+        dominator->GetLastInstruction()->AsIf()->IfTrueSuccessor()->Dominates(pred);
+    const bool dominated_by_false =
+        dominator->GetLastInstruction()->AsIf()->IfFalseSuccessor()->Dominates(pred);
+    if (dominated_by_true == dominated_by_false) {
+      // In this case, we can't know if we are coming from the true branch, or the false branch. It
+      // happens in cases like:
+      //      1 (outer if)
+      //     / \
+      //    2   3 (inner if)
+      //    |  / \
+      //    | 4  5
+      //     \/  |
+      //      6  |
+      //       \ |
+      //         7 (has the same if(cond) as 1)
+      //         |
+      //         8
+      // `7` (which would be `block` in this example), and `6` will come from both the true path and
+      // the false path of `1`. We bumped into something similar in SelectGenerator. See
+      // HSelectGenerator::TryFixupDoubleDiamondPattern.
+      // TODO(solanes): Figure out if we can fix up the graph into a double diamond in a generic way
+      // so that DeadCodeElimination and SelectGenerator can take advantage of it.
+
+      if (!same_input) {
+        // `1` and `7` having the opposite condition is a case we are missing. We could potentially
+        // add a BooleanNot instruction to be able to add the Phi, but it seems like overkill since
+        // this case is not that common.
+        return;
+      }
+
+      // The Phi will have `0`, `1`, and `cond` as inputs. If SimplifyIf redirects 0s and 1s, we
+      // will end up with Phi(cond,...,cond) which will be replaced by `cond`. Effectively, we will
+      // redirect edges that we are able to redirect and the rest will remain as before (i.e. we
+      // won't have an extra Phi).
+      new_phi->SetRawInputAt(index, input);
+    } else {
+      // Redirect to either the true branch (1), or the false branch (0).
+      // Given that `dominated_by_true` is the exact opposite of `dominated_by_false`,
+      // `(same_input && dominated_by_true) || (!same_input && dominated_by_false)` is equivalent to
+      // `same_input == dominated_by_true`.
+      new_phi->SetRawInputAt(
+          index,
+          same_input == dominated_by_true ? graph_->GetIntConstant(1) : graph_->GetIntConstant(0));
+    }
+  }
+
+  block->AddPhi(new_phi);
+  if_instruction->ReplaceInput(new_phi, 0);
+
+  // Remove the old input now, if possible. This allows the branch redirection in SimplifyIf to
+  // work without waiting for another pass of DCE.
+  if (input->IsDeadAndRemovable()) {
+    DCHECK(!same_input)
+        << " if both blocks have the same condition, it shouldn't be dead and removable since the "
+        << "dominator block's If instruction would be using that condition.";
+    input->GetBlock()->RemoveInstruction(input);
+  }
+  MaybeRecordStat(stats_, MethodCompilationStat::kSimplifyIfAddedPhi);
 }
 
 void HDeadCodeElimination::ConnectSuccessiveBlocks() {
@@ -629,7 +727,6 @@ bool HDeadCodeElimination::RemoveUnneededTries() {
     }
   }
 
-  const size_t total_tries = tries.size();
   size_t removed_tries = 0;
   bool any_block_in_loop = false;
 
@@ -639,10 +736,6 @@ bool HDeadCodeElimination::RemoveUnneededTries() {
       ++removed_tries;
       RemoveTry(entry.first, entry.second, &any_block_in_loop);
     }
-  }
-
-  if (removed_tries == total_tries) {
-    graph_->SetHasTryCatch(false);
   }
 
   if (removed_tries != 0) {
@@ -741,6 +834,33 @@ void HDeadCodeElimination::RemoveDeadInstructions() {
   }
 }
 
+void HDeadCodeElimination::UpdateGraphFlags() {
+  bool has_monitor_operations = false;
+  bool has_simd = false;
+  bool has_bounds_checks = false;
+  bool has_always_throwing_invokes = false;
+
+  for (HBasicBlock* block : graph_->GetReversePostOrder()) {
+    for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
+      HInstruction* instruction = it.Current();
+      if (instruction->IsMonitorOperation()) {
+        has_monitor_operations = true;
+      } else if (instruction->IsVecOperation()) {
+        has_simd = true;
+      } else if (instruction->IsBoundsCheck()) {
+        has_bounds_checks = true;
+      } else if (instruction->IsInvoke() && instruction->AsInvoke()->AlwaysThrows()) {
+        has_always_throwing_invokes = true;
+      }
+    }
+  }
+
+  graph_->SetHasMonitorOperations(has_monitor_operations);
+  graph_->SetHasSIMD(has_simd);
+  graph_->SetHasBoundsChecks(has_bounds_checks);
+  graph_->SetHasAlwaysThrowingInvokes(has_always_throwing_invokes);
+}
+
 bool HDeadCodeElimination::Run() {
   // Do not eliminate dead blocks if the graph has irreducible loops. We could
   // support it, but that would require changes in our loop representation to handle
@@ -764,6 +884,7 @@ bool HDeadCodeElimination::Run() {
   }
   SsaRedundantPhiElimination(graph_).Run();
   RemoveDeadInstructions();
+  UpdateGraphFlags();
   return true;
 }
 

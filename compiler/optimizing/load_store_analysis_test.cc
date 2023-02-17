@@ -118,12 +118,13 @@ TEST_F(LoadStoreAnalysisTest, ArrayHeapLocations) {
   size_t field = HeapLocation::kInvalidFieldOffset;
   size_t vec = HeapLocation::kScalar;
   size_t class_def = HeapLocation::kDeclaringClassDefIndexForArrays;
+  const bool is_vec_op = false;
   size_t loc1 = heap_location_collector.FindHeapLocationIndex(
-      ref, type, field, c1, vec, class_def);
+      ref, type, field, c1, vec, class_def, is_vec_op);
   size_t loc2 = heap_location_collector.FindHeapLocationIndex(
-      ref, type, field, c2, vec, class_def);
+      ref, type, field, c2, vec, class_def, is_vec_op);
   size_t loc3 = heap_location_collector.FindHeapLocationIndex(
-      ref, type, field, index, vec, class_def);
+      ref, type, field, index, vec, class_def, is_vec_op);
   // must find this reference info for array in HeapLocationCollector.
   ASSERT_TRUE(ref != nullptr);
   // must find these heap locations;
@@ -143,7 +144,7 @@ TEST_F(LoadStoreAnalysisTest, ArrayHeapLocations) {
   ASSERT_TRUE(heap_location_collector.MayAlias(loc1, loc3));
   ASSERT_TRUE(heap_location_collector.MayAlias(loc1, loc3));
 
-  EXPECT_TRUE(CheckGraph(graph_));
+  EXPECT_TRUE(CheckGraph());
 }
 
 TEST_F(LoadStoreAnalysisTest, FieldHeapLocations) {
@@ -224,7 +225,7 @@ TEST_F(LoadStoreAnalysisTest, FieldHeapLocations) {
   // accesses to different fields of the same object should not alias.
   ASSERT_FALSE(heap_location_collector.MayAlias(loc1, loc2));
 
-  EXPECT_TRUE(CheckGraph(graph_));
+  EXPECT_TRUE(CheckGraph());
 }
 
 TEST_F(LoadStoreAnalysisTest, ArrayIndexAliasingTest) {
@@ -318,7 +319,7 @@ TEST_F(LoadStoreAnalysisTest, ArrayIndexAliasingTest) {
   loc2 = heap_location_collector.GetArrayHeapLocation(arr_set8);
   ASSERT_TRUE(heap_location_collector.MayAlias(loc1, loc2));
 
-  EXPECT_TRUE(CheckGraphSkipRefTypeInfoChecks(graph_));
+  EXPECT_TRUE(CheckGraph());
 }
 
 TEST_F(LoadStoreAnalysisTest, ArrayAliasingTest) {

@@ -18,15 +18,16 @@ package com.android.server.art;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.SuppressLint;
 import android.apphibernation.AppHibernationManager;
-import android.os.ServiceManager;
 import android.os.SystemProperties;
 import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseArray;
 
-import com.android.server.art.model.OptimizeParams;
+import com.android.modules.utils.pm.PackageStateModulesUtils;
+import com.android.server.art.model.DexoptParams;
 import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.PackageState;
@@ -166,7 +167,7 @@ public final class Utils {
 
     /** Returns true if the given string is a valid compiler filter. */
     public static boolean isValidArtServiceCompilerFilter(@NonNull String compilerFilter) {
-        if (compilerFilter.equals(OptimizeParams.COMPILER_FILTER_NOOP)) {
+        if (compilerFilter.equals(DexoptParams.COMPILER_FILTER_NOOP)) {
             return true;
         }
         return DexFile.isValidCompilerFilter(compilerFilter);
@@ -241,38 +242,32 @@ public final class Utils {
     }
 
     /**
-     * Returns true if the given package is optimizable.
+     * Returns true if the given package is dexoptable.
      *
      * @param appHibernationManager the {@link AppHibernationManager} instance for checking
      *         hibernation status, or null to skip the check
      */
-    public static boolean canOptimizePackage(
+    @SuppressLint("NewApi")
+    public static boolean canDexoptPackage(
             @NonNull PackageState pkgState, @Nullable AppHibernationManager appHibernationManager) {
-        // An APEX has a uid of -1.
-        // TODO(b/256637152): Consider using `isApex` instead.
-        if (pkgState.getAppId() <= 0) {
-            return false;
-        }
-
-        // "android" is a special package that represents the platform, not an app.
-        if (pkgState.getPackageName().equals(Utils.PLATFORM_PACKAGE_NAME)) {
-            return false;
-        }
-
-        AndroidPackage pkg = pkgState.getAndroidPackage();
-        if (pkg == null || !pkg.getSplits().get(0).isHasCode()) {
+        if (!PackageStateModulesUtils.isDexoptable(pkgState)) {
             return false;
         }
 
         // We do not dexopt unused packages.
         // If `appHibernationManager` is null, the caller's intention is to skip the check.
         if (appHibernationManager != null
-                && appHibernationManager.isHibernatingGlobally(pkgState.getPackageName())
-                && appHibernationManager.isOatArtifactDeletionEnabled()) {
+                && shouldSkipDexoptDueToHibernation(pkgState, appHibernationManager)) {
             return false;
         }
 
         return true;
+    }
+
+    public static boolean shouldSkipDexoptDueToHibernation(
+            @NonNull PackageState pkgState, @NonNull AppHibernationManager appHibernationManager) {
+        return appHibernationManager.isHibernatingGlobally(pkgState.getPackageName())
+                && appHibernationManager.isOatArtifactDeletionEnabled();
     }
 
     public static long getPackageLastActiveTime(@NonNull PackageState pkgState,
@@ -283,8 +278,7 @@ public final class Utils {
                 userManager.getUserHandles(true /* excludeDying */)
                         .stream()
                         .map(handle -> pkgState.getStateForUser(handle))
-                        .map(com.android.server.art.wrapper.PackageUserState::new)
-                        .map(userState -> userState.getFirstInstallTime())
+                        .map(userState -> userState.getFirstInstallTimeMillis())
                         .max(Long::compare)
                         .orElse(0l);
         return Math.max(lastUsedAtMs, lastFirstInstallTimeMs);
