@@ -29,7 +29,8 @@
 
 namespace art {
 
-#if defined(__LP64__) && !defined(__Fuchsia__) && (defined(__aarch64__) || defined(__APPLE__))
+#if defined(__LP64__) && !defined(__Fuchsia__) && \
+    (defined(__aarch64__) || defined(__riscv) || defined(__APPLE__))
 #define USE_ART_LOW_4G_ALLOCATOR 1
 #else
 #if defined(__LP64__) && !defined(__Fuchsia__) && !defined(__x86_64__)
@@ -315,6 +316,7 @@ class MemMap {
   // time after the first call to Init and before the first call to Shutodwn.
   static void Init() REQUIRES(!MemMap::mem_maps_lock_);
   static void Shutdown() REQUIRES(!MemMap::mem_maps_lock_);
+  static bool IsInitialized();
 
   // If the map is PROT_READ, try to read each page of the map to check it is in fact readable (not
   // faulting). This is used to diagnose a bug b/19894268 where mprotect doesn't seem to be working
