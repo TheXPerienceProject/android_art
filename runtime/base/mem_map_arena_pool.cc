@@ -57,11 +57,28 @@ MemMap MemMapArena::Allocate(size_t size, bool low_4gb, const char* name) {
   // and we want to be able to use all memory that we actually allocate.
   size = RoundUp(size, kPageSize);
   std::string error_msg;
+#ifdef ART_TARGET_ANDROID
   MemMap map = MemMap::MapAnonymous(name,
                                     size,
                                     PROT_READ | PROT_WRITE,
                                     low_4gb,
                                     &error_msg);
+#else
+  MemMap map;
+
+  for (int retries = 0; retries < 512; retries++) {
+      if (retries > 0)
+          LOG(WARNING) << error_msg << " Retrying!";
+
+      map = MemMap::MapAnonymous(name,
+                                        size,
+                                        PROT_READ | PROT_WRITE,
+                                        low_4gb,
+                                        &error_msg);
+      if (map.IsValid())
+          break;
+  }
+#endif
   CHECK(map.IsValid()) << error_msg;
   return map;
 }
