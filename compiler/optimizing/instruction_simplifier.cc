@@ -1456,24 +1456,26 @@ void InstructionSimplifierVisitor::VisitAdd(HAdd* instruction) {
     }
   }
 
-  HNeg* neg = left_is_neg ? left->AsNeg() : right->AsNeg();
-  if (left_is_neg != right_is_neg && neg->HasOnlyOneNonEnvironmentUse()) {
-    // Replace code looking like
-    //    NEG tmp, b
-    //    ADD dst, a, tmp
-    // with
-    //    SUB dst, a, b
-    // We do not perform the optimization if the input negation has environment
-    // uses or multiple non-environment uses as it could lead to worse code. In
-    // particular, we do not want the live range of `b` to be extended if we are
-    // not sure the initial 'NEG' instruction can be removed.
-    HInstruction* other = left_is_neg ? right : left;
-    HSub* sub =
-        new(GetGraph()->GetAllocator()) HSub(instruction->GetType(), other, neg->GetInput());
-    instruction->GetBlock()->ReplaceAndRemoveInstructionWith(instruction, sub);
-    RecordSimplification();
-    neg->GetBlock()->RemoveInstruction(neg);
-    return;
+  if (left_is_neg != right_is_neg) {
+    HNeg* neg = left_is_neg ? left->AsNeg() : right->AsNeg();
+    if (neg->HasOnlyOneNonEnvironmentUse()) {
+      // Replace code looking like
+      //    NEG tmp, b
+      //    ADD dst, a, tmp
+      // with
+      //    SUB dst, a, b
+      // We do not perform the optimization if the input negation has environment
+      // uses or multiple non-environment uses as it could lead to worse code. In
+      // particular, we do not want the live range of `b` to be extended if we are
+      // not sure the initial 'NEG' instruction can be removed.
+      HInstruction* other = left_is_neg ? right : left;
+      HSub* sub =
+          new(GetGraph()->GetAllocator()) HSub(instruction->GetType(), other, neg->GetInput());
+      instruction->GetBlock()->ReplaceAndRemoveInstructionWith(instruction, sub);
+      RecordSimplification();
+      neg->GetBlock()->RemoveInstruction(neg);
+      return;
+    }
   }
 
   if (TryReplaceWithRotate(instruction)) {
@@ -1676,7 +1678,7 @@ static bool RecognizeAndSimplifyClassCheck(HCondition* condition) {
   HInstruction* input_two = condition->InputAt(1);
   HLoadClass* load_class = input_one->IsLoadClass()
       ? input_one->AsLoadClass()
-      : input_two->AsLoadClass();
+      : input_two->AsLoadClassOrNull();
   if (load_class == nullptr) {
     return false;
   }
@@ -1688,8 +1690,8 @@ static bool RecognizeAndSimplifyClassCheck(HCondition* condition) {
   }
 
   HInstanceFieldGet* field_get = (load_class == input_one)
-      ? input_two->AsInstanceFieldGet()
-      : input_one->AsInstanceFieldGet();
+      ? input_two->AsInstanceFieldGetOrNull()
+      : input_one->AsInstanceFieldGetOrNull();
   if (field_get == nullptr) {
     return false;
   }
@@ -2465,7 +2467,7 @@ void InstructionSimplifierVisitor::SimplifySystemArrayCopy(HInvoke* instruction)
       DCHECK(method != nullptr);
       DCHECK(method->IsStatic());
       DCHECK(method->GetDeclaringClass() == system);
-      invoke->SetResolvedMethod(method);
+      invoke->SetResolvedMethod(method, !codegen_->GetGraph()->IsDebuggable());
       // Sharpen the new invoke. Note that we do not update the dex method index of
       // the invoke, as we would need to look it up in the current dex file, and it
       // is unlikely that it exists. The most usual situation for such typed
@@ -3215,7 +3217,7 @@ bool InstructionSimplifierVisitor::TrySubtractionChainSimplification(
   HInstruction* left = instruction->GetLeft();
   HInstruction* right = instruction->GetRight();
   // Variable names as described above.
-  HConstant* const2 = right->IsConstant() ? right->AsConstant() : left->AsConstant();
+  HConstant* const2 = right->IsConstant() ? right->AsConstant() : left->AsConstantOrNull();
   if (const2 == nullptr) {
     return false;
   }
@@ -3231,7 +3233,7 @@ bool InstructionSimplifierVisitor::TrySubtractionChainSimplification(
   }
 
   left = y->GetLeft();
-  HConstant* const1 = left->IsConstant() ? left->AsConstant() : y->GetRight()->AsConstant();
+  HConstant* const1 = left->IsConstant() ? left->AsConstant() : y->GetRight()->AsConstantOrNull();
   if (const1 == nullptr) {
     return false;
   }

@@ -1,7 +1,7 @@
 ***** streaming test *******
 .>> TestThread2246 java.lang.Thread run ()V Thread.java
 ..>> TestThread2246 Main$$ExternalSyntheticLambda0 run ()V D8$$SyntheticClass
-...>> TestThread2246 Main lambda$testTracing$0 (Ljava/io/FileOutputStream;ZLBaseTraceParser;I)V Main.java
+...>> TestThread2246 Main lambda$testTracing$0 (ZLBaseTraceParser;I)V Main.java
 ....>> TestThread2246 Main$VMDebug startMethodTracing (Ljava/lang/String;Ljava/io/FileDescriptor;IIZIZ)V Main.java
 .....>> TestThread2246 java.lang.reflect.Method invoke (Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object; Method.java
 ......>> TestThread2246 dalvik.system.VMDebug startMethodTracing (Ljava/lang/String;Ljava/io/FileDescriptor;IIZIZ)V VMDebug.java
@@ -23,12 +23,6 @@
 .....<< TestThread2246 Main callLeafFunction ()V Main.java
 ....<< TestThread2246 Main $noinline$doSomeWork ()V Main.java
 ....>> TestThread2246 Main$VMDebug $noinline$stopMethodTracing ()V Main.java
-.>> main Main main ([Ljava/lang/String;)V Main.java
-..>> main Main testTracing (ZLBaseTraceParser;I)V Main.java
-...>> main java.lang.Thread join ()V Thread.java
-....>> main java.lang.Thread join (J)V Thread.java
-.....>> main java.lang.Object wait (J)V Object.java
-......>> main java.lang.Object wait (JI)V Object.java
 .>> main Main main ([Ljava/lang/String;)V Main.java
 ..>> main Main testTracing (ZLBaseTraceParser;I)V Main.java
 ...>> main Main$VMDebug startMethodTracing (Ljava/lang/String;Ljava/io/FileDescriptor;IIZIZ)V Main.java
@@ -67,7 +61,7 @@
 ***** non streaming test *******
 .>> TestThread2246 java.lang.Thread	run	()V	Thread.java
 ..>> TestThread2246 Main$$ExternalSyntheticLambda0	run	()V	D8$$SyntheticClass
-...>> TestThread2246 Main	lambda$testTracing$0	(Ljava/io/FileOutputStream;ZLBaseTraceParser;I)V	Main.java
+...>> TestThread2246 Main	lambda$testTracing$0	(ZLBaseTraceParser;I)V	Main.java
 ....>> TestThread2246 Main$VMDebug	startMethodTracing	(Ljava/lang/String;Ljava/io/FileDescriptor;IIZIZ)V	Main.java
 .....>> TestThread2246 java.lang.reflect.Method	invoke	(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;	Method.java
 ......>> TestThread2246 dalvik.system.VMDebug	startMethodTracing	(Ljava/lang/String;Ljava/io/FileDescriptor;IIZIZ)V	VMDebug.java
@@ -91,12 +85,6 @@
 ....>> TestThread2246 Main$VMDebug	$noinline$stopMethodTracing	()V	Main.java
 .....>> TestThread2246 java.lang.reflect.Method	invoke	(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;	Method.java
 ......>> TestThread2246 dalvik.system.VMDebug	stopMethodTracing	()V	VMDebug.java
-.>> main Main	main	([Ljava/lang/String;)V	Main.java
-..>> main Main	testTracing	(ZLBaseTraceParser;I)V	Main.java
-...>> main java.lang.Thread	join	()V	Thread.java
-....>> main java.lang.Thread	join	(J)V	Thread.java
-.....>> main java.lang.Object	wait	(J)V	Object.java
-......>> main java.lang.Object	wait	(JI)V	Object.java
 .>> main Main	main	([Ljava/lang/String;)V	Main.java
 ..>> main Main	testTracing	(ZLBaseTraceParser;I)V	Main.java
 ...>> main Main$VMDebug	startMethodTracing	(Ljava/lang/String;Ljava/io/FileDescriptor;IIZIZ)V	Main.java

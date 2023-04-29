@@ -593,7 +593,7 @@ void RegisterAllocationResolver::InsertParallelMoveAt(size_t position,
   } else if (IsInstructionEnd(position)) {
     // Move must happen after the instruction.
     DCHECK(!at->IsControlFlow());
-    move = at->GetNext()->AsParallelMove();
+    move = at->GetNext()->AsParallelMoveOrNull();
     // This is a parallel move for connecting siblings in a same block. We need to
     // differentiate it with moves for connecting blocks, and input moves.
     if (move == nullptr || move->GetLifetimePosition() > position) {
@@ -663,7 +663,7 @@ void RegisterAllocationResolver::InsertParallelMoveAtEntryOf(HBasicBlock* block,
   if (source.Equals(destination)) return;
 
   HInstruction* first = block->GetFirstInstruction();
-  HParallelMove* move = first->AsParallelMove();
+  HParallelMove* move = first->AsParallelMoveOrNull();
   size_t position = block->GetLifetimeStart();
   // This is a parallel move for connecting blocks. We need to differentiate
   // it with moves for connecting siblings in a same block, and input moves.
@@ -687,7 +687,7 @@ void RegisterAllocationResolver::InsertMoveAfter(HInstruction* instruction,
   }
 
   size_t position = instruction->GetLifetimePosition() + 1;
-  HParallelMove* move = instruction->GetNext()->AsParallelMove();
+  HParallelMove* move = instruction->GetNext()->AsParallelMoveOrNull();
   // This is a parallel move for moving the output of an instruction. We need
   // to differentiate with input moves, moves for connecting siblings in a
   // and moves for connecting blocks.

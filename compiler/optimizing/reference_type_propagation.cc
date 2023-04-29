@@ -254,7 +254,7 @@ static void BoundTypeForClassCheck(HInstruction* check) {
   HInstruction* input_two = compare->InputAt(1);
   HLoadClass* load_class = input_one->IsLoadClass()
       ? input_one->AsLoadClass()
-      : input_two->AsLoadClass();
+      : input_two->AsLoadClassOrNull();
   if (load_class == nullptr) {
     return;
   }
@@ -335,7 +335,7 @@ void ReferenceTypePropagation::RTPVisitor::VisitBasicBlock(HBasicBlock* block) {
 }
 
 void ReferenceTypePropagation::RTPVisitor::BoundTypeForIfNotNull(HBasicBlock* block) {
-  HIf* ifInstruction = block->GetLastInstruction()->AsIf();
+  HIf* ifInstruction = block->GetLastInstruction()->AsIfOrNull();
   if (ifInstruction == nullptr) {
     return;
   }
@@ -453,7 +453,7 @@ static bool MatchIfInstanceOf(HIf* ifInstruction,
 // If that's the case insert an HBoundType instruction to bound the type of `x`
 // to `ClassX` in the scope of the dominated blocks.
 void ReferenceTypePropagation::RTPVisitor::BoundTypeForIfInstanceOf(HBasicBlock* block) {
-  HIf* ifInstruction = block->GetLastInstruction()->AsIf();
+  HIf* ifInstruction = block->GetLastInstruction()->AsIfOrNull();
   if (ifInstruction == nullptr) {
     return;
   }
@@ -704,7 +704,7 @@ void ReferenceTypePropagation::RTPVisitor::VisitBoundType(HBoundType* instr) {
 }
 
 void ReferenceTypePropagation::RTPVisitor::VisitCheckCast(HCheckCast* check_cast) {
-  HBoundType* bound_type = check_cast->GetNext()->AsBoundType();
+  HBoundType* bound_type = check_cast->GetNext()->AsBoundTypeOrNull();
   if (bound_type == nullptr || bound_type->GetUpperBound().IsValid()) {
     // The next instruction is not an uninitialized BoundType. This must be
     // an RTP pass after SsaBuilder and we do not need to do anything.

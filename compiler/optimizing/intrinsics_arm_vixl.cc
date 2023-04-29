@@ -1252,9 +1252,9 @@ void IntrinsicLocationsBuilderARMVIXL::VisitSystemArrayCopy(HInvoke* invoke) {
     return;
   }
 
-  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstant();
-  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstant();
-  HIntConstant* length = invoke->InputAt(4)->AsIntConstant();
+  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstantOrNull();
+  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstantOrNull();
+  HIntConstant* length = invoke->InputAt(4)->AsIntConstantOrNull();
 
   if (src_pos != nullptr && !assembler_->ShifterOperandCanAlwaysHold(src_pos->GetValue())) {
     locations->SetInAt(1, Location::RequiresRegister());

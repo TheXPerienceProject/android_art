@@ -1982,7 +1982,7 @@ void InstructionCodeGeneratorX86::GenerateFPCompare(Location lhs,
                                                     Location rhs,
                                                     HInstruction* insn,
                                                     bool is_double) {
-  HX86LoadFromConstantTable* const_area = insn->InputAt(1)->AsX86LoadFromConstantTable();
+  HX86LoadFromConstantTable* const_area = insn->InputAt(1)->AsX86LoadFromConstantTableOrNull();
   if (is_double) {
     if (rhs.IsFpuRegister()) {
       __ ucomisd(lhs.AsFpuRegister<XmmRegister>(), rhs.AsFpuRegister<XmmRegister>());

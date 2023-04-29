@@ -490,9 +490,9 @@ SchedulingNode* CriticalPathSchedulingNodeSelector::SelectMaterializedCondition(
   DCHECK(instruction != nullptr);
 
   if (instruction->IsIf()) {
-    condition = instruction->AsIf()->InputAt(0)->AsCondition();
+    condition = instruction->AsIf()->InputAt(0)->AsConditionOrNull();
   } else if (instruction->IsSelect()) {
-    condition = instruction->AsSelect()->GetCondition()->AsCondition();
+    condition = instruction->AsSelect()->GetCondition()->AsConditionOrNull();
   }
 
   SchedulingNode* condition_node = (condition != nullptr) ? graph.GetNode(condition) : nullptr;

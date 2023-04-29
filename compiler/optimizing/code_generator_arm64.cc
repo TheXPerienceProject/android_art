@@ -3888,8 +3888,8 @@ void LocationsBuilderARM64::VisitSelect(HSelect* select) {
     locations->SetInAt(1, Location::RequiresFpuRegister());
     locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
   } else {
-    HConstant* cst_true_value = select->GetTrueValue()->AsConstant();
-    HConstant* cst_false_value = select->GetFalseValue()->AsConstant();
+    HConstant* cst_true_value = select->GetTrueValue()->AsConstantOrNull();
+    HConstant* cst_false_value = select->GetFalseValue()->AsConstantOrNull();
     bool is_true_value_constant = cst_true_value != nullptr;
     bool is_false_value_constant = cst_false_value != nullptr;
     // Ask VIXL whether we should synthesize constants in registers.

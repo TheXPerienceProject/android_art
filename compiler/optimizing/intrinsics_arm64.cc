@@ -2582,7 +2582,7 @@ static constexpr int32_t kSystemArrayCopyCharThreshold = 192;
 static void SetSystemArrayCopyLocationRequires(LocationSummary* locations,
                                                uint32_t at,
                                                HInstruction* input) {
-  HIntConstant* const_input = input->AsIntConstant();
+  HIntConstant* const_input = input->AsIntConstantOrNull();
   if (const_input != nullptr && !vixl::aarch64::Assembler::IsImmAddSub(const_input->GetValue())) {
     locations->SetInAt(at, Location::RequiresRegister());
   } else {
@@ -2593,8 +2593,8 @@ static void SetSystemArrayCopyLocationRequires(LocationSummary* locations,
 void IntrinsicLocationsBuilderARM64::VisitSystemArrayCopyChar(HInvoke* invoke) {
   // Check to see if we have known failures that will cause us to have to bail out
   // to the runtime, and just generate the runtime call directly.
-  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstant();
-  HIntConstant* dst_pos = invoke->InputAt(3)->AsIntConstant();
+  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstantOrNull();
+  HIntConstant* dst_pos = invoke->InputAt(3)->AsIntConstantOrNull();
 
   // The positions must be non-negative.
   if ((src_pos != nullptr && src_pos->GetValue() < 0) ||
@@ -2605,7 +2605,7 @@ void IntrinsicLocationsBuilderARM64::VisitSystemArrayCopyChar(HInvoke* invoke) {
 
   // The length must be >= 0 and not so long that we would (currently) prefer libcore's
   // native implementation.
-  HIntConstant* length = invoke->InputAt(4)->AsIntConstant();
+  HIntConstant* length = invoke->InputAt(4)->AsIntConstantOrNull();
   if (length != nullptr) {
     int32_t len = length->GetValue();
     if (len < 0 || len > kSystemArrayCopyCharThreshold) {
@@ -2903,8 +2903,8 @@ void IntrinsicLocationsBuilderARM64::VisitSystemArrayCopy(HInvoke* invoke) {
 
   // Check to see if we have known failures that will cause us to have to bail out
   // to the runtime, and just generate the runtime call directly.
-  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstant();
-  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstant();
+  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstantOrNull();
+  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstantOrNull();
 
   // The positions must be non-negative.
   if ((src_pos != nullptr && src_pos->GetValue() < 0) ||
@@ -2914,7 +2914,7 @@ void IntrinsicLocationsBuilderARM64::VisitSystemArrayCopy(HInvoke* invoke) {
   }
 
   // The length must be >= 0.
-  HIntConstant* length = invoke->InputAt(4)->AsIntConstant();
+  HIntConstant* length = invoke->InputAt(4)->AsIntConstantOrNull();
   if (length != nullptr) {
     int32_t len = length->GetValue();
     if (len < 0 || len >= kSystemArrayCopyThreshold) {

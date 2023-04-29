@@ -180,7 +180,7 @@ bool HInliner::Run() {
   for (HBasicBlock* block : blocks) {
     for (HInstruction* instruction = block->GetFirstInstruction(); instruction != nullptr;) {
       HInstruction* next = instruction->GetNext();
-      HInvoke* call = instruction->AsInvoke();
+      HInvoke* call = instruction->AsInvokeOrNull();
       // As long as the call is not intrinsified, it is worth trying to inline.
       if (call != nullptr && !codegen_->IsImplementedIntrinsic(call)) {
         if (honor_noinline_directives) {
@@ -1321,7 +1321,8 @@ bool HInliner::TryDevirtualize(HInvoke* invoke_instruction,
       dispatch_info,
       kDirect,
       MethodReference(method->GetDexFile(), method->GetDexMethodIndex()),
-      HInvokeStaticOrDirect::ClinitCheckRequirement::kNone);
+      HInvokeStaticOrDirect::ClinitCheckRequirement::kNone,
+      !graph_->IsDebuggable());
   HInputsRef inputs = invoke_instruction->GetInputs();
   DCHECK_EQ(inputs.size(), invoke_instruction->GetNumberOfArguments());
   for (size_t index = 0; index != inputs.size(); ++index) {
@@ -1527,7 +1528,8 @@ bool HInliner::TryBuildAndInline(HInvoke* invoke_instruction,
         invoke_instruction->GetMethodReference(),  // Use existing invoke's method's reference.
         method,
         MethodReference(method->GetDexFile(), method->GetDexMethodIndex()),
-        method->GetMethodIndex());
+        method->GetMethodIndex(),
+        !graph_->IsDebuggable());
     DCHECK_NE(new_invoke->GetIntrinsic(), Intrinsics::kNone);
     HInputsRef inputs = invoke_instruction->GetInputs();
     for (size_t index = 0; index != inputs.size(); ++index) {

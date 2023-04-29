@@ -394,7 +394,6 @@ void IntrinsicLocationsBuilderX86::VisitMathRoundFloat(HInvoke* invoke) {
   }
 
   HInvokeStaticOrDirect* static_or_direct = invoke->AsInvokeStaticOrDirect();
-  DCHECK(static_or_direct != nullptr);
   LocationSummary* locations =
       new (allocator_) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
   locations->SetInAt(0, Location::RequiresFpuRegister());
@@ -774,9 +773,9 @@ void IntrinsicCodeGeneratorX86::VisitMathNextAfter(HInvoke* invoke) {
 static void CreateSystemArrayCopyLocations(HInvoke* invoke) {
   // We need at least two of the positions or length to be an integer constant,
   // or else we won't have enough free registers.
-  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstant();
-  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstant();
-  HIntConstant* length = invoke->InputAt(4)->AsIntConstant();
+  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstantOrNull();
+  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstantOrNull();
+  HIntConstant* length = invoke->InputAt(4)->AsIntConstantOrNull();
 
   int num_constants =
       ((src_pos != nullptr) ? 1 : 0)
