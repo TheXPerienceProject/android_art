@@ -318,7 +318,7 @@ ENTRY art_quick_generic_jni_trampoline
     // Check for error (class init check or locking for synchronized native method can throw).
     beqz a0, .Lexception_in_native
 
-    mv   t0, a0       // save pointer to native method code into temporary
+    mv   t2, a0       // save pointer to native method code into temporary
 
     // Load argument GPRs from stack (saved there by artQuickGenericJniTrampoline).
     ld  a0, 8*0(sp)   // JniEnv* for the native method
@@ -340,13 +340,12 @@ ENTRY art_quick_generic_jni_trampoline
     fld  fa6, 8*14(sp)
     fld  fa7, 8*15(sp)
 
-    // FIXME(riscv64): Use T0 to align with the JNI calling convention.
-    ld  t6, 8*16(sp)  // @CriticalNative arg, used by art_jni_dlsym_lookup_critical_stub
+    ld  t0, 8*16(sp)  // @CriticalNative arg, used by art_jni_dlsym_lookup_critical_stub
 
     ld  t1, 8*17(sp)  // restore stack
     mv  sp, t1
 
-    jalr  t0  // call native method
+    jalr  t2  // call native method
 
     // result sign extension is handled in C code, prepare for artQuickGenericJniEndTrampoline call:
     // uint64_t artQuickGenericJniEndTrampoline(Thread* self,       // a0
@@ -555,6 +554,8 @@ ENTRY \c_name
 END \c_name
 .endm
 
+// Called by managed code to deliver an exception.
+ONE_ARG_RUNTIME_EXCEPTION art_quick_deliver_exception, artDeliverExceptionFromCode
 
 // Called to attempt to execute an obsolete method.
 ONE_ARG_RUNTIME_EXCEPTION art_invoke_obsolete_method_stub, artInvokeObsoleteMethod
@@ -788,7 +789,6 @@ UNDEFINED art_quick_invoke_super_trampoline_with_access_check
 UNDEFINED art_quick_invoke_virtual_trampoline_with_access_check
 UNDEFINED art_quick_invoke_polymorphic
 UNDEFINED art_quick_invoke_custom
-UNDEFINED art_quick_deliver_exception
 UNDEFINED art_quick_throw_array_bounds
 UNDEFINED art_quick_throw_div_zero
 UNDEFINED art_quick_throw_null_pointer_exception
