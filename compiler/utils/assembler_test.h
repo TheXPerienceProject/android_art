@@ -1583,7 +1583,7 @@ class AssemblerTest : public AssemblerTestBase {
     size_t cs = assembler_->CodeSize();
     std::unique_ptr<std::vector<uint8_t>> data(new std::vector<uint8_t>(cs));
     MemoryRegion code(&(*data)[0], data->size());
-    assembler_->CopyInstructions(code);
+    assembler_->FinalizeInstructions(code);
     Pad(*data);
     Driver(*data, assembly_text, test_name);
   }

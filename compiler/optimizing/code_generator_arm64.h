@@ -698,7 +698,7 @@ class CodeGeneratorARM64 : public CodeGenerator {
     return jump_tables_.back().get();
   }
 
-  void Finalize() override;
+  void Finalize(CodeAllocator* allocator) override;
 
   // Code generation helpers.
   void MoveConstant(vixl::aarch64::CPURegister destination, HConstant* constant);

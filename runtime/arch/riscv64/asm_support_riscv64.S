@@ -66,17 +66,6 @@
 .endm
 
 
-.macro CFI_EXPRESSION_BREG n, b, offset
-    .if (-0x40 <= (\offset)) && ((\offset) < 0x40)
-        CFI_EXPRESSION_BREG_1(\n, \b, \offset)
-    .elseif (-0x2000 <= (\offset)) && ((\offset) < 0x2000)
-        CFI_EXPRESSION_BREG_2(\n, \b, \offset)
-    .else
-        .error "Unsupported offset"
-    .endif
-.endm
-
-
 .macro CFI_DEF_CFA_BREG_PLUS_UCONST reg, offset, size
     .if (((\offset) < -0x40) || ((\offset) >= 0x40))
         .error "Unsupported offset"
@@ -106,25 +95,15 @@
 .endm
 
 
-.macro SAVE_GPR_BASE base, reg, offset
-    sd \reg, (\offset)(\base)
+.macro SAVE_GPR reg, offset
+    sd \reg, (\offset)(sp)
     .cfi_rel_offset \reg, (\offset)
 .endm
 
 
-.macro SAVE_GPR reg, offset
-    SAVE_GPR_BASE sp, \reg, \offset
-.endm
-
-
-.macro RESTORE_GPR_BASE base, reg, offset
-    ld \reg, (\offset)(\base)
-    .cfi_restore \reg
-.endm
-
-
 .macro RESTORE_GPR reg, offset
-    RESTORE_GPR_BASE sp, \reg, \offset
+    ld \reg, (\offset)(sp)
+    .cfi_restore \reg
 .endm
 
 
@@ -170,9 +149,8 @@
     SAVE_FPR fa7, (8*8)
 
     SAVE_GPR fp,  (9*8)  // x8, frame pointer
-    // s1 (x9) is the ART thread register
 
-    // a0 (x10) is the method pointer
+    // a0 is the method pointer
     SAVE_GPR a1,  (10*8)  // x11
     SAVE_GPR a2,  (11*8)  // x12
     SAVE_GPR a3,  (12*8)  // x13
@@ -181,6 +159,7 @@
     SAVE_GPR a6,  (15*8)  // x16
     SAVE_GPR a7,  (16*8)  // x17
 
+    // s1 is the ART thread register
     SAVE_GPR s2,  (17*8)  // x18
     SAVE_GPR s3,  (18*8)  // x19
     SAVE_GPR s4,  (19*8)  // x20
@@ -196,7 +175,7 @@
 .endm
 
 
-.macro RESTORE_SAVE_REFS_AND_ARGS_FRAME_INTERNAL
+.macro RESTORE_SAVE_REFS_AND_ARGS_FRAME_INTERNAL base
     // stack slot (0*8)(sp) is for ArtMethod*
 
     RESTORE_FPR fa0, (1*8)
@@ -298,7 +277,7 @@
 
     // GP callee-saves
     SAVE_GPR s0,  (8*14)  // x8/fp, frame pointer
-    // s1 (x9) is the ART thread register
+    // s1 is the ART thread register
     SAVE_GPR s2,  (8*15)  // x18
     SAVE_GPR s3,  (8*16)  // x19
     SAVE_GPR s4,  (8*17)  // x20

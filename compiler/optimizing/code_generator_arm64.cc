@@ -1040,7 +1040,7 @@ void CodeGeneratorARM64::EmitJumpTables() {
   }
 }
 
-void CodeGeneratorARM64::Finalize() {
+void CodeGeneratorARM64::Finalize(CodeAllocator* allocator) {
   EmitJumpTables();
 
   // Emit JIT baker read barrier slow paths.
@@ -1055,11 +1055,11 @@ void CodeGeneratorARM64::Finalize() {
   // Ensure we emit the literal pool.
   __ FinalizeCode();
 
-  CodeGenerator::Finalize();
+  CodeGenerator::Finalize(allocator);
 
   // Verify Baker read barrier linker patches.
   if (kIsDebugBuild) {
-    ArrayRef<const uint8_t> code(GetCode());
+    ArrayRef<const uint8_t> code = allocator->GetMemory();
     for (const BakerReadBarrierPatchInfo& info : baker_read_barrier_patches_) {
       DCHECK(info.label.IsBound());
       uint32_t literal_offset = info.label.GetLocation();
@@ -5371,7 +5371,7 @@ void CodeGeneratorARM64::EmitThunkCode(const linker::LinkerPatch& patch,
   assembler.FinalizeCode();
   code->resize(assembler.CodeSize());
   MemoryRegion code_region(code->data(), code->size());
-  assembler.CopyInstructions(code_region);
+  assembler.FinalizeInstructions(code_region);
 }
 
 vixl::aarch64::Literal<uint32_t>* CodeGeneratorARM64::DeduplicateUint32Literal(uint32_t value) {

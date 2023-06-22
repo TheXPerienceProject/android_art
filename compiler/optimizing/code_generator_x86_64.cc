@@ -8170,7 +8170,7 @@ class JumpTableRIPFixup : public RIPFixup {
   const HPackedSwitch* switch_instr_;
 };
 
-void CodeGeneratorX86_64::Finalize() {
+void CodeGeneratorX86_64::Finalize(CodeAllocator* allocator) {
   // Generate the constant area if needed.
   X86_64Assembler* assembler = GetAssembler();
   if (!assembler->IsConstantAreaEmpty() || !fixups_to_jump_tables_.empty()) {
@@ -8188,7 +8188,7 @@ void CodeGeneratorX86_64::Finalize() {
   }
 
   // And finish up.
-  CodeGenerator::Finalize();
+  CodeGenerator::Finalize(allocator);
 }
 
 Address CodeGeneratorX86_64::LiteralDoubleAddress(double v) {

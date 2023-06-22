@@ -163,8 +163,9 @@ class AssemblerBuffer {
 
   uint8_t* contents() const { return contents_; }
 
-  // Copy the assembled instructions into the specified memory block.
-  void CopyInstructions(const MemoryRegion& region);
+  // Copy the assembled instructions into the specified memory block
+  // and apply all fixups.
+  void FinalizeInstructions(const MemoryRegion& region);
 
   // To emit an instruction to the assembler buffer, the EnsureCapacity helper
   // must be used to guarantee that the underlying data area is big enough to
@@ -244,8 +245,6 @@ class AssemblerBuffer {
   // Unconditionally increase the capacity.
   // The provided `min_capacity` must be higher than current `Capacity()`.
   void ExtendCapacity(size_t min_capacity);
-
-  void ProcessFixups();
 
  private:
   // The limit is set to kMinimumGap bytes before the end of the data area.
@@ -358,10 +357,7 @@ class DebugFrameOpCodeWriterForAssembler final
 class Assembler : public DeletableArenaObject<kArenaAllocAssembler> {
  public:
   // Finalize the code; emit slow paths, fixup branches, add literal pool, etc.
-  virtual void FinalizeCode() {
-    buffer_.EmitSlowPaths(this);
-    buffer_.ProcessFixups();
-  }
+  virtual void FinalizeCode() { buffer_.EmitSlowPaths(this); }
 
   // Size of generated code
   virtual size_t CodeSize() const { return buffer_.Size(); }
@@ -379,8 +375,8 @@ class Assembler : public DeletableArenaObject<kArenaAllocAssembler> {
   virtual size_t CodePosition() { return CodeSize(); }
 
   // Copy instructions out of assembly buffer into the given region of memory
-  virtual void CopyInstructions(const MemoryRegion& region) {
-    buffer_.CopyInstructions(region);
+  virtual void FinalizeInstructions(const MemoryRegion& region) {
+    buffer_.FinalizeInstructions(region);
   }
 
   // TODO: Implement with disassembler.
