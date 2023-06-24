@@ -583,7 +583,7 @@ void InstructionWithAbsorbingInputSimplifier::VisitRem(HRem* instruction) {
     block->RemoveInstruction(instruction);
   }
 
-  HConstant* cst_right = instruction->GetRight()->AsConstant();
+  HConstant* cst_right = instruction->GetRight()->AsConstantOrNull();
   if (((cst_right != nullptr) &&
        (cst_right->IsOne() || cst_right->IsMinusOne())) ||
       (instruction->GetLeft() == instruction->GetRight())) {

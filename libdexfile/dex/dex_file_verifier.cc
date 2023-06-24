@@ -50,9 +50,7 @@ constexpr bool IsValidOrNoTypeId(uint16_t low, uint16_t high) {
   return (high == 0) || ((high == 0xffffU) && (low == 0xffffU));
 }
 
-constexpr bool IsValidTypeId(uint16_t low ATTRIBUTE_UNUSED, uint16_t high) {
-  return (high == 0);
-}
+constexpr bool IsValidTypeId([[maybe_unused]] uint16_t low, uint16_t high) { return (high == 0); }
 
 constexpr uint32_t MapTypeToBitMask(DexFile::MapItemType map_item_type) {
   switch (map_item_type) {
@@ -1523,7 +1521,9 @@ bool DexFileVerifier::CheckIntraClassDataItem() {
 
 bool DexFileVerifier::CheckIntraCodeItem() {
   const dex::CodeItem* code_item = reinterpret_cast<const dex::CodeItem*>(ptr_);
-  if (!CheckListSize(code_item, 1, sizeof(dex::CodeItem), "code")) {
+
+  DCHECK(dex_file_->IsStandardDexFile());
+  if (!CheckListSize(code_item, 1, sizeof(StandardDexFile::CodeItem), "code")) {
     return false;
   }
 
@@ -2315,10 +2315,6 @@ bool DexFileVerifier::CheckIntraSection() {
     } else if (UNLIKELY(offset > section_offset)) {
       ErrorStringPrintf("Section overlap or out-of-order map: %zx, %x", offset, section_offset);
       return false;
-    }
-
-    if (type == DexFile::kDexTypeClassDataItem) {
-      FindStringRangesForMethodNames();
     }
 
     // Check each item based on its type.
@@ -3248,6 +3244,10 @@ bool DexFileVerifier::CheckInterSection() {
     uint32_t section_count = item->size_;
     DexFile::MapItemType type = static_cast<DexFile::MapItemType>(item->type_);
     bool found = false;
+
+    if (type == DexFile::kDexTypeClassDataItem) {
+      FindStringRangesForMethodNames();
+    }
 
     switch (type) {
       case DexFile::kDexTypeHeaderItem:

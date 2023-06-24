@@ -152,11 +152,9 @@
   mov r1, r0                           // pass the result
   mov r0, rSELF                        // Thread::Current
   bl artDeoptimizeIfNeeded
-  CFI_REMEMBER_STATE
   RESTORE_SAVE_EVERYTHING_FRAME
   REFRESH_MARKING_REGISTER
   bx     lr
-  CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
 .endm
 
 .macro DEOPT_OR_RESTORE_SAVE_EVERYTHING_FRAME_AND_RETURN_R0 temp, is_ref
@@ -746,8 +744,8 @@ ENTRY art_quick_aput_obj
     mov r1, r4
     mov r0, r3
     bl artIsAssignableFromCode
-    cbz r0, .Lthrow_array_store_exception
     CFI_REMEMBER_STATE
+    cbz r0, .Lthrow_array_store_exception
     pop {r0-r2, lr}
     .cfi_restore lr
     .cfi_adjust_cfa_offset -16
@@ -1439,8 +1437,8 @@ ENTRY art_quick_resolution_trampoline
     mov     r2, rSELF              @ pass Thread::Current
     mov     r3, sp                 @ pass SP
     blx     artQuickResolutionTrampoline  @ (Method* called, receiver, Thread*, SP)
-    cbz     r0, 1f                 @ is code pointer null? goto exception
     CFI_REMEMBER_STATE
+    cbz     r0, 1f                 @ is code pointer null? goto exception
     mov     r12, r0
     ldr     r0, [sp, #0]           @ load resolved method in r0
     RESTORE_SAVE_REFS_AND_ARGS_FRAME
@@ -1529,11 +1527,11 @@ ENTRY art_quick_generic_jni_trampoline
 
     LOAD_RUNTIME_INSTANCE r2
     ldr r2, [r2,  #RUN_EXIT_HOOKS_OFFSET_FROM_RUNTIME_INSTANCE]
+    CFI_REMEMBER_STATE
     cbnz r2, .Lcall_method_exit_hook
 .Lcall_method_exit_hook_done:
 
     // Tear down the callee-save frame. Skip arg registers.
-    CFI_REMEMBER_STATE
     .cfi_def_cfa_register sp
     add sp, #(FRAME_SIZE_SAVE_REFS_AND_ARGS - 7 * 4)
     .cfi_adjust_cfa_offset -(FRAME_SIZE_SAVE_REFS_AND_ARGS - 7 * 4)
@@ -1549,10 +1547,8 @@ ENTRY art_quick_generic_jni_trampoline
     REFRESH_MARKING_REGISTER
     bx lr      // ret
 
-    // Undo the unwinding information from above since it doesn't apply below.
-    CFI_RESTORE_STATE_AND_DEF_CFA r10, FRAME_SIZE_SAVE_REFS_AND_ARGS
-
 .Lcall_method_exit_hook:
+    CFI_RESTORE_STATE_AND_DEF_CFA r10, FRAME_SIZE_SAVE_REFS_AND_ARGS
     mov r2, #FRAME_SIZE_SAVE_REFS_AND_ARGS
     bl art_quick_method_exit_hook
     b .Lcall_method_exit_hook_done
@@ -2511,8 +2507,9 @@ END art_quick_method_entry_hook
 ENTRY art_quick_method_exit_hook
     SETUP_SAVE_EVERYTHING_FRAME r5
 
-    sub sp, #4                                @ align stack
+    INCREASE_FRAME 4                          @ align stack
     push {r2}                                 @ pass frame_size stack
+    .cfi_adjust_cfa_offset 4
     add r3, sp, #(8 + 8)                      @ store fpr_res pointer, in kSaveEverything frame
     add r2, sp, #(136 + 8)                    @ store gpr_res pointer, in kSaveEverything frame
     add r1, sp, #(FRAME_SIZE_SAVE_EVERYTHING + 8)   @ pass ArtMethod**
@@ -2520,7 +2517,7 @@ ENTRY art_quick_method_exit_hook
     blx artMethodExitHook                     @ (Thread*, ArtMethod**, gpr_res*, fpr_res*,
                                               @ frame_size)
 
-    add sp, #8                                @ pop arguments on stack
+    DECREASE_FRAME 8                          @ pop arguments on stack
     RESTORE_SAVE_EVERYTHING_FRAME
     REFRESH_MARKING_REGISTER
     blx lr

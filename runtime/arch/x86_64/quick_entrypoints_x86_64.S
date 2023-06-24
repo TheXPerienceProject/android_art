@@ -84,8 +84,7 @@ MACRO1(SETUP_SAVE_EVERYTHING_FRAME_R14_R15_SAVED, runtime_method_offset = RUNTIM
     PUSH rcx
     PUSH rax
     // Create space for FPRs and stack alignment padding.
-    subq MACRO_LITERAL(8 + 16 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(8 + 16 * 8)
+    INCREASE_FRAME 8 + 16 * 8
     // R10 := Runtime::Current()
     LOAD_RUNTIME_INSTANCE r10
     // Save FPRs.
@@ -180,8 +179,7 @@ MACRO0(RESTORE_SAVE_EVERYTHING_FRAME)
     RESTORE_SAVE_EVERYTHING_FRAME_FRPS
 
     // Remove save everything callee save method, stack alignment padding and FPRs.
-    addq MACRO_LITERAL(16 + 16 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-(16 + 16 * 8))
+    DECREASE_FRAME 16 + 16 * 8
 
     POP rax
     RESTORE_SAVE_EVERYTHING_FRAME_GPRS_EXCEPT_RAX
@@ -191,8 +189,7 @@ MACRO0(RESTORE_SAVE_EVERYTHING_FRAME_KEEP_RAX)
     RESTORE_SAVE_EVERYTHING_FRAME_FRPS
 
     // Remove save everything callee save method, stack alignment padding and FPRs, skip RAX.
-    addq MACRO_LITERAL(16 + 16 * 8 + 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-(16 + 16 * 8 + 8))
+    DECREASE_FRAME 16 + 16 * 8 + 8
 
     RESTORE_SAVE_EVERYTHING_FRAME_GPRS_EXCEPT_RAX
 END_MACRO
@@ -771,20 +768,18 @@ MACRO1(DEOPT_OR_RETURN, is_ref = 0)
   movq %rax, %rsi                      // pass the result
   movq %gs:THREAD_SELF_OFFSET, %rdi    // pass Thread::Current
   call SYMBOL(artDeoptimizeIfNeeded)
-  CFI_REMEMBER_STATE
   RESTORE_SAVE_EVERYTHING_FRAME
   ret
-  CFI_RESTORE_STATE_AND_DEF_CFA rsp, FRAME_SIZE_SAVE_EVERYTHING
 END_MACRO
 
 MACRO1(DEOPT_OR_RESTORE_SAVE_EVERYTHING_FRAME_AND_RETURN_RAX, is_ref = 0)
   cmpl LITERAL(0), %gs:THREAD_DEOPT_CHECK_REQUIRED_OFFSET
-  jne 2f
   CFI_REMEMBER_STATE
+  jne 2f
   RESTORE_SAVE_EVERYTHING_FRAME_KEEP_RAX
   ret
-  CFI_RESTORE_STATE_AND_DEF_CFA rsp, FRAME_SIZE_SAVE_EVERYTHING
 2:
+  CFI_RESTORE_STATE_AND_DEF_CFA rsp, FRAME_SIZE_SAVE_EVERYTHING
   movq %rax, SAVE_EVERYTHING_FRAME_RAX_OFFSET(%rsp) // update result in the frame
   movq LITERAL(\is_ref), %rdx                       // pass if result is a reference
   movq %rax, %rsi                                   // pass the result
@@ -1174,15 +1169,15 @@ DEFINE_FUNCTION art_quick_check_instance_of
     SETUP_FP_CALLEE_SAVE_FRAME
     call SYMBOL(artInstanceOfFromCode)  // (Object* obj, Class* ref_klass)
     testq %rax, %rax
-    jz .Lthrow_class_cast_exception   // jump forward if not assignable
     CFI_REMEMBER_STATE
+    jz .Lthrow_class_cast_exception   // jump forward if not assignable
     RESTORE_FP_CALLEE_SAVE_FRAME
     addq LITERAL(24), %rsp            // pop arguments
     CFI_ADJUST_CFA_OFFSET(-24)
     ret
-    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 64  // Reset unwind info so following code unwinds.
 
 .Lthrow_class_cast_exception:
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 64  // Reset unwind info so following code unwinds.
     RESTORE_FP_CALLEE_SAVE_FRAME
     addq LITERAL(8), %rsp             // pop padding
     CFI_ADJUST_CFA_OFFSET(-8)
@@ -1200,8 +1195,7 @@ END_FUNCTION art_quick_check_instance_of
 // Restore reg's value if reg is not the same as exclude_reg, otherwise just adjust stack.
 MACRO2(POP_REG_NE, reg, exclude_reg)
     .ifc RAW_VAR(reg), RAW_VAR(exclude_reg)
-      addq MACRO_LITERAL(8), %rsp
-      CFI_ADJUST_CFA_OFFSET(-8)
+      DECREASE_FRAME 8
     .else
       POP RAW_VAR(reg)
     .endif
@@ -1214,6 +1208,7 @@ DEFINE_FUNCTION art_quick_aput_obj
     UNPOISON_HEAP_REF ecx
 #ifdef USE_READ_BARRIER
     cmpl LITERAL(0), %gs:THREAD_IS_GC_MARKING_OFFSET
+    CFI_REMEMBER_STATE
     jnz .Laput_obj_gc_marking
 #endif  // USE_READ_BARRIER
     movl MIRROR_CLASS_COMPONENT_TYPE_OFFSET(%rcx), %ecx
@@ -1256,9 +1251,6 @@ DEFINE_FUNCTION art_quick_aput_obj
     ret
 
 .Laput_obj_throw_array_store_exception:
-#ifdef USE_READ_BARRIER
-    CFI_REMEMBER_STATE
-#endif  // USE_READ_BARRIER
     SETUP_SAVE_ALL_CALLEE_SAVES_FRAME  // Save all registers as basis for long jump context.
     // Outgoing argument set up.
     movq %rdx, %rsi                         // Pass arg 2 = value.
@@ -1268,8 +1260,8 @@ DEFINE_FUNCTION art_quick_aput_obj
     UNREACHABLE
 
 #ifdef USE_READ_BARRIER
-    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 4
 .Laput_obj_gc_marking:
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 8
     // We need to align stack for `art_quick_read_barrier_mark_regNN`.
     INCREASE_FRAME 8                        // Stack alignment.
     call SYMBOL(art_quick_read_barrier_mark_reg01)  // Mark ECX
@@ -1560,11 +1552,11 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
 
     LOAD_RUNTIME_INSTANCE rcx
     cmpb MACRO_LITERAL(0), RUN_EXIT_HOOKS_OFFSET_FROM_RUNTIME_INSTANCE(%rcx)
+    CFI_REMEMBER_STATE
     jne .Lcall_method_exit_hook
 .Lcall_method_exit_hook_done:
 
     // Tear down the callee-save frame.
-    CFI_REMEMBER_STATE
     CFI_DEF_CFA_REGISTER(rsp)
     // Load callee-save FPRs. Skip FP args.
     movq 80(%rsp), %xmm12
@@ -1583,13 +1575,11 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     POP r15  // Callee save.
     ret
 
-    // Undo the unwinding information from above since it doesn't apply below.
-    CFI_RESTORE_STATE_AND_DEF_CFA rbp, 208
-
 .Lcall_method_exit_hook:
-   movq LITERAL(FRAME_SIZE_SAVE_REFS_AND_ARGS), %r8
-   call art_quick_method_exit_hook
-   jmp .Lcall_method_exit_hook_done
+    CFI_RESTORE_STATE_AND_DEF_CFA rbp, 208
+    movq LITERAL(FRAME_SIZE_SAVE_REFS_AND_ARGS), %r8
+    call art_quick_method_exit_hook
+    jmp .Lcall_method_exit_hook_done
 
 .Lexception_in_native:
     pushq %gs:THREAD_TOP_QUICK_FRAME_OFFSET
@@ -1780,6 +1770,7 @@ MACRO2(READ_BARRIER_MARK_REG, name, reg)
     // Jump if the addl caused eax to unsigned overflow. The only case where it overflows is the
     // forwarding address one.
     // Taken ~25% of the time.
+    CFI_REMEMBER_STATE
     jnae .Lret_forwarding_address\name
 
     // Save all potentially live caller-save core registers.
@@ -1793,8 +1784,7 @@ MACRO2(READ_BARRIER_MARK_REG, name, reg)
     PUSH r10
     PUSH r11
     // Create space for caller-save floating-point registers.
-    subq MACRO_LITERAL(12 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(12 * 8)
+    INCREASE_FRAME 12 * 8
     // Save all potentially live caller-save floating-point registers.
     movq %xmm0, 0(%rsp)
     movq %xmm1, 8(%rsp)
@@ -1833,8 +1823,7 @@ MACRO2(READ_BARRIER_MARK_REG, name, reg)
     movq 80(%rsp), %xmm10
     movq 88(%rsp), %xmm11
     // Remove floating-point registers.
-    addq MACRO_LITERAL(12 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-(12 * 8))
+    DECREASE_FRAME 12 * 8
     // Restore core regs, except `reg`, as it is used to return the
     // result of this function (simply remove it from the stack instead).
     POP_REG_NE r11, RAW_VAR(reg)
@@ -1849,6 +1838,7 @@ MACRO2(READ_BARRIER_MARK_REG, name, reg)
 .Lret_rb_\name:
     ret
 .Lret_forwarding_address\name:
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 16
     // The overflow cleared the top bits.
     sall LITERAL(LOCK_WORD_STATE_FORWARDING_ADDRESS_SHIFT), %eax
     movq %rax, REG_VAR(reg)
@@ -1928,8 +1918,8 @@ DEFINE_FUNCTION art_quick_osr_stub
     movl %esi, %ecx               // rcx := size of stack
     movq %rdi, %rsi               // rsi := stack to copy
     movq %rsp, %rbp               // Save stack pointer to RBP for CFI use in .Losr_entry.
-    call .Losr_entry
     CFI_REMEMBER_STATE
+    call .Losr_entry
 
     // Restore stack and callee-saves.
     addq LITERAL(8), %rsp

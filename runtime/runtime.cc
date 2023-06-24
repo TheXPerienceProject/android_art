@@ -2782,8 +2782,9 @@ void Runtime::RegisterAppInfo(const std::string& package_name,
     }
   }
   if (!has_code) {
-    VLOG(profiler) << "JIT profile information will not be recorded: no dex code in '" +
-                          android::base::Join(code_paths, ',') + "'.";
+    VLOG(profiler) << ART_FORMAT(
+        "JIT profile information will not be recorded: no dex code in '{}'.",
+        android::base::Join(code_paths, ','));
     return;
   }
 

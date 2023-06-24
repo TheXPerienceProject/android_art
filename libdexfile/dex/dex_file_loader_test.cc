@@ -199,6 +199,50 @@ static const char kRawDexDebugInfoLocalNullType[] =
     "AAIAAAAEAAAAkAAAAAMAAAACAAAAoAAAAAUAAAADAAAAuAAAAAYAAAABAAAA0AAAAAEgAAACAAAA"
     "8AAAAAIgAAAIAAAAHAEAAAMgAAACAAAAVAEAAAAgAAABAAAAYwEAAAAQAAABAAAAdAEAAA==";
 
+// Created from kRawDex38 by changing version to 35 and appending three entries
+// to the map list, namely `kDexTypeMethodHandleItem`, `kDexTypeCallSiteIdItem`
+// and `kDexTypeHiddenapiClassData`, each with size one and invalid offset 0xffff.
+static const char kRawDexBadMapOffsets[] =
+    "ZGV4CjAzNQC4OovJlJ1089ikzK6asMf/f8qp3Kve5VsgAgAAcAAAAHhWNBIAAAAAAAAAAIwBAAAI"
+    "AAAAcAAAAAQAAACQAAAAAgAAAKAAAAAAAAAAAAAAAAMAAAC4AAAAAQAAANAAAAAwAQAA8AAAACIB"
+    "AAAqAQAAMgEAAEYBAABRAQAAVAEAAFgBAABtAQAAAQAAAAIAAAAEAAAABgAAAAQAAAACAAAAAAAA"
+    "AAUAAAACAAAAHAEAAAAAAAAAAAAAAAABAAcAAAABAAAAAAAAAAAAAAABAAAAAQAAAAAAAAADAAAA"
+    "AAAAAH4BAAAAAAAAAQABAAEAAABzAQAABAAAAHAQAgAAAA4AAQABAAAAAAB4AQAAAQAAAA4AAAAB"
+    "AAAAAwAGPGluaXQ+AAZMTWFpbjsAEkxqYXZhL2xhbmcvT2JqZWN0OwAJTWFpbi5qYXZhAAFWAAJW"
+    "TAATW0xqYXZhL2xhbmcvU3RyaW5nOwAEbWFpbgABAAcOAAMBAAcOAAAAAgAAgYAE8AEBCYgCDwAA"
+    "AAAAAAABAAAAAAAAAAEAAAAIAAAAcAAAAAIAAAAEAAAAkAAAAAMAAAACAAAAoAAAAAUAAAADAAAA"
+    "uAAAAAYAAAABAAAA0AAAAAEgAAACAAAA8AAAAAEQAAABAAAAHAEAAAIgAAAIAAAAIgEAAAMgAAAC"
+    "AAAAcwEAAAAgAAABAAAAfgEAAAAQAAABAAAAjAEAAAgAAAABAAAA//8AAAcAAAABAAAA//8AAADw"
+    "AAABAAAA//8AAA==";
+
+static const char kRawDexStringDataOOB[] =
+    "ZGV4CjAzNQCeYAY06q0ySzKz8hklA3wUmxR8x10yt8X0AgAAcAAAAHhWNBIAAAAAAAAAAFQCAAAQAAAAcAAAAAcAAACw"
+    "AAAAAwAAAMwAAAABAAAA8AAAAAQAAAD4AAAAAQAAABgBAAC8AQAAOAEAAH4BAACGAQABAAEAlQAAnQC0AQAAyAEAANwB"
+    "AADwAQAA+"
+    "wEAAP4BAAACAgAAFwIAAB0CAAAjAgAAKAIAADECAAACAAAAAwAAAAQAAAAFAAAABgAAAAgAAAAKAAAACAAAAAUAAAAAA"
+    "AAACQAAAAUAAABwAQAACQAAAAUAAAB4AQAABAABAA0AAAAAAAAAAAAAAAAAAgAMAAAAAQABAA4AAAACAAAAAAAAAAAAA"
+    "AABAAAAAgAAAAAAAAAHAAAAAAAAAEMCAAAAAAAAAQABAAEAAAA3AgAABAAAAHAQAwAAAA4AAwABAAIAAAA8AgAACAAAA"
+    "GIAAAAaAQEAbiACABAADgABAAAAAwAAAAEAAAAGAAY8aW5pdD4ADUhlbGxvLCB3b3JsZCEABkxNYWluOwAVTGphdmEva"
+    "W8vUHJpbnRTdHJlYW07ABJMamF2YS9sYW5nL09iamVjdDsAEkxqYXZhL2xhbmcvU3RyaW5nOwASTGphdmEvbGFuZy9Te"
+    "XN0ZW07AAlNYWluLmphdmEAAVYAAlZMABNbTGphK2EvbGFuZy9TdHJpbmc7AARhcmdzAARtYWluAANvdXQAB3ByaW50b"
+    "G4ABHRoaXMAEQAHDgATAQwHDngAAAACAACBgAS4AgEJ0AIAAAANAAAAAAAAAAEAAAAAAAAAAQAAABAAAABwAAAAAgAAA"
+    "AcAAACwAAAAAwAAAAMAAADMAAAABAAAAAEAAADwAAAABQAAAAQAAAD4AAAABgAAAAEAAAAYAQAAASAAAAIAAAA4AQAAA"
+    "RAAAAIAAABwAQAAAiAAABAAAAB+AQAAAyAAAAIAAAA3AgAAACAAAAEAAABDAgAAABAAAAEAAABUAgAA";
+
+static const char kRawDexCodeItemOOB[] =
+    "ZGV4CjAzNQBNRhvKLnmGPLR973zkwLwGomvp/qfZL080AgAAcAAAAHhWNBIAAAAA"
+    "AAAAAKABAAAKAAAAcAAAAAQAAACYAAAAAgAAAKgAAAAAAAAAAAAAAAMAAADAAAAA"
+    "AQAAANgAAAA8AQAACAAAACoBAAAxAQAA2gEAAE4BAABZAQAAXAEAAGABAAB1AQAA"
+    "ewEAAIEBAAABAAAAAgAAAAQAAAAGAAAABAAAAAIAAAAAAAAABQAAAAIAAAAkAQAA"
+    "AAAAAAAAAAAAAAEACAAAAAEAAAAAAAAAAAAAAAEAAAABAAAAAAAAAAMAAAAAAAAA"
+    "kgEAAAAAAAABAAEAAQAAAIcBAAKSAAAAcBACAAAADgABAAEAAAAAAIwBAAABAAAA"
+    "DgAAAAEAAAADAAY8aW5pdD4ABkxNYWluOwASTGphdmEvbGFuZy9PYmplY3Q7AAlN"
+    "YWluLmphdmEAAVYAAlZMABNbTGphdmEvbGFuZy9TdHJpbmc7AARhcmdzAARtYWlu"
+    "AAR0aGlzABEABw4A6QH4+PH////9+gAlgAT4AQEJkAIMAAAAAAAAAAEAAAAAAAAA"
+    "AQAAAAoAAABwAAAAAgAAAAQAAACYAAAAAwAAAAIAAACoAAAABQAAAAMAAADAAAAA"
+    "BgAAAAEAAADYAAAAASAAAAIAAAD4AAAAARAAAAEAAAAkAQAAAiAAAAoAAAAqAQAA"
+    "AyAAAAIAAACHAQAAACAAAAEAAACSAQAAABAAAAEAAACgAQAA";
+
 static void DecodeDexFile(const char* base64, std::vector<uint8_t>* dex_bytes) {
   // decode base64
   CHECK(base64 != nullptr);
@@ -461,6 +505,34 @@ TEST_F(DexFileLoaderTest, OpenDexDebugInfoLocalNullType) {
   const dex::CodeItem* code_item = raw->GetCodeItem(raw->FindCodeItemOffset(class_def, kMethodIdx));
   CodeItemDebugInfoAccessor accessor(*raw, code_item, kMethodIdx);
   ASSERT_TRUE(accessor.DecodeDebugLocalInfo(true, 1, VoidFunctor()));
+}
+
+// Helper for tests that open and verify raw dex files to avoid boilerplate.
+void OpenAndVerify(const char* dex_file_base64, bool expected_success) {
+  std::vector<uint8_t> dex_bytes;
+  std::vector<std::unique_ptr<const DexFile>> dex_files;
+  DexFileLoaderErrorCode error_code;
+  std::string error_msg;
+  bool success = OpenDexFilesBase64(
+      dex_file_base64, kLocationString, &dex_bytes, &dex_files, &error_code, &error_msg);
+  ASSERT_EQ(success, expected_success);
+}
+
+// Bad offset for `kDexTypeHiddenapiClassData` previously triggered a `DCHECK()`
+// before verifying the dex file. We want to reject dex files with bad offsets
+// without crashing, even in debug builds. b/281960267
+TEST_F(DexFileLoaderTest, BadMapOffsets) {
+  OpenAndVerify(kRawDexBadMapOffsets, /*expected_success=*/false);
+}
+
+// Generated dex file with a string data offset out of bounds. It should fail verification without
+// crashing. b/280066537
+TEST_F(DexFileLoaderTest, StringDataOffsetOutOfBounds) {
+  OpenAndVerify(kRawDexStringDataOOB, /*expected_success=*/false);
+}
+
+TEST_F(DexFileLoaderTest, CodeItemOutOfBounds) {
+  OpenAndVerify(kRawDexCodeItemOOB, /*expected_success=*/false);
 }
 
 }  // namespace art

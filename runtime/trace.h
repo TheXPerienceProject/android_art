@@ -98,6 +98,21 @@ enum TraceAction {
     kTraceMethodActionMask = 0x03,  // two bits
 };
 
+// We need 3 entries to store 64-bit timestamp counter as two 32-bit values on 32-bit architectures.
+static constexpr uint32_t kNumEntriesForWallClock =
+    (kRuntimePointerSize == PointerSize::k64) ? 2 : 3;
+static constexpr uint32_t kNumEntriesForDualClock = kNumEntriesForWallClock + 1;
+
+// These define offsets in bytes for the individual fields of a trace entry. These are used by the
+// JITed code when storing a trace entry.
+static constexpr int32_t kMethodOffsetInBytes = 0;
+static constexpr int32_t kTimestampOffsetInBytes = -1 * static_cast<uint32_t>(kRuntimePointerSize);
+// This is valid only for 32-bit architectures.
+static constexpr int32_t kLowTimestampOffsetInBytes =
+    -2 * static_cast<uint32_t>(kRuntimePointerSize);
+
+static constexpr uintptr_t kMaskTraceAction = ~0b11;
+
 // Class for recording event traces. Trace data is either collected
 // synchronously during execution (TracingMode::kMethodTracingActive),
 // or by a separate sampling thread (TracingMode::kSampleProfilingActive).
@@ -279,7 +294,7 @@ class Trace final : public instrumentation::InstrumentationListener {
   // Encodes event in non-streaming mode. This assumes that there is enough space reserved to
   // encode the entry.
   void EncodeEventEntry(uint8_t* ptr,
-                        Thread* thread,
+                        uint16_t thread_id,
                         uint32_t method_index,
                         TraceAction action,
                         uint32_t thread_clock_diff,
@@ -329,6 +344,8 @@ class Trace final : public instrumentation::InstrumentationListener {
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(!tracing_lock_);
 
   void UpdateThreadsList(Thread* thread);
+
+  uint16_t GetThreadEncoding(pid_t thread_id) REQUIRES(tracing_lock_);
 
   // Singleton instance of the Trace or null when no method tracing is active.
   static Trace* volatile the_trace_ GUARDED_BY(Locks::trace_lock_);
@@ -413,6 +430,10 @@ class Trace final : public instrumentation::InstrumentationListener {
   // Map from ArtMethod* to index.
   std::unordered_map<ArtMethod*, uint32_t> art_method_id_map_ GUARDED_BY(tracing_lock_);
   uint32_t current_method_index_ = 0;
+
+  // Map from thread_id to a 16-bit identifier.
+  std::unordered_map<pid_t, uint16_t> thread_id_map_ GUARDED_BY(tracing_lock_);
+  uint16_t current_thread_index_;
 
   DISALLOW_COPY_AND_ASSIGN(Trace);
 };

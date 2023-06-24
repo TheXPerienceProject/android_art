@@ -617,8 +617,8 @@ void IntrinsicCodeGeneratorX86_64::VisitMathNextAfter(HInvoke* invoke) {
 static void CreateSystemArrayCopyLocations(HInvoke* invoke) {
   // Check to see if we have known failures that will cause us to have to bail out
   // to the runtime, and just generate the runtime call directly.
-  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstant();
-  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstant();
+  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstantOrNull();
+  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstantOrNull();
 
   // The positions must be non-negative.
   if ((src_pos != nullptr && src_pos->GetValue() < 0) ||
@@ -628,7 +628,7 @@ static void CreateSystemArrayCopyLocations(HInvoke* invoke) {
   }
 
   // The length must be > 0.
-  HIntConstant* length = invoke->InputAt(4)->AsIntConstant();
+  HIntConstant* length = invoke->InputAt(4)->AsIntConstantOrNull();
   if (length != nullptr) {
     int32_t len = length->GetValue();
     if (len < 0) {
@@ -1424,7 +1424,7 @@ static void GenerateStringIndexOf(HInvoke* invoke,
   HInstruction* code_point = invoke->InputAt(1);
   if (code_point->IsIntConstant()) {
     if (static_cast<uint32_t>(code_point->AsIntConstant()->GetValue()) >
-    std::numeric_limits<uint16_t>::max()) {
+        std::numeric_limits<uint16_t>::max()) {
       // Always needs the slow-path. We could directly dispatch to it, but this case should be
       // rare, so for simplicity just put the full slow-path down and branch unconditionally.
       slow_path = new (codegen->GetScopedAllocator()) IntrinsicSlowPathX86_64(invoke);
@@ -1655,7 +1655,7 @@ void IntrinsicCodeGeneratorX86_64::VisitStringGetCharsNoCheck(HInvoke* invoke) {
   CpuRegister obj = locations->InAt(0).AsRegister<CpuRegister>();
   Location srcBegin = locations->InAt(1);
   int srcBegin_value =
-    srcBegin.IsConstant() ? srcBegin.GetConstant()->AsIntConstant()->GetValue() : 0;
+      srcBegin.IsConstant() ? srcBegin.GetConstant()->AsIntConstant()->GetValue() : 0;
   CpuRegister srcEnd = locations->InAt(2).AsRegister<CpuRegister>();
   CpuRegister dst = locations->InAt(3).AsRegister<CpuRegister>();
   CpuRegister dstBegin = locations->InAt(4).AsRegister<CpuRegister>();
@@ -1871,7 +1871,7 @@ void IntrinsicCodeGeneratorX86_64::VisitThreadCurrentThread(HInvoke* invoke) {
 
 static void GenUnsafeGet(HInvoke* invoke,
                          DataType::Type type,
-                         bool is_volatile ATTRIBUTE_UNUSED,
+                         [[maybe_unused]] bool is_volatile,
                          CodeGeneratorX86_64* codegen) {
   X86_64Assembler* assembler = down_cast<X86_64Assembler*>(codegen->GetAssembler());
   LocationSummary* locations = invoke->GetLocations();
@@ -3249,7 +3249,7 @@ void IntrinsicLocationsBuilderX86_64::VisitReachabilityFence(HInvoke* invoke) {
   locations->SetInAt(0, Location::Any());
 }
 
-void IntrinsicCodeGeneratorX86_64::VisitReachabilityFence(HInvoke* invoke ATTRIBUTE_UNUSED) { }
+void IntrinsicCodeGeneratorX86_64::VisitReachabilityFence([[maybe_unused]] HInvoke* invoke) {}
 
 static void CreateDivideUnsignedLocations(HInvoke* invoke, ArenaAllocator* allocator) {
   LocationSummary* locations =
@@ -3770,8 +3770,8 @@ static void GenerateVarHandleTarget(HInvoke* invoke,
         instr_codegen->GenerateGcRootFieldLoad(invoke,
                                                Location::RegisterLocation(target.object),
                                                Address(method, ArtField::DeclaringClassOffset()),
-                                               /*fixup_label=*/ nullptr,
-                                               gCompilerReadBarrierOption);
+                                               /*fixup_label=*/nullptr,
+                                               GetCompilerReadBarrierOption());
       }
     }
   } else {

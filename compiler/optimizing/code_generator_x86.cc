@@ -38,6 +38,7 @@
 #include "optimizing/nodes.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread.h"
+#include "trace.h"
 #include "utils/assembler.h"
 #include "utils/stack_checks.h"
 #include "utils/x86/assembler_x86.h"
@@ -839,7 +840,8 @@ class ReadBarrierForHeapReferenceSlowPathX86 : public SlowPathCode {
         DCHECK((instruction_->AsInvoke()->GetIntrinsic() == Intrinsics::kUnsafeGetObject) ||
                (instruction_->AsInvoke()->GetIntrinsic() == Intrinsics::kUnsafeGetObjectVolatile) ||
                (instruction_->AsInvoke()->GetIntrinsic() == Intrinsics::kJdkUnsafeGetObject) ||
-               (instruction_->AsInvoke()->GetIntrinsic() == Intrinsics::kJdkUnsafeGetObjectVolatile) ||
+               (instruction_->AsInvoke()->GetIntrinsic() ==
+                    Intrinsics::kJdkUnsafeGetObjectVolatile) ||
                (instruction_->AsInvoke()->GetIntrinsic() == Intrinsics::kJdkUnsafeGetObjectAcquire))
             << instruction_->AsInvoke()->GetIntrinsic();
         DCHECK_EQ(offset_, 0U);
@@ -1221,12 +1223,18 @@ void LocationsBuilderX86::VisitMethodExitHook(HMethodExitHook* method_hook) {
   LocationSummary* locations = new (GetGraph()->GetAllocator())
       LocationSummary(method_hook, LocationSummary::kCallOnSlowPath);
   SetInForReturnValue(method_hook, locations);
+  // We use rdtsc to obtain a timestamp for tracing. rdtsc returns the results in EAX + EDX.
+  locations->AddTemp(Location::RegisterLocation(EAX));
+  locations->AddTemp(Location::RegisterLocation(EDX));
+  // An additional temporary register to hold address to store the timestamp counter.
+  locations->AddTemp(Location::RequiresRegister());
 }
 
 void InstructionCodeGeneratorX86::GenerateMethodEntryExitHook(HInstruction* instruction) {
   SlowPathCode* slow_path =
       new (codegen_->GetScopedAllocator()) MethodEntryExitHooksSlowPathX86(instruction);
   codegen_->AddSlowPath(slow_path);
+  LocationSummary* locations = instruction->GetLocations();
 
   if (instruction->IsMethodExitHook()) {
     // Check if we are required to check if the caller needs a deoptimization. Strictly speaking it
@@ -1242,8 +1250,48 @@ void InstructionCodeGeneratorX86::GenerateMethodEntryExitHook(HInstruction* inst
   MemberOffset  offset = instruction->IsMethodExitHook() ?
       instrumentation::Instrumentation::HaveMethodExitListenersOffset() :
       instrumentation::Instrumentation::HaveMethodEntryListenersOffset();
-  __ cmpb(Address::Absolute(address + offset.Int32Value()), Immediate(0));
-  __ j(kNotEqual, slow_path->GetEntryLabel());
+  __ cmpb(Address::Absolute(address + offset.Int32Value()),
+          Immediate(instrumentation::Instrumentation::kFastTraceListeners));
+  // Check if there are any trace method entry / exit listeners. If no, continue.
+  __ j(kLess, slow_path->GetExitLabel());
+  // Check if there are any slow (jvmti / trace with thread cpu time) method entry / exit listeners.
+  // If yes, just take the slow path.
+  __ j(kGreater, slow_path->GetEntryLabel());
+
+  // Check if there is place in the buffer for a new entry, if no, take slow path.
+  uint64_t trace_buffer_index_addr = Thread::TraceBufferIndexOffset<kX86PointerSize>().Int32Value();
+  __ fs()->cmpl(Address::Absolute(trace_buffer_index_addr), Immediate(kNumEntriesForWallClock));
+  __ j(kLess, slow_path->GetEntryLabel());
+
+  // Just update the buffer and advance the offset
+  // For entry_addr use the first temp that isn't EAX or EDX. We need this after
+  // rdtsc which returns values in EAX + EDX.
+  Register entry_addr = locations->GetTemp(2).AsRegister<Register>();
+  Register index = locations->GetTemp(1).AsRegister<Register>();
+  uint32_t trace_buffer_ptr = Thread::TraceBufferPtrOffset<kX86PointerSize>().Int32Value();
+  // entry_addr = base_addr + sizeof(void*) * index
+  __ fs()->movl(index, Address::Absolute(trace_buffer_index_addr));
+  __ fs()->movl(entry_addr, Address::Absolute(trace_buffer_ptr));
+  __ leal(entry_addr, Address(entry_addr, index, TIMES_4, 0));
+  // Advance the index in the buffer
+  __ subl(index, Immediate(kNumEntriesForWallClock));
+  __ fs()->movl(Address::Absolute(trace_buffer_index_addr), index);
+
+  // Record method pointer and trace action.
+  Register method = index;
+  __ movl(method, Address(ESP, kCurrentMethodStackOffset));
+  // Use last two bits to encode trace method action. For MethodEntry it is 0
+  // so no need to set the bits since they are 0 already.
+  if (instruction->IsMethodExitHook()) {
+    DCHECK_GE(ArtMethod::Alignment(kRuntimePointerSize), static_cast<size_t>(4));
+    uint32_t trace_action = 1;
+    __ orl(method, Immediate(trace_action));
+  }
+  __ movl(Address(entry_addr, kMethodOffsetInBytes), method);
+  // Get the timestamp. rdtsc returns timestamp in EAX + EDX.
+  __ rdtsc();
+  __ movl(Address(entry_addr, kTimestampOffsetInBytes), EDX);
+  __ movl(Address(entry_addr, kLowTimestampOffsetInBytes), EAX);
   __ Bind(slow_path->GetExitLabel());
 }
 
@@ -1254,7 +1302,13 @@ void InstructionCodeGeneratorX86::VisitMethodExitHook(HMethodExitHook* instructi
 }
 
 void LocationsBuilderX86::VisitMethodEntryHook(HMethodEntryHook* method_hook) {
-  new (GetGraph()->GetAllocator()) LocationSummary(method_hook, LocationSummary::kCallOnSlowPath);
+  LocationSummary* locations = new (GetGraph()->GetAllocator())
+      LocationSummary(method_hook, LocationSummary::kCallOnSlowPath);
+  // We use rdtsc to obtain a timestamp for tracing. rdtsc returns the results in EAX + EDX.
+  locations->AddTemp(Location::RegisterLocation(EAX));
+  locations->AddTemp(Location::RegisterLocation(EDX));
+  // An additional temporary register to hold address to store the timestamp counter.
+  locations->AddTemp(Location::RequiresRegister());
 }
 
 void InstructionCodeGeneratorX86::VisitMethodEntryHook(HMethodEntryHook* instruction) {
@@ -1865,8 +1919,7 @@ void LocationsBuilderX86::VisitExit(HExit* exit) {
   exit->SetLocations(nullptr);
 }
 
-void InstructionCodeGeneratorX86::VisitExit(HExit* exit ATTRIBUTE_UNUSED) {
-}
+void InstructionCodeGeneratorX86::VisitExit([[maybe_unused]] HExit* exit) {}
 
 template<class LabelType>
 void InstructionCodeGeneratorX86::GenerateFPJumps(HCondition* cond,
@@ -1981,7 +2034,7 @@ void InstructionCodeGeneratorX86::GenerateFPCompare(Location lhs,
                                                     Location rhs,
                                                     HInstruction* insn,
                                                     bool is_double) {
-  HX86LoadFromConstantTable* const_area = insn->InputAt(1)->AsX86LoadFromConstantTable();
+  HX86LoadFromConstantTable* const_area = insn->InputAt(1)->AsX86LoadFromConstantTableOrNull();
   if (is_double) {
     if (rhs.IsFpuRegister()) {
       __ ucomisd(lhs.AsFpuRegister<XmmRegister>(), rhs.AsFpuRegister<XmmRegister>());
@@ -2506,7 +2559,7 @@ void LocationsBuilderX86::VisitIntConstant(HIntConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorX86::VisitIntConstant(HIntConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitIntConstant([[maybe_unused]] HIntConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -2516,7 +2569,7 @@ void LocationsBuilderX86::VisitNullConstant(HNullConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorX86::VisitNullConstant(HNullConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitNullConstant([[maybe_unused]] HNullConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -2526,7 +2579,7 @@ void LocationsBuilderX86::VisitLongConstant(HLongConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorX86::VisitLongConstant(HLongConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitLongConstant([[maybe_unused]] HLongConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -2536,7 +2589,7 @@ void LocationsBuilderX86::VisitFloatConstant(HFloatConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorX86::VisitFloatConstant(HFloatConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitFloatConstant([[maybe_unused]] HFloatConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -2546,7 +2599,7 @@ void LocationsBuilderX86::VisitDoubleConstant(HDoubleConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorX86::VisitDoubleConstant(HDoubleConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitDoubleConstant([[maybe_unused]] HDoubleConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -2555,7 +2608,7 @@ void LocationsBuilderX86::VisitConstructorFence(HConstructorFence* constructor_f
 }
 
 void InstructionCodeGeneratorX86::VisitConstructorFence(
-    HConstructorFence* constructor_fence ATTRIBUTE_UNUSED) {
+    [[maybe_unused]] HConstructorFence* constructor_fence) {
   codegen_->GenerateMemoryBarrier(MemBarrierKind::kStoreStore);
 }
 
@@ -2571,7 +2624,7 @@ void LocationsBuilderX86::VisitReturnVoid(HReturnVoid* ret) {
   ret->SetLocations(nullptr);
 }
 
-void InstructionCodeGeneratorX86::VisitReturnVoid(HReturnVoid* ret ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitReturnVoid([[maybe_unused]] HReturnVoid* ret) {
   codegen_->GenerateFrameExit();
 }
 
@@ -5086,8 +5139,7 @@ void LocationsBuilderX86::VisitParameterValue(HParameterValue* instruction) {
 }
 
 void InstructionCodeGeneratorX86::VisitParameterValue(
-    HParameterValue* instruction ATTRIBUTE_UNUSED) {
-}
+    [[maybe_unused]] HParameterValue* instruction) {}
 
 void LocationsBuilderX86::VisitCurrentMethod(HCurrentMethod* instruction) {
   LocationSummary* locations =
@@ -5095,7 +5147,7 @@ void LocationsBuilderX86::VisitCurrentMethod(HCurrentMethod* instruction) {
   locations->SetOut(Location::RegisterLocation(kMethodRegisterArgument));
 }
 
-void InstructionCodeGeneratorX86::VisitCurrentMethod(HCurrentMethod* instruction ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitCurrentMethod([[maybe_unused]] HCurrentMethod* instruction) {
 }
 
 void LocationsBuilderX86::VisitClassTableGet(HClassTableGet* instruction) {
@@ -5294,7 +5346,7 @@ void LocationsBuilderX86::VisitPhi(HPhi* instruction) {
   locations->SetOut(Location::Any());
 }
 
-void InstructionCodeGeneratorX86::VisitPhi(HPhi* instruction ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitPhi([[maybe_unused]] HPhi* instruction) {
   LOG(FATAL) << "Unreachable";
 }
 
@@ -5323,8 +5375,8 @@ void CodeGeneratorX86::GenerateMemoryBarrier(MemBarrierKind kind) {
 }
 
 HInvokeStaticOrDirect::DispatchInfo CodeGeneratorX86::GetSupportedInvokeStaticOrDirectDispatch(
-      const HInvokeStaticOrDirect::DispatchInfo& desired_dispatch_info,
-      ArtMethod* method ATTRIBUTE_UNUSED) {
+    const HInvokeStaticOrDirect::DispatchInfo& desired_dispatch_info,
+    [[maybe_unused]] ArtMethod* method) {
   return desired_dispatch_info;
 }
 
@@ -6749,7 +6801,7 @@ void InstructionCodeGeneratorX86::VisitBoundsCheck(HBoundsCheck* instruction) {
   }
 }
 
-void LocationsBuilderX86::VisitParallelMove(HParallelMove* instruction ATTRIBUTE_UNUSED) {
+void LocationsBuilderX86::VisitParallelMove([[maybe_unused]] HParallelMove* instruction) {
   LOG(FATAL) << "Unreachable";
 }
 
@@ -7213,9 +7265,8 @@ void InstructionCodeGeneratorX86::VisitLoadClass(HLoadClass* cls) NO_THREAD_SAFE
   Register out = out_loc.AsRegister<Register>();
 
   bool generate_null_check = false;
-  const ReadBarrierOption read_barrier_option = cls->IsInBootImage()
-      ? kWithoutReadBarrier
-      : gCompilerReadBarrierOption;
+  const ReadBarrierOption read_barrier_option =
+      cls->IsInBootImage() ? kWithoutReadBarrier : GetCompilerReadBarrierOption();
   switch (load_kind) {
     case HLoadClass::LoadKind::kReferrersClass: {
       DCHECK(!cls->CanCallRuntime());
@@ -7445,7 +7496,7 @@ void InstructionCodeGeneratorX86::VisitLoadString(HLoadString* load) NO_THREAD_S
       Address address = Address(method_address, CodeGeneratorX86::kPlaceholder32BitOffset);
       Label* fixup_label = codegen_->NewStringBssEntryPatch(load);
       // /* GcRoot<mirror::String> */ out = *address  /* PC-relative */
-      GenerateGcRootFieldLoad(load, out_loc, address, fixup_label, gCompilerReadBarrierOption);
+      GenerateGcRootFieldLoad(load, out_loc, address, fixup_label, GetCompilerReadBarrierOption());
       // No need for memory fence, thanks to the x86 memory model.
       SlowPathCode* slow_path = new (codegen_->GetScopedAllocator()) LoadStringSlowPathX86(load);
       codegen_->AddSlowPath(slow_path);
@@ -7465,7 +7516,7 @@ void InstructionCodeGeneratorX86::VisitLoadString(HLoadString* load) NO_THREAD_S
       Label* fixup_label = codegen_->NewJitRootStringPatch(
           load->GetDexFile(), load->GetStringIndex(), load->GetString());
       // /* GcRoot<mirror::String> */ out = *address
-      GenerateGcRootFieldLoad(load, out_loc, address, fixup_label, gCompilerReadBarrierOption);
+      GenerateGcRootFieldLoad(load, out_loc, address, fixup_label, GetCompilerReadBarrierOption());
       return;
     }
     default:
@@ -7498,7 +7549,7 @@ void LocationsBuilderX86::VisitClearException(HClearException* clear) {
   new (GetGraph()->GetAllocator()) LocationSummary(clear, LocationSummary::kNoCall);
 }
 
-void InstructionCodeGeneratorX86::VisitClearException(HClearException* clear ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitClearException([[maybe_unused]] HClearException* clear) {
   __ fs()->movl(GetExceptionTlsAddress(), Immediate(0));
 }
 
@@ -8584,12 +8635,12 @@ void CodeGeneratorX86::GenerateReadBarrierForRootSlow(HInstruction* instruction,
   __ Bind(slow_path->GetExitLabel());
 }
 
-void LocationsBuilderX86::VisitBoundType(HBoundType* instruction ATTRIBUTE_UNUSED) {
+void LocationsBuilderX86::VisitBoundType([[maybe_unused]] HBoundType* instruction) {
   // Nothing to do, this should be removed during prepare for register allocator.
   LOG(FATAL) << "Unreachable";
 }
 
-void InstructionCodeGeneratorX86::VisitBoundType(HBoundType* instruction ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitBoundType([[maybe_unused]] HBoundType* instruction) {
   // Nothing to do, this should be removed during prepare for register allocator.
   LOG(FATAL) << "Unreachable";
 }
@@ -8782,13 +8833,15 @@ void InstructionCodeGeneratorX86::VisitX86LoadFromConstantTable(HX86LoadFromCons
     case DataType::Type::kFloat32:
       __ movss(out.AsFpuRegister<XmmRegister>(),
                codegen_->LiteralFloatAddress(
-                  value->AsFloatConstant()->GetValue(), insn->GetBaseMethodAddress(), const_area));
+                   value->AsFloatConstant()->GetValue(), insn->GetBaseMethodAddress(), const_area));
       break;
 
     case DataType::Type::kFloat64:
       __ movsd(out.AsFpuRegister<XmmRegister>(),
                codegen_->LiteralDoubleAddress(
-                  value->AsDoubleConstant()->GetValue(), insn->GetBaseMethodAddress(), const_area));
+                   value->AsDoubleConstant()->GetValue(),
+                   insn->GetBaseMethodAddress(),
+                   const_area));
       break;
 
     case DataType::Type::kInt32:
@@ -8968,9 +9021,9 @@ Address CodeGeneratorX86::ArrayAddress(Register obj,
                                        Location index,
                                        ScaleFactor scale,
                                        uint32_t data_offset) {
-  return index.IsConstant() ?
-      Address(obj, (index.GetConstant()->AsIntConstant()->GetValue() << scale) + data_offset) :
-      Address(obj, index.AsRegister<Register>(), scale, data_offset);
+  return index.IsConstant()
+      ? Address(obj, (index.GetConstant()->AsIntConstant()->GetValue() << scale) + data_offset)
+      : Address(obj, index.AsRegister<Register>(), scale, data_offset);
 }
 
 Address CodeGeneratorX86::LiteralCaseTable(HX86PackedSwitch* switch_instr,
@@ -9042,13 +9095,13 @@ void CodeGeneratorX86::EmitJitRootPatches(uint8_t* code, const uint8_t* roots_da
   }
 }
 
-void LocationsBuilderX86::VisitIntermediateAddress(HIntermediateAddress* instruction
-                                                   ATTRIBUTE_UNUSED) {
+void LocationsBuilderX86::VisitIntermediateAddress(
+    [[maybe_unused]] HIntermediateAddress* instruction) {
   LOG(FATAL) << "Unreachable";
 }
 
-void InstructionCodeGeneratorX86::VisitIntermediateAddress(HIntermediateAddress* instruction
-                                                           ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorX86::VisitIntermediateAddress(
+    [[maybe_unused]] HIntermediateAddress* instruction) {
   LOG(FATAL) << "Unreachable";
 }
 

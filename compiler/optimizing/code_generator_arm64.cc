@@ -45,6 +45,7 @@
 #include "optimizing/common_arm64.h"
 #include "optimizing/nodes.h"
 #include "thread.h"
+#include "trace.h"
 #include "utils/arm64/assembler_arm64.h"
 #include "utils/assembler.h"
 #include "utils/stack_checks.h"
@@ -87,6 +88,9 @@ using helpers::StackOperandFrom;
 using helpers::VIXLRegCodeFromART;
 using helpers::WRegisterFrom;
 using helpers::XRegisterFrom;
+
+// TODO(mythria): Expand SystemRegister in vixl to include this value.
+uint16_t SYS_CNTVCT_EL0 = SystemRegisterEncoder<1, 3, 14, 0, 2>::value;
 
 // The compare/jump sequence will generate about (1.5 * num_entries + 3) instructions. While jump
 // table version generates 7 instructions and num_entries literals. Compare/jump sequence will
@@ -1192,8 +1196,9 @@ void LocationsBuilderARM64::VisitMethodExitHook(HMethodExitHook* method_hook) {
 void InstructionCodeGeneratorARM64::GenerateMethodEntryExitHook(HInstruction* instruction) {
   MacroAssembler* masm = GetVIXLAssembler();
   UseScratchRegisterScope temps(masm);
-  Register temp = temps.AcquireX();
-  Register value = temps.AcquireW();
+  Register addr = temps.AcquireX();
+  Register index = temps.AcquireX();
+  Register value = index.W();
 
   SlowPathCodeARM64* slow_path =
       new (codegen_->GetScopedAllocator()) MethodEntryExitHooksSlowPathARM64(instruction);
@@ -1213,9 +1218,44 @@ void InstructionCodeGeneratorARM64::GenerateMethodEntryExitHook(HInstruction* in
   MemberOffset  offset = instruction->IsMethodExitHook() ?
       instrumentation::Instrumentation::HaveMethodExitListenersOffset() :
       instrumentation::Instrumentation::HaveMethodEntryListenersOffset();
-  __ Mov(temp, address + offset.Int32Value());
-  __ Ldrb(value, MemOperand(temp, 0));
-  __ Cbnz(value, slow_path->GetEntryLabel());
+  __ Mov(addr, address + offset.Int32Value());
+  __ Ldrb(value, MemOperand(addr, 0));
+  __ Cmp(value, Operand(instrumentation::Instrumentation::kFastTraceListeners));
+  // Check if there are any method entry / exit listeners. If no, continue.
+  __ B(lt, slow_path->GetExitLabel());
+  // Check if there are any slow (jvmti / trace with thread cpu time) method entry / exit listeners.
+  // If yes, just take the slow path.
+  __ B(gt, slow_path->GetEntryLabel());
+
+  // Check if there is place in the buffer to store a new entry, if no, take slow path.
+  uint32_t trace_buffer_index_addr =
+      Thread::TraceBufferIndexOffset<kArm64PointerSize>().Int32Value();
+  __ Ldr(index, MemOperand(tr, trace_buffer_index_addr));
+  __ Cmp(index, Operand(kNumEntriesForWallClock));
+  __ B(lt, slow_path->GetEntryLabel());
+
+  // Just update the buffer and advance the offset
+  // addr = base_addr + sizeof(void*) * index;
+  __ Ldr(addr, MemOperand(tr, Thread::TraceBufferPtrOffset<kArm64PointerSize>().SizeValue()));
+  __ ComputeAddress(addr, MemOperand(addr, index, LSL, TIMES_8));
+  // Advance the index
+  __ Sub(index, index, kNumEntriesForWallClock);
+  __ Str(index, MemOperand(tr, trace_buffer_index_addr));
+
+  Register tmp = index;
+  // Record method pointer and trace action.
+  __ Ldr(tmp, MemOperand(sp, 0));
+  // Use last two bits to encode trace method action. For MethodEntry it is 0
+  // so no need to set the bits since they are 0 already.
+  if (instruction->IsMethodExitHook()) {
+    DCHECK_GE(ArtMethod::Alignment(kRuntimePointerSize), static_cast<size_t>(4));
+    uint32_t trace_action = 1;
+    __ Orr(tmp, tmp, Operand(trace_action));
+  }
+  __ Str(tmp, MemOperand(addr, kMethodOffsetInBytes));
+  // Record the timestamp.
+  __ Mrs(tmp, (SystemRegister)SYS_CNTVCT_EL0);
+  __ Str(tmp, MemOperand(addr, kTimestampOffsetInBytes));
   __ Bind(slow_path->GetExitLabel());
 }
 
@@ -1532,15 +1572,15 @@ size_t CodeGeneratorARM64::RestoreCoreRegister(size_t stack_index, uint32_t reg_
   return kArm64WordSize;
 }
 
-size_t CodeGeneratorARM64::SaveFloatingPointRegister(size_t stack_index ATTRIBUTE_UNUSED,
-                                                     uint32_t reg_id ATTRIBUTE_UNUSED) {
+size_t CodeGeneratorARM64::SaveFloatingPointRegister([[maybe_unused]] size_t stack_index,
+                                                     [[maybe_unused]] uint32_t reg_id) {
   LOG(FATAL) << "FP registers shouldn't be saved/restored individually, "
              << "use SaveRestoreLiveRegistersHelper";
   UNREACHABLE();
 }
 
-size_t CodeGeneratorARM64::RestoreFloatingPointRegister(size_t stack_index ATTRIBUTE_UNUSED,
-                                                        uint32_t reg_id ATTRIBUTE_UNUSED) {
+size_t CodeGeneratorARM64::RestoreFloatingPointRegister([[maybe_unused]] size_t stack_index,
+                                                        [[maybe_unused]] uint32_t reg_id) {
   LOG(FATAL) << "FP registers shouldn't be saved/restored individually, "
              << "use SaveRestoreLiveRegistersHelper";
   UNREACHABLE();
@@ -3647,7 +3687,7 @@ void LocationsBuilderARM64::VisitDoubleConstant(HDoubleConstant* constant) {
 }
 
 void InstructionCodeGeneratorARM64::VisitDoubleConstant(
-    HDoubleConstant* constant ATTRIBUTE_UNUSED) {
+    [[maybe_unused]] HDoubleConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -3655,8 +3695,7 @@ void LocationsBuilderARM64::VisitExit(HExit* exit) {
   exit->SetLocations(nullptr);
 }
 
-void InstructionCodeGeneratorARM64::VisitExit(HExit* exit ATTRIBUTE_UNUSED) {
-}
+void InstructionCodeGeneratorARM64::VisitExit([[maybe_unused]] HExit* exit) {}
 
 void LocationsBuilderARM64::VisitFloatConstant(HFloatConstant* constant) {
   LocationSummary* locations =
@@ -3664,7 +3703,7 @@ void LocationsBuilderARM64::VisitFloatConstant(HFloatConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorARM64::VisitFloatConstant(HFloatConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorARM64::VisitFloatConstant([[maybe_unused]] HFloatConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -3876,7 +3915,7 @@ static inline bool IsConditionOnFloatingPointValues(HInstruction* condition) {
 }
 
 static inline Condition GetConditionForSelect(HCondition* condition) {
-  IfCondition cond = condition->AsCondition()->GetCondition();
+  IfCondition cond = condition->GetCondition();
   return IsConditionOnFloatingPointValues(condition) ? ARM64FPCondition(cond, condition->IsGtBias())
                                                      : ARM64Condition(cond);
 }
@@ -3888,8 +3927,8 @@ void LocationsBuilderARM64::VisitSelect(HSelect* select) {
     locations->SetInAt(1, Location::RequiresFpuRegister());
     locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
   } else {
-    HConstant* cst_true_value = select->GetTrueValue()->AsConstant();
-    HConstant* cst_false_value = select->GetFalseValue()->AsConstant();
+    HConstant* cst_true_value = select->GetTrueValue()->AsConstantOrNull();
+    HConstant* cst_false_value = select->GetFalseValue()->AsConstantOrNull();
     bool is_true_value_constant = cst_true_value != nullptr;
     bool is_false_value_constant = cst_false_value != nullptr;
     // Ask VIXL whether we should synthesize constants in registers.
@@ -4525,7 +4564,7 @@ void LocationsBuilderARM64::VisitIntConstant(HIntConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorARM64::VisitIntConstant(HIntConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorARM64::VisitIntConstant([[maybe_unused]] HIntConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -4534,7 +4573,7 @@ void LocationsBuilderARM64::VisitNullConstant(HNullConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorARM64::VisitNullConstant(HNullConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorARM64::VisitNullConstant([[maybe_unused]] HNullConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -4709,8 +4748,8 @@ static bool TryGenerateIntrinsicCode(HInvoke* invoke, CodeGeneratorARM64* codege
 }
 
 HInvokeStaticOrDirect::DispatchInfo CodeGeneratorARM64::GetSupportedInvokeStaticOrDirectDispatch(
-      const HInvokeStaticOrDirect::DispatchInfo& desired_dispatch_info,
-      ArtMethod* method ATTRIBUTE_UNUSED) {
+    const HInvokeStaticOrDirect::DispatchInfo& desired_dispatch_info,
+    [[maybe_unused]] ArtMethod* method) {
   // On ARM64 we support all dispatch types.
   return desired_dispatch_info;
 }
@@ -5460,9 +5499,8 @@ void InstructionCodeGeneratorARM64::VisitLoadClass(HLoadClass* cls) NO_THREAD_SA
   Location out_loc = cls->GetLocations()->Out();
   Register out = OutputRegister(cls);
 
-  const ReadBarrierOption read_barrier_option = cls->IsInBootImage()
-      ? kWithoutReadBarrier
-      : gCompilerReadBarrierOption;
+  const ReadBarrierOption read_barrier_option =
+      cls->IsInBootImage() ? kWithoutReadBarrier : GetCompilerReadBarrierOption();
   bool generate_null_check = false;
   switch (load_kind) {
     case HLoadClass::LoadKind::kReferrersClass: {
@@ -5600,7 +5638,7 @@ void LocationsBuilderARM64::VisitClearException(HClearException* clear) {
   new (GetGraph()->GetAllocator()) LocationSummary(clear, LocationSummary::kNoCall);
 }
 
-void InstructionCodeGeneratorARM64::VisitClearException(HClearException* clear ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorARM64::VisitClearException([[maybe_unused]] HClearException* clear) {
   __ Str(wzr, GetExceptionTlsAddress());
 }
 
@@ -5685,7 +5723,7 @@ void InstructionCodeGeneratorARM64::VisitLoadString(HLoadString* load) NO_THREAD
                                         temp,
                                         /* offset placeholder */ 0u,
                                         ldr_label,
-                                        gCompilerReadBarrierOption);
+                                        GetCompilerReadBarrierOption());
       SlowPathCodeARM64* slow_path =
           new (codegen_->GetScopedAllocator()) LoadStringSlowPathARM64(load);
       codegen_->AddSlowPath(slow_path);
@@ -5709,7 +5747,7 @@ void InstructionCodeGeneratorARM64::VisitLoadString(HLoadString* load) NO_THREAD
                                         out.X(),
                                         /* offset= */ 0,
                                         /* fixup_label= */ nullptr,
-                                        gCompilerReadBarrierOption);
+                                        GetCompilerReadBarrierOption());
       return;
     }
     default:
@@ -5730,7 +5768,7 @@ void LocationsBuilderARM64::VisitLongConstant(HLongConstant* constant) {
   locations->SetOut(Location::ConstantLocation(constant));
 }
 
-void InstructionCodeGeneratorARM64::VisitLongConstant(HLongConstant* constant ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorARM64::VisitLongConstant([[maybe_unused]] HLongConstant* constant) {
   // Will be generated at use site.
 }
 
@@ -5930,7 +5968,7 @@ void InstructionCodeGeneratorARM64::VisitOr(HOr* instruction) {
   HandleBinaryOp(instruction);
 }
 
-void LocationsBuilderARM64::VisitParallelMove(HParallelMove* instruction ATTRIBUTE_UNUSED) {
+void LocationsBuilderARM64::VisitParallelMove([[maybe_unused]] HParallelMove* instruction) {
   LOG(FATAL) << "Unreachable";
 }
 
@@ -5957,7 +5995,7 @@ void LocationsBuilderARM64::VisitParameterValue(HParameterValue* instruction) {
 }
 
 void InstructionCodeGeneratorARM64::VisitParameterValue(
-    HParameterValue* instruction ATTRIBUTE_UNUSED) {
+    [[maybe_unused]] HParameterValue* instruction) {
   // Nothing to do, the parameter is already at its location.
 }
 
@@ -5968,7 +6006,7 @@ void LocationsBuilderARM64::VisitCurrentMethod(HCurrentMethod* instruction) {
 }
 
 void InstructionCodeGeneratorARM64::VisitCurrentMethod(
-    HCurrentMethod* instruction ATTRIBUTE_UNUSED) {
+    [[maybe_unused]] HCurrentMethod* instruction) {
   // Nothing to do, the method is already at its location.
 }
 
@@ -5980,7 +6018,7 @@ void LocationsBuilderARM64::VisitPhi(HPhi* instruction) {
   locations->SetOut(Location::Any());
 }
 
-void InstructionCodeGeneratorARM64::VisitPhi(HPhi* instruction ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorARM64::VisitPhi([[maybe_unused]] HPhi* instruction) {
   LOG(FATAL) << "Unreachable";
 }
 
@@ -6175,7 +6213,7 @@ void LocationsBuilderARM64::VisitConstructorFence(HConstructorFence* constructor
 }
 
 void InstructionCodeGeneratorARM64::VisitConstructorFence(
-    HConstructorFence* constructor_fence ATTRIBUTE_UNUSED) {
+    [[maybe_unused]] HConstructorFence* constructor_fence) {
   codegen_->GenerateMemoryBarrier(MemBarrierKind::kStoreStore);
 }
 
@@ -6215,7 +6253,7 @@ void LocationsBuilderARM64::VisitReturnVoid(HReturnVoid* instruction) {
   instruction->SetLocations(nullptr);
 }
 
-void InstructionCodeGeneratorARM64::VisitReturnVoid(HReturnVoid* instruction ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorARM64::VisitReturnVoid([[maybe_unused]] HReturnVoid* instruction) {
   codegen_->GenerateFrameExit();
 }
 
@@ -6467,12 +6505,12 @@ void InstructionCodeGeneratorARM64::VisitXor(HXor* instruction) {
   HandleBinaryOp(instruction);
 }
 
-void LocationsBuilderARM64::VisitBoundType(HBoundType* instruction ATTRIBUTE_UNUSED) {
+void LocationsBuilderARM64::VisitBoundType([[maybe_unused]] HBoundType* instruction) {
   // Nothing to do, this should be removed during prepare for register allocator.
   LOG(FATAL) << "Unreachable";
 }
 
-void InstructionCodeGeneratorARM64::VisitBoundType(HBoundType* instruction ATTRIBUTE_UNUSED) {
+void InstructionCodeGeneratorARM64::VisitBoundType([[maybe_unused]] HBoundType* instruction) {
   // Nothing to do, this should be removed during prepare for register allocator.
   LOG(FATAL) << "Unreachable";
 }

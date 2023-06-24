@@ -1252,9 +1252,9 @@ void IntrinsicLocationsBuilderARMVIXL::VisitSystemArrayCopy(HInvoke* invoke) {
     return;
   }
 
-  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstant();
-  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstant();
-  HIntConstant* length = invoke->InputAt(4)->AsIntConstant();
+  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstantOrNull();
+  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstantOrNull();
+  HIntConstant* length = invoke->InputAt(4)->AsIntConstantOrNull();
 
   if (src_pos != nullptr && !assembler_->ShifterOperandCanAlwaysHold(src_pos->GetValue())) {
     locations->SetInAt(1, Location::RequiresRegister());
@@ -2653,7 +2653,7 @@ void IntrinsicLocationsBuilderARMVIXL::VisitReachabilityFence(HInvoke* invoke) {
   locations->SetInAt(0, Location::Any());
 }
 
-void IntrinsicCodeGeneratorARMVIXL::VisitReachabilityFence(HInvoke* invoke ATTRIBUTE_UNUSED) { }
+void IntrinsicCodeGeneratorARMVIXL::VisitReachabilityFence([[maybe_unused]] HInvoke* invoke) {}
 
 void IntrinsicLocationsBuilderARMVIXL::VisitIntegerDivideUnsigned(HInvoke* invoke) {
   CreateIntIntToIntSlowPathCallLocations(allocator_, invoke);
@@ -4351,7 +4351,7 @@ static void GenerateVarHandleTarget(HInvoke* invoke,
                                          LocationFrom(target.object),
                                          method,
                                          ArtField::DeclaringClassOffset().Int32Value(),
-                                         gCompilerReadBarrierOption);
+                                         GetCompilerReadBarrierOption());
       }
     }
   } else {

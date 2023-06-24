@@ -769,7 +769,7 @@ class OatWriter::InitBssLayoutMethodVisitor : public DexMethodVisitor {
   explicit InitBssLayoutMethodVisitor(OatWriter* writer)
       : DexMethodVisitor(writer, /* offset */ 0u) {}
 
-  bool VisitMethod(size_t class_def_method_index ATTRIBUTE_UNUSED,
+  bool VisitMethod([[maybe_unused]] size_t class_def_method_index,
                    const ClassAccessor::Method& method) override {
     // Look for patches with .bss references and prepare maps with placeholders for their offsets.
     CompiledMethod* compiled_method = writer_->compiler_driver_->GetCompiledMethod(
@@ -863,7 +863,7 @@ class OatWriter::InitOatClassesMethodVisitor : public DexMethodVisitor {
     return true;
   }
 
-  bool VisitMethod(size_t class_def_method_index ATTRIBUTE_UNUSED,
+  bool VisitMethod([[maybe_unused]] size_t class_def_method_index,
                    const ClassAccessor::Method& method) override {
     // Fill in the compiled_methods_ array for methods that have a
     // CompiledMethod. We track the number of non-null entries in
@@ -1400,8 +1400,8 @@ class OatWriter::InitMapMethodVisitor : public OatDexMethodVisitor {
   }
 
   bool VisitMethod(size_t class_def_method_index,
-                   const ClassAccessor::Method& method ATTRIBUTE_UNUSED)
-      override REQUIRES_SHARED(Locks::mutator_lock_) {
+                   [[maybe_unused]] const ClassAccessor::Method& method) override
+      REQUIRES_SHARED(Locks::mutator_lock_) {
     OatClass* oat_class = &writer_->oat_classes_[oat_class_index_];
     CompiledMethod* compiled_method = oat_class->GetCompiledMethod(class_def_method_index);
 
@@ -2264,9 +2264,7 @@ size_t OatWriter::InitOatCode(size_t offset) {
   oat_header_->SetExecutableOffset(offset);
   size_executable_offset_alignment_ = offset - old_offset;
   InstructionSet instruction_set = compiler_options_.GetInstructionSet();
-  if (GetCompilerOptions().IsBootImage() && primary_oat_file_ &&
-      // TODO(riscv64): remove this when we have compiler support for RISC-V.
-      instruction_set != InstructionSet::kRiscv64) {
+  if (GetCompilerOptions().IsBootImage() && primary_oat_file_) {
     const bool generate_debug_info = GetCompilerOptions().GenerateAnyDebugInfo();
     size_t adjusted_offset = offset;
 
@@ -2510,7 +2508,7 @@ bool OatWriter::WriteRodata(OutputStream* out) {
   return true;
 }
 
-void OatWriter::WriteQuickeningInfo(/*out*/std::vector<uint8_t>* ATTRIBUTE_UNUSED) {
+void OatWriter::WriteQuickeningInfo([[maybe_unused]] /*out*/ std::vector<uint8_t>*) {
   // Nothing to write. Leave `vdex_size_` untouched and unaligned.
   vdex_quickening_info_offset_ = vdex_size_;
   size_quickening_info_alignment_ = 0;
@@ -3072,9 +3070,7 @@ size_t OatWriter::WriteBcpBssInfo(OutputStream* out, size_t file_offset, size_t 
 
 size_t OatWriter::WriteCode(OutputStream* out, size_t file_offset, size_t relative_offset) {
   InstructionSet instruction_set = compiler_options_.GetInstructionSet();
-  if (GetCompilerOptions().IsBootImage() && primary_oat_file_ &&
-      // TODO(riscv64): remove this when we have compiler support for RISC-V.
-      instruction_set != InstructionSet::kRiscv64) {
+  if (GetCompilerOptions().IsBootImage() && primary_oat_file_) {
     #define DO_TRAMPOLINE(field) \
       do { \
         /* Pad with at least four 0xFFs so we can do DCHECKs in OatQuickMethodHeader */ \

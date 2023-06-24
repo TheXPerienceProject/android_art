@@ -362,7 +362,7 @@ ENTRY art_quick_generic_jni_trampoline
 
     // Tear down the alloca.
     mv   sp, fp
-    .cfi_remember_state
+    CFI_REMEMBER_STATE
     .cfi_def_cfa_register sp
 
     LOAD_RUNTIME_INSTANCE a1
@@ -380,7 +380,7 @@ ENTRY art_quick_generic_jni_trampoline
 .Lcall_method_exit_hook:
     fmv.d.x  fa0, a0
     li   a4, FRAME_SIZE_SAVE_REFS_AND_ARGS
-    jal  art_quick_method_exit_hook
+    call  art_quick_method_exit_hook
     j    .Lcall_method_exit_hook_done
 
 .Lexception_in_native:
@@ -411,7 +411,8 @@ END art_quick_to_interpreter_bridge
 
     .extern artMethodExitHook
 ENTRY art_quick_method_exit_hook
-    SETUP_SAVE_EVERYTHING_FRAME
+    SETUP_SAVE_EVERYTHING_FRAME \
+        RUNTIME_SAVE_EVERYTHING_METHOD_OFFSET
 
     addi a3, sp, SAVE_EVERYTHING_FRAME_OFFSET_FA0  // FP result ptr in kSaveEverything frame
     addi a2, sp, SAVE_EVERYTHING_FRAME_OFFSET_A0   // integer result ptr in kSaveEverything frame
@@ -530,7 +531,7 @@ ENTRY art_quick_proxy_invoke_handler
 
     ld    a2, THREAD_EXCEPTION_OFFSET(xSELF)
     bnez  a2, .Lexception_in_proxy    // success if no exception is pending
-    .cfi_remember_state
+    CFI_REMEMBER_STATE
     RESTORE_SAVE_REFS_AND_ARGS_FRAME  // Restore frame
     fmv.d.x  fa0, a0                  // Store result in fa0 in case it was float or double
     ret                               // return on success
@@ -547,7 +548,7 @@ END art_quick_proxy_invoke_handler
 ENTRY \c_name
     SETUP_SAVE_ALL_CALLEE_SAVES_FRAME // save all registers as basis for long jump context.
     mv  a1, xSELF                     // pass Thread::Current.
-    jal \cxx_name                     // \cxx_name(arg, Thread*).
+    call \cxx_name                     // \cxx_name(arg, Thread*).
     ebreak
 END \c_name
 .endm
@@ -567,9 +568,8 @@ ENTRY art_quick_resolution_trampoline
     mv   a2, xSELF
     mv   a3, sp
     call artQuickResolutionTrampoline
-
+    CFI_REMEMBER_STATE
     beqz a0, 1f
-    .cfi_remember_state
     mv   t0, a0    // Remember returned code pointer in t0.
     ld   a0, (sp)  // artQuickResolutionTrampoline puts called method in *sp.
 
@@ -580,6 +580,16 @@ ENTRY art_quick_resolution_trampoline
     RESTORE_SAVE_REFS_AND_ARGS_FRAME
     DELIVER_PENDING_EXCEPTION
 END art_quick_resolution_trampoline
+
+
+ENTRY art_quick_test_suspend
+    SETUP_SAVE_EVERYTHING_FRAME \
+        RUNTIME_SAVE_EVERYTHING_FOR_SUSPEND_CHECK_METHOD_OFFSET
+    mv   a0, xSELF
+    call artTestSuspendFromCode
+    RESTORE_SAVE_EVERYTHING_FRAME
+    ret
+END
 
 
 UNDEFINED art_quick_imt_conflict_trampoline
@@ -776,7 +786,6 @@ UNDEFINED art_quick_invoke_super_trampoline_with_access_check
 UNDEFINED art_quick_invoke_virtual_trampoline_with_access_check
 UNDEFINED art_quick_invoke_polymorphic
 UNDEFINED art_quick_invoke_custom
-UNDEFINED art_quick_test_suspend
 UNDEFINED art_quick_deliver_exception
 UNDEFINED art_quick_throw_array_bounds
 UNDEFINED art_quick_throw_div_zero

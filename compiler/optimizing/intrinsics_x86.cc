@@ -394,7 +394,6 @@ void IntrinsicLocationsBuilderX86::VisitMathRoundFloat(HInvoke* invoke) {
   }
 
   HInvokeStaticOrDirect* static_or_direct = invoke->AsInvokeStaticOrDirect();
-  DCHECK(static_or_direct != nullptr);
   LocationSummary* locations =
       new (allocator_) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
   locations->SetInAt(0, Location::RequiresFpuRegister());
@@ -774,9 +773,9 @@ void IntrinsicCodeGeneratorX86::VisitMathNextAfter(HInvoke* invoke) {
 static void CreateSystemArrayCopyLocations(HInvoke* invoke) {
   // We need at least two of the positions or length to be an integer constant,
   // or else we won't have enough free registers.
-  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstant();
-  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstant();
-  HIntConstant* length = invoke->InputAt(4)->AsIntConstant();
+  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstantOrNull();
+  HIntConstant* dest_pos = invoke->InputAt(3)->AsIntConstantOrNull();
+  HIntConstant* length = invoke->InputAt(4)->AsIntConstantOrNull();
 
   int num_constants =
       ((src_pos != nullptr) ? 1 : 0)
@@ -1205,7 +1204,7 @@ static void GenerateStringIndexOf(HInvoke* invoke,
   HInstruction* code_point = invoke->InputAt(1);
   if (code_point->IsIntConstant()) {
     if (static_cast<uint32_t>(code_point->AsIntConstant()->GetValue()) >
-    std::numeric_limits<uint16_t>::max()) {
+        std::numeric_limits<uint16_t>::max()) {
       // Always needs the slow-path. We could directly dispatch to it, but this case should be
       // rare, so for simplicity just put the full slow-path down and branch unconditionally.
       slow_path = new (codegen->GetScopedAllocator()) IntrinsicSlowPathX86(invoke);
@@ -1445,7 +1444,7 @@ void IntrinsicCodeGeneratorX86::VisitStringGetCharsNoCheck(HInvoke* invoke) {
   Register obj = locations->InAt(0).AsRegister<Register>();
   Location srcBegin = locations->InAt(1);
   int srcBegin_value =
-    srcBegin.IsConstant() ? srcBegin.GetConstant()->AsIntConstant()->GetValue() : 0;
+      srcBegin.IsConstant() ? srcBegin.GetConstant()->AsIntConstant()->GetValue() : 0;
   Register srcEnd = locations->InAt(2).AsRegister<Register>();
   Register dst = locations->InAt(3).AsRegister<Register>();
   Register dstBegin = locations->InAt(4).AsRegister<Register>();
@@ -3504,7 +3503,7 @@ void IntrinsicLocationsBuilderX86::VisitReachabilityFence(HInvoke* invoke) {
   locations->SetInAt(0, Location::Any());
 }
 
-void IntrinsicCodeGeneratorX86::VisitReachabilityFence(HInvoke* invoke ATTRIBUTE_UNUSED) { }
+void IntrinsicCodeGeneratorX86::VisitReachabilityFence([[maybe_unused]] HInvoke* invoke) {}
 
 void IntrinsicLocationsBuilderX86::VisitIntegerDivideUnsigned(HInvoke* invoke) {
   LocationSummary* locations = new (allocator_) LocationSummary(invoke,
@@ -3781,7 +3780,7 @@ static Register GenerateVarHandleFieldReference(HInvoke* invoke,
                                            Location::RegisterLocation(temp),
                                            Address(temp, declaring_class_offset),
                                            /* fixup_label= */ nullptr,
-                                           gCompilerReadBarrierOption);
+                                           GetCompilerReadBarrierOption());
     return temp;
   }
 
@@ -3860,7 +3859,7 @@ static void GenerateVarHandleGet(HInvoke* invoke, CodeGeneratorX86* codegen) {
   Address field_addr(ref, offset, TIMES_1, 0);
 
   // Load the value from the field
-  if (type == DataType::Type::kReference && gCompilerReadBarrierOption == kWithReadBarrier) {
+  if (type == DataType::Type::kReference && GetCompilerReadBarrierOption() == kWithReadBarrier) {
     codegen->GenerateReferenceLoadWithBakerReadBarrier(
         invoke, out, ref, field_addr, /* needs_null_check= */ false);
   } else if (type == DataType::Type::kInt64 &&

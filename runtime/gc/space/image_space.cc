@@ -51,7 +51,6 @@
 #include "dex/art_dex_file_loader.h"
 #include "dex/dex_file_loader.h"
 #include "exec_utils.h"
-#include "fmt/format.h"
 #include "gc/accounting/space_bitmap-inl.h"
 #include "gc/task_processor.h"
 #include "image-inl.h"
@@ -77,8 +76,6 @@ namespace {
 using ::android::base::Join;
 using ::android::base::StringAppendF;
 using ::android::base::StringPrintf;
-
-using ::fmt::literals::operator""_format;  // NOLINT
 
 // We do not allow the boot image and extensions to take more than 1GiB. They are
 // supposed to be much smaller and allocating more that this would likely fail anyway.
@@ -335,7 +332,7 @@ class ImageSpace::PatchObjectVisitor final {
   }
 
   template <typename T>
-  T* operator()(T* ptr, void** dest_addr ATTRIBUTE_UNUSED) const {
+  T* operator()(T* ptr, [[maybe_unused]] void** dest_addr) const {
     return (ptr != nullptr) ? native_visitor_(ptr) : nullptr;
   }
 
@@ -376,9 +373,9 @@ class ImageSpace::PatchObjectVisitor final {
     this->operator()(ref, mirror::Reference::ReferentOffset(), /*is_static=*/ false);
   }
   // Ignore class native roots; not called from VisitReferences() for kVisitNativeRoots == false.
-  void VisitRootIfNonNull(mirror::CompressedReference<mirror::Object>* root ATTRIBUTE_UNUSED)
-      const {}
-  void VisitRoot(mirror::CompressedReference<mirror::Object>* root ATTRIBUTE_UNUSED) const {}
+  void VisitRootIfNonNull(
+      [[maybe_unused]] mirror::CompressedReference<mirror::Object>* root) const {}
+  void VisitRoot([[maybe_unused]] mirror::CompressedReference<mirror::Object>* root) const {}
 
   template <typename T> void VisitNativeDexCacheArray(mirror::NativeArray<T>* array)
       REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -519,8 +516,8 @@ class ImageSpace::RemapInternedStringsVisitor {
   // Visitor for VisitReferences().
   ALWAYS_INLINE void operator()(ObjPtr<mirror::Object> object,
                                 MemberOffset field_offset,
-                                bool is_static ATTRIBUTE_UNUSED)
-      const REQUIRES_SHARED(Locks::mutator_lock_) {
+                                [[maybe_unused]] bool is_static) const
+      REQUIRES_SHARED(Locks::mutator_lock_) {
     ObjPtr<mirror::Object> old_value =
         object->GetFieldObject<mirror::Object, kVerifyNone, kWithoutReadBarrier>(field_offset);
     if (old_value != nullptr &&
@@ -541,9 +538,9 @@ class ImageSpace::RemapInternedStringsVisitor {
     this->operator()(ref, mirror::Reference::ReferentOffset(), /*is_static=*/ false);
   }
   // Ignore class native roots; not called from VisitReferences() for kVisitNativeRoots == false.
-  void VisitRootIfNonNull(mirror::CompressedReference<mirror::Object>* root ATTRIBUTE_UNUSED)
-      const {}
-  void VisitRoot(mirror::CompressedReference<mirror::Object>* root ATTRIBUTE_UNUSED) const {}
+  void VisitRootIfNonNull(
+      [[maybe_unused]] mirror::CompressedReference<mirror::Object>* root) const {}
+  void VisitRoot([[maybe_unused]] mirror::CompressedReference<mirror::Object>* root) const {}
 
  private:
   mirror::Class* GetStringClass() REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -1182,15 +1179,14 @@ class ImageSpace::Loader {
 
     // Fix up separately since we also need to fix up method entrypoints.
     ALWAYS_INLINE void VisitRootIfNonNull(
-        mirror::CompressedReference<mirror::Object>* root ATTRIBUTE_UNUSED) const {}
+        [[maybe_unused]] mirror::CompressedReference<mirror::Object>* root) const {}
 
-    ALWAYS_INLINE void VisitRoot(mirror::CompressedReference<mirror::Object>* root ATTRIBUTE_UNUSED)
-        const {}
+    ALWAYS_INLINE void VisitRoot(
+        [[maybe_unused]] mirror::CompressedReference<mirror::Object>* root) const {}
 
     ALWAYS_INLINE void operator()(ObjPtr<mirror::Object> obj,
                                   MemberOffset offset,
-                                  bool is_static ATTRIBUTE_UNUSED) const
-        NO_THREAD_SAFETY_ANALYSIS {
+                                  [[maybe_unused]] bool is_static) const NO_THREAD_SAFETY_ANALYSIS {
       // Space is not yet added to the heap, don't do a read barrier.
       mirror::Object* ref = obj->GetFieldObject<mirror::Object, kVerifyNone, kWithoutReadBarrier>(
           offset);
@@ -1901,7 +1897,7 @@ bool ImageSpace::BootImageLayout::CompileBootclasspathElements(
     // TODO: Rewrite ProfileCompilationInfo to provide a better interface and
     // to store the dex locations in uncompressed section of the file.
     auto collect_fn = [&dex_locations](const std::string& dex_location,
-                                       uint32_t checksum ATTRIBUTE_UNUSED) {
+                                       [[maybe_unused]] uint32_t checksum) {
       dex_locations.insert(dex_location);  // Just collect locations.
       return false;                        // Do not read the profile data.
     };
@@ -2191,8 +2187,8 @@ bool ImageSpace::BootImageLayout::LoadFromSystem(InstructionSet image_isa,
                                                  bool allow_in_memory_compilation,
                                                  /*out*/ std::string* error_msg) {
   auto filename_fn = [image_isa](const std::string& location,
-                                 /*out*/std::string* filename,
-                                 /*out*/std::string* err_msg ATTRIBUTE_UNUSED) {
+                                 /*out*/ std::string* filename,
+                                 [[maybe_unused]] /*out*/ std::string* err_msg) {
     *filename = GetSystemImageFilename(location.c_str(), image_isa);
     return true;
   };
@@ -3446,8 +3442,9 @@ bool ImageSpace::ValidateOatFile(const OatFile& oat_file,
   if (oat_file.GetOatHeader().GetKeyValueStoreSize() != 0 &&
       oat_file.GetOatHeader().IsConcurrentCopying() != gUseReadBarrier) {
     *error_msg =
-        "ValidateOatFile found read barrier state mismatch (oat file: {}, runtime: {})"_format(
-            oat_file.GetOatHeader().IsConcurrentCopying(), gUseReadBarrier);
+        ART_FORMAT("ValidateOatFile found read barrier state mismatch (oat file: {}, runtime: {})",
+                   oat_file.GetOatHeader().IsConcurrentCopying(),
+                   gUseReadBarrier);
     return false;
   }
 
