@@ -1239,6 +1239,25 @@ static void inline RawClearMemory(uint8_t* begin, uint8_t* end) {
   std::fill(begin, end, 0);
 }
 
+#if defined(__linux__)
+static inline void ClearMemory(uint8_t* page_begin, size_t size, bool resident) {
+  DCHECK(IsAligned<kPageSize>(page_begin));
+  DCHECK(IsAligned<kPageSize>(page_begin + size));
+  if (resident) {
+    RawClearMemory(page_begin, page_begin + size);
+    // Note we check madvise return value against -1, as it seems old kernels
+    // can return 1.
+#ifdef MADV_FREE
+    bool res = madvise(page_begin, size, MADV_FREE);
+    CHECK_NE(res, -1) << "madvise failed";
+#endif  // MADV_FREE
+  } else {
+    bool res = madvise(page_begin, size, MADV_DONTNEED);
+    CHECK_NE(res, -1) << "madvise failed";
+  }
+}
+#endif  // __linux__
+
 void ZeroMemory(void* address, size_t length, bool release_eagerly) {
   if (length == 0) {
     return;
@@ -1247,35 +1266,58 @@ void ZeroMemory(void* address, size_t length, bool release_eagerly) {
   uint8_t* const mem_end = mem_begin + length;
   uint8_t* const page_begin = AlignUp(mem_begin, kPageSize);
   uint8_t* const page_end = AlignDown(mem_end, kPageSize);
-  // TODO: Avoid clearing memory and just use DONTNEED for pages that are
-  // swapped out. We can use mincore for this.
   if (!kMadviseZeroes || page_begin >= page_end) {
     // No possible area to madvise.
     RawClearMemory(mem_begin, mem_end);
-  } else {
-    // Spans one or more pages.
-    DCHECK_LE(mem_begin, page_begin);
-    DCHECK_LE(page_begin, page_end);
-    DCHECK_LE(page_end, mem_end);
-#ifdef _WIN32
-    UNUSED(release_eagerly);
-    LOG(WARNING) << "ZeroMemory does not madvise on Windows.";
-    RawClearMemory(mem_begin, mem_end);
-#else
-    if (release_eagerly) {
-      RawClearMemory(mem_begin, page_begin);
-      RawClearMemory(page_end, mem_end);
-      bool res = madvise(page_begin, page_end - page_begin, MADV_DONTNEED);
-      CHECK_NE(res, -1) << "madvise failed";
-    } else {
-      RawClearMemory(mem_begin, mem_end);
-#ifdef MADV_FREE
-      bool res = madvise(page_begin, page_end - page_begin, MADV_FREE);
-      CHECK_NE(res, -1) << "madvise failed";
-#endif  // MADV_FREE
-    }
-#endif
+    return;
   }
+  // Spans one or more pages.
+  DCHECK_LE(mem_begin, page_begin);
+  DCHECK_LE(page_begin, page_end);
+  DCHECK_LE(page_end, mem_end);
+#ifdef _WIN32
+  UNUSED(release_eagerly);
+  LOG(WARNING) << "ZeroMemory does not madvise on Windows.";
+  RawClearMemory(mem_begin, mem_end);
+#else
+  RawClearMemory(mem_begin, page_begin);
+  RawClearMemory(page_end, mem_end);
+// mincore() is linux-specific syscall.
+#if defined(__linux__)
+  if (!release_eagerly) {
+    size_t vec_len = (page_end - page_begin) / kPageSize;
+    std::unique_ptr<unsigned char[]> vec(new unsigned char[vec_len]);
+    if (mincore(page_begin, page_end - page_begin, vec.get()) == 0) {
+      uint8_t* current_page = page_begin;
+      size_t current_size = kPageSize;
+      uint32_t old_state = vec[0] & 0x1;
+      for (size_t i = 1; i < vec_len; ++i) {
+        uint32_t new_state = vec[i] & 0x1;
+        if (old_state == new_state) {
+          current_size += kPageSize;
+        } else {
+          ClearMemory(current_page, current_size, old_state);
+          current_page = current_page + current_size;
+          current_size = kPageSize;
+          old_state = new_state;
+        }
+      }
+      ClearMemory(current_page, current_size, old_state);
+      return;
+    }
+    static bool logged_about_mincore = false;
+    if (!logged_about_mincore) {
+      PLOG(WARNING) << "mincore failed, falling back to madvise MADV_DONTNEED";
+      logged_about_mincore = true;
+    }
+    // mincore failed, fall through to MADV_DONTNEED.
+  }
+#else
+  UNUSED(release_eagerly);
+#endif  // __linux__
+  bool res = madvise(page_begin, page_end - page_begin, MADV_DONTNEED);
+  CHECK_NE(res, -1) << "madvise failed";
+#endif  // _WIN32
 }
 
 void MemMap::AlignBy(size_t alignment, bool align_both_ends) {

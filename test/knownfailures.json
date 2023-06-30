@@ -120,6 +120,12 @@
                         "non-deterministic. Same for 913."]
     },
     {
+        "tests": "2264-throwing-systemcleaner",
+        "variant": "gcstress | gcverify",
+        "description": ["failing for unknown reasons"],
+        "bug": "http://b/288355042"
+    },
+    {
         "tests": ["1946-list-descriptors"],
         "variant": "gcverify | trace",
         "description": "This test is rather slow and gcverify or trace often cause it to timeout."
@@ -374,7 +380,8 @@
                   "080-oom-throw",
                   "1336-short-finalizer-timeout",
                   "2041-bad-cleaner",
-                  "2048-bad-native-registry"],
+                  "2048-bad-native-registry",
+                  "2264-throwing-systemcleaner"],
         "bug": "http://b/36377828",
         "variant": "interp-ac"
     },
@@ -1078,7 +1085,8 @@
           "2048-bad-native-registry",
           "2230-profile-save-hotness",
           "2245-checker-smali-instance-of-comparison",
-          "2251-checker-irreducible-loop-do-not-inline"
+          "2251-checker-irreducible-loop-do-not-inline",
+          "2264-throwing-systemcleaner"
         ],
         "variant": "jvm",
         "bug": "b/73888836",

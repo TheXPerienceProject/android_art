@@ -263,7 +263,7 @@ void CodeGenerator::InitializeCodeGenerationData() {
   code_generation_data_ = CodeGenerationData::Create(graph_->GetArenaStack(), GetInstructionSet());
 }
 
-void CodeGenerator::Compile(CodeAllocator* allocator) {
+void CodeGenerator::Compile() {
   InitializeCodeGenerationData();
 
   // The register allocator already called `InitializeCodeGeneration`,
@@ -328,17 +328,13 @@ void CodeGenerator::Compile(CodeAllocator* allocator) {
   }
 
   // Finalize instructions in assember;
-  Finalize(allocator);
+  Finalize();
 
   GetStackMapStream()->EndMethod(GetAssembler()->CodeSize());
 }
 
-void CodeGenerator::Finalize(CodeAllocator* allocator) {
-  size_t code_size = GetAssembler()->CodeSize();
-  uint8_t* buffer = allocator->Allocate(code_size);
-
-  MemoryRegion code(buffer, code_size);
-  GetAssembler()->FinalizeInstructions(code);
+void CodeGenerator::Finalize() {
+  GetAssembler()->FinalizeCode();
 }
 
 void CodeGenerator::EmitLinkerPatches(
@@ -911,6 +907,12 @@ std::unique_ptr<CodeGenerator> CodeGenerator::Create(HGraph* graph,
     case InstructionSet::kArm64: {
       return std::unique_ptr<CodeGenerator>(
           new (allocator) arm64::CodeGeneratorARM64(graph, compiler_options, stats));
+    }
+#endif
+#ifdef ART_ENABLE_CODEGEN_riscv64
+    case InstructionSet::kRiscv64: {
+      return std::unique_ptr<CodeGenerator>(
+          new (allocator) riscv64::CodeGeneratorRISCV64(graph, compiler_options, stats));
     }
 #endif
 #ifdef ART_ENABLE_CODEGEN_x86

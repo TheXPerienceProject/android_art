@@ -31,7 +31,7 @@
 #include "utils/assembler.h"
 #include "utils/jni_macro_assembler.h"
 
-namespace art {
+namespace art HIDDEN {
 namespace riscv64 {
 
 class Riscv64JNIMacroAssembler  : public JNIMacroAssemblerFwd<Riscv64Assembler, PointerSize::k64> {
@@ -68,6 +68,9 @@ class Riscv64JNIMacroAssembler  : public JNIMacroAssemblerFwd<Riscv64Assembler, 
   void Load(ManagedRegister dest, FrameOffset offs, size_t size) override;
   void Load(ManagedRegister dest, ManagedRegister base, MemberOffset offs, size_t size) override;
   void LoadRawPtrFromThread(ManagedRegister dest, ThreadOffset64 offs) override;
+  void LoadGcRootWithoutReadBarrier(ManagedRegister dest,
+                                    ManagedRegister base,
+                                    MemberOffset offs) override;
 
   // Copying routines.
   void MoveArguments(ArrayRef<ArgumentLocation> dests,
@@ -143,6 +146,8 @@ class Riscv64JNIMacroAssembler  : public JNIMacroAssemblerFwd<Riscv64Assembler, 
                      FrameOffset spilled_reference_offset,
                      ManagedRegister m_ref,
                      bool null_allowed);
+
+  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, CreateJObject);
 };
 
 class Riscv64JNIMacroLabel final

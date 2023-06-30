@@ -21,7 +21,7 @@
 #include "base/logging.h"
 #include "base/memory_region.h"
 
-namespace art {
+namespace art HIDDEN {
 namespace riscv64 {
 
 static_assert(static_cast<size_t>(kRiscv64PointerSize) == kRiscv64DoublewordSize,
@@ -50,15 +50,12 @@ ALWAYS_INLINE static inline int32_t ToInt12(uint32_t uint12) {
 }
 
 void Riscv64Assembler::FinalizeCode() {
+  Assembler::FinalizeCode();
   ReserveJumpTableSpace();
   EmitLiterals();
   PromoteBranches();
-}
-
-void Riscv64Assembler::FinalizeInstructions(const MemoryRegion& region) {
   EmitBranches();
   EmitJumpTables();
-  Assembler::FinalizeInstructions(region);
   PatchCFI();
 }
 

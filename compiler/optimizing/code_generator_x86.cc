@@ -1142,8 +1142,7 @@ CodeGeneratorX86::CodeGeneratorX86(HGraph* graph,
                     kNumberOfCpuRegisters,
                     kNumberOfXmmRegisters,
                     kNumberOfRegisterPairs,
-                    ComputeRegisterMask(reinterpret_cast<const int*>(kCoreCalleeSaves),
-                                        arraysize(kCoreCalleeSaves))
+                    ComputeRegisterMask(kCoreCalleeSaves, arraysize(kCoreCalleeSaves))
                         | (1 << kFakeReturnRegister),
                     0,
                     compiler_options,
@@ -8930,7 +8929,7 @@ class JumpTableRIPFixup : public RIPFixup {
   const HX86PackedSwitch* switch_instr_;
 };
 
-void CodeGeneratorX86::Finalize(CodeAllocator* allocator) {
+void CodeGeneratorX86::Finalize() {
   // Generate the constant area if needed.
   X86Assembler* assembler = GetAssembler();
 
@@ -8950,7 +8949,7 @@ void CodeGeneratorX86::Finalize(CodeAllocator* allocator) {
   }
 
   // And finish up.
-  CodeGenerator::Finalize(allocator);
+  CodeGenerator::Finalize();
 }
 
 Address CodeGeneratorX86::LiteralDoubleAddress(double v,
