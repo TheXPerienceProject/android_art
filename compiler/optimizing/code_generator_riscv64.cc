@@ -39,26 +39,62 @@ static constexpr FRegister kFpuCalleeSaves[] = {
 #define QUICK_ENTRY_POINT(x) QUICK_ENTRYPOINT_OFFSET(kRiscv64PointerSize, x).Int32Value()
 
 Location Riscv64ReturnLocation(DataType::Type return_type) {
-  UNUSED(return_type);
-  LOG(FATAL) << "Unimplemented";
+  switch (return_type) {
+    case DataType::Type::kBool:
+    case DataType::Type::kUint8:
+    case DataType::Type::kInt8:
+    case DataType::Type::kUint16:
+    case DataType::Type::kInt16:
+    case DataType::Type::kUint32:
+    case DataType::Type::kInt32:
+    case DataType::Type::kReference:
+    case DataType::Type::kUint64:
+    case DataType::Type::kInt64:
+      return Location::RegisterLocation(A0);
+
+    case DataType::Type::kFloat32:
+    case DataType::Type::kFloat64:
+      return Location::FpuRegisterLocation(FA0);
+
+    case DataType::Type::kVoid:
+      return Location::NoLocation();
+  }
   UNREACHABLE();
 }
 
 Location InvokeDexCallingConventionVisitorRISCV64::GetReturnLocation(DataType::Type type) const {
-  UNUSED(type);
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
+  return Riscv64ReturnLocation(type);
 }
 
 Location InvokeDexCallingConventionVisitorRISCV64::GetMethodLocation() const {
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
+  return Location::RegisterLocation(kArtMethodRegister);
 }
 
 Location InvokeDexCallingConventionVisitorRISCV64::GetNextLocation(DataType::Type type) {
-  UNUSED(type);
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
+  Location next_location;
+  if (type == DataType::Type::kVoid) {
+    LOG(FATAL) << "Unexpected parameter type " << type;
+  }
+
+  // Note: Unlike the RISCV-V C/C++ calling convention, managed ABI does not use
+  // GPRs to pass FP args when we run out of FPRs.
+  if (DataType::IsFloatingPointType(type) &&
+      float_index_ < calling_convention.GetNumberOfFpuRegisters()) {
+    next_location =
+        Location::FpuRegisterLocation(calling_convention.GetFpuRegisterAt(float_index_++));
+  } else if (!DataType::IsFloatingPointType(type) &&
+             (gp_index_ < calling_convention.GetNumberOfRegisters())) {
+    next_location = Location::RegisterLocation(calling_convention.GetRegisterAt(gp_index_++));
+  } else {
+    size_t stack_offset = calling_convention.GetStackOffsetOf(stack_index_);
+    next_location = DataType::Is64BitType(type) ? Location::DoubleStackSlot(stack_offset) :
+                                                  Location::StackSlot(stack_offset);
+  }
+
+  // Space on the stack is reserved for all arguments.
+  stack_index_ += DataType::Is64BitType(type) ? 2 : 1;
+
+  return next_location;
 }
 
 void LocationsBuilderRISCV64::HandleInvoke(HInvoke* instruction) {
@@ -652,13 +688,14 @@ void InstructionCodeGeneratorRISCV64::VisitExit(HExit* instruction) {
 }
 
 void LocationsBuilderRISCV64::VisitFloatConstant(HFloatConstant* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations =
+      new (GetGraph()->GetAllocator()) LocationSummary(instruction, LocationSummary::kNoCall);
+  locations->SetOut(Location::ConstantLocation(instruction));
 }
 
-void InstructionCodeGeneratorRISCV64::VisitFloatConstant(HFloatConstant* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+void InstructionCodeGeneratorRISCV64::VisitFloatConstant(
+    [[maybe_unused]] HFloatConstant* instruction) {
+  // Will be generated at use site.
 }
 
 void LocationsBuilderRISCV64::VisitGoto(HGoto* instruction) {
@@ -1716,15 +1753,35 @@ void CodeGeneratorRISCV64::MoveLocation(Location dst, Location src, DataType::Ty
   UNREACHABLE();
 }
 void CodeGeneratorRISCV64::AddLocationAsTemp(Location location, LocationSummary* locations) {
-  UNUSED(location);
-  UNUSED(locations);
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
+  if (location.IsRegister()) {
+    locations->AddTemp(location);
+  } else {
+    UNIMPLEMENTED(FATAL) << "AddLocationAsTemp not implemented for location " << location;
+  }
 }
 
 void CodeGeneratorRISCV64::SetupBlockedRegisters() const {
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
+  // ZERO, GP, SP, RA, TP and TR(S1) are reserved and can't be allocated.
+  blocked_core_registers_[Zero] = true;
+  blocked_core_registers_[GP] = true;
+  blocked_core_registers_[SP] = true;
+  blocked_core_registers_[RA] = true;
+  blocked_core_registers_[TP] = true;
+  blocked_core_registers_[TR] = true;  // ART Thread register.
+
+  // TMP(T6), TMP2(T5) and FTMP(FT11) are used as temporary/scratch registers.
+  blocked_core_registers_[TMP] = true;
+  blocked_core_registers_[TMP2] = true;
+  blocked_fpu_registers_[FTMP] = true;
+
+  if (GetGraph()->IsDebuggable()) {
+    // Stubs do not save callee-save floating point registers. If the graph
+    // is debuggable, we need to deal with these registers differently. For
+    // now, just block them.
+    for (size_t i = 0; i < arraysize(kFpuCalleeSaves); ++i) {
+      blocked_fpu_registers_[kFpuCalleeSaves[i]] = true;
+    }
+  }
 }
 
 size_t CodeGeneratorRISCV64::SaveCoreRegister(size_t stack_index, uint32_t reg_id) {
@@ -1756,17 +1813,11 @@ size_t CodeGeneratorRISCV64::RestoreFloatingPointRegister(size_t stack_index, ui
 }
 
 void CodeGeneratorRISCV64::DumpCoreRegister(std::ostream& stream, int reg) const {
-  UNUSED(stream);
-  UNUSED(reg);
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
+  stream << XRegister(reg);
 }
 
 void CodeGeneratorRISCV64::DumpFloatingPointRegister(std::ostream& stream, int reg) const {
-  UNUSED(stream);
-  UNUSED(reg);
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
+  stream << FRegister(reg);
 }
 
 void CodeGeneratorRISCV64::Finalize() {
