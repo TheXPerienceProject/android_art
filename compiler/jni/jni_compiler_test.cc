@@ -465,7 +465,6 @@ LockWord JniCompilerTest::GetLockWord(jobject obj) {
 #define JNI_TEST(TestName) \
   JNI_TEST_NORMAL_ONLY(TestName)                 \
   TEST_F(JniCompilerTest, TestName ## FastCompiler) {    \
-    TEST_DISABLED_FOR_RISCV64(); \
     ScopedCheckHandleScope top_handle_scope_check;  \
     SCOPED_TRACE("@FastNative JNI with compiler");  \
     gCurrentJni = static_cast<uint32_t>(JniKind::kFast); \
@@ -473,7 +472,6 @@ LockWord JniCompilerTest::GetLockWord(jobject obj) {
   }                                              \
                                                  \
   TEST_F(JniCompilerTest, TestName ## FastGeneric) { \
-    TEST_DISABLED_FOR_RISCV64(); \
     ScopedCheckHandleScope top_handle_scope_check;  \
     SCOPED_TRACE("@FastNative JNI with generic");  \
     gCurrentJni = static_cast<uint32_t>(JniKind::kFast); \
@@ -484,14 +482,12 @@ LockWord JniCompilerTest::GetLockWord(jobject obj) {
 // Test (@CriticalNative) x (compiler, generic) only.
 #define JNI_TEST_CRITICAL_ONLY(TestName) \
   TEST_F(JniCompilerTest, TestName ## CriticalCompiler) { \
-    TEST_DISABLED_FOR_RISCV64(); \
     ScopedCheckHandleScope top_handle_scope_check;  \
     SCOPED_TRACE("@CriticalNative JNI with compiler");  \
     gCurrentJni = static_cast<uint32_t>(JniKind::kCritical); \
     TestName ## Impl();                          \
   }                                              \
   TEST_F(JniCompilerTest, TestName ## CriticalGeneric) { \
-    TEST_DISABLED_FOR_RISCV64(); \
     ScopedCheckHandleScope top_handle_scope_check;  \
     SCOPED_TRACE("@CriticalNative JNI with generic");  \
     gCurrentJni = static_cast<uint32_t>(JniKind::kCritical); \
@@ -2273,6 +2269,14 @@ void Java_MyClassNatives_stackArgsFloatsFirst(JNIEnv*, jclass, jfloat f1, jfloat
 }
 
 void JniCompilerTest::StackArgsFloatsFirstImpl() {
+  if (check_generic_jni_) {
+    // FIXME(riscv64): Fix FP argument passing in GenericJNI.
+    TEST_DISABLED_FOR_RISCV64();
+    // TODO(riscv64): This test passes with compiled JNI stubs but the compiled code
+    // does not perform NaN-boxing of float args passed in GPRs. The test should be
+    // extended to check 64-bit values of these float args.
+  }
+
   SetUpForTest(true, "stackArgsFloatsFirst", "(FFFFFFFFFFIIIIIIIIII)V",
                CURRENT_JNI_WRAPPER(Java_MyClassNatives_stackArgsFloatsFirst));
 
