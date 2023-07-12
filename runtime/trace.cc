@@ -198,18 +198,6 @@ ALWAYS_INLINE uint64_t GetMicroTime(uint64_t counter) {
 
 }  // namespace
 
-ArtMethod* Trace::DecodeTraceMethod(uint32_t tmid) {
-  uint32_t method_index = tmid >> TraceActionBits;
-  // This is used only for logging which is usually needed only for debugging ART. So it's not
-  // performance critical.
-  for (auto const& entry : art_method_id_map_) {
-    if (method_index == entry.second) {
-      return entry.first;
-    }
-  }
-  return nullptr;
-}
-
 std::pair<uint32_t, bool> Trace::GetMethodEncoding(ArtMethod* method) {
   auto it = art_method_id_map_.find(method);
   if (it != art_method_id_map_.end()) {
@@ -576,29 +564,6 @@ void Trace::Start(std::unique_ptr<File>&& trace_file_in,
   }
 }
 
-void Trace::UpdateThreadsList(Thread* thread) {
-  // TODO(mythria): Clean this up and update threads_list_ when recording the trace event similar
-  // to what we do for streaming case.
-  std::string name;
-  thread->GetThreadName(name);
-  // In tests, we destroy VM after already detaching the current thread. When a thread is
-  // detached we record the information about the threads_list_. We re-attach the current
-  // thread again as a "Shutdown thread" in the process of shutting down. So don't record
-  // information about shutdown threads.
-  if (name.compare("Shutdown thread") == 0) {
-    return;
-  }
-
-  // There can be races when unregistering a thread and stopping the trace and it is possible to
-  // update the list twice. For example, This information is updated here when stopping tracing and
-  // also when a thread is detaching. In thread detach, we first update this information and then
-  // remove the thread from the list of active threads. If the tracing was stopped in between these
-  // events, we can see two updates for the same thread. Since we need a trace_lock_ it isn't easy
-  // to prevent this race (for ex: update this information when holding thread_list_lock_). It is
-  // harmless to do two updates so just use overwrite here.
-  threads_list_.Overwrite(thread->GetTid(), name);
-}
-
 void Trace::StopTracing(bool finish_tracing, bool flush_file) {
   Runtime* const runtime = Runtime::Current();
   Thread* const self = Thread::Current();
@@ -659,9 +624,6 @@ void Trace::StopTracing(bool finish_tracing, bool flush_file) {
           the_trace->FlushBuffer(thread);
           thread->ResetMethodTraceBuffer();
         }
-        // Record threads here before resetting the_trace_ to prevent any races between
-        // unregistering the thread and resetting the_trace_.
-        the_trace->UpdateThreadsList(thread);
       }
     }
 
@@ -795,7 +757,7 @@ Trace::Trace(File* trace_file,
   }
   static_assert(18 <= kMinBufSize, "Minimum buffer size not large enough for trace header");
 
-  cur_offset_.store(kTraceHeaderLength, std::memory_order_relaxed);
+  cur_offset_ = kTraceHeaderLength;
 
   if (output_mode == TraceOutputMode::kStreaming) {
     // Flush the header information to the file. We use a per thread buffer, so
@@ -803,7 +765,7 @@ Trace::Trace(File* trace_file,
     if (!trace_file_->WriteFully(buf_.get(), kTraceHeaderLength)) {
       PLOG(WARNING) << "Failed streaming a tracing event.";
     }
-    cur_offset_.store(0, std::memory_order_relaxed);
+    cur_offset_ = 0;
   }
 
   // Thread index of 0 is a special identifier used to distinguish between trace
@@ -811,32 +773,11 @@ Trace::Trace(File* trace_file,
   current_thread_index_ = 1;
 }
 
-static uint64_t ReadBytes(uint8_t* buf, size_t bytes) {
-  uint64_t ret = 0;
-  for (size_t i = 0; i < bytes; ++i) {
-    ret |= static_cast<uint64_t>(buf[i]) << (i * 8);
-  }
-  return ret;
-}
-
-void Trace::DumpBuf(uint8_t* buf, size_t buf_size, TraceClockSource clock_source) {
-  uint8_t* ptr = buf + kTraceHeaderLength;
-  uint8_t* end = buf + buf_size;
-
-  MutexLock mu(Thread::Current(), tracing_lock_);
-  while (ptr < end) {
-    uint32_t tmid = ReadBytes(ptr + 2, sizeof(tmid));
-    ArtMethod* method = DecodeTraceMethod(tmid);
-    TraceAction action = DecodeTraceAction(tmid);
-    LOG(INFO) << ArtMethod::PrettyMethod(method) << " " << static_cast<int>(action);
-    ptr += GetRecordSize(clock_source);
-  }
-}
-
 void Trace::FinishTracing() {
   size_t final_offset = 0;
   if (trace_output_mode_ != TraceOutputMode::kStreaming) {
-    final_offset = cur_offset_.load(std::memory_order_relaxed);
+    MutexLock mu(Thread::Current(), tracing_lock_);
+    final_offset = cur_offset_;
   }
 
   // Compute elapsed time.
@@ -908,11 +849,6 @@ void Trace::FinishTracing() {
       memcpy(data.data() + header.length(), buf_.get(), final_offset);
       Runtime::Current()->GetRuntimeCallbacks()->DdmPublishChunk(CHUNK_TYPE("MPSE"),
                                                                  ArrayRef<const uint8_t>(data));
-      const bool kDumpTraceInfo = false;
-      if (kDumpTraceInfo) {
-        LOG(INFO) << "Trace sent:\n" << header;
-        DumpBuf(buf_.get(), final_offset, clock_source_);
-      }
     } else {
       if (!trace_file_->WriteFully(header.c_str(), header.length()) ||
           !trace_file_->WriteFully(buf_.get(), final_offset)) {
@@ -1029,29 +965,35 @@ std::string Trace::GetMethodLine(ArtMethod* method, uint32_t method_index) {
 }
 
 void Trace::RecordThreadInfo(Thread* thread) {
-  if (trace_output_mode_ != TraceOutputMode::kStreaming) {
-    return;
-  }
-
   // This is the first event from this thread, so first record information about the thread.
   std::string thread_name;
   thread->GetThreadName(thread_name);
+
+  // In tests, we destroy VM after already detaching the current thread. We re-attach the current
+  // thread again as a "Shutdown thread" during the process of shutting down. So don't record
+  // information about shutdown threads since it overwrites the actual thread_name.
+  if (thread_name.compare("Shutdown thread") == 0) {
+    return;
+  }
+
+  MutexLock mu(Thread::Current(), tracing_lock_);
+  if (trace_output_mode_ != TraceOutputMode::kStreaming) {
+    threads_list_.Overwrite(GetThreadEncoding(thread->GetTid()), thread_name);
+    return;
+  }
+
   static constexpr size_t kThreadNameHeaderSize = 7;
   uint8_t header[kThreadNameHeaderSize];
+  Append2LE(header, 0);
+  header[2] = kOpNewThread;
+  Append2LE(header + 3, GetThreadEncoding(thread->GetTid()));
+  DCHECK(thread_name.length() < (1 << 16));
+  Append2LE(header + 5, static_cast<uint16_t>(thread_name.length()));
 
-  {
-    MutexLock mu(Thread::Current(), tracing_lock_);
-    Append2LE(header, 0);
-    header[2] = kOpNewThread;
-    Append2LE(header + 3, GetThreadEncoding(thread->GetTid()));
-    DCHECK(thread_name.length() < (1 << 16));
-    Append2LE(header + 5, static_cast<uint16_t>(thread_name.length()));
-
-    if (!trace_file_->WriteFully(header, kThreadNameHeaderSize) ||
-        !trace_file_->WriteFully(reinterpret_cast<const uint8_t*>(thread_name.c_str()),
-                                 thread_name.length())) {
-      PLOG(WARNING) << "Failed streaming a tracing event.";
-    }
+  if (!trace_file_->WriteFully(header, kThreadNameHeaderSize) ||
+      !trace_file_->WriteFully(reinterpret_cast<const uint8_t*>(thread_name.c_str()),
+                               thread_name.length())) {
+    PLOG(WARNING) << "Failed streaming a tracing event.";
   }
 }
 
@@ -1128,7 +1070,7 @@ void Trace::FlushBuffer(Thread* thread) {
   } else {
     buffer_size = buffer_size_;
     buffer_ptr = buf_.get();
-    current_index = cur_offset_.load(std::memory_order_relaxed);
+    current_index = cur_offset_;
   }
 
   size_t num_entries = *(thread->GetMethodTraceIndexPtr());
@@ -1178,7 +1120,7 @@ void Trace::FlushBuffer(Thread* thread) {
   } else {
     // In non-streaming mode, we keep the data in the buffer and write to the
     // file when tracing has stopped. Just updated the offset of the buffer.
-    cur_offset_.store(current_index, std::memory_order_relaxed);
+    cur_offset_ = current_index;
   }
 }
 
@@ -1291,14 +1233,7 @@ void Trace::DumpMethodList(std::ostream& os) {
 
 void Trace::DumpThreadList(std::ostream& os) {
   for (const auto& it : threads_list_) {
-    os << GetThreadEncoding(it.first) << "\t" << it.second << "\n";
-  }
-}
-
-void Trace::StoreExitingThreadInfo(Thread* thread) {
-  MutexLock mu(thread, *Locks::trace_lock_);
-  if (the_trace_ != nullptr) {
-    the_trace_->UpdateThreadsList(thread);
+    os << it.first << "\t" << it.second << "\n";
   }
 }
 

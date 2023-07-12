@@ -279,6 +279,10 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   void GenerateFrameEntry() override;
   void GenerateFrameExit() override;
 
+  Riscv64Label* GetLabelOf(HBasicBlock* block) const {
+    return CommonGetLabelOf<Riscv64Label>(block_labels_, block);
+  }
+
   void Bind(HBasicBlock* block) override;
 
   size_t GetWordSize() const override { return kRiscv64WordSize; }
@@ -288,28 +292,32 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
     return false;
   }
 
+  // Get FP register width in bytes for spilling/restoring in the slow paths.
+  //
+  // Note: In SIMD graphs this should return SIMD register width as all FP and SIMD registers
+  // alias and live SIMD registers are forced to be spilled in full size in the slow paths.
   size_t GetSlowPathFPWidth() const override {
-    LOG(FATAL) << "CodeGeneratorRISCV64::GetSlowPathFPWidth is unimplemented";
-    UNREACHABLE();
+    // Default implementation.
+    return GetCalleePreservedFPWidth();
   }
 
   size_t GetCalleePreservedFPWidth() const override {
-    LOG(FATAL) << "CodeGeneratorRISCV64::GetCalleePreservedFPWidth is unimplemented";
-    UNREACHABLE();
+    return kRiscv64FloatRegSizeInBytes;
   };
 
-  size_t GetSIMDRegisterWidth() const override;
+  size_t GetSIMDRegisterWidth() const override {
+    LOG(FATAL) << "Vector is not unimplemented";
+    UNREACHABLE();
+  };
 
   uintptr_t GetAddressOf(HBasicBlock* block) override {
-    UNUSED(block);
-    LOG(FATAL) << "CodeGeneratorRISCV64::GetAddressOf is unimplemented";
-    UNREACHABLE();
+    return assembler_.GetLabelLocation(GetLabelOf(block));
   };
 
-  void Initialize() override { LOG(FATAL) << "unimplemented"; }
+  void Initialize() override { block_labels_ = CommonInitializeLabels<Riscv64Label>(); }
 
   void MoveConstant(Location destination, int32_t value) override;
-  void MoveLocation(Location dst, Location src, DataType::Type dst_type) override;
+  void MoveLocation(Location destination, Location source, DataType::Type dst_type) override;
   void AddLocationAsTemp(Location location, LocationSummary* locations) override;
 
   HGraphVisitor* GetInstructionVisitor() override {
@@ -401,6 +409,9 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   Riscv64Assembler assembler_;
   LocationsBuilderRISCV64 location_builder_;
   Riscv64Label frame_entry_label_;
+
+  // Labels for each block that will be compiled.
+  Riscv64Label* block_labels_;  // Indexed by block id.
 };
 
 }  // namespace riscv64

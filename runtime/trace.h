@@ -239,8 +239,6 @@ class Trace final : public instrumentation::InstrumentationListener {
   static std::vector<ArtMethod*>* AllocStackTrace();
   // Clear and store an old stack trace for later use.
   static void FreeStackTrace(std::vector<ArtMethod*>* stack_trace);
-  // Save id and name of a thread before it exits.
-  static void StoreExitingThreadInfo(Thread* thread);
 
   static TraceOutputMode GetOutputMode() REQUIRES(!Locks::trace_lock_);
   static TraceMode GetMode() REQUIRES(!Locks::trace_lock_);
@@ -322,14 +320,8 @@ class Trace final : public instrumentation::InstrumentationListener {
                    size_t required_size);
 
   std::pair<uint32_t, bool> GetMethodEncoding(ArtMethod* method) REQUIRES(tracing_lock_);
-  ArtMethod* DecodeTraceMethod(uint32_t tmid) REQUIRES(tracing_lock_);
   std::string GetMethodLine(ArtMethod* method, uint32_t method_id) REQUIRES(tracing_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void DumpBuf(uint8_t* buf, size_t buf_size, TraceClockSource clock_source)
-      REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(!tracing_lock_);
-
-  void UpdateThreadsList(Thread* thread);
 
   uint16_t GetThreadEncoding(pid_t thread_id) REQUIRES(tracing_lock_);
 
@@ -348,10 +340,8 @@ class Trace final : public instrumentation::InstrumentationListener {
   // File to write trace data out to, null if direct to ddms.
   std::unique_ptr<File> trace_file_;
 
-  // Buffer to store trace data. In streaming mode, this is protected
-  // by the tracing_lock_. In non-streaming mode, reserved regions
-  // are atomically allocated (using cur_offset_) for log entries to
-  // be written.
+  // Buffer to store trace data in non-streaming mode. This is only accessed in
+  // SuspendAll scope to flush the data from all threads into this buffer.
   std::unique_ptr<uint8_t[]> buf_;
 
   // Flags enabling extra tracing of things such as alloc counts.
@@ -374,35 +364,15 @@ class Trace final : public instrumentation::InstrumentationListener {
   // Clock overhead.
   const uint32_t clock_overhead_ns_;
 
-  // Offset into buf_. The field is atomic to allow multiple writers
-  // to concurrently reserve space in the buffer. The newly written
-  // buffer contents are not read without some other form of thread
-  // synchronization, such as suspending all potential writers or
-  // acquiring *tracing_lock_. Reading cur_offset_ is thus never
-  // used to ensure visibility of any other objects, and all accesses
-  // are memory_order_relaxed.
-  //
-  // All accesses to buf_ in streaming mode occur whilst holding the
-  // streaming lock. In streaming mode, the buffer may be written out
-  // so cur_offset_ can move forwards and backwards.
-  //
-  // When not in streaming mode, the buf_ writes can come from
-  // multiple threads when the trace mode is kMethodTracing. When
-  // trace mode is kSampling, writes only come from the sampling
-  // thread.
-  //
-  // Reads to the buffer happen after the event sources writing to the
-  // buffer have been shutdown and all stores have completed. The
-  // stores are made visible in StopTracing() when execution leaves
-  // the ScopedSuspendAll block.
-  AtomicInteger cur_offset_;
+  size_t cur_offset_ GUARDED_BY(tracing_lock_);
 
   // Did we overflow the buffer recording traces?
   bool overflow_;
 
-  // Map of thread ids and names. We record the information when the threads are
-  // exiting and when the tracing has finished.
-  SafeMap<pid_t, std::string> threads_list_;
+  // Map of thread ids and names. This is used only in non-streaming mode, since we have to dump
+  // information about all threads in one block. In streaming mode, thread info is recorded directly
+  // in the file when we see the first even from this thread.
+  SafeMap<uint16_t, std::string> threads_list_;
 
   // Sampling profiler sampling interval.
   int interval_us_;

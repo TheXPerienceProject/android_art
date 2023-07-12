@@ -250,6 +250,7 @@ Runtime::Runtime()
       must_relocate_(false),
       is_concurrent_gc_enabled_(true),
       is_explicit_gc_disabled_(false),
+      is_eagerly_release_explicit_gc_disabled_(false),
       image_dex2oat_enabled_(true),
       default_stack_size_(0),
       heap_(nullptr),
@@ -1337,25 +1338,6 @@ static inline void CreatePreAllocatedException(Thread* self,
   detailMessageField->SetObject</* kTransactionActive= */ false>(exception->Read(), message);
 }
 
-static inline void CreateBootClassLoaderInstance(Thread* self,
-                                                 Runtime* runtime,
-                                                 GcRoot<mirror::ClassLoader>* loader)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
-  DCHECK_EQ(self, Thread::Current());
-  ClassLinker* class_linker = runtime->GetClassLinker();
-  StackHandleScope<1u> hs(self);
-  // Cannot use WellKnownClasses yet as it's not initialized.
-  ObjPtr<mirror::Class> klass = class_linker->FindSystemClass(self, "Ljava/lang/BootClassLoader;");
-  CHECK(klass != nullptr);
-  gc::AllocatorType allocator_type = runtime->GetHeap()->GetCurrentAllocator();
-  // Allocate but not need to call <init>. We cannot anyway as this is called
-  // during VM bootstrap.
-  ObjPtr<mirror::ClassLoader> loader_object = ObjPtr<mirror::ClassLoader>::DownCast(
-      klass->Alloc(self, allocator_type));
-  CHECK(loader_object != nullptr);
-  *loader = GcRoot<mirror::ClassLoader>(loader_object);
-}
-
 std::string Runtime::GetApexVersions(ArrayRef<const std::string> boot_class_path_locations) {
   std::vector<std::string_view> bcp_apexes;
   for (std::string_view jar : boot_class_path_locations) {
@@ -1523,6 +1505,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   is_zygote_ = runtime_options.Exists(Opt::Zygote);
   is_primary_zygote_ = runtime_options.Exists(Opt::PrimaryZygote);
   is_explicit_gc_disabled_ = runtime_options.Exists(Opt::DisableExplicitGC);
+  is_eagerly_release_explicit_gc_disabled_ =
+      runtime_options.Exists(Opt::DisableEagerlyReleaseExplicitGC);
   image_dex2oat_enabled_ = runtime_options.GetOrDefault(Opt::ImageDex2Oat);
   dump_native_stack_on_sig_quit_ = runtime_options.GetOrDefault(Opt::DumpNativeStackOnSigQuit);
   allow_in_memory_compilation_ = runtime_options.Exists(Opt::AllowInMemoryCompilation);
@@ -1964,10 +1948,6 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
         boot_image_live_objects->Get(ImageHeader::kNoClassDefFoundError)->AsThrowable());
     DCHECK(pre_allocated_NoClassDefFoundError_.Read()->GetClass()
                ->DescriptorEquals("Ljava/lang/NoClassDefFoundError;"));
-    boot_class_loader_instance_ = GcRoot<mirror::ClassLoader>(
-        boot_image_live_objects->Get(ImageHeader::kBootClassLoaderInstance)->AsClassLoader());
-    DCHECK(boot_class_loader_instance_.Read()->GetClass()
-               ->DescriptorEquals("Ljava/lang/BootClassLoader;"));
   } else {
     // Pre-allocate an OutOfMemoryError for the case when we fail to
     // allocate the exception to be thrown.
@@ -2001,11 +1981,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
                                 "Ljava/lang/NoClassDefFoundError;",
                                 "Class not found using the boot class loader; "
                                     "no stack trace available");
-
-    CreateBootClassLoaderInstance(self, this, &boot_class_loader_instance_);
   }
-  GetBootClassLoaderInstance()->SetClassTable(class_linker_->ClassTableForClassLoader(nullptr));
-  WriteBarrier::ForEveryFieldWrite(GetBootClassLoaderInstance());
 
   // Class-roots are setup, we can now finish initializing the JniIdManager.
   GetJniIdManager()->Init(self);
@@ -2509,10 +2485,6 @@ mirror::Throwable* Runtime::GetPreAllocatedNoClassDefFoundError() {
   return ncdfe;
 }
 
-mirror::ClassLoader* Runtime::GetBootClassLoaderInstance() {
-  return boot_class_loader_instance_.Read();
-}
-
 void Runtime::VisitConstantRoots(RootVisitor* visitor) {
   // Visiting the roots of these ArtMethods is not currently required since all the GcRoots are
   // null.
@@ -2565,7 +2537,6 @@ void Runtime::VisitNonThreadRoots(RootVisitor* visitor) {
   pre_allocated_OutOfMemoryError_when_handling_stack_overflow_
       .VisitRootIfNonNull(visitor, RootInfo(kRootVMInternal));
   pre_allocated_NoClassDefFoundError_.VisitRootIfNonNull(visitor, RootInfo(kRootVMInternal));
-  boot_class_loader_instance_.VisitRootIfNonNull(visitor, RootInfo(kRootVMInternal));
   VisitImageRoots(visitor);
   VisitTransactionRoots(visitor);
 }

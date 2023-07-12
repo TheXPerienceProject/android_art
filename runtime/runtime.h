@@ -217,6 +217,10 @@ class Runtime {
     return is_explicit_gc_disabled_;
   }
 
+  bool IsEagerlyReleaseExplicitGcDisabled() const {
+    return is_eagerly_release_explicit_gc_disabled_;
+  }
+
   std::string GetCompilerExecutable() const;
 
   const std::vector<std::string>& GetCompilerOptions() const {
@@ -426,9 +430,8 @@ class Runtime {
       REQUIRES_SHARED(Locks::mutator_lock_);
   mirror::Throwable* GetPreAllocatedOutOfMemoryErrorWhenHandlingStackOverflow()
       REQUIRES_SHARED(Locks::mutator_lock_);
+
   mirror::Throwable* GetPreAllocatedNoClassDefFoundError()
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  mirror::ClassLoader* GetBootClassLoaderInstance()
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   const std::vector<std::string>& GetProperties() const {
@@ -1242,7 +1245,6 @@ class Runtime {
   GcRoot<mirror::Throwable> pre_allocated_OutOfMemoryError_when_throwing_oome_;
   GcRoot<mirror::Throwable> pre_allocated_OutOfMemoryError_when_handling_stack_overflow_;
   GcRoot<mirror::Throwable> pre_allocated_NoClassDefFoundError_;
-  GcRoot<mirror::ClassLoader> boot_class_loader_instance_;
   ArtMethod* resolution_method_;
   ArtMethod* imt_conflict_method_;
   // Unresolved method has the same behavior as the conflict method, it is used by the class linker
@@ -1262,6 +1264,7 @@ class Runtime {
   bool must_relocate_;
   bool is_concurrent_gc_enabled_;
   bool is_explicit_gc_disabled_;
+  bool is_eagerly_release_explicit_gc_disabled_;
   bool image_dex2oat_enabled_;
 
   std::string compiler_executable_;
