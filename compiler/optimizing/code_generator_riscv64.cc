@@ -21,9 +21,12 @@
 #include "arch/riscv64/registers_riscv64.h"
 #include "base/macros.h"
 #include "dwarf/register.h"
+#include "heap_poisoning.h"
 #include "intrinsics_list.h"
 #include "jit/profiling_info.h"
+#include "mirror/class-inl.h"
 #include "optimizing/nodes.h"
+#include "stack_map_stream.h"
 #include "utils/label.h"
 #include "utils/riscv64/assembler_riscv64.h"
 #include "utils/stack_checks.h"
@@ -41,6 +44,21 @@ static constexpr FRegister kFpuCalleeSaves[] = {
 };
 
 #define QUICK_ENTRY_POINT(x) QUICK_ENTRYPOINT_OFFSET(kRiscv64PointerSize, x).Int32Value()
+
+Location RegisterOrZeroBitPatternLocation(HInstruction* instruction) {
+  return IsZeroBitPattern(instruction)
+      ? Location::ConstantLocation(instruction->AsConstant())
+      : Location::RequiresRegister();
+}
+
+XRegister InputXRegisterOrZero(Location location) {
+  if (location.IsConstant()) {
+    DCHECK(location.GetConstant()->IsZeroBitPattern());
+    return Zero;
+  } else {
+    return location.AsRegister<XRegister>();
+  }
+}
 
 Location Riscv64ReturnLocation(DataType::Type return_type) {
   switch (return_type) {
@@ -80,7 +98,7 @@ Location InvokeDexCallingConventionVisitorRISCV64::GetNextLocation(DataType::Typ
     LOG(FATAL) << "Unexpected parameter type " << type;
   }
 
-  // Note: Unlike the RISCV-V C/C++ calling convention, managed ABI does not use
+  // Note: Unlike the RISC-V C/C++ calling convention, managed ABI does not use
   // GPRs to pass FP args when we run out of FPRs.
   if (DataType::IsFloatingPointType(type) &&
       float_index_ < calling_convention.GetNumberOfFpuRegisters()) {
@@ -178,6 +196,30 @@ class SuspendCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
   Riscv64Label return_label_;
 
   DISALLOW_COPY_AND_ASSIGN(SuspendCheckSlowPathRISCV64);
+};
+
+class NullCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
+ public:
+  explicit NullCheckSlowPathRISCV64(HNullCheck* instr) : SlowPathCodeRISCV64(instr) {}
+
+  void EmitNativeCode(CodeGenerator* codegen) override {
+    CodeGeneratorRISCV64* riscv64_codegen = down_cast<CodeGeneratorRISCV64*>(codegen);
+    __ Bind(GetEntryLabel());
+    if (instruction_->CanThrowIntoCatchBlock()) {
+      // Live registers will be restored in the catch block if caught.
+      SaveLiveRegisters(codegen, instruction_->GetLocations());
+    }
+    riscv64_codegen->InvokeRuntime(
+        kQuickThrowNullPointer, instruction_, instruction_->GetDexPc(), this);
+    CheckEntrypointTypes<kQuickThrowNullPointer, void, void>();
+  }
+
+  bool IsFatal() const override { return true; }
+
+  const char* GetDescription() const override { return "NullCheckSlowPathRISCV64"; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(NullCheckSlowPathRISCV64);
 };
 
 #undef __
@@ -346,13 +388,96 @@ void InstructionCodeGeneratorRISCV64::GenerateDivRemIntegral(HBinaryOperation* i
   LOG(FATAL) << "Unimplemented";
 }
 
-void InstructionCodeGeneratorRISCV64::GenerateIntLongCompare(IfCondition cond,
-                                                             bool is_64bit,
-                                                             LocationSummary* locations) {
-  UNUSED(cond);
-  UNUSED(is_64bit);
-  UNUSED(locations);
-  LOG(FATAL) << "Unimplemented";
+void InstructionCodeGeneratorRISCV64::GenerateIntLongCondition(IfCondition cond,
+                                                               LocationSummary* locations) {
+  XRegister rd = locations->Out().AsRegister<XRegister>();
+  XRegister rs1 = locations->InAt(0).AsRegister<XRegister>();
+  Location rs2_location = locations->InAt(1);
+  bool use_imm = rs2_location.IsConstant();
+  int64_t imm = use_imm ? CodeGenerator::GetInt64ValueOf(rs2_location.GetConstant()) : 0;
+  XRegister rs2 = use_imm ? kNoXRegister : rs2_location.AsRegister<XRegister>();
+  switch (cond) {
+    case kCondEQ:
+    case kCondNE:
+      if (!use_imm) {
+        __ Sub(rd, rs1, rs2);  // SUB is OK here even for 32-bit comparison.
+      } else if (imm != 0) {
+        DCHECK(IsInt<12>(-imm));
+        __ Addi(rd, rs1, -imm);  // ADDI is OK here even for 32-bit comparison.
+      }  // else test `rs1` directly without subtraction for `use_imm && imm == 0`.
+      if (cond == kCondEQ) {
+        __ Seqz(rd, (use_imm && imm == 0) ? rs1 : rd);
+      } else {
+        __ Snez(rd, (use_imm && imm == 0) ? rs1 : rd);
+      }
+      break;
+
+    case kCondLT:
+    case kCondGE:
+      if (use_imm) {
+        DCHECK(IsInt<12>(imm));
+        __ Slti(rd, rs1, imm);
+      } else {
+        __ Slt(rd, rs1, rs2);
+      }
+      if (cond == kCondGE) {
+        // Calculate `rs1 >= rhs` as `!(rs1 < rhs)` since there's only the SLT but no SGE.
+        __ Xori(rd, rd, 1);
+      }
+      break;
+
+    case kCondLE:
+    case kCondGT:
+      if (use_imm) {
+        // Calculate `rs1 <= imm` as `rs1 < imm + 1`.
+        DCHECK(IsInt<12>(imm + 1));  // The value that overflows would fail this check.
+        __ Slti(rd, rs1, imm + 1);
+      } else {
+        __ Slt(rd, rs2, rs1);
+      }
+      if ((cond == kCondGT) == use_imm) {
+        // Calculate `rs1 > imm` as `!(rs1 < imm + 1)` and calculate
+        // `rs1 <= rs2` as `!(rs2 < rs1)` since there's only the SLT but no SGE.
+        __ Xori(rd, rd, 1);
+      }
+      break;
+
+    case kCondB:
+    case kCondAE:
+      if (use_imm) {
+        // Sltiu sign-extends its 12-bit immediate operand before the comparison
+        // and thus lets us compare directly with unsigned values in the ranges
+        // [0, 0x7ff] and [0x[ffffffff]fffff800, 0x[ffffffff]ffffffff].
+        DCHECK(IsInt<12>(imm));
+        __ Sltiu(rd, rs1, imm);
+      } else {
+        __ Sltu(rd, rs1, rs2);
+      }
+      if (cond == kCondAE) {
+        // Calculate `rs1 AE rhs` as `!(rs1 B rhs)` since there's only the SLTU but no SGEU.
+        __ Xori(rd, rd, 1);
+      }
+      break;
+
+    case kCondBE:
+    case kCondA:
+      if (use_imm) {
+        // Calculate `rs1 BE imm` as `rs1 B imm + 1`.
+        // Sltiu sign-extends its 12-bit immediate operand before the comparison
+        // and thus lets us compare directly with unsigned values in the ranges
+        // [0, 0x7ff] and [0x[ffffffff]fffff800, 0x[ffffffff]ffffffff].
+        DCHECK(IsInt<12>(imm + 1));  // The value that overflows would fail this check.
+        __ Sltiu(rd, rs1, imm + 1);
+      } else {
+        __ Sltu(rd, rs2, rs1);
+      }
+      if ((cond == kCondA) == use_imm) {
+        // Calculate `rs1 A imm` as `!(rs1 B imm + 1)` and calculate
+        // `rs1 BE rs2` as `!(rs2 B rs1)` since there's only the SLTU but no SGEU.
+        __ Xori(rd, rd, 1);
+      }
+      break;
+  }
 }
 
 bool InstructionCodeGeneratorRISCV64::MaterializeIntLongCompare(IfCondition cond,
@@ -378,15 +503,97 @@ void InstructionCodeGeneratorRISCV64::GenerateIntLongCompareAndBranch(IfConditio
   LOG(FATAL) << "UniMplemented";
 }
 
-void InstructionCodeGeneratorRISCV64::GenerateFpCompare(IfCondition cond,
-                                                        bool gt_bias,
-                                                        DataType::Type type,
-                                                        LocationSummary* locations) {
-  UNUSED(cond);
-  UNUSED(gt_bias);
-  UNUSED(type);
-  UNUSED(locations);
-  LOG(FATAL) << "Unimplemented";
+void InstructionCodeGeneratorRISCV64::GenerateFpCondition(IfCondition cond,
+                                                          bool gt_bias,
+                                                          DataType::Type type,
+                                                          LocationSummary* locations) {
+  XRegister rd = locations->Out().AsRegister<XRegister>();
+  FRegister rs1 = locations->InAt(0).AsFpuRegister<FRegister>();
+  FRegister rs2 = locations->InAt(1).AsFpuRegister<FRegister>();
+
+  // All FP compare operations yield 0 for NaN on either side but we need the result to be 1
+  // for certain combinations of `gt_bias` and `cond`.
+  // There is no dex instruction or HIR that would need the "equal or unordered" or "not equal"
+  // and the conditions "equal" and "not equal or unordered" do not need the NaN check here.
+  Riscv64Label done;
+  if (gt_bias ? (cond == kCondGT || cond == kCondGE) : (cond == kCondLT || cond == kCondLE)) {
+    // FCLASS.S/D examines the value in the floating-point register and writes to integer
+    // register a 10-bit mask that indicates the class of the floating-point number.
+    // rd[8]: Singaling NaN
+    // rd[9]: Quiet NaN
+    ScratchRegisterScope srs(GetAssembler());
+    XRegister tmp = srs.AllocateXRegister();
+    XRegister tmp2 = srs.AllocateXRegister();
+    if (type == DataType::Type::kFloat32) {
+      __ FClassS(tmp, rs1);
+      __ FClassS(tmp2, rs2);
+    } else {
+      DCHECK_EQ(type, DataType::Type::kFloat64);
+      __ FClassD(tmp, rs1);
+      __ FClassS(tmp2, rs2);
+    }
+    __ Li(rd, 1);  // Pre-load the result for NaN to avoid branching over it later.
+    __ Or(tmp, tmp, tmp2);
+    __ Srli(tmp, tmp, 8);
+    __ Bnez(tmp, &done);  // goto done if either input was NaN.
+  }
+
+  if (type == DataType::Type::kFloat32) {
+    switch (cond) {
+      case kCondEQ:
+        __ FEqS(rd, rs1, rs2);
+        break;
+      case kCondNE:
+        __ FEqS(rd, rs1, rs2);
+        __ Xori(rd, rd, 1);
+        break;
+      case kCondLT:
+        __ FLtS(rd, rs1, rs2);
+        break;
+      case kCondLE:
+        __ FLeS(rd, rs1, rs2);
+        break;
+      case kCondGT:
+        __ FLtS(rd, rs2, rs1);
+        break;
+      case kCondGE:
+        __ FLeS(rd, rs2, rs1);
+        break;
+      default:
+        LOG(FATAL) << "Unexpected floating-point condition " << cond;
+        UNREACHABLE();
+    }
+  } else {
+    DCHECK_EQ(type, DataType::Type::kFloat64);
+    switch (cond) {
+      case kCondEQ:
+        __ FEqD(rd, rs1, rs2);
+        break;
+      case kCondNE:
+        __ FEqD(rd, rs1, rs2);
+        __ Xori(rd, rd, 1);
+        break;
+      case kCondLT:
+        __ FLtD(rd, rs1, rs2);
+        break;
+      case kCondLE:
+        __ FLeD(rd, rs1, rs2);
+        break;
+      case kCondGT:
+        __ FLtD(rd, rs2, rs1);
+        break;
+      case kCondGE:
+        __ FLeD(rd, rs2, rs1);
+        break;
+      default:
+        LOG(FATAL) << "Unexpected floating-point condition " << cond;
+        UNREACHABLE();
+    }
+  }
+
+  if (done.IsLinked()) {
+    __ Bind(&done);
+  }
 }
 
 bool InstructionCodeGeneratorRISCV64::MaterializeFpCompare(IfCondition cond,
@@ -602,13 +809,68 @@ void InstructionCodeGeneratorRISCV64::HandleBinaryOp(HBinaryOperation* instructi
 }
 
 void LocationsBuilderRISCV64::HandleCondition(HCondition* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
+  switch (instruction->InputAt(0)->GetType()) {
+    case DataType::Type::kFloat32:
+    case DataType::Type::kFloat64:
+      locations->SetInAt(0, Location::RequiresFpuRegister());
+      locations->SetInAt(1, Location::RequiresFpuRegister());
+      break;
+
+    default: {
+      locations->SetInAt(0, Location::RequiresRegister());
+      HInstruction* rhs = instruction->InputAt(1);
+      bool use_imm = false;
+      if (rhs->IsConstant()) {
+        int64_t imm = CodeGenerator::GetInt64ValueOf(rhs->AsConstant());
+        switch (instruction->GetCondition()) {
+          case kCondEQ:
+          case kCondNE:
+            imm = -imm;
+            break;
+          case kCondLE:
+          case kCondGT:
+          case kCondBE:
+          case kCondA:
+            imm += 1;
+            break;
+          default:
+            break;
+        }
+        // Constants that cannot be embedded in an instruction's 12-bit immediate shall be
+        // materialized. This simplifies the code and avoids cases with arithmetic overflow.
+        use_imm = IsInt<12>(imm);
+      }
+      if (use_imm) {
+        locations->SetInAt(1, Location::ConstantLocation(rhs->AsConstant()));
+      } else {
+        locations->SetInAt(1, Location::RequiresRegister());
+      }
+      break;
+    }
+  }
+  if (!instruction->IsEmittedAtUseSite()) {
+    locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
+  }
 }
 
 void InstructionCodeGeneratorRISCV64::HandleCondition(HCondition* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  if (instruction->IsEmittedAtUseSite()) {
+    return;
+  }
+
+  DataType::Type type = instruction->InputAt(0)->GetType();
+  LocationSummary* locations = instruction->GetLocations();
+  switch (type) {
+    case DataType::Type::kFloat32:
+    case DataType::Type::kFloat64:
+      GenerateFpCondition(instruction->GetCondition(), instruction->IsGtBias(), type, locations);
+      return;
+    default:
+      // Integral types.
+      GenerateIntLongCondition(instruction->GetCondition(), locations);
+      return;
+  }
 }
 
 void LocationsBuilderRISCV64::HandleShift(HBinaryOperation* instruction) {
@@ -760,33 +1022,77 @@ void InstructionCodeGeneratorRISCV64::HandleFieldGet(HInstruction* instruction,
 }
 
 void LocationsBuilderRISCV64::VisitAbove(HAbove* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitAbove(HAbove* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitAboveOrEqual(HAboveOrEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitAboveOrEqual(HAboveOrEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
-void LocationsBuilderRISCV64::VisitAbs(HAbs* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+void LocationsBuilderRISCV64::VisitAbs(HAbs* abs) {
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(abs);
+  switch (abs->GetResultType()) {
+    case DataType::Type::kInt32:
+    case DataType::Type::kInt64:
+      locations->SetInAt(0, Location::RequiresRegister());
+      locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
+      break;
+    case DataType::Type::kFloat32:
+    case DataType::Type::kFloat64:
+      locations->SetInAt(0, Location::RequiresFpuRegister());
+      locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
+      break;
+    default:
+      LOG(FATAL) << "Unexpected abs type " << abs->GetResultType();
+  }
 }
 
-void InstructionCodeGeneratorRISCV64::VisitAbs(HAbs* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+void InstructionCodeGeneratorRISCV64::VisitAbs(HAbs* abs) {
+  LocationSummary* locations = abs->GetLocations();
+  switch (abs->GetResultType()) {
+    case DataType::Type::kInt32: {
+      XRegister in = locations->InAt(0).AsRegister<XRegister>();
+      XRegister out = locations->Out().AsRegister<XRegister>();
+      ScratchRegisterScope srs(GetAssembler());
+      XRegister tmp = srs.AllocateXRegister();
+      __ Sraiw(tmp, in, 31);
+      __ Xor(out, in, tmp);
+      __ Subw(out, out, tmp);
+      break;
+    }
+    case DataType::Type::kInt64: {
+      XRegister in = locations->InAt(0).AsRegister<XRegister>();
+      XRegister out = locations->Out().AsRegister<XRegister>();
+      ScratchRegisterScope srs(GetAssembler());
+      XRegister tmp = srs.AllocateXRegister();
+      __ Srai(tmp, in, 63);
+      __ Xor(out, in, tmp);
+      __ Sub(out, out, tmp);
+      break;
+    }
+    case DataType::Type::kFloat32: {
+      FRegister in = locations->InAt(0).AsFpuRegister<FRegister>();
+      FRegister out = locations->Out().AsFpuRegister<FRegister>();
+      __ FAbsS(out, in);
+      break;
+    }
+    case DataType::Type::kFloat64: {
+      FRegister in = locations->InAt(0).AsFpuRegister<FRegister>();
+      FRegister out = locations->Out().AsFpuRegister<FRegister>();
+      __ FAbsD(out, in);
+      break;
+    }
+    default:
+      LOG(FATAL) << "Unexpected abs type " << abs->GetResultType();
+  }
 }
 
 void LocationsBuilderRISCV64::VisitAdd(HAdd* instruction) {
@@ -836,33 +1142,30 @@ void InstructionCodeGeneratorRISCV64::VisitArraySet(HArraySet* instruction) {
 }
 
 void LocationsBuilderRISCV64::VisitBelow(HBelow* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitBelow(HBelow* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitBelowOrEqual(HBelowOrEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitBelowOrEqual(HBelowOrEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitBooleanNot(HBooleanNot* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
+  locations->SetInAt(0, Location::RequiresRegister());
+  locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitBooleanNot(HBooleanNot* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = instruction->GetLocations();
+  __ Xori(locations->Out().AsRegister<XRegister>(), locations->InAt(0).AsRegister<XRegister>(), 1);
 }
 
 void LocationsBuilderRISCV64::VisitBoundsCheck(HBoundsCheck* instruction) {
@@ -905,14 +1208,17 @@ void InstructionCodeGeneratorRISCV64::VisitClassTableGet(HClassTableGet* instruc
   LOG(FATAL) << "Unimplemented";
 }
 
-void LocationsBuilderRISCV64::VisitClearException(HClearException* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+static int32_t GetExceptionTlsOffset() {
+  return Thread::ExceptionOffset<kRiscv64PointerSize>().Int32Value();
 }
 
-void InstructionCodeGeneratorRISCV64::VisitClearException(HClearException* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+void LocationsBuilderRISCV64::VisitClearException(HClearException* instruction) {
+  new (GetGraph()->GetAllocator()) LocationSummary(instruction, LocationSummary::kNoCall);
+}
+
+void InstructionCodeGeneratorRISCV64::VisitClearException(
+    [[maybe_unused]] HClearException* instruction) {
+  __ Stored(Zero, TR, GetExceptionTlsOffset());
 }
 
 void LocationsBuilderRISCV64::VisitClinitCheck(HClinitCheck* instruction) {
@@ -926,23 +1232,111 @@ void InstructionCodeGeneratorRISCV64::VisitClinitCheck(HClinitCheck* instruction
 }
 
 void LocationsBuilderRISCV64::VisitCompare(HCompare* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  DataType::Type in_type = instruction->InputAt(0)->GetType();
+
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
+
+  switch (in_type) {
+    case DataType::Type::kBool:
+    case DataType::Type::kUint8:
+    case DataType::Type::kInt8:
+    case DataType::Type::kUint16:
+    case DataType::Type::kInt16:
+    case DataType::Type::kInt32:
+    case DataType::Type::kInt64:
+      locations->SetInAt(0, Location::RequiresRegister());
+      locations->SetInAt(1, RegisterOrZeroBitPatternLocation(instruction->InputAt(1)));
+      locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
+      break;
+
+    case DataType::Type::kFloat32:
+    case DataType::Type::kFloat64:
+      locations->SetInAt(0, Location::RequiresFpuRegister());
+      locations->SetInAt(1, Location::RequiresFpuRegister());
+      locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
+      break;
+
+    default:
+      LOG(FATAL) << "Unexpected type for compare operation " << in_type;
+      UNREACHABLE();
+  }
 }
 
 void InstructionCodeGeneratorRISCV64::VisitCompare(HCompare* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = instruction->GetLocations();
+  XRegister result = locations->Out().AsRegister<XRegister>();
+  DataType::Type in_type = instruction->InputAt(0)->GetType();
+
+  //  0 if: left == right
+  //  1 if: left  > right
+  // -1 if: left  < right
+  switch (in_type) {
+    case DataType::Type::kBool:
+    case DataType::Type::kUint8:
+    case DataType::Type::kInt8:
+    case DataType::Type::kUint16:
+    case DataType::Type::kInt16:
+    case DataType::Type::kInt32:
+    case DataType::Type::kInt64: {
+      XRegister left = locations->InAt(0).AsRegister<XRegister>();
+      XRegister right = InputXRegisterOrZero(locations->InAt(1));
+      ScratchRegisterScope srs(GetAssembler());
+      XRegister tmp = srs.AllocateXRegister();
+      __ Slt(tmp, left, right);
+      __ Slt(result, right, left);
+      __ Sub(result, result, tmp);
+      break;
+    }
+
+    case DataType::Type::kFloat32: {
+      FRegister left = locations->InAt(0).AsFpuRegister<FRegister>();
+      FRegister right = locations->InAt(1).AsFpuRegister<FRegister>();
+      ScratchRegisterScope srs(GetAssembler());
+      XRegister tmp = srs.AllocateXRegister();
+      if (instruction->IsGtBias()) {
+        __ FLeS(tmp, left, right);
+        __ FLtS(result, left, right);
+        __ Xori(tmp, tmp, 1);
+        __ Sub(result, tmp, result);
+      } else {
+        __ FLeS(tmp, right, left);
+        __ FLtS(result, right, left);
+        __ Addi(tmp, tmp, -1);
+        __ Add(result, result, tmp);
+      }
+      break;
+    }
+
+    case DataType::Type::kFloat64: {
+      FRegister left = locations->InAt(0).AsFpuRegister<FRegister>();
+      FRegister right = locations->InAt(1).AsFpuRegister<FRegister>();
+      ScratchRegisterScope srs(GetAssembler());
+      XRegister tmp = srs.AllocateXRegister();
+      if (instruction->IsGtBias()) {
+        __ FLeD(tmp, left, right);
+        __ FLtD(result, left, right);
+        __ Xori(tmp, tmp, 1);
+        __ Sub(result, tmp, result);
+      } else {
+        __ FLeD(tmp, right, left);
+        __ FLtD(result, right, left);
+        __ Addi(tmp, tmp, -1);
+        __ Add(result, result, tmp);
+      }
+      break;
+    }
+
+    default:
+      LOG(FATAL) << "Unimplemented compare type " << in_type;
+  }
 }
 
 void LocationsBuilderRISCV64::VisitConstructorFence(HConstructorFence* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  instruction->SetLocations(nullptr);
 }
-
-void InstructionCodeGeneratorRISCV64::VisitConstructorFence(HConstructorFence* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+void InstructionCodeGeneratorRISCV64::VisitConstructorFence(
+    [[maybe_unused]] HConstructorFence* instruction) {
+  codegen_->GenerateMemoryBarrier(MemBarrierKind::kStoreStore);
 }
 
 void LocationsBuilderRISCV64::VisitCurrentMethod(HCurrentMethod* instruction) {
@@ -1008,13 +1402,11 @@ void InstructionCodeGeneratorRISCV64::VisitDoubleConstant(
 }
 
 void LocationsBuilderRISCV64::VisitEqual(HEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitEqual(HEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitExit(HExit* instruction) {
@@ -1043,23 +1435,19 @@ void InstructionCodeGeneratorRISCV64::VisitGoto(HGoto* instruction) {
 }
 
 void LocationsBuilderRISCV64::VisitGreaterThan(HGreaterThan* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitGreaterThan(HGreaterThan* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitGreaterThanOrEqual(HGreaterThanOrEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitGreaterThanOrEqual(HGreaterThanOrEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitIf(HIf* instruction) {
@@ -1115,13 +1503,11 @@ void InstructionCodeGeneratorRISCV64::VisitInstanceOf(HInstanceOf* instruction) 
 }
 
 void LocationsBuilderRISCV64::VisitIntConstant(HIntConstant* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
+  locations->SetOut(Location::ConstantLocation(instruction));
 }
-
-void InstructionCodeGeneratorRISCV64::VisitIntConstant(HIntConstant* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+void InstructionCodeGeneratorRISCV64::VisitIntConstant([[maybe_unused]] HIntConstant* instruction) {
+  // Will be generated at use site.
 }
 
 void LocationsBuilderRISCV64::VisitIntermediateAddress(HIntermediateAddress* instruction) {
@@ -1196,23 +1582,19 @@ void InstructionCodeGeneratorRISCV64::VisitInvokeCustom(HInvokeCustom* instructi
 }
 
 void LocationsBuilderRISCV64::VisitLessThan(HLessThan* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitLessThan(HLessThan* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitLessThanOrEqual(HLessThanOrEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitLessThanOrEqual(HLessThanOrEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitLoadClass(HLoadClass* instruction) {
@@ -1396,13 +1778,11 @@ void InstructionCodeGeneratorRISCV64::VisitNot(HNot* instruction) {
 }
 
 void LocationsBuilderRISCV64::VisitNotEqual(HNotEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitNotEqual(HNotEqual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleCondition(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitNullConstant(HNullConstant* instruction) {
@@ -2055,8 +2435,6 @@ void InstructionCodeGeneratorRISCV64::VisitVecPredNot(HVecPredNot* instruction) 
   LOG(FATAL) << "Unimplemented";
 }
 
-#undef __
-
 namespace detail {
 
 // Mark which intrinsics we don't have handcrafted code for.
@@ -2077,13 +2455,11 @@ static constexpr bool kIsIntrinsicUnimplemented[] = {
     false,  // kNone
 #define IS_UNIMPLEMENTED(Intrinsic, ...) \
     IsUnimplemented<Intrinsics::k##Intrinsic>().is_unimplemented,
-    INTRINSICS_LIST(IS_UNIMPLEMENTED)
+    ART_INTRINSICS_LIST(IS_UNIMPLEMENTED)
 #undef IS_UNIMPLEMENTED
 };
 
 }  // namespace detail
-
-#define __ down_cast<Riscv64Assembler*>(GetAssembler())->  // NOLINT
 
 CodeGeneratorRISCV64::CodeGeneratorRISCV64(HGraph* graph,
                                            const CompilerOptions& compiler_options,
@@ -2129,7 +2505,6 @@ void CodeGeneratorRISCV64::MaybeIncrementHotness(bool is_frame_entry) {
     DCHECK(info != nullptr);
     DCHECK(!HasEmptyFrame());
     uint64_t address = reinterpret_cast64<uint64_t>(info);
-    Riscv64Label done;
     ScratchRegisterScope srs(GetAssembler());
     XRegister tmp = srs.AllocateXRegister();
     __ LoadConst64(tmp, address);
@@ -2571,8 +2946,34 @@ void CodeGeneratorRISCV64::DumpFloatingPointRegister(std::ostream& stream, int r
 }
 
 void CodeGeneratorRISCV64::Finalize() {
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
+  // Ensure that we fix up branches and literal loads and emit the literal pool.
+  __ FinalizeCode();
+
+  // Adjust native pc offsets in stack maps.
+  StackMapStream* stack_map_stream = GetStackMapStream();
+  for (size_t i = 0, num = stack_map_stream->GetNumberOfStackMaps(); i != num; ++i) {
+    uint32_t old_position = stack_map_stream->GetStackMapNativePcOffset(i);
+    uint32_t new_position = __ GetAdjustedPosition(old_position);
+    DCHECK_GE(new_position, old_position);
+    stack_map_stream->SetStackMapNativePcOffset(i, new_position);
+  }
+
+  // Adjust pc offsets for the disassembly information.
+  if (disasm_info_ != nullptr) {
+    GeneratedCodeInterval* frame_entry_interval = disasm_info_->GetFrameEntryInterval();
+    frame_entry_interval->start = __ GetAdjustedPosition(frame_entry_interval->start);
+    frame_entry_interval->end = __ GetAdjustedPosition(frame_entry_interval->end);
+    for (auto& entry : *disasm_info_->GetInstructionIntervals()) {
+      entry.second.start = __ GetAdjustedPosition(entry.second.start);
+      entry.second.end = __ GetAdjustedPosition(entry.second.end);
+    }
+    for (auto& entry : *disasm_info_->GetSlowPathIntervals()) {
+      entry.code_interval.start = __ GetAdjustedPosition(entry.code_interval.start);
+      entry.code_interval.end = __ GetAdjustedPosition(entry.code_interval.end);
+    }
+  }
+
+  CodeGenerator::Finalize();
 }
 
 // Generate code to invoke a runtime entry point.
@@ -2580,11 +2981,17 @@ void CodeGeneratorRISCV64::InvokeRuntime(QuickEntrypointEnum entrypoint,
                                          HInstruction* instruction,
                                          uint32_t dex_pc,
                                          SlowPathCode* slow_path) {
-  UNUSED(entrypoint);
-  UNUSED(instruction);
-  UNUSED(dex_pc);
-  UNUSED(slow_path);
-  LOG(FATAL) << "Unimplemented";
+  ValidateInvokeRuntime(entrypoint, instruction, slow_path);
+
+  ThreadOffset64 entrypoint_offset = GetThreadOffset<kRiscv64PointerSize>(entrypoint);
+
+  // TODO(riscv64): Reduce code size for AOT by using shared trampolines for slow path
+  // runtime calls across the entire oat file.
+  __ Loadd(RA, TR, entrypoint_offset.Int32Value());
+  __ Jalr(RA);
+  if (EntrypointRequiresStackMap(entrypoint)) {
+    RecordPcInfo(instruction, dex_pc, slow_path);
+  }
 }
 
 // Generate code to invoke a runtime entry point, but do not record
@@ -2592,10 +2999,9 @@ void CodeGeneratorRISCV64::InvokeRuntime(QuickEntrypointEnum entrypoint,
 void CodeGeneratorRISCV64::InvokeRuntimeWithoutRecordingPcInfo(int32_t entry_point_offset,
                                                                HInstruction* instruction,
                                                                SlowPathCode* slow_path) {
-  UNUSED(entry_point_offset);
-  UNUSED(instruction);
-  UNUSED(slow_path);
-  LOG(FATAL) << "Unimplemented";
+  ValidateInvokeRuntimeWithoutRecordingPcInfo(instruction, slow_path);
+  __ Loadd(RA, TR, entry_point_offset);
+  __ Jalr(RA);
 }
 
 void CodeGeneratorRISCV64::IncreaseFrame(size_t adjustment) {
@@ -2610,15 +3016,21 @@ void CodeGeneratorRISCV64::DecreaseFrame(size_t adjustment) {
   GetAssembler()->cfi().AdjustCFAOffset(-adjustment32);
 }
 
-void CodeGeneratorRISCV64::GenerateNop() { LOG(FATAL) << "Unimplemented"; }
+void CodeGeneratorRISCV64::GenerateNop() {
+  __ Nop();
+}
 
 void CodeGeneratorRISCV64::GenerateImplicitNullCheck(HNullCheck* instruction) {
   UNUSED(instruction);
   LOG(FATAL) << "Unimplemented";
 }
 void CodeGeneratorRISCV64::GenerateExplicitNullCheck(HNullCheck* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  SlowPathCodeRISCV64* slow_path = new (GetScopedAllocator()) NullCheckSlowPathRISCV64(instruction);
+  AddSlowPath(slow_path);
+
+  Location obj = instruction->GetLocations()->InAt(0);
+
+  __ Beqz(obj.AsRegister<XRegister>(), slow_path->GetEntryLabel());
 }
 
 HLoadString::LoadKind CodeGeneratorRISCV64::GetSupportedLoadStringKind(
@@ -2687,13 +3099,68 @@ void CodeGeneratorRISCV64::GenerateStaticOrDirectCall(HInvokeStaticOrDirect* inv
   LOG(FATAL) << "Unimplemented";
 }
 
+void CodeGeneratorRISCV64::MaybeGenerateInlineCacheCheck(HInstruction* instruction,
+                                                         XRegister klass) {
+  // We know the destination of an intrinsic, so no need to record inline caches.
+  if (!instruction->GetLocations()->Intrinsified() &&
+      GetGraph()->IsCompilingBaseline() &&
+      !Runtime::Current()->IsAotCompiler()) {
+    DCHECK(!instruction->GetEnvironment()->IsFromInlinedInvoke());
+    ProfilingInfo* info = GetGraph()->GetProfilingInfo();
+    DCHECK(info != nullptr);
+    InlineCache* cache = info->GetInlineCache(instruction->GetDexPc());
+    uint64_t address = reinterpret_cast64<uint64_t>(cache);
+    Riscv64Label done;
+    {
+      ScratchRegisterScope srs(GetAssembler());
+      XRegister tmp = srs.AllocateXRegister();
+      __ LoadConst64(tmp, address);
+      __ Loadd(tmp, tmp, InlineCache::ClassesOffset().Int32Value());
+      // Fast path for a monomorphic cache.
+      __ Beq(klass, tmp, &done);
+    }
+    InvokeRuntime(kQuickUpdateInlineCache, instruction, instruction->GetDexPc());
+    __ Bind(&done);
+  }
+}
+
 void CodeGeneratorRISCV64::GenerateVirtualCall(HInvokeVirtual* invoke,
-                                               Location temp,
+                                               Location temp_location,
                                                SlowPathCode* slow_path) {
-  UNUSED(temp);
-  UNUSED(invoke);
-  UNUSED(slow_path);
-  LOG(FATAL) << "Unimplemented";
+  // Use the calling convention instead of the location of the receiver, as
+  // intrinsics may have put the receiver in a different register. In the intrinsics
+  // slow path, the arguments have been moved to the right place, so here we are
+  // guaranteed that the receiver is the first register of the calling convention.
+  InvokeDexCallingConvention calling_convention;
+  XRegister receiver = calling_convention.GetRegisterAt(0);
+  XRegister temp = temp_location.AsRegister<XRegister>();
+  MemberOffset method_offset =
+      mirror::Class::EmbeddedVTableEntryOffset(invoke->GetVTableIndex(), kRiscv64PointerSize);
+  MemberOffset class_offset = mirror::Object::ClassOffset();
+  Offset entry_point = ArtMethod::EntryPointFromQuickCompiledCodeOffset(kRiscv64PointerSize);
+
+  // temp = object->GetClass();
+  __ Loadwu(temp, receiver, class_offset.Int32Value());
+  MaybeRecordImplicitNullCheck(invoke);
+  // Instead of simply (possibly) unpoisoning `temp` here, we should
+  // emit a read barrier for the previous class reference load.
+  // However this is not required in practice, as this is an
+  // intermediate/temporary reference and because the current
+  // concurrent copying collector keeps the from-space memory
+  // intact/accessible until the end of the marking phase (the
+  // concurrent copying collector may not in the future).
+  MaybeUnpoisonHeapReference(temp);
+
+  // If we're compiling baseline, update the inline cache.
+  MaybeGenerateInlineCacheCheck(invoke, temp);
+
+  // temp = temp->GetMethodAt(method_offset);
+  __ Loadd(temp, temp, method_offset.Int32Value());
+  // RA = temp->GetEntryPoint();
+  __ Loadd(RA, temp, entry_point.Int32Value());
+  // RA();
+  __ Jalr(RA);
+  RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
 }
 
 void CodeGeneratorRISCV64::MoveFromReturnRegister(Location trg, DataType::Type type) {
@@ -2716,6 +3183,28 @@ void CodeGeneratorRISCV64::MoveFromReturnRegister(Location trg, DataType::Type t
     if (trg_reg != res_reg) {
       __ FMvD(trg_reg, res_reg);  // 64-bit move is OK also for `float`.
     }
+  }
+}
+
+void CodeGeneratorRISCV64::PoisonHeapReference(XRegister reg) {
+  __ Sub(reg, Zero, reg);  // Negate the ref.
+  __ ZextW(reg, reg);      // Zero-extend the 32-bit ref.
+}
+
+void CodeGeneratorRISCV64::UnpoisonHeapReference(XRegister reg) {
+  __ Sub(reg, Zero, reg);  // Negate the ref.
+  __ ZextW(reg, reg);      // Zero-extend the 32-bit ref.
+}
+
+inline void CodeGeneratorRISCV64::MaybePoisonHeapReference(XRegister reg) {
+  if (kPoisonHeapReferences) {
+    PoisonHeapReference(reg);
+  }
+}
+
+inline void CodeGeneratorRISCV64::MaybeUnpoisonHeapReference(XRegister reg) {
+  if (kPoisonHeapReferences) {
+    UnpoisonHeapReference(reg);
   }
 }
 

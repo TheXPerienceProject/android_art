@@ -22,6 +22,7 @@
 #include "base/macros.h"
 #include "code_generator.h"
 #include "driver/compiler_options.h"
+#include "intrinsics_list.h"
 #include "optimizing/locations.h"
 #include "utils/riscv64/assembler_riscv64.h"
 
@@ -47,7 +48,7 @@ static constexpr FRegister kRuntimeParameterFpuRegisters[] = {
 static constexpr size_t kRuntimeParameterFpuRegistersLength =
     arraysize(kRuntimeParameterFpuRegisters);
 
-#define UNIMPLEMENTED_INTRINSIC_LIST_RISCV64(V) INTRINSICS_LIST(V)
+#define UNIMPLEMENTED_INTRINSIC_LIST_RISCV64(V) ART_INTRINSICS_LIST(V)
 
 // Method register on invoke.
 static const XRegister kArtMethodRegister = A0;
@@ -218,7 +219,7 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
   void DivRemByPowerOfTwo(HBinaryOperation* instruction);
   void GenerateDivRemWithAnyConstant(HBinaryOperation* instruction);
   void GenerateDivRemIntegral(HBinaryOperation* instruction);
-  void GenerateIntLongCompare(IfCondition cond, bool is64bit, LocationSummary* locations);
+  void GenerateIntLongCondition(IfCondition cond, LocationSummary* locations);
   // When the function returns `false` it means that the condition holds if `dst` is non-zero
   // and doesn't hold if `dst` is zero. If it returns `true`, the roles of zero and non-zero
   // `dst` are exchanged.
@@ -230,10 +231,10 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
                                        bool is64bit,
                                        LocationSummary* locations,
                                        Riscv64Label* label);
-  void GenerateFpCompare(IfCondition cond,
-                         bool gt_bias,
-                         DataType::Type type,
-                         LocationSummary* locations);
+  void GenerateFpCondition(IfCondition cond,
+                           bool gt_bias,
+                           DataType::Type type,
+                           LocationSummary* locations);
   // When the function returns `false` it means that the condition holds if `dst` is non-zero
   // and doesn't hold if `dst` is zero. If it returns `true`, the roles of zero and non-zero
   // `dst` are exchanged.
@@ -330,6 +331,8 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
 
   HGraphVisitor* GetLocationBuilder() override { return &location_builder_; }
 
+  void MaybeGenerateInlineCacheCheck(HInstruction* instruction, XRegister klass);
+
   void SetupBlockedRegisters() const override;
 
   size_t SaveCoreRegister(size_t stack_index, uint32_t reg_id) override;
@@ -406,6 +409,22 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   void MaybeIncrementHotness(bool is_frame_entry);
 
   bool CanUseImplicitSuspendCheck() const;
+
+  //
+  // Heap poisoning.
+  //
+
+  // Poison a heap reference contained in `reg`.
+  void PoisonHeapReference(XRegister reg);
+
+  // Unpoison a heap reference contained in `reg`.
+  void UnpoisonHeapReference(XRegister reg);
+
+  // Poison a heap reference contained in `reg` if heap poisoning is enabled.
+  void MaybePoisonHeapReference(XRegister reg);
+
+  // Unpoison a heap reference contained in `reg` if heap poisoning is enabled.
+  void MaybeUnpoisonHeapReference(XRegister reg);
 
  private:
   Riscv64Assembler assembler_;
