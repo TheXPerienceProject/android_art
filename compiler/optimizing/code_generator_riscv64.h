@@ -220,34 +220,14 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
   void GenerateDivRemWithAnyConstant(HBinaryOperation* instruction);
   void GenerateDivRemIntegral(HBinaryOperation* instruction);
   void GenerateIntLongCondition(IfCondition cond, LocationSummary* locations);
-  // When the function returns `false` it means that the condition holds if `dst` is non-zero
-  // and doesn't hold if `dst` is zero. If it returns `true`, the roles of zero and non-zero
-  // `dst` are exchanged.
-  bool MaterializeIntLongCompare(IfCondition cond,
-                                 bool is64bit,
-                                 LocationSummary* input_locations,
-                                 XRegister dst);
   void GenerateIntLongCompareAndBranch(IfCondition cond,
-                                       bool is64bit,
                                        LocationSummary* locations,
                                        Riscv64Label* label);
   void GenerateFpCondition(IfCondition cond,
                            bool gt_bias,
                            DataType::Type type,
-                           LocationSummary* locations);
-  // When the function returns `false` it means that the condition holds if `dst` is non-zero
-  // and doesn't hold if `dst` is zero. If it returns `true`, the roles of zero and non-zero
-  // `dst` are exchanged.
-  bool MaterializeFpCompare(IfCondition cond,
-                            bool gt_bias,
-                            DataType::Type type,
-                            LocationSummary* input_locations,
-                            XRegister dst);
-  void GenerateFpCompareAndBranch(IfCondition cond,
-                                  bool gt_bias,
-                                  DataType::Type type,
-                                  LocationSummary* locations,
-                                  Riscv64Label* label);
+                           LocationSummary* locations,
+                           Riscv64Label* label = nullptr);
   void HandleGoto(HInstruction* got, HBasicBlock* successor);
   void GenPackedSwitchWithCompares(XRegister value_reg,
                                    int32_t lower_bound,
@@ -263,6 +243,16 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
                      size_t size,
                      /*out*/ XRegister* adjusted_base);
   void GenConditionalMove(HSelect* select);
+
+  template <typename Reg,
+            void (Riscv64Assembler::*opS)(Reg, FRegister, FRegister),
+            void (Riscv64Assembler::*opD)(Reg, FRegister, FRegister)>
+  void FpBinOp(Reg rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FAdd(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FSub(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FEq(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FLt(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FLe(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
 
   Riscv64Assembler* const assembler_;
   CodeGeneratorRISCV64* const codegen_;
@@ -303,8 +293,9 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   };
 
   size_t GetSIMDRegisterWidth() const override {
-    LOG(FATAL) << "Vector is not unimplemented";
-    UNREACHABLE();
+    // TODO(riscv64): Implement SIMD with the Vector extension.
+    // Note: HLoopOptimization calls this function even for an ISA without SIMD support.
+    return kRiscv64FloatRegSizeInBytes;
   };
 
   uintptr_t GetAddressOf(HBasicBlock* block) override {
@@ -321,15 +312,11 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   void MoveLocation(Location destination, Location source, DataType::Type dst_type) override;
   void AddLocationAsTemp(Location location, LocationSummary* locations) override;
 
-  HGraphVisitor* GetInstructionVisitor() override {
-    LOG(FATAL) << "unimplemented";
-    UNREACHABLE();
-  }
-
   Riscv64Assembler* GetAssembler() override { return &assembler_; }
   const Riscv64Assembler& GetAssembler() const override { return assembler_; }
 
   HGraphVisitor* GetLocationBuilder() override { return &location_builder_; }
+  HGraphVisitor* GetInstructionVisitor() override { return &instruction_visitor_; }
 
   void MaybeGenerateInlineCacheCheck(HInstruction* instruction, XRegister klass);
 
@@ -346,8 +333,7 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   InstructionSet GetInstructionSet() const override { return InstructionSet::kRiscv64; }
 
   uint32_t GetPreferredSlotsAlignment() const override {
-    LOG(FATAL) << "Unimplemented";
-    UNREACHABLE();
+    return static_cast<uint32_t>(kRiscv64PointerSize);
   }
 
   void Finalize() override;
@@ -429,6 +415,7 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
  private:
   Riscv64Assembler assembler_;
   LocationsBuilderRISCV64 location_builder_;
+  InstructionCodeGeneratorRISCV64 instruction_visitor_;
   Riscv64Label frame_entry_label_;
 
   // Labels for each block that will be compiled.

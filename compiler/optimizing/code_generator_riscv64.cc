@@ -20,6 +20,7 @@
 #include "android-base/macros.h"
 #include "arch/riscv64/registers_riscv64.h"
 #include "base/macros.h"
+#include "code_generator_utils.h"
 #include "dwarf/register.h"
 #include "heap_poisoning.h"
 #include "intrinsics_list.h"
@@ -225,6 +226,45 @@ class NullCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
 #undef __
 #define __ down_cast<Riscv64Assembler*>(GetAssembler())->  // NOLINT
 
+template <typename Reg,
+          void (Riscv64Assembler::*opS)(Reg, FRegister, FRegister),
+          void (Riscv64Assembler::*opD)(Reg, FRegister, FRegister)>
+inline void InstructionCodeGeneratorRISCV64::FpBinOp(
+    Reg rd, FRegister rs1, FRegister rs2, DataType::Type type) {
+  Riscv64Assembler* assembler = down_cast<CodeGeneratorRISCV64*>(codegen_)->GetAssembler();
+  if (type == DataType::Type::kFloat32) {
+    (assembler->*opS)(rd, rs1, rs2);
+  } else {
+    DCHECK_EQ(type, DataType::Type::kFloat64);
+    (assembler->*opD)(rd, rs1, rs2);
+  }
+}
+
+inline void InstructionCodeGeneratorRISCV64::FAdd(
+    FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type) {
+  FpBinOp<FRegister, &Riscv64Assembler::FAddS, &Riscv64Assembler::FAddD>(rd, rs1, rs2, type);
+}
+
+inline void InstructionCodeGeneratorRISCV64::FSub(
+    FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type) {
+  FpBinOp<FRegister, &Riscv64Assembler::FSubS, &Riscv64Assembler::FSubD>(rd, rs1, rs2, type);
+}
+
+inline void InstructionCodeGeneratorRISCV64::FEq(
+    XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type) {
+  FpBinOp<XRegister, &Riscv64Assembler::FEqS, &Riscv64Assembler::FEqD>(rd, rs1, rs2, type);
+}
+
+inline void InstructionCodeGeneratorRISCV64::FLt(
+    XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type) {
+  FpBinOp<XRegister, &Riscv64Assembler::FLtS, &Riscv64Assembler::FLtD>(rd, rs1, rs2, type);
+}
+
+inline void InstructionCodeGeneratorRISCV64::FLe(
+    XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type) {
+  FpBinOp<XRegister, &Riscv64Assembler::FLeS, &Riscv64Assembler::FLeD>(rd, rs1, rs2, type);
+}
+
 InstructionCodeGeneratorRISCV64::InstructionCodeGeneratorRISCV64(HGraph* graph,
                                                                  CodeGeneratorRISCV64* codegen)
     : InstructionCodeGenerator(graph, codegen),
@@ -361,11 +401,74 @@ void InstructionCodeGeneratorRISCV64::GenerateTestAndBranch(HInstruction* instru
                                                             size_t condition_input_index,
                                                             Riscv64Label* true_target,
                                                             Riscv64Label* false_target) {
-  UNUSED(instruction);
-  UNUSED(condition_input_index);
-  UNUSED(true_target);
-  UNUSED(false_target);
-  LOG(FATAL) << "Unimplemented";
+  HInstruction* cond = instruction->InputAt(condition_input_index);
+
+  if (true_target == nullptr && false_target == nullptr) {
+    // Nothing to do. The code always falls through.
+    return;
+  } else if (cond->IsIntConstant()) {
+    // Constant condition, statically compared against "true" (integer value 1).
+    if (cond->AsIntConstant()->IsTrue()) {
+      if (true_target != nullptr) {
+        __ J(true_target);
+      }
+    } else {
+      DCHECK(cond->AsIntConstant()->IsFalse()) << cond->AsIntConstant()->GetValue();
+      if (false_target != nullptr) {
+        __ J(false_target);
+      }
+    }
+    return;
+  }
+
+  // The following code generates these patterns:
+  //  (1) true_target == nullptr && false_target != nullptr
+  //        - opposite condition true => branch to false_target
+  //  (2) true_target != nullptr && false_target == nullptr
+  //        - condition true => branch to true_target
+  //  (3) true_target != nullptr && false_target != nullptr
+  //        - condition true => branch to true_target
+  //        - branch to false_target
+  if (IsBooleanValueOrMaterializedCondition(cond)) {
+    // The condition instruction has been materialized, compare the output to 0.
+    Location cond_val = instruction->GetLocations()->InAt(condition_input_index);
+    DCHECK(cond_val.IsRegister());
+    if (true_target == nullptr) {
+      __ Beqz(cond_val.AsRegister<XRegister>(), false_target);
+    } else {
+      __ Bnez(cond_val.AsRegister<XRegister>(), true_target);
+    }
+  } else {
+    // The condition instruction has not been materialized, use its inputs as
+    // the comparison and its condition as the branch condition.
+    HCondition* condition = cond->AsCondition();
+    DataType::Type type = condition->InputAt(0)->GetType();
+    LocationSummary* locations = condition->GetLocations();
+    IfCondition if_cond = condition->GetCondition();
+    Riscv64Label* branch_target = true_target;
+
+    if (true_target == nullptr) {
+      if_cond = condition->GetOppositeCondition();
+      branch_target = false_target;
+    }
+
+    switch (type) {
+      case DataType::Type::kFloat32:
+      case DataType::Type::kFloat64:
+        GenerateFpCondition(if_cond, condition->IsGtBias(), type, locations, branch_target);
+        break;
+      default:
+        // Integral types and reference equality.
+        GenerateIntLongCompareAndBranch(if_cond, locations, branch_target);
+        break;
+    }
+  }
+
+  // If neither branch falls through (case 3), the conditional branch to `true_target`
+  // was already emitted (case 2) and we need to emit a jump to `false_target`.
+  if (true_target != nullptr && false_target != nullptr) {
+    __ J(false_target);
+  }
 }
 
 void InstructionCodeGeneratorRISCV64::DivRemOneOrMinusOne(HBinaryOperation* instruction) {
@@ -480,147 +583,179 @@ void InstructionCodeGeneratorRISCV64::GenerateIntLongCondition(IfCondition cond,
   }
 }
 
-bool InstructionCodeGeneratorRISCV64::MaterializeIntLongCompare(IfCondition cond,
-                                                                bool is_64bit,
-                                                                LocationSummary* locations,
-                                                                XRegister dest) {
-  UNUSED(cond);
-  UNUSED(is_64bit);
-  UNUSED(locations);
-  UNUSED(dest);
-  LOG(FATAL) << "UniMplemented";
-  UNREACHABLE();
-}
-
 void InstructionCodeGeneratorRISCV64::GenerateIntLongCompareAndBranch(IfCondition cond,
-                                                                      bool is_64bit,
                                                                       LocationSummary* locations,
                                                                       Riscv64Label* label) {
-  UNUSED(cond);
-  UNUSED(is_64bit);
-  UNUSED(locations);
-  UNUSED(label);
-  LOG(FATAL) << "UniMplemented";
+  XRegister left = locations->InAt(0).AsRegister<XRegister>();
+  Location right_location = locations->InAt(1);
+  if (right_location.IsConstant()) {
+    DCHECK_EQ(CodeGenerator::GetInt64ValueOf(right_location.GetConstant()), 0);
+    switch (cond) {
+      case kCondEQ:
+      case kCondBE:  // <= 0 if zero
+        __ Beqz(left, label);
+        break;
+      case kCondNE:
+      case kCondA:  // > 0 if non-zero
+        __ Bnez(left, label);
+        break;
+      case kCondLT:
+        __ Bltz(left, label);
+        break;
+      case kCondGE:
+        __ Bgez(left, label);
+        break;
+      case kCondLE:
+        __ Blez(left, label);
+        break;
+      case kCondGT:
+        __ Bgtz(left, label);
+        break;
+      case kCondB:  // always false
+        break;
+      case kCondAE:  // always true
+        __ J(label);
+        break;
+    }
+  } else {
+    XRegister right_reg = right_location.AsRegister<XRegister>();
+    switch (cond) {
+      case kCondEQ:
+        __ Beq(left, right_reg, label);
+        break;
+      case kCondNE:
+        __ Bne(left, right_reg, label);
+        break;
+      case kCondLT:
+        __ Blt(left, right_reg, label);
+        break;
+      case kCondGE:
+        __ Bge(left, right_reg, label);
+        break;
+      case kCondLE:
+        __ Ble(left, right_reg, label);
+        break;
+      case kCondGT:
+        __ Bgt(left, right_reg, label);
+        break;
+      case kCondB:
+        __ Bltu(left, right_reg, label);
+        break;
+      case kCondAE:
+        __ Bgeu(left, right_reg, label);
+        break;
+      case kCondBE:
+        __ Bleu(left, right_reg, label);
+        break;
+      case kCondA:
+        __ Bgtu(left, right_reg, label);
+        break;
+    }
+  }
 }
 
 void InstructionCodeGeneratorRISCV64::GenerateFpCondition(IfCondition cond,
                                                           bool gt_bias,
                                                           DataType::Type type,
-                                                          LocationSummary* locations) {
-  XRegister rd = locations->Out().AsRegister<XRegister>();
+                                                          LocationSummary* locations,
+                                                          Riscv64Label* label) {
+  // RISCV-V FP compare instructions yield the following values:
+  //                      l<r  l=r  l>r Unordered
+  //             FEQ l,r   0    1    0    0
+  //             FLT l,r   1    0    0    0
+  //             FLT r,l   0    0    1    0
+  //             FLE l,r   1    1    0    0
+  //             FLE r,l   0    1    1    0
+  //
+  // We can calculate the `Compare` results using the following formulas:
+  //                      l<r  l=r  l>r Unordered
+  //     Compare/gt_bias  -1    0    1    1       = ((FLE l,r) ^ 1) - (FLT l,r)
+  //     Compare/lt_bias  -1    0    1   -1       = ((FLE r,l) - 1) + (FLT r,l)
+  // These are emitted in `VisitCompare()`.
+  //
+  // This function emits a fused `Condition(Compare(., .), 0)`. If we compare the
+  // `Compare` results above with 0, we get the following values and formulas:
+  //                      l<r  l=r  l>r Unordered
+  //     CondEQ/-          0    1    0    0       = (FEQ l, r)
+  //     CondNE/-          1    0    1    1       = (FEQ l, r) ^ 1
+  //     CondLT/gt_bias    1    0    0    0       = (FLT l,r)
+  //     CondLT/lt_bias    1    0    0    1       = (FLE r,l) ^ 1
+  //     CondLE/gt_bias    1    1    0    0       = (FLE l,r)
+  //     CondLE/lt_bias    1    1    0    1       = (FLT r,l) ^ 1
+  //     CondGT/gt_bias    0    0    1    1       = (FLE l,r) ^ 1
+  //     CondGT/lt_bias    0    0    1    0       = (FLT r,l)
+  //     CondGE/gt_bias    0    1    1    1       = (FLT l,r) ^ 1
+  //     CondGE/lt_bias    0    1    1    0       = (FLE r,l)
+  // (CondEQ/CondNE comparison with zero yields the same result with gt_bias and lt_bias.)
+  //
+  // If the condition is not materialized, the `^ 1` is not emitted,
+  // instead the condition is reversed by emitting BEQZ instead of BNEZ.
+
   FRegister rs1 = locations->InAt(0).AsFpuRegister<FRegister>();
   FRegister rs2 = locations->InAt(1).AsFpuRegister<FRegister>();
 
-  // All FP compare operations yield 0 for NaN on either side but we need the result to be 1
-  // for certain combinations of `gt_bias` and `cond`.
-  // There is no dex instruction or HIR that would need the "equal or unordered" or "not equal"
-  // and the conditions "equal" and "not equal or unordered" do not need the NaN check here.
-  Riscv64Label done;
-  if (gt_bias ? (cond == kCondGT || cond == kCondGE) : (cond == kCondLT || cond == kCondLE)) {
-    // FCLASS.S/D examines the value in the floating-point register and writes to integer
-    // register a 10-bit mask that indicates the class of the floating-point number.
-    // rd[8]: Singaling NaN
-    // rd[9]: Quiet NaN
-    ScratchRegisterScope srs(GetAssembler());
-    XRegister tmp = srs.AllocateXRegister();
-    XRegister tmp2 = srs.AllocateXRegister();
-    if (type == DataType::Type::kFloat32) {
-      __ FClassS(tmp, rs1);
-      __ FClassS(tmp2, rs2);
-    } else {
-      DCHECK_EQ(type, DataType::Type::kFloat64);
-      __ FClassD(tmp, rs1);
-      __ FClassS(tmp2, rs2);
-    }
-    __ Li(rd, 1);  // Pre-load the result for NaN to avoid branching over it later.
-    __ Or(tmp, tmp, tmp2);
-    __ Srli(tmp, tmp, 8);
-    __ Bnez(tmp, &done);  // goto done if either input was NaN.
+  DCHECK_EQ(label != nullptr, locations->Out().IsInvalid());
+  ScratchRegisterScope srs(GetAssembler());
+  XRegister rd =
+      (label != nullptr) ? srs.AllocateXRegister() : locations->Out().AsRegister<XRegister>();
+  bool reverse_condition = false;
+
+  switch (cond) {
+    case kCondEQ:
+      FEq(rd, rs1, rs2, type);
+      break;
+    case kCondNE:
+      FEq(rd, rs1, rs2, type);
+      reverse_condition = true;
+      break;
+    case kCondLT:
+      if (gt_bias) {
+        FLt(rd, rs1, rs2, type);
+      } else {
+        FLe(rd, rs2, rs1, type);
+        reverse_condition = true;
+      }
+      break;
+    case kCondLE:
+      if (gt_bias) {
+        FLe(rd, rs1, rs2, type);
+      } else {
+        FLt(rd, rs2, rs1, type);
+        reverse_condition = true;
+      }
+      break;
+    case kCondGT:
+      if (gt_bias) {
+        FLe(rd, rs1, rs2, type);
+        reverse_condition = true;
+      } else {
+        FLt(rd, rs2, rs1, type);
+      }
+      break;
+    case kCondGE:
+      if (gt_bias) {
+        FLt(rd, rs1, rs2, type);
+        reverse_condition = true;
+      } else {
+        FLe(rd, rs2, rs1, type);
+      }
+      break;
+    default:
+      LOG(FATAL) << "Unexpected floating-point condition " << cond;
+      UNREACHABLE();
   }
 
-  if (type == DataType::Type::kFloat32) {
-    switch (cond) {
-      case kCondEQ:
-        __ FEqS(rd, rs1, rs2);
-        break;
-      case kCondNE:
-        __ FEqS(rd, rs1, rs2);
-        __ Xori(rd, rd, 1);
-        break;
-      case kCondLT:
-        __ FLtS(rd, rs1, rs2);
-        break;
-      case kCondLE:
-        __ FLeS(rd, rs1, rs2);
-        break;
-      case kCondGT:
-        __ FLtS(rd, rs2, rs1);
-        break;
-      case kCondGE:
-        __ FLeS(rd, rs2, rs1);
-        break;
-      default:
-        LOG(FATAL) << "Unexpected floating-point condition " << cond;
-        UNREACHABLE();
+  if (label != nullptr) {
+    if (reverse_condition) {
+      __ Beqz(rd, label);
+    } else {
+      __ Bnez(rd, label);
     }
   } else {
-    DCHECK_EQ(type, DataType::Type::kFloat64);
-    switch (cond) {
-      case kCondEQ:
-        __ FEqD(rd, rs1, rs2);
-        break;
-      case kCondNE:
-        __ FEqD(rd, rs1, rs2);
-        __ Xori(rd, rd, 1);
-        break;
-      case kCondLT:
-        __ FLtD(rd, rs1, rs2);
-        break;
-      case kCondLE:
-        __ FLeD(rd, rs1, rs2);
-        break;
-      case kCondGT:
-        __ FLtD(rd, rs2, rs1);
-        break;
-      case kCondGE:
-        __ FLeD(rd, rs2, rs1);
-        break;
-      default:
-        LOG(FATAL) << "Unexpected floating-point condition " << cond;
-        UNREACHABLE();
+    if (reverse_condition) {
+      __ Xori(rd, rd, 1);
     }
   }
-
-  if (done.IsLinked()) {
-    __ Bind(&done);
-  }
-}
-
-bool InstructionCodeGeneratorRISCV64::MaterializeFpCompare(IfCondition cond,
-                                                           bool gt_bias,
-                                                           DataType::Type type,
-                                                           LocationSummary* locations,
-                                                           XRegister dest) {
-  UNUSED(cond);
-  UNUSED(gt_bias);
-  UNUSED(type);
-  UNUSED(locations);
-  UNUSED(dest);
-  LOG(FATAL) << "Unimplemented";
-  UNREACHABLE();
-}
-
-void InstructionCodeGeneratorRISCV64::GenerateFpCompareAndBranch(IfCondition cond,
-                                                                 bool gt_bias,
-                                                                 DataType::Type type,
-                                                                 LocationSummary* locations,
-                                                                 Riscv64Label* label) {
-  UNUSED(cond);
-  UNUSED(gt_bias);
-  UNUSED(type);
-  UNUSED(locations);
-  UNUSED(label);
-  LOG(FATAL) << "Unimplemented";
 }
 
 void InstructionCodeGeneratorRISCV64::HandleGoto(HInstruction* instruction,
@@ -787,18 +922,10 @@ void InstructionCodeGeneratorRISCV64::HandleBinaryOp(HBinaryOperation* instructi
       FRegister rs1 = locations->InAt(0).AsFpuRegister<FRegister>();
       FRegister rs2 = locations->InAt(1).AsFpuRegister<FRegister>();
       if (instruction->IsAdd()) {
-        if (type == DataType::Type::kFloat32) {
-          __ FAddS(rd, rs1, rs2);
-        } else {
-          __ FAddD(rd, rs1, rs2);
-        }
+        FAdd(rd, rs1, rs2, type);
       } else {
         DCHECK(instruction->IsSub());
-        if (type == DataType::Type::kFloat32) {
-          __ FSubS(rd, rs1, rs2);
-        } else {
-          __ FSubD(rd, rs1, rs2);
-        }
+        FSub(rd, rs1, rs2, type);
       }
       break;
     }
@@ -823,23 +950,32 @@ void LocationsBuilderRISCV64::HandleCondition(HCondition* instruction) {
       bool use_imm = false;
       if (rhs->IsConstant()) {
         int64_t imm = CodeGenerator::GetInt64ValueOf(rhs->AsConstant());
-        switch (instruction->GetCondition()) {
-          case kCondEQ:
-          case kCondNE:
-            imm = -imm;
-            break;
-          case kCondLE:
-          case kCondGT:
-          case kCondBE:
-          case kCondA:
-            imm += 1;
-            break;
-          default:
-            break;
+        if (instruction->IsEmittedAtUseSite()) {
+          // For `HIf`, materialize all non-zero constants with an `HParallelMove`.
+          // Note: For certain constants and conditions, the code could be improved.
+          // For example, 2048 takes two instructions to materialize but the negative
+          // -2048 could be embedded in ADDI for EQ/NE comparison.
+          use_imm = (imm == 0);
+        } else {
+          // Constants that cannot be embedded in an instruction's 12-bit immediate shall be
+          // materialized with an `HParallelMove`. This simplifies the code and avoids cases
+          // with arithmetic overflow. Adjust the `imm` if needed for a particular instruction.
+          switch (instruction->GetCondition()) {
+            case kCondEQ:
+            case kCondNE:
+              imm = -imm;  // ADDI with negative immediate (there is no SUBI).
+              break;
+            case kCondLE:
+            case kCondGT:
+            case kCondBE:
+            case kCondA:
+              imm += 1;    // SLTI/SLTIU with adjusted immediate (there is no SLEI/SLEIU).
+              break;
+            default:
+              break;
+          }
+          use_imm = IsInt<12>(imm);
         }
-        // Constants that cannot be embedded in an instruction's 12-bit immediate shall be
-        // materialized. This simplifies the code and avoids cases with arithmetic overflow.
-        use_imm = IsInt<12>(imm);
       }
       if (use_imm) {
         locations->SetInAt(1, Location::ConstantLocation(rhs->AsConstant()));
@@ -867,7 +1003,7 @@ void InstructionCodeGeneratorRISCV64::HandleCondition(HCondition* instruction) {
       GenerateFpCondition(instruction->GetCondition(), instruction->IsGtBias(), type, locations);
       return;
     default:
-      // Integral types.
+      // Integral types and reference equality.
       GenerateIntLongCondition(instruction->GetCondition(), locations);
       return;
   }
@@ -1288,38 +1424,22 @@ void InstructionCodeGeneratorRISCV64::VisitCompare(HCompare* instruction) {
       break;
     }
 
-    case DataType::Type::kFloat32: {
-      FRegister left = locations->InAt(0).AsFpuRegister<FRegister>();
-      FRegister right = locations->InAt(1).AsFpuRegister<FRegister>();
-      ScratchRegisterScope srs(GetAssembler());
-      XRegister tmp = srs.AllocateXRegister();
-      if (instruction->IsGtBias()) {
-        __ FLeS(tmp, left, right);
-        __ FLtS(result, left, right);
-        __ Xori(tmp, tmp, 1);
-        __ Sub(result, tmp, result);
-      } else {
-        __ FLeS(tmp, right, left);
-        __ FLtS(result, right, left);
-        __ Addi(tmp, tmp, -1);
-        __ Add(result, result, tmp);
-      }
-      break;
-    }
-
+    case DataType::Type::kFloat32:
     case DataType::Type::kFloat64: {
       FRegister left = locations->InAt(0).AsFpuRegister<FRegister>();
       FRegister right = locations->InAt(1).AsFpuRegister<FRegister>();
       ScratchRegisterScope srs(GetAssembler());
       XRegister tmp = srs.AllocateXRegister();
       if (instruction->IsGtBias()) {
-        __ FLeD(tmp, left, right);
-        __ FLtD(result, left, right);
+        // ((FLE l,r) ^ 1) - (FLT l,r); see `GenerateFpCondition()`.
+        FLe(tmp, left, right, in_type);
+        FLt(result, left, right, in_type);
         __ Xori(tmp, tmp, 1);
         __ Sub(result, tmp, result);
       } else {
-        __ FLeD(tmp, right, left);
-        __ FLtD(result, right, left);
+        // ((FLE r,l) - 1) + (FLT r,l); see `GenerateFpCondition()`.
+        FLe(tmp, right, left, in_type);
+        FLt(result, right, left, in_type);
         __ Addi(tmp, tmp, -1);
         __ Add(result, result, tmp);
       }
@@ -1453,13 +1573,22 @@ void InstructionCodeGeneratorRISCV64::VisitGreaterThanOrEqual(HGreaterThanOrEqua
 }
 
 void LocationsBuilderRISCV64::VisitIf(HIf* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
+  if (IsBooleanValueOrMaterializedCondition(instruction->InputAt(0))) {
+    locations->SetInAt(0, Location::RequiresRegister());
+  }
 }
 
 void InstructionCodeGeneratorRISCV64::VisitIf(HIf* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HBasicBlock* true_successor = instruction->IfTrueSuccessor();
+  HBasicBlock* false_successor = instruction->IfFalseSuccessor();
+  Riscv64Label* true_target = codegen_->GoesToNextBlock(instruction->GetBlock(), true_successor)
+      ? nullptr
+      : codegen_->GetLabelOf(true_successor);
+  Riscv64Label* false_target = codegen_->GoesToNextBlock(instruction->GetBlock(), false_successor)
+      ? nullptr
+      : codegen_->GetLabelOf(false_successor);
+  GenerateTestAndBranch(instruction, /* condition_input_index= */ 0, true_target, false_target);
 }
 
 void LocationsBuilderRISCV64::VisitInstanceFieldGet(HInstanceFieldGet* instruction) {
@@ -2478,7 +2607,11 @@ CodeGeneratorRISCV64::CodeGeneratorRISCV64(HGraph* graph,
       assembler_(graph->GetAllocator(),
                  compiler_options.GetInstructionSetFeatures()->AsRiscv64InstructionSetFeatures()),
       location_builder_(graph, this),
-      block_labels_(nullptr) {}
+      instruction_visitor_(graph, this),
+      block_labels_(nullptr) {
+  // Always mark the RA register to be saved.
+  AddAllocatedRegister(Location::RegisterLocation(RA));
+}
 
 void CodeGeneratorRISCV64::MaybeIncrementHotness(bool is_frame_entry) {
   if (GetCompilerOptions().CountHotnessInCompiledCode()) {
@@ -3008,13 +3141,13 @@ void CodeGeneratorRISCV64::InvokeRuntimeWithoutRecordingPcInfo(int32_t entry_poi
 
 void CodeGeneratorRISCV64::IncreaseFrame(size_t adjustment) {
   int32_t adjustment32 = dchecked_integral_cast<int32_t>(adjustment);
-  __ AddConst32(SP, SP, -adjustment32);
+  __ AddConst64(SP, SP, -adjustment32);
   GetAssembler()->cfi().AdjustCFAOffset(adjustment32);
 }
 
 void CodeGeneratorRISCV64::DecreaseFrame(size_t adjustment) {
   int32_t adjustment32 = dchecked_integral_cast<int32_t>(adjustment);
-  __ AddConst32(SP, SP, adjustment32);
+  __ AddConst64(SP, SP, adjustment32);
   GetAssembler()->cfi().AdjustCFAOffset(-adjustment32);
 }
 
