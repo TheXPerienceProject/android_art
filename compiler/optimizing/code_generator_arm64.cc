@@ -5438,7 +5438,9 @@ void LocationsBuilderARM64::VisitLoadClass(HLoadClass* cls) {
     locations->SetInAt(0, Location::RequiresRegister());
   }
   locations->SetOut(Location::RequiresRegister());
-  if (cls->GetLoadKind() == HLoadClass::LoadKind::kBssEntry) {
+  if (load_kind == HLoadClass::LoadKind::kBssEntry ||
+      load_kind == HLoadClass::LoadKind::kBssEntryPublic ||
+      load_kind == HLoadClass::LoadKind::kBssEntryPackage) {
     if (!gUseReadBarrier || kUseBakerReadBarrier) {
       // Rely on the type resolution or initialization and marking to save everything we need.
       locations->SetCustomSlowPathCallerSaves(OneRegInReferenceOutSaveEverythingCallerSaves());
@@ -6356,6 +6358,9 @@ void LocationsBuilderARM64::VisitSuspendCheck(HSuspendCheck* instruction) {
   // In suspend check slow path, usually there are no caller-save registers at all.
   // If SIMD instructions are present, however, we force spilling all live SIMD
   // registers in full width (since the runtime only saves/restores lower part).
+  // Note that only a suspend check can see live SIMD registers. In the
+  // loop optimization, we make sure this does not happen for any other slow
+  // path.
   locations->SetCustomSlowPathCallerSaves(
       GetGraph()->HasSIMD() ? RegisterSet::AllFpu() : RegisterSet::Empty());
 }
