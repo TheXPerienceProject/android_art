@@ -18,6 +18,7 @@
 
 #include "android-base/logging.h"
 #include "android-base/macros.h"
+#include "arch/riscv64/jni_frame_riscv64.h"
 #include "arch/riscv64/registers_riscv64.h"
 #include "base/macros.h"
 #include "code_generator_utils.h"
@@ -85,6 +86,29 @@ Location Riscv64ReturnLocation(DataType::Type return_type) {
   UNREACHABLE();
 }
 
+static RegisterSet OneRegInReferenceOutSaveEverythingCallerSaves() {
+  InvokeRuntimeCallingConvention calling_convention;
+  RegisterSet caller_saves = RegisterSet::Empty();
+  caller_saves.Add(Location::RegisterLocation(calling_convention.GetRegisterAt(0)));
+  DCHECK_EQ(
+      calling_convention.GetRegisterAt(0),
+      calling_convention.GetReturnLocation(DataType::Type::kReference).AsRegister<XRegister>());
+  return caller_saves;
+}
+
+template <ClassStatus kStatus>
+static constexpr int64_t ShiftedSignExtendedClassStatusValue() {
+  // This is used only for status values that have the highest bit set.
+  static_assert(CLZ(enum_cast<uint32_t>(kStatus)) == status_lsb_position);
+  constexpr uint32_t kShiftedStatusValue = enum_cast<uint32_t>(kStatus) << status_lsb_position;
+  static_assert(kShiftedStatusValue >= 0x80000000u);
+  return static_cast<int64_t>(kShiftedStatusValue) - (INT64_C(1) << 32);
+}
+
+Location InvokeRuntimeCallingConvention::GetReturnLocation(DataType::Type return_type) {
+  return Riscv64ReturnLocation(return_type);
+}
+
 Location InvokeDexCallingConventionVisitorRISCV64::GetReturnLocation(DataType::Type type) const {
   return Riscv64ReturnLocation(type);
 }
@@ -118,6 +142,54 @@ Location InvokeDexCallingConventionVisitorRISCV64::GetNextLocation(DataType::Typ
   stack_index_ += DataType::Is64BitType(type) ? 2 : 1;
 
   return next_location;
+}
+
+Location CriticalNativeCallingConventionVisitorRiscv64::GetNextLocation(DataType::Type type) {
+  DCHECK_NE(type, DataType::Type::kReference);
+
+  Location location = Location::NoLocation();
+  if (DataType::IsFloatingPointType(type)) {
+    if (fpr_index_ < kParameterFpuRegistersLength) {
+      location = Location::FpuRegisterLocation(kParameterFpuRegisters[fpr_index_]);
+      ++fpr_index_;
+    }
+    // Native ABI allows passing excessive FP args in GPRs. This is facilitated by
+    // inserting fake conversion intrinsic calls (`Double.doubleToRawLongBits()`
+    // or `Float.floatToRawIntBits()`) by `CriticalNativeAbiFixupRiscv64`.
+    // TODO(riscv64): Implement these  intrinsics and `CriticalNativeAbiFixupRiscv64`.
+  } else {
+    // Native ABI uses the same core registers as a runtime call.
+    if (gpr_index_ < kRuntimeParameterCoreRegistersLength) {
+      location = Location::RegisterLocation(kRuntimeParameterCoreRegisters[gpr_index_]);
+      ++gpr_index_;
+    }
+  }
+  if (location.IsInvalid()) {
+    if (DataType::Is64BitType(type)) {
+      location = Location::DoubleStackSlot(stack_offset_);
+    } else {
+      location = Location::StackSlot(stack_offset_);
+    }
+    stack_offset_ += kFramePointerSize;
+
+    if (for_register_allocation_) {
+      location = Location::Any();
+    }
+  }
+  return location;
+}
+
+Location CriticalNativeCallingConventionVisitorRiscv64::GetReturnLocation(
+    DataType::Type type) const {
+  // The result is returned the same way in native ABI and managed ABI. No result conversion is
+  // needed, see comments in `Riscv64JniCallingConvention::RequiresSmallResultTypeExtension()`.
+  InvokeDexCallingConventionVisitorRISCV64 dex_calling_convention;
+  return dex_calling_convention.GetReturnLocation(type);
+}
+
+Location CriticalNativeCallingConventionVisitorRiscv64::GetMethodLocation() const {
+  // Pass the method in the hidden argument T0.
+  return Location::RegisterLocation(T0);
 }
 
 #define __ down_cast<CodeGeneratorRISCV64*>(codegen)->GetAssembler()->  // NOLINT
@@ -261,6 +333,96 @@ class BoundsCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
   DISALLOW_COPY_AND_ASSIGN(BoundsCheckSlowPathRISCV64);
 };
 
+class LoadClassSlowPathRISCV64 : public SlowPathCodeRISCV64 {
+ public:
+  LoadClassSlowPathRISCV64(HLoadClass* cls, HInstruction* at) : SlowPathCodeRISCV64(at), cls_(cls) {
+    DCHECK(at->IsLoadClass() || at->IsClinitCheck());
+    DCHECK_EQ(instruction_->IsLoadClass(), cls_ == instruction_);
+  }
+
+  void EmitNativeCode(CodeGenerator* codegen) override {
+    LocationSummary* locations = instruction_->GetLocations();
+    Location out = locations->Out();
+    const uint32_t dex_pc = instruction_->GetDexPc();
+    bool must_resolve_type = instruction_->IsLoadClass() && cls_->MustResolveTypeOnSlowPath();
+    bool must_do_clinit = instruction_->IsClinitCheck() || cls_->MustGenerateClinitCheck();
+
+    CodeGeneratorRISCV64* riscv64_codegen = down_cast<CodeGeneratorRISCV64*>(codegen);
+    __ Bind(GetEntryLabel());
+    SaveLiveRegisters(codegen, locations);
+
+    InvokeRuntimeCallingConvention calling_convention;
+    if (must_resolve_type) {
+      DCHECK(IsSameDexFile(cls_->GetDexFile(), riscv64_codegen->GetGraph()->GetDexFile()) ||
+             riscv64_codegen->GetCompilerOptions().WithinOatFile(&cls_->GetDexFile()) ||
+             ContainsElement(Runtime::Current()->GetClassLinker()->GetBootClassPath(),
+                             &cls_->GetDexFile()));
+      dex::TypeIndex type_index = cls_->GetTypeIndex();
+      __ LoadConst32(calling_convention.GetRegisterAt(0), type_index.index_);
+      if (cls_->NeedsAccessCheck()) {
+        CheckEntrypointTypes<kQuickResolveTypeAndVerifyAccess, void*, uint32_t>();
+        riscv64_codegen->InvokeRuntime(
+            kQuickResolveTypeAndVerifyAccess, instruction_, dex_pc, this);
+      } else {
+        CheckEntrypointTypes<kQuickResolveType, void*, uint32_t>();
+        riscv64_codegen->InvokeRuntime(kQuickResolveType, instruction_, dex_pc, this);
+      }
+      // If we also must_do_clinit, the resolved type is now in the correct register.
+    } else {
+      DCHECK(must_do_clinit);
+      Location source = instruction_->IsLoadClass() ? out : locations->InAt(0);
+      riscv64_codegen->MoveLocation(
+          Location::RegisterLocation(calling_convention.GetRegisterAt(0)), source, cls_->GetType());
+    }
+    if (must_do_clinit) {
+      riscv64_codegen->InvokeRuntime(kQuickInitializeStaticStorage, instruction_, dex_pc, this);
+      CheckEntrypointTypes<kQuickInitializeStaticStorage, void*, mirror::Class*>();
+    }
+
+    // Move the class to the desired location.
+    if (out.IsValid()) {
+      DCHECK(out.IsRegister() && !locations->GetLiveRegisters()->ContainsCoreRegister(out.reg()));
+      DataType::Type type = instruction_->GetType();
+      riscv64_codegen->MoveLocation(
+          out, Location::RegisterLocation(calling_convention.GetRegisterAt(0)), type);
+    }
+    RestoreLiveRegisters(codegen, locations);
+
+    __ J(GetExitLabel());
+  }
+
+  const char* GetDescription() const override { return "LoadClassSlowPathRISCV64"; }
+
+ private:
+  // The class this slow path will load.
+  HLoadClass* const cls_;
+
+  DISALLOW_COPY_AND_ASSIGN(LoadClassSlowPathRISCV64);
+};
+
+class DeoptimizationSlowPathRISCV64 : public SlowPathCodeRISCV64 {
+ public:
+  explicit DeoptimizationSlowPathRISCV64(HDeoptimize* instruction)
+      : SlowPathCodeRISCV64(instruction) {}
+
+  void EmitNativeCode(CodeGenerator* codegen) override {
+    CodeGeneratorRISCV64* riscv64_codegen = down_cast<CodeGeneratorRISCV64*>(codegen);
+    __ Bind(GetEntryLabel());
+    LocationSummary* locations = instruction_->GetLocations();
+    SaveLiveRegisters(codegen, locations);
+    InvokeRuntimeCallingConvention calling_convention;
+    __ LoadConst32(calling_convention.GetRegisterAt(0),
+                   static_cast<uint32_t>(instruction_->AsDeoptimize()->GetDeoptimizationKind()));
+    riscv64_codegen->InvokeRuntime(kQuickDeoptimize, instruction_, instruction_->GetDexPc(), this);
+    CheckEntrypointTypes<kQuickDeoptimize, void, DeoptimizationKind>();
+  }
+
+  const char* GetDescription() const override { return "DeoptimizationSlowPathRISCV64"; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DeoptimizationSlowPathRISCV64);
+};
+
 #undef __
 #define __ down_cast<Riscv64Assembler*>(GetAssembler())->  // NOLINT
 
@@ -379,9 +541,17 @@ InstructionCodeGeneratorRISCV64::InstructionCodeGeneratorRISCV64(HGraph* graph,
 
 void InstructionCodeGeneratorRISCV64::GenerateClassInitializationCheck(
     SlowPathCodeRISCV64* slow_path, XRegister class_reg) {
-  UNUSED(slow_path);
-  UNUSED(class_reg);
-  LOG(FATAL) << "Unimplemented";
+  ScratchRegisterScope srs(GetAssembler());
+  XRegister tmp = srs.AllocateXRegister();
+  XRegister tmp2 = srs.AllocateXRegister();
+
+  // We shall load the full 32-bit status word with sign-extension and compare as unsigned
+  // to a sign-extended shifted status value. This yields the same comparison as loading and
+  // materializing unsigned but the constant is materialized with a single LUI instruction.
+  __ Loadw(tmp, class_reg, mirror::Class::StatusOffset().SizeValue());  // Sign-extended.
+  __ Li(tmp2, ShiftedSignExtendedClassStatusValue<ClassStatus::kVisiblyInitialized>());
+  __ Bltu(tmp, tmp2, slow_path->GetEntryLabel());
+  __ Bind(slow_path->GetExitLabel());
 }
 
 void InstructionCodeGeneratorRISCV64::GenerateBitstringTypeCheckCompare(
@@ -1550,13 +1720,23 @@ void InstructionCodeGeneratorRISCV64::VisitClearException(
 }
 
 void LocationsBuilderRISCV64::VisitClinitCheck(HClinitCheck* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(
+      instruction, LocationSummary::kCallOnSlowPath);
+  locations->SetInAt(0, Location::RequiresRegister());
+  if (instruction->HasUses()) {
+    locations->SetOut(Location::SameAsFirstInput());
+  }
+  // Rely on the type initialization to save everything we need.
+  locations->SetCustomSlowPathCallerSaves(OneRegInReferenceOutSaveEverythingCallerSaves());
 }
 
 void InstructionCodeGeneratorRISCV64::VisitClinitCheck(HClinitCheck* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  // We assume the class is not null.
+  SlowPathCodeRISCV64* slow_path = new (codegen_->GetScopedAllocator()) LoadClassSlowPathRISCV64(
+      instruction->GetLoadClass(), instruction);
+  codegen_->AddSlowPath(slow_path);
+  GenerateClassInitializationCheck(slow_path,
+                                   instruction->GetLocations()->InAt(0).AsRegister<XRegister>());
 }
 
 void LocationsBuilderRISCV64::VisitCompare(HCompare* instruction) {
@@ -1676,13 +1856,24 @@ void InstructionCodeGeneratorRISCV64::VisitShouldDeoptimizeFlag(
 }
 
 void LocationsBuilderRISCV64::VisitDeoptimize(HDeoptimize* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = new (GetGraph()->GetAllocator())
+      LocationSummary(instruction, LocationSummary::kCallOnSlowPath);
+  InvokeRuntimeCallingConvention calling_convention;
+  RegisterSet caller_saves = RegisterSet::Empty();
+  caller_saves.Add(Location::RegisterLocation(calling_convention.GetRegisterAt(0)));
+  locations->SetCustomSlowPathCallerSaves(caller_saves);
+  if (IsBooleanValueOrMaterializedCondition(instruction->InputAt(0))) {
+    locations->SetInAt(0, Location::RequiresRegister());
+  }
 }
 
 void InstructionCodeGeneratorRISCV64::VisitDeoptimize(HDeoptimize* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  SlowPathCodeRISCV64* slow_path =
+      deopt_slow_paths_.NewSlowPath<DeoptimizationSlowPathRISCV64>(instruction);
+  GenerateTestAndBranch(instruction,
+                        /* condition_input_index= */ 0,
+                        slow_path->GetEntryLabel(),
+                        /* false_target= */ nullptr);
 }
 
 void LocationsBuilderRISCV64::VisitDiv(HDiv* instruction) {
@@ -2901,21 +3092,6 @@ void CodeGeneratorRISCV64::GenerateFrameEntry() {
     Riscv64Label resolution;
     Riscv64Label memory_barrier;
 
-    static constexpr uint32_t kShiftedVisiblyInitializedValue =
-        enum_cast<uint32_t>(ClassStatus::kVisiblyInitialized) << status_lsb_position;
-    static constexpr uint32_t kShiftedInitializedValue =
-        enum_cast<uint32_t>(ClassStatus::kInitialized) << status_lsb_position;
-    static constexpr uint32_t kShiftedInitializingValue =
-        enum_cast<uint32_t>(ClassStatus::kInitializing) << status_lsb_position;
-
-    // We shall load the full 32-bit status word with sign-extension and compare as unsigned
-    // to the sign-extended status values above. This yields the same comparison as loading and
-    // materializing unsigned but the constant is materialized with a single LUI instruction.
-    auto extend64 = [](uint32_t shifted_status_value) {
-      DCHECK_GE(shifted_status_value, 0x80000000u);
-      return static_cast<int64_t>(shifted_status_value) - (INT64_C(1) << 32);
-    };
-
     ScratchRegisterScope srs(GetAssembler());
     XRegister tmp = srs.AllocateXRegister();
     XRegister tmp2 = srs.AllocateXRegister();
@@ -2923,19 +3099,23 @@ void CodeGeneratorRISCV64::GenerateFrameEntry() {
     // We don't emit a read barrier here to save on code size. We rely on the
     // resolution trampoline to do a clinit check before re-entering this code.
     __ Loadd(tmp2, kArtMethodRegister, ArtMethod::DeclaringClassOffset().Int32Value());
+
+    // We shall load the full 32-bit status word with sign-extension and compare as unsigned
+    // to sign-extended shifted status values. This yields the same comparison as loading and
+    // materializing unsigned but the constant is materialized with a single LUI instruction.
     __ Loadw(tmp, tmp2, mirror::Class::StatusOffset().SizeValue());  // Sign-extended.
 
     // Check if we're visibly initialized.
-    __ Li(tmp2, extend64(kShiftedVisiblyInitializedValue));
+    __ Li(tmp2, ShiftedSignExtendedClassStatusValue<ClassStatus::kVisiblyInitialized>());
     __ Bgeu(tmp, tmp2, &frame_entry_label_);  // Can clobber `TMP` if taken.
 
     // Check if we're initialized and jump to code that does a memory barrier if so.
-    __ Li(tmp2, extend64(kShiftedInitializedValue));
+    __ Li(tmp2, ShiftedSignExtendedClassStatusValue<ClassStatus::kInitialized>());
     __ Bgeu(tmp, tmp2, &memory_barrier);  // Can clobber `TMP` if taken.
 
     // Check if we're initializing and the thread initializing is the one
     // executing the code.
-    __ Li(tmp2, extend64(kShiftedInitializingValue));
+    __ Li(tmp2, ShiftedSignExtendedClassStatusValue<ClassStatus::kInitializing>());
     __ Bltu(tmp, tmp2, &resolution);  // Can clobber `TMP` if taken.
 
     __ Loadd(tmp2, kArtMethodRegister, ArtMethod::DeclaringClassOffset().Int32Value());
@@ -3370,9 +3550,15 @@ void CodeGeneratorRISCV64::GenerateNop() {
 }
 
 void CodeGeneratorRISCV64::GenerateImplicitNullCheck(HNullCheck* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  if (CanMoveNullCheckToUser(instruction)) {
+    return;
+  }
+  Location obj = instruction->GetLocations()->InAt(0);
+
+  __ Lw(Zero, obj.AsRegister<XRegister>(), 0);
+  RecordPcInfo(instruction, instruction->GetDexPc());
 }
+
 void CodeGeneratorRISCV64::GenerateExplicitNullCheck(HNullCheck* instruction) {
   SlowPathCodeRISCV64* slow_path = new (GetScopedAllocator()) NullCheckSlowPathRISCV64(instruction);
   AddSlowPath(slow_path);
@@ -3606,10 +3792,80 @@ void CodeGeneratorRISCV64::LoadMethod(MethodLoadKind load_kind, Location temp, H
 void CodeGeneratorRISCV64::GenerateStaticOrDirectCall(HInvokeStaticOrDirect* invoke,
                                                       Location temp,
                                                       SlowPathCode* slow_path) {
-  UNUSED(temp);
-  UNUSED(invoke);
-  UNUSED(slow_path);
-  LOG(FATAL) << "Unimplemented";
+  // All registers are assumed to be correctly set up per the calling convention.
+  Location callee_method = temp;  // For all kinds except kRecursive, callee will be in temp.
+
+  switch (invoke->GetMethodLoadKind()) {
+    case MethodLoadKind::kStringInit: {
+      // temp = thread->string_init_entrypoint
+      uint32_t offset =
+          GetThreadOffset<kRiscv64PointerSize>(invoke->GetStringInitEntryPoint()).Int32Value();
+      __ Loadd(temp.AsRegister<XRegister>(), TR, offset);
+      break;
+    }
+    case MethodLoadKind::kRecursive:
+      callee_method = invoke->GetLocations()->InAt(invoke->GetCurrentMethodIndex());
+      break;
+    case MethodLoadKind::kRuntimeCall:
+      GenerateInvokeStaticOrDirectRuntimeCall(invoke, temp, slow_path);
+      return;  // No code pointer retrieval; the runtime performs the call directly.
+    case MethodLoadKind::kBootImageLinkTimePcRelative:
+      DCHECK(GetCompilerOptions().IsBootImage() || GetCompilerOptions().IsBootImageExtension());
+      if (invoke->GetCodePtrLocation() == CodePtrLocation::kCallCriticalNative) {
+        // Do not materialize the method pointer, load directly the entrypoint.
+        CodeGeneratorRISCV64::PcRelativePatchInfo* info_high =
+            NewBootImageJniEntrypointPatch(invoke->GetResolvedMethodReference());
+        EmitPcRelativeAuipcPlaceholder(info_high, RA);
+        CodeGeneratorRISCV64::PcRelativePatchInfo* info_low =
+            NewBootImageJniEntrypointPatch(invoke->GetResolvedMethodReference(), info_high);
+        EmitPcRelativeLdPlaceholder(info_low, RA, RA);
+        break;
+      }
+      FALLTHROUGH_INTENDED;
+    default:
+      LoadMethod(invoke->GetMethodLoadKind(), temp, invoke);
+      break;
+  }
+
+  switch (invoke->GetCodePtrLocation()) {
+    case CodePtrLocation::kCallSelf:
+      DCHECK(!GetGraph()->HasShouldDeoptimizeFlag());
+      __ Jal(&frame_entry_label_);
+      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      break;
+    case CodePtrLocation::kCallArtMethod:
+      // RA = callee_method->entry_point_from_quick_compiled_code_;
+      __ Loadd(RA,
+               callee_method.AsRegister<XRegister>(),
+               ArtMethod::EntryPointFromQuickCompiledCodeOffset(kRiscv64PointerSize).Int32Value());
+      // RA()
+      __ Jalr(RA);
+      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      break;
+    case CodePtrLocation::kCallCriticalNative: {
+      size_t out_frame_size =
+          PrepareCriticalNativeCall<CriticalNativeCallingConventionVisitorRiscv64,
+                                    kNativeStackAlignment,
+                                    GetCriticalNativeDirectCallFrameSize>(invoke);
+      if (invoke->GetMethodLoadKind() == MethodLoadKind::kBootImageLinkTimePcRelative) {
+        __ Jalr(TMP);
+      } else {
+        // TMP2 = callee_method->ptr_sized_fields_.data_;  // EntryPointFromJni
+        MemberOffset offset = ArtMethod::EntryPointFromJniOffset(kRiscv64PointerSize);
+        __ Loadd(TMP2, callee_method.AsRegister<XRegister>(), offset.Int32Value());
+        __ Jalr(TMP2);
+      }
+      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      // The result is returned the same way in native ABI and managed ABI. No result conversion is
+      // needed, see comments in `Riscv64JniCallingConvention::RequiresSmallResultTypeExtension()`.
+      if (out_frame_size != 0u) {
+        DecreaseFrame(out_frame_size);
+      }
+      break;
+    }
+  }
+
+  DCHECK(!IsLeafMethod());
 }
 
 void CodeGeneratorRISCV64::MaybeGenerateInlineCacheCheck(HInstruction* instruction,
