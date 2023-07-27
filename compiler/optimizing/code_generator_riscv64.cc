@@ -195,8 +195,8 @@ Location CriticalNativeCallingConventionVisitorRiscv64::GetMethodLocation() cons
 #define __ down_cast<CodeGeneratorRISCV64*>(codegen)->GetAssembler()->  // NOLINT
 
 void LocationsBuilderRISCV64::HandleInvoke(HInvoke* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  InvokeDexCallingConventionVisitorRISCV64 calling_convention_visitor;
+  CodeGenerator::CreateCommonInvokeLocationSummary(instruction, &calling_convention_visitor);
 }
 
 Location LocationsBuilderRISCV64::RegisterOrZeroConstant(HInstruction* instruction) {
@@ -1681,6 +1681,7 @@ void LocationsBuilderRISCV64::VisitBoundType([[maybe_unused]] HBoundType* instru
   // Nothing to do, this should be removed during prepare for register allocator.
   LOG(FATAL) << "Unreachable";
 }
+
 void InstructionCodeGeneratorRISCV64::VisitBoundType([[maybe_unused]] HBoundType* instruction) {
   // Nothing to do, this should be removed during prepare for register allocator.
   LOG(FATAL) << "Unreachable";
@@ -1697,13 +1698,26 @@ void InstructionCodeGeneratorRISCV64::VisitCheckCast(HCheckCast* instruction) {
 }
 
 void LocationsBuilderRISCV64::VisitClassTableGet(HClassTableGet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations =
+      new (GetGraph()->GetAllocator()) LocationSummary(instruction, LocationSummary::kNoCall);
+  locations->SetInAt(0, Location::RequiresRegister());
+  locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitClassTableGet(HClassTableGet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = instruction->GetLocations();
+  XRegister in = locations->InAt(0).AsRegister<XRegister>();
+  XRegister out = locations->Out().AsRegister<XRegister>();
+  if (instruction->GetTableKind() == HClassTableGet::TableKind::kVTable) {
+    MemberOffset method_offset =
+        mirror::Class::EmbeddedVTableEntryOffset(instruction->GetIndex(), kRiscv64PointerSize);
+    __ Loadd(out, in, method_offset.SizeValue());
+  } else {
+    uint32_t method_offset = dchecked_integral_cast<uint32_t>(
+        ImTable::OffsetOfElement(instruction->GetIndex(), kRiscv64PointerSize));
+    __ Loadd(out, in, mirror::Class::ImtPtrOffset(kRiscv64PointerSize).Uint32Value());
+    __ Loadd(out, out, method_offset);
+  }
 }
 
 static int32_t GetExceptionTlsOffset() {
@@ -1826,6 +1840,7 @@ void InstructionCodeGeneratorRISCV64::VisitCompare(HCompare* instruction) {
 void LocationsBuilderRISCV64::VisitConstructorFence(HConstructorFence* instruction) {
   instruction->SetLocations(nullptr);
 }
+
 void InstructionCodeGeneratorRISCV64::VisitConstructorFence(
     [[maybe_unused]] HConstructorFence* instruction) {
   codegen_->GenerateMemoryBarrier(MemBarrierKind::kStoreStore);
@@ -2037,13 +2052,13 @@ void InstructionCodeGeneratorRISCV64::VisitIntermediateAddress(HIntermediateAddr
 }
 
 void LocationsBuilderRISCV64::VisitInvokeUnresolved(HInvokeUnresolved* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  // The trampoline uses the same calling convention as dex calling conventions, except
+  // instead of loading arg0/A0 with the target Method*, arg0/A0 will contain the method_idx.
+  HandleInvoke(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitInvokeUnresolved(HInvokeUnresolved* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  codegen_->GenerateInvokeUnresolvedRuntimeCall(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitInvokeInterface(HInvokeInterface* instruction) {
@@ -3098,7 +3113,7 @@ void CodeGeneratorRISCV64::GenerateFrameEntry() {
 
     // We don't emit a read barrier here to save on code size. We rely on the
     // resolution trampoline to do a clinit check before re-entering this code.
-    __ Loadd(tmp2, kArtMethodRegister, ArtMethod::DeclaringClassOffset().Int32Value());
+    __ Loadwu(tmp2, kArtMethodRegister, ArtMethod::DeclaringClassOffset().Int32Value());
 
     // We shall load the full 32-bit status word with sign-extension and compare as unsigned
     // to sign-extended shifted status values. This yields the same comparison as loading and
@@ -3118,7 +3133,7 @@ void CodeGeneratorRISCV64::GenerateFrameEntry() {
     __ Li(tmp2, ShiftedSignExtendedClassStatusValue<ClassStatus::kInitializing>());
     __ Bltu(tmp, tmp2, &resolution);  // Can clobber `TMP` if taken.
 
-    __ Loadd(tmp2, kArtMethodRegister, ArtMethod::DeclaringClassOffset().Int32Value());
+    __ Loadwu(tmp2, kArtMethodRegister, ArtMethod::DeclaringClassOffset().Int32Value());
     __ Loadw(tmp, tmp2, mirror::Class::ClinitThreadIdOffset().Int32Value());
     __ Loadw(tmp2, TR, Thread::TidOffset<kRiscv64PointerSize>().Int32Value());
     __ Beq(tmp, tmp2, &frame_entry_label_);

@@ -210,7 +210,7 @@ Runtime* Runtime::instance_ = nullptr;
 
 struct TraceConfig {
   Trace::TraceMode trace_mode;
-  Trace::TraceOutputMode trace_output_mode;
+  TraceOutputMode trace_output_mode;
   std::string trace_file;
   size_t trace_file_size;
   TraceClockSource clock_source;
@@ -987,11 +987,6 @@ bool Runtime::Start() {
   // recoding profiles. Maybe we should consider changing the name to be more clear it's
   // not only about compiling. b/28295073.
   if (jit_options_->UseJitCompilation() || jit_options_->GetSaveProfilingInfo()) {
-    // Try to load compiler pre zygote to reduce PSS. b/27744947
-    std::string error_msg;
-    if (!jit::Jit::LoadCompilerLibrary(&error_msg)) {
-      LOG(WARNING) << "Failed to load JIT compiler with error " << error_msg;
-    }
     CreateJit();
 #ifdef ADDRESS_SANITIZER
     // (b/238730394): In older implementations of sanitizer + glibc there is a race between
@@ -1919,8 +1914,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     trace_config_->trace_file_size = runtime_options.ReleaseOrDefault(Opt::MethodTraceFileSize);
     trace_config_->trace_mode = Trace::TraceMode::kMethodTracing;
     trace_config_->trace_output_mode = runtime_options.Exists(Opt::MethodTraceStreaming) ?
-        Trace::TraceOutputMode::kStreaming :
-        Trace::TraceOutputMode::kFile;
+                                           TraceOutputMode::kStreaming :
+                                           TraceOutputMode::kFile;
     trace_config_->clock_source = runtime_options.GetOrDefault(Opt::MethodTraceClock);
   }
 
@@ -3065,15 +3060,8 @@ void Runtime::CreateJit() {
     return;
   }
 
-  jit::Jit* jit = jit::Jit::Create(jit_code_cache_.get(), jit_options_.get());
-  jit_.reset(jit);
-  if (jit == nullptr) {
-    LOG(WARNING) << "Failed to allocate JIT";
-    // Release JIT code cache resources (several MB of memory).
-    jit_code_cache_.reset();
-  } else {
-    jit->CreateThreadPool();
-  }
+  jit_ = jit::Jit::Create(jit_code_cache_.get(), jit_options_.get());
+  jit_->CreateThreadPool();
 }
 
 bool Runtime::CanRelocate() const {
