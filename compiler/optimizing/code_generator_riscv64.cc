@@ -25,6 +25,7 @@
 #include "dwarf/register.h"
 #include "heap_poisoning.h"
 #include "intrinsics_list.h"
+#include "intrinsics_riscv64.h"
 #include "jit/profiling_info.h"
 #include "mirror/class-inl.h"
 #include "optimizing/nodes.h"
@@ -33,7 +34,7 @@
 #include "utils/riscv64/assembler_riscv64.h"
 #include "utils/stack_checks.h"
 
-namespace art {
+namespace art HIDDEN {
 namespace riscv64 {
 
 static constexpr XRegister kCoreCalleeSaves[] = {
@@ -2072,44 +2073,78 @@ void InstructionCodeGeneratorRISCV64::VisitInvokeInterface(HInvokeInterface* ins
 }
 
 void LocationsBuilderRISCV64::VisitInvokeStaticOrDirect(HInvokeStaticOrDirect* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  // Explicit clinit checks triggered by static invokes must have been pruned by
+  // art::PrepareForRegisterAllocation.
+  DCHECK(!instruction->IsStaticWithExplicitClinitCheck());
+
+  IntrinsicLocationsBuilderRISCV64 intrinsic(GetGraph()->GetAllocator(), codegen_);
+  if (intrinsic.TryDispatch(instruction)) {
+    return;
+  }
+
+  if (instruction->GetCodePtrLocation() == CodePtrLocation::kCallCriticalNative) {
+    CriticalNativeCallingConventionVisitorRiscv64 calling_convention_visitor(
+        /*for_register_allocation=*/ true);
+    CodeGenerator::CreateCommonInvokeLocationSummary(instruction, &calling_convention_visitor);
+  } else {
+    HandleInvoke(instruction);
+  }
+}
+
+static bool TryGenerateIntrinsicCode(HInvoke* invoke, CodeGeneratorRISCV64* codegen) {
+  // TODO(riscv64): Implement intrinsics later
+  UNUSED(invoke);
+  UNUSED(codegen);
+  return false;
 }
 
 void InstructionCodeGeneratorRISCV64::VisitInvokeStaticOrDirect(
     HInvokeStaticOrDirect* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  // Explicit clinit checks triggered by static invokes must have been pruned by
+  // art::PrepareForRegisterAllocation.
+  DCHECK(!instruction->IsStaticWithExplicitClinitCheck());
+
+  if (TryGenerateIntrinsicCode(instruction, codegen_)) {
+    return;
+  }
+
+  LocationSummary* locations = instruction->GetLocations();
+  codegen_->GenerateStaticOrDirectCall(
+      instruction, locations->HasTemps() ? locations->GetTemp(0) : Location::NoLocation());
 }
 
 void LocationsBuilderRISCV64::VisitInvokeVirtual(HInvokeVirtual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  IntrinsicLocationsBuilderRISCV64 intrinsic(GetGraph()->GetAllocator(), codegen_);
+  if (intrinsic.TryDispatch(instruction)) {
+    return;
+  }
+
+  HandleInvoke(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitInvokeVirtual(HInvokeVirtual* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  if (TryGenerateIntrinsicCode(instruction, codegen_)) {
+    return;
+  }
+
+  codegen_->GenerateVirtualCall(instruction, instruction->GetLocations()->GetTemp(0));
+  DCHECK(!codegen_->IsLeafMethod());
 }
 
 void LocationsBuilderRISCV64::VisitInvokePolymorphic(HInvokePolymorphic* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleInvoke(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitInvokePolymorphic(HInvokePolymorphic* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  codegen_->GenerateInvokePolymorphicCall(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitInvokeCustom(HInvokeCustom* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HandleInvoke(instruction);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitInvokeCustom(HInvokeCustom* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  codegen_->GenerateInvokeCustomCall(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitLessThan(HLessThan* instruction) {
