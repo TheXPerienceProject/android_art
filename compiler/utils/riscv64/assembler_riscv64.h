@@ -41,25 +41,119 @@ enum class FPRoundingMode : uint32_t {
   kRUP = 0x3,  // Round Up (towards +Infinity)
   kRMM = 0x4,  // Round to Nearest, ties to Max Magnitude
   kDYN = 0x7,  // Dynamic rounding mode
-  kDefault = kDYN
+  kDefault = kDYN,
+  // Some instructions never need to round even though the spec includes the RM field.
+  // To simplify testing, emit the RM as 0 by default for these instructions because that's what
+  // `clang` does and because the `llvm-objdump` fails to disassemble the other rounding modes.
+  kIgnored = 0
 };
 
 static constexpr size_t kRiscv64HalfwordSize = 2;
 static constexpr size_t kRiscv64WordSize = 4;
 static constexpr size_t kRiscv64DoublewordSize = 8;
 
+// the type for fence
+enum FenceType {
+  kFenceNone = 0,
+  kFenceWrite = 1,
+  kFenceRead = 2,
+  kFenceOutput = 4,
+  kFenceInput = 8,
+  kFenceDefault = 0xf,
+};
+
 class Riscv64Label : public Label {
+ public:
+  Riscv64Label() : prev_branch_id_(kNoPrevBranchId) {}
+
+  Riscv64Label(Riscv64Label&& src) noexcept
+      : Label(std::move(src)), prev_branch_id_(src.prev_branch_id_) {}
+
+ private:
+  static constexpr uint32_t kNoPrevBranchId = std::numeric_limits<uint32_t>::max();
+
+  uint32_t prev_branch_id_;  // To get distance from preceding branch, if any.
+
+  friend class Riscv64Assembler;
+  DISALLOW_COPY_AND_ASSIGN(Riscv64Label);
+};
+
+// Assembler literal is a value embedded in code, retrieved using a PC-relative load.
+class Literal {
+ public:
+  static constexpr size_t kMaxSize = 8;
+
+  Literal(uint32_t size, const uint8_t* data) : label_(), size_(size) {
+    DCHECK_LE(size, Literal::kMaxSize);
+    memcpy(data_, data, size);
+  }
+
+  template <typename T>
+  T GetValue() const {
+    DCHECK_EQ(size_, sizeof(T));
+    T value;
+    memcpy(&value, data_, sizeof(T));
+    return value;
+  }
+
+  uint32_t GetSize() const { return size_; }
+
+  const uint8_t* GetData() const { return data_; }
+
+  Riscv64Label* GetLabel() { return &label_; }
+
+  const Riscv64Label* GetLabel() const { return &label_; }
+
+ private:
+  Riscv64Label label_;
+  const uint32_t size_;
+  uint8_t data_[kMaxSize];
+
+  DISALLOW_COPY_AND_ASSIGN(Literal);
+};
+
+// Jump table: table of labels emitted after the code and before the literals. Similar to literals.
+class JumpTable {
+ public:
+  explicit JumpTable(ArenaVector<Riscv64Label*>&& labels) : label_(), labels_(std::move(labels)) {}
+
+  size_t GetSize() const { return labels_.size() * sizeof(int32_t); }
+
+  const ArenaVector<Riscv64Label*>& GetData() const { return labels_; }
+
+  Riscv64Label* GetLabel() { return &label_; }
+
+  const Riscv64Label* GetLabel() const { return &label_; }
+
+ private:
+  Riscv64Label label_;
+  ArenaVector<Riscv64Label*> labels_;
+
+  DISALLOW_COPY_AND_ASSIGN(JumpTable);
 };
 
 class Riscv64Assembler final : public Assembler {
  public:
   explicit Riscv64Assembler(ArenaAllocator* allocator,
                             const Riscv64InstructionSetFeatures* instruction_set_features = nullptr)
-      : Assembler(allocator) {
+      : Assembler(allocator),
+        branches_(allocator->Adapter(kArenaAllocAssembler)),
+        overwriting_(false),
+        overwrite_location_(0),
+        literals_(allocator->Adapter(kArenaAllocAssembler)),
+        long_literals_(allocator->Adapter(kArenaAllocAssembler)),
+        jump_tables_(allocator->Adapter(kArenaAllocAssembler)),
+        last_position_adjustment_(0),
+        last_old_position_(0),
+        last_branch_id_(0) {
     UNUSED(instruction_set_features);
+    cfi().DelayEmittingAdvancePCs();
   }
 
   virtual ~Riscv64Assembler() {
+    for (auto& branch : branches_) {
+      CHECK(branch.IsResolved());
+    }
   }
 
   size_t CodeSize() const override { return Assembler::CodeSize(); }
@@ -136,6 +230,17 @@ class Riscv64Assembler final : public Assembler {
   void Srlw(XRegister rd, XRegister rs1, XRegister rs2);
   void Sraw(XRegister rd, XRegister rs1, XRegister rs2);
 
+  // Environment call and breakpoint (RV32I), opcode = 0x73
+  void Ecall();
+  void Ebreak();
+
+  // Fence instruction (RV32I): opcode = 0xf, funct3 = 0
+  void Fence(uint32_t pred = kFenceDefault, uint32_t succ = kFenceDefault);
+  void FenceTso();
+
+  // "Zifencei" Standard Extension, opcode = 0xf, funct3 = 1
+  void FenceI();
+
   // RV32M Standard Extension: opcode = 0x33, funct3 from 0x0 ~ 0x7
   void Mul(XRegister rd, XRegister rs1, XRegister rs2);
   void Mulh(XRegister rd, XRegister rs1, XRegister rs2);
@@ -152,6 +257,38 @@ class Riscv64Assembler final : public Assembler {
   void Divuw(XRegister rd, XRegister rs1, XRegister rs2);
   void Remw(XRegister rd, XRegister rs1, XRegister rs2);
   void Remuw(XRegister rd, XRegister rs1, XRegister rs2);
+
+  // RV32A/RV64A Standard Extension
+  void LrW(XRegister rd, XRegister rs1, uint32_t aqrl);
+  void LrD(XRegister rd, XRegister rs1, uint32_t aqrl);
+  void ScW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void ScD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoSwapW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoSwapD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoAddW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoAddD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoXorW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoXorD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoAndW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoAndD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoOrW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoOrD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoMinW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoMinD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoMaxW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoMaxD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoMinuW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoMinuD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoMaxuW(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+  void AmoMaxuD(XRegister rd, XRegister rs2, XRegister rs1, uint32_t aqrl);
+
+  // "Zicsr" Standard Extension, opcode = 0x73, funct3 from 0x1 ~ 0x3 and 0x5 ~ 0x7
+  void Csrrw(XRegister rd, uint32_t csr, XRegister rs1);
+  void Csrrs(XRegister rd, uint32_t csr, XRegister rs1);
+  void Csrrc(XRegister rd, uint32_t csr, XRegister rs1);
+  void Csrrwi(XRegister rd, uint32_t csr, uint32_t uimm5);
+  void Csrrsi(XRegister rd, uint32_t csr, uint32_t uimm5);
+  void Csrrci(XRegister rd, uint32_t csr, uint32_t uimm5);
 
   // FP load/store instructions (RV32F+RV32D): opcode = 0x07, 0x27
   void FLw(FRegister rd, XRegister rs1, int32_t offset);
@@ -254,7 +391,7 @@ class Riscv64Assembler final : public Assembler {
     FCvtSD(rd, rs1, FPRoundingMode::kDefault);
   }
   void FCvtDS(FRegister rd, FRegister rs1) {
-    FCvtDS(rd, rs1, FPRoundingMode::kDefault);
+    FCvtDS(rd, rs1, FPRoundingMode::kIgnored);
   }
 
   // FP compare instructions (RV32F+RV32D): opcode = 0x53, funct7 = 0b101000D
@@ -293,9 +430,9 @@ class Riscv64Assembler final : public Assembler {
   void FCvtLuS(XRegister rd, FRegister rs1) { FCvtLuS(rd, rs1, FPRoundingMode::kDefault); }
   void FCvtLuD(XRegister rd, FRegister rs1) { FCvtLuD(rd, rs1, FPRoundingMode::kDefault); }
   void FCvtSW(FRegister rd, XRegister rs1) { FCvtSW(rd, rs1, FPRoundingMode::kDefault); }
-  void FCvtDW(FRegister rd, XRegister rs1) { FCvtDW(rd, rs1, FPRoundingMode::kDefault); }
+  void FCvtDW(FRegister rd, XRegister rs1) { FCvtDW(rd, rs1, FPRoundingMode::kIgnored); }
   void FCvtSWu(FRegister rd, XRegister rs1) { FCvtSWu(rd, rs1, FPRoundingMode::kDefault); }
-  void FCvtDWu(FRegister rd, XRegister rs1) { FCvtDWu(rd, rs1, FPRoundingMode::kDefault); }
+  void FCvtDWu(FRegister rd, XRegister rs1) { FCvtDWu(rd, rs1, FPRoundingMode::kIgnored); }
   void FCvtSL(FRegister rd, XRegister rs1) { FCvtSL(rd, rs1, FPRoundingMode::kDefault); }
   void FCvtDL(FRegister rd, XRegister rs1) { FCvtDL(rd, rs1, FPRoundingMode::kDefault); }
   void FCvtSLu(FRegister rd, XRegister rs1) { FCvtSLu(rd, rs1, FPRoundingMode::kDefault); }
@@ -315,6 +452,7 @@ class Riscv64Assembler final : public Assembler {
   // These pseudo instructions are from "RISC-V Assembly Programmer's Manual".
 
   void Nop();
+  void Li(XRegister rd, int64_t imm);
   void Mv(XRegister rd, XRegister rs);
   void Not(XRegister rd, XRegister rs);
   void Neg(XRegister rd, XRegister rs);
@@ -356,26 +494,321 @@ class Riscv64Assembler final : public Assembler {
   void Jalr(XRegister rd, XRegister rs);
   void Ret();
 
+  // Pseudo instructions for accessing control and status registers
+  void RdCycle(XRegister rd);
+  void RdTime(XRegister rd);
+  void RdInstret(XRegister rd);
+  void Csrr(XRegister rd, uint32_t csr);
+  void Csrw(uint32_t csr, XRegister rs);
+  void Csrs(uint32_t csr, XRegister rs);
+  void Csrc(uint32_t csr, XRegister rs);
+  void Csrwi(uint32_t csr, uint32_t uimm5);
+  void Csrsi(uint32_t csr, uint32_t uimm5);
+  void Csrci(uint32_t csr, uint32_t uimm5);
+
+  // Load/store macros for arbitrary 32-bit offsets.
+  void Loadb(XRegister rd, XRegister rs1, int32_t offset);
+  void Loadh(XRegister rd, XRegister rs1, int32_t offset);
+  void Loadw(XRegister rd, XRegister rs1, int32_t offset);
+  void Loadd(XRegister rd, XRegister rs1, int32_t offset);
+  void Loadbu(XRegister rd, XRegister rs1, int32_t offset);
+  void Loadhu(XRegister rd, XRegister rs1, int32_t offset);
+  void Loadwu(XRegister rd, XRegister rs1, int32_t offset);
+  void Storeb(XRegister rs2, XRegister rs1, int32_t offset);
+  void Storeh(XRegister rs2, XRegister rs1, int32_t offset);
+  void Storew(XRegister rs2, XRegister rs1, int32_t offset);
+  void Stored(XRegister rs2, XRegister rs1, int32_t offset);
+  void FLoadw(FRegister rd, XRegister rs1, int32_t offset);
+  void FLoadd(FRegister rd, XRegister rs1, int32_t offset);
+  void FStorew(FRegister rs2, XRegister rs1, int32_t offset);
+  void FStored(FRegister rs2, XRegister rs1, int32_t offset);
+
+  // Macros for loading constants.
+  void LoadConst32(XRegister rd, int32_t value);
+  void LoadConst64(XRegister rd, int64_t value);
+
+  // Macros for adding constants.
+  void AddConst32(XRegister rd, XRegister rs1, int32_t value);
+  void AddConst64(XRegister rd, XRegister rs1, int64_t value);
+
+  // Jumps and branches to a label.
+  void Beqz(XRegister rs, Riscv64Label* label, bool is_bare = false);
+  void Bnez(XRegister rs, Riscv64Label* label, bool is_bare = false);
+  void Blez(XRegister rs, Riscv64Label* label, bool is_bare = false);
+  void Bgez(XRegister rs, Riscv64Label* label, bool is_bare = false);
+  void Bltz(XRegister rs, Riscv64Label* label, bool is_bare = false);
+  void Bgtz(XRegister rs, Riscv64Label* label, bool is_bare = false);
+  void Beq(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Bne(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Ble(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Bge(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Blt(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Bgt(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Bleu(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Bgeu(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Bltu(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Bgtu(XRegister rs, XRegister rt, Riscv64Label* label, bool is_bare = false);
+  void Jal(XRegister rd, Riscv64Label* label, bool is_bare = false);
+  void J(Riscv64Label* label, bool is_bare = false);
+  void Jal(Riscv64Label* label, bool is_bare = false);
+
+  // Literal load.
+  void Loadw(XRegister rd, Literal* literal);
+  void Loadwu(XRegister rd, Literal* literal);
+  void Loadd(XRegister rd, Literal* literal);
+  void FLoadw(FRegister rd, Literal* literal);
+  void FLoadd(FRegister rd, Literal* literal);
+
+  // Illegal instruction that triggers SIGILL.
+  void Unimp();
+
   /////////////////////////////// RV64 MACRO Instructions END ///////////////////////////////
 
-  void Bind([[maybe_unused]] Label* label) override {
-    UNIMPLEMENTED(FATAL) << "TODO: Support branches.";
-  }
+  void Bind(Label* label) override { Bind(down_cast<Riscv64Label*>(label)); }
+
   void Jump([[maybe_unused]] Label* label) override {
     UNIMPLEMENTED(FATAL) << "Do not use Jump for RISCV64";
   }
 
+  void Bind(Riscv64Label* label);
+
+  // Load label address using PC-relative loads.
+  void LoadLabelAddress(XRegister rd, Riscv64Label* label);
+
+  // Create a new literal with a given value.
+  // NOTE:Use `Identity<>` to force the template parameter to be explicitly specified.
+  template <typename T>
+  Literal* NewLiteral(typename Identity<T>::type value) {
+    static_assert(std::is_integral<T>::value, "T must be an integral type.");
+    return NewLiteral(sizeof(value), reinterpret_cast<const uint8_t*>(&value));
+  }
+
+  // Create a new literal with the given data.
+  Literal* NewLiteral(size_t size, const uint8_t* data);
+
+  // Create a jump table for the given labels that will be emitted when finalizing.
+  // When the table is emitted, offsets will be relative to the location of the table.
+  // The table location is determined by the location of its label (the label precedes
+  // the table data) and should be loaded using LoadLabelAddress().
+  JumpTable* CreateJumpTable(ArenaVector<Riscv64Label*>&& labels);
+
  public:
+  // Emit slow paths queued during assembly, promote short branches to long if needed,
+  // and emit branches.
+  void FinalizeCode() override;
+
+  // Returns the current location of a label.
+  //
+  // This function must be used instead of `Riscv64Label::GetPosition()`
+  // which returns assembler's internal data instead of an actual location.
+  //
+  // The location can change during branch fixup in `FinalizeCode()`. Before that,
+  // the location is not final and therefore not very useful to external users,
+  // so they should preferably retrieve the location only after `FinalizeCode()`.
+  uint32_t GetLabelLocation(const Riscv64Label* label) const;
+
+  // Get the final position of a label after local fixup based on the old position
+  // recorded before FinalizeCode().
+  uint32_t GetAdjustedPosition(uint32_t old_position);
+
+ private:
+  enum BranchCondition : uint8_t {
+    kCondEQ,
+    kCondNE,
+    kCondLT,
+    kCondGE,
+    kCondLE,
+    kCondGT,
+    kCondLTU,
+    kCondGEU,
+    kCondLEU,
+    kCondGTU,
+    kUncond,
+  };
+
+  // Note that PC-relative literal loads are handled as pseudo branches because they need
+  // to be emitted after branch relocation to use correct offsets.
+  class Branch {
+   public:
+    enum Type : uint8_t {
+      // TODO(riscv64): Support 16-bit instructions ("C" Standard Extension).
+
+      // Short branches (can be promoted to longer).
+      kCondBranch,
+      kUncondBranch,
+      kCall,
+      // Short branches (can't be promoted to longer).
+      // TODO(riscv64): Do we need these (untested) bare branches, or can we remove them?
+      kBareCondBranch,
+      kBareUncondBranch,
+      kBareCall,
+
+      // Medium branch (can be promoted to long).
+      kCondBranch21,
+
+      // Long branches.
+      kLongCondBranch,
+      kLongUncondBranch,
+      kLongCall,
+
+      // Label.
+      kLabel,
+
+      // Literals.
+      kLiteral,
+      kLiteralUnsigned,
+      kLiteralLong,
+      kLiteralFloat,
+      kLiteralDouble,
+    };
+
+    // Bit sizes of offsets defined as enums to minimize chance of typos.
+    enum OffsetBits {
+      kOffset13 = 13,
+      kOffset21 = 21,
+      kOffset32 = 32,
+    };
+
+    static constexpr uint32_t kUnresolved = 0xffffffff;  // Unresolved target_
+    static constexpr uint32_t kMaxBranchLength = 12;  // In bytes.
+
+    struct BranchInfo {
+      // Branch length in bytes.
+      uint32_t length;
+      // The offset in bytes of the PC used in the (only) PC-relative instruction from
+      // the start of the branch sequence. RISC-V always uses the address of the PC-relative
+      // instruction as the PC, so this is essentially the offset of that instruction.
+      uint32_t pc_offset;
+      // How large (in bits) a PC-relative offset can be for a given type of branch.
+      OffsetBits offset_size;
+    };
+    static const BranchInfo branch_info_[/* Type */];
+
+    // Unconditional branch or call.
+    Branch(uint32_t location, uint32_t target, XRegister rd, bool is_bare);
+    // Conditional branch.
+    Branch(uint32_t location,
+           uint32_t target,
+           BranchCondition condition,
+           XRegister lhs_reg,
+           XRegister rhs_reg,
+           bool is_bare);
+    // Label address or literal.
+    Branch(uint32_t location, uint32_t target, XRegister rd, Type label_or_literal_type);
+    Branch(uint32_t location, uint32_t target, FRegister rd, Type literal_type);
+
+    // Some conditional branches with lhs = rhs are effectively NOPs, while some
+    // others are effectively unconditional.
+    static bool IsNop(BranchCondition condition, XRegister lhs, XRegister rhs);
+    static bool IsUncond(BranchCondition condition, XRegister lhs, XRegister rhs);
+
+    static BranchCondition OppositeCondition(BranchCondition cond);
+
+    Type GetType() const;
+    BranchCondition GetCondition() const;
+    XRegister GetLeftRegister() const;
+    XRegister GetRightRegister() const;
+    FRegister GetFRegister() const;
+    uint32_t GetTarget() const;
+    uint32_t GetLocation() const;
+    uint32_t GetOldLocation() const;
+    uint32_t GetLength() const;
+    uint32_t GetOldLength() const;
+    uint32_t GetEndLocation() const;
+    uint32_t GetOldEndLocation() const;
+    bool IsBare() const;
+    bool IsResolved() const;
+
+    // Returns the bit size of the signed offset that the branch instruction can handle.
+    OffsetBits GetOffsetSize() const;
+
+    // Calculates the distance between two byte locations in the assembler buffer and
+    // returns the number of bits needed to represent the distance as a signed integer.
+    static OffsetBits GetOffsetSizeNeeded(uint32_t location, uint32_t target);
+
+    // Resolve a branch when the target is known.
+    void Resolve(uint32_t target);
+
+    // Relocate a branch by a given delta if needed due to expansion of this or another
+    // branch at a given location by this delta (just changes location_ and target_).
+    void Relocate(uint32_t expand_location, uint32_t delta);
+
+    // If necessary, updates the type by promoting a short branch to a longer branch
+    // based on the branch location and target. Returns the amount (in bytes) by
+    // which the branch size has increased.
+    uint32_t PromoteIfNeeded();
+
+    // Returns the offset into assembler buffer that shall be used as the base PC for
+    // offset calculation. RISC-V always uses the address of the PC-relative instruction
+    // as the PC, so this is essentially the location of that instruction.
+    uint32_t GetOffsetLocation() const;
+
+    // Calculates and returns the offset ready for encoding in the branch instruction(s).
+    int32_t GetOffset() const;
+
+   private:
+    // Completes branch construction by determining and recording its type.
+    void InitializeType(Type initial_type);
+    // Helper for the above.
+    void InitShortOrLong(OffsetBits ofs_size, Type short_type, Type long_type, Type longest_type);
+
+    uint32_t old_location_;  // Offset into assembler buffer in bytes.
+    uint32_t location_;      // Offset into assembler buffer in bytes.
+    uint32_t target_;        // Offset into assembler buffer in bytes.
+
+    XRegister lhs_reg_;          // Left-hand side register in conditional branches or
+                                 // destination register in calls or literals.
+    XRegister rhs_reg_;          // Right-hand side register in conditional branches.
+    FRegister freg_;             // Destination register in FP literals.
+    BranchCondition condition_;  // Condition for conditional branches.
+
+    Type type_;      // Current type of the branch.
+    Type old_type_;  // Initial type of the branch.
+  };
+
+  // Branch and literal fixup.
+
+  void EmitBcond(BranchCondition cond, XRegister rs, XRegister rt, int32_t offset);
+  void EmitBranch(Branch* branch);
+  void EmitBranches();
+  void EmitJumpTables();
+  void EmitLiterals();
+
+  void FinalizeLabeledBranch(Riscv64Label* label);
+  void Bcond(Riscv64Label* label,
+             bool is_bare,
+             BranchCondition condition,
+             XRegister lhs,
+             XRegister rhs);
+  void Buncond(Riscv64Label* label, XRegister rd, bool is_bare);
+  template <typename XRegisterOrFRegister>
+  void LoadLiteral(Literal* literal, XRegisterOrFRegister rd, Branch::Type literal_type);
+
+  Branch* GetBranch(uint32_t branch_id);
+  const Branch* GetBranch(uint32_t branch_id) const;
+
+  void ReserveJumpTableSpace();
+  void PromoteBranches();
+  void PatchCFI();
+
   // Emit data (e.g. encoded instruction or immediate) to the instruction stream.
   void Emit(uint32_t value);
 
-  // Emit slow paths queued during assembly and promote short branches to long if needed.
-  void FinalizeCode() override;
+  // Adjust base register and offset if needed for load/store with a large offset.
+  void AdjustBaseAndOffset(XRegister& base, int32_t& offset);
 
-  // Emit branches and finalize all instructions.
-  void FinalizeInstructions(const MemoryRegion& region) override;
+  // Implementation helper for `Li()`, `LoadConst32()` and `LoadConst64()`.
+  void LoadImmediate(XRegister rd, int64_t imm, bool can_use_tmp);
 
- private:
+  // Emit helpers.
+
+  // I-type instruction:
+  //
+  //    31                   20 19     15 14 12 11      7 6           0
+  //   -----------------------------------------------------------------
+  //   [ . . . . . . . . . . . | . . . . | . . | . . . . | . . . . . . ]
+  //   [        imm11:0            rs1   funct3     rd        opcode   ]
+  //   -----------------------------------------------------------------
   template <typename Reg1, typename Reg2>
   void EmitI(int32_t imm12, Reg1 rs1, uint32_t funct3, Reg2 rd, uint32_t opcode) {
     DCHECK(IsInt<12>(imm12)) << imm12;
@@ -388,6 +821,13 @@ class Riscv64Assembler final : public Assembler {
     Emit(encoding);
   }
 
+  // R-type instruction:
+  //
+  //    31         25 24     20 19     15 14 12 11      7 6           0
+  //   -----------------------------------------------------------------
+  //   [ . . . . . . | . . . . | . . . . | . . | . . . . | . . . . . . ]
+  //   [   funct7        rs2       rs1   funct3     rd        opcode   ]
+  //   -----------------------------------------------------------------
   template <typename Reg1, typename Reg2, typename Reg3>
   void EmitR(uint32_t funct7, Reg1 rs2, Reg2 rs1, uint32_t funct3, Reg3 rd, uint32_t opcode) {
     DCHECK(IsUint<7>(funct7));
@@ -402,28 +842,37 @@ class Riscv64Assembler final : public Assembler {
     Emit(encoding);
   }
 
+  // R-type instruction variant for floating-point fused multiply-add/sub (F[N]MADD/ F[N]MSUB):
+  //
+  //    31     27  25 24     20 19     15 14 12 11      7 6           0
+  //   -----------------------------------------------------------------
+  //   [ . . . . | . | . . . . | . . . . | . . | . . . . | . . . . . . ]
+  //   [  rs3     fmt    rs2       rs1   funct3     rd        opcode   ]
+  //   -----------------------------------------------------------------
   template <typename Reg1, typename Reg2, typename Reg3, typename Reg4>
-  void EmitR4(Reg1 rs3,
-              uint32_t funct2,
-              Reg2 rs2,
-              Reg3 rs1,
-              uint32_t funct3,
-              Reg4 rd,
-              uint32_t opcode) {
+  void EmitR4(
+      Reg1 rs3, uint32_t fmt, Reg2 rs2, Reg3 rs1, uint32_t funct3, Reg4 rd, uint32_t opcode) {
     DCHECK(IsUint<5>(static_cast<uint32_t>(rs3)));
-    DCHECK(IsUint<2>(funct2));
+    DCHECK(IsUint<2>(fmt));
     DCHECK(IsUint<5>(static_cast<uint32_t>(rs2)));
     DCHECK(IsUint<5>(static_cast<uint32_t>(rs1)));
     DCHECK(IsUint<3>(funct3));
     DCHECK(IsUint<5>(static_cast<uint32_t>(rd)));
     DCHECK(IsUint<7>(opcode));
-    uint32_t encoding = static_cast<uint32_t>(rs3) << 27 | static_cast<uint32_t>(funct2) << 25 |
+    uint32_t encoding = static_cast<uint32_t>(rs3) << 27 | static_cast<uint32_t>(fmt) << 25 |
                         static_cast<uint32_t>(rs2) << 20 | static_cast<uint32_t>(rs1) << 15 |
                         static_cast<uint32_t>(funct3) << 12 | static_cast<uint32_t>(rd) << 7 |
                         opcode;
     Emit(encoding);
   }
 
+  // S-type instruction:
+  //
+  //    31         25 24     20 19     15 14 12 11      7 6           0
+  //   -----------------------------------------------------------------
+  //   [ . . . . . . | . . . . | . . . . | . . | . . . . | . . . . . . ]
+  //   [   imm11:5       rs2       rs1   funct3   imm4:0      opcode   ]
+  //   -----------------------------------------------------------------
   template <typename Reg1, typename Reg2>
   void EmitS(int32_t imm12, Reg1 rs2, Reg2 rs1, uint32_t funct3, uint32_t opcode) {
     DCHECK(IsInt<12>(imm12)) << imm12;
@@ -438,6 +887,13 @@ class Riscv64Assembler final : public Assembler {
     Emit(encoding);
   }
 
+  // I-type instruction variant for shifts (SLLI / SRLI / SRAI):
+  //
+  //    31       26 25       20 19     15 14 12 11      7 6           0
+  //   -----------------------------------------------------------------
+  //   [ . . . . . | . . . . . | . . . . | . . | . . . . | . . . . . . ]
+  //   [  imm11:6  imm5:0(shamt)   rs1   funct3     rd        opcode   ]
+  //   -----------------------------------------------------------------
   void EmitI6(uint32_t funct6,
               uint32_t imm6,
               XRegister rs1,
@@ -456,6 +912,13 @@ class Riscv64Assembler final : public Assembler {
     Emit(encoding);
   }
 
+  // B-type instruction:
+  //
+  //   31 30       25 24     20 19     15 14 12 11    8 7 6           0
+  //   -----------------------------------------------------------------
+  //   [ | . . . . . | . . . . | . . . . | . . | . . . | | . . . . . . ]
+  //  imm12 imm11:5      rs2       rs1   funct3 imm4:1 imm11  opcode   ]
+  //   -----------------------------------------------------------------
   void EmitB(int32_t offset, XRegister rs2, XRegister rs1, uint32_t funct3, uint32_t opcode) {
     DCHECK_ALIGNED(offset, 2);
     DCHECK(IsInt<13>(offset)) << offset;
@@ -471,6 +934,13 @@ class Riscv64Assembler final : public Assembler {
     Emit(encoding);
   }
 
+  // U-type instruction:
+  //
+  //    31                                   12 11      7 6           0
+  //   -----------------------------------------------------------------
+  //   [ . . . . . . . . . . . . . . . . . . . | . . . . | . . . . . . ]
+  //   [                imm31:12                    rd        opcode   ]
+  //   -----------------------------------------------------------------
   void EmitU(uint32_t imm20, XRegister rd, uint32_t opcode) {
     CHECK(IsUint<20>(imm20)) << imm20;
     DCHECK(IsUint<5>(static_cast<uint32_t>(rd)));
@@ -479,6 +949,13 @@ class Riscv64Assembler final : public Assembler {
     Emit(encoding);
   }
 
+  // J-type instruction:
+  //
+  //   31 30               21   19           12 11      7 6           0
+  //   -----------------------------------------------------------------
+  //   [ | . . . . . . . . . | | . . . . . . . | . . . . | . . . . . . ]
+  //  imm20    imm10:1      imm11   imm19:12        rd        opcode   ]
+  //   -----------------------------------------------------------------
   void EmitJ(int32_t offset, XRegister rd, uint32_t opcode) {
     DCHECK_ALIGNED(offset, 2);
     CHECK(IsInt<21>(offset)) << offset;
@@ -490,6 +967,26 @@ class Riscv64Assembler final : public Assembler {
                         static_cast<uint32_t>(rd) << 7 | opcode;
     Emit(encoding);
   }
+
+  ArenaVector<Branch> branches_;
+
+  // Whether appending instructions at the end of the buffer or overwriting the existing ones.
+  bool overwriting_;
+  // The current overwrite location.
+  uint32_t overwrite_location_;
+
+  // Use `std::deque<>` for literal labels to allow insertions at the end
+  // without invalidating pointers and references to existing elements.
+  ArenaDeque<Literal> literals_;
+  ArenaDeque<Literal> long_literals_;  // 64-bit literals separated for alignment reasons.
+
+  // Jump table list.
+  ArenaDeque<JumpTable> jump_tables_;
+
+  // Data for `GetAdjustedPosition()`, see the description there.
+  uint32_t last_position_adjustment_;
+  uint32_t last_old_position_;
+  uint32_t last_branch_id_;
 
   static constexpr uint32_t kXlen = 64;
 
