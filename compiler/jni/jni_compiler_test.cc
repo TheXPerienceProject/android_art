@@ -446,14 +446,12 @@ LockWord JniCompilerTest::GetLockWord(jobject obj) {
 // 1) synchronized keyword
 # define JNI_TEST_NORMAL_ONLY(TestName)          \
   TEST_F(JniCompilerTest, TestName ## NormalCompiler) { \
-    TEST_DISABLED_FOR_RISCV64(); \
     ScopedCheckHandleScope top_handle_scope_check;  \
     SCOPED_TRACE("Normal JNI with compiler");    \
     gCurrentJni = static_cast<uint32_t>(JniKind::kNormal); \
     TestName ## Impl();                          \
   }                                              \
   TEST_F(JniCompilerTest, TestName ## NormalGeneric) { \
-    TEST_DISABLED_FOR_RISCV64(); \
     ScopedCheckHandleScope top_handle_scope_check;  \
     SCOPED_TRACE("Normal JNI with generic");     \
     gCurrentJni = static_cast<uint32_t>(JniKind::kNormal); \
@@ -2269,14 +2267,6 @@ void Java_MyClassNatives_stackArgsFloatsFirst(JNIEnv*, jclass, jfloat f1, jfloat
 }
 
 void JniCompilerTest::StackArgsFloatsFirstImpl() {
-  if (check_generic_jni_) {
-    // FIXME(riscv64): Fix FP argument passing in GenericJNI.
-    TEST_DISABLED_FOR_RISCV64();
-    // TODO(riscv64): This test passes with compiled JNI stubs but the compiled code
-    // does not perform NaN-boxing of float args passed in GPRs. The test should be
-    // extended to check 64-bit values of these float args.
-  }
-
   SetUpForTest(true, "stackArgsFloatsFirst", "(FFFFFFFFFFIIIIIIIIII)V",
                CURRENT_JNI_WRAPPER(Java_MyClassNatives_stackArgsFloatsFirst));
 

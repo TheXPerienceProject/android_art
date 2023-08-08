@@ -73,6 +73,7 @@ def parse_args(argv):
   argp.add_argument("--image", default=True, action=opt_bool)
   argp.add_argument("--instruction-set-features", default="")
   argp.add_argument("--interpreter", action="store_true")
+  argp.add_argument("--switch-interpreter", action="store_true")
   argp.add_argument("--invoke-with", default=[], action="append")
   argp.add_argument("--jit", action="store_true")
   argp.add_argument("--jvm", action="store_true")
@@ -277,6 +278,7 @@ def default_run(ctx, args, **kwargs):
   USE_EXTRACTED_ZIPAPEX = (args.runtime_extracted_zipapex != "")
   EXTRACTED_ZIPAPEX_LOC = args.runtime_extracted_zipapex
   INTERPRETER = args.interpreter
+  SWITCH_INTERPRETER = args.switch_interpreter
   JIT = args.jit
   INVOKE_WITH = " ".join(args.invoke_with)
   USE_JVMTI = args.jvmti
@@ -655,15 +657,20 @@ def default_run(ctx, args, **kwargs):
       GDB = "gdb"
       GDB_ARGS += f" -d '{ANDROID_BUILD_TOP}' --args {DALVIKVM}"
 
-  if INTERPRETER:
+  if SWITCH_INTERPRETER:
+    # run on the slow switch-interpreter enabled with -Xint
     INT_OPTS += " -Xint"
+
+  if INTERPRETER:
+    # run on Nterp the fast interpreter, not the slow switch-interpreter enabled with -Xint
+    INT_OPTS += " -Xusejit:false"
 
   if JIT:
     INT_OPTS += " -Xusejit:true"
   else:
     INT_OPTS += " -Xusejit:false"
 
-  if INTERPRETER or JIT:
+  if INTERPRETER or SWITCH_INTERPRETER or JIT:
     if VERIFY == "y":
       INT_OPTS += " -Xcompiler-option --compiler-filter=verify"
       COMPILE_FLAGS += " --compiler-filter=verify"
@@ -982,11 +989,11 @@ def default_run(ctx, args, **kwargs):
     #     In particular, unhandled exception is printed using several unterminated printfs.
     ALL_LOG_TAGS = ["V", "D", "I", "W", "E", "F", "S"]
     skip_tag_set = "|".join(ALL_LOG_TAGS[:ALL_LOG_TAGS.index(args.diff_min_log_tag.upper())])
-    skip_reg_exp = fr'[[:alnum:]]+ ({skip_tag_set}) #-# #:#:# [^\n]*\n'.replace('#', '[0-9]+')
+    skip_reg_exp = fr'#-# #:#:# # # ({skip_tag_set}) [^\n]*\n'.replace('#', '[0-9.]+')
     ctx.run(fr"sed -i -z -E 's/{skip_reg_exp}//g' '{args.stderr_file}'")
     if not HAVE_IMAGE:
       message = "(Unable to open file|Could not create image space)"
-      ctx.run(fr"sed -i -E '/^dalvikvm(|32|64) E .* {message}/d' '{args.stderr_file}'")
+      ctx.run(fr"sed -i -E '/^.* E dalvikvm(|32|64): .* {message}/d' '{args.stderr_file}'")
     if ANDROID_LOG_TAGS != "*:i" and "D" in skip_tag_set:
       ctx.run(fr"sed -i -E '/^(Time zone|I18n) APEX ICU file found/d' '{args.stderr_file}'")
     if ON_VM:

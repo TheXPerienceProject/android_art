@@ -27,6 +27,7 @@
 #include "arch/instruction_set.h"
 #include "base/file_utils.h"
 #include "base/globals.h"
+#include "base/mem_map.h"
 #include "base/stl_util.h"
 #include "odr_common.h"
 #include "odr_compilation_log.h"
@@ -260,14 +261,13 @@ int main(int argc, char** argv) {
   // by others and prevents system_server from loading generated artifacts.
   umask(S_IWGRP | S_IWOTH);
 
+  // Explicitly initialize logging (b/201042799).
+  android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
+
   OdrConfig config(argv[0]);
   int n = InitializeConfig(argc, argv, &config);
 
-  // Explicitly initialize logging (b/201042799).
-  // But not in CompOS mode - logd doesn't exist in Microdroid (b/265153235).
-  if (!config.GetCompilationOsMode()) {
-    android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
-  }
+  art::MemMap::Init();  // Needed by DexFileLoader.
 
   argv += n;
   argc -= n;

@@ -61,9 +61,6 @@ static std::unique_ptr<const std::vector<uint8_t>> CreateTrampoline(
   ArmVIXLAssembler assembler(allocator);
 
   switch (abi) {
-    case kInterpreterAbi:  // Thread* is first argument (R0) in interpreter ABI.
-      ___ Ldr(pc, MemOperand(r0, offset.Int32Value()));
-      break;
     case kJniAbi: {  // Load via Thread* held in JNIEnv* in first argument (R0).
       vixl::aarch32::UseScratchRegisterScope temps(assembler.GetVIXLAssembler());
       const vixl::aarch32::Register temp_reg = temps.Acquire();
@@ -99,11 +96,6 @@ static std::unique_ptr<const std::vector<uint8_t>> CreateTrampoline(
   Arm64Assembler assembler(allocator);
 
   switch (abi) {
-    case kInterpreterAbi:  // Thread* is first argument (X0) in interpreter ABI.
-      __ JumpTo(Arm64ManagedRegister::FromXRegister(X0), Offset(offset.Int32Value()),
-          Arm64ManagedRegister::FromXRegister(IP1));
-
-      break;
     case kJniAbi:  // Load via Thread* held in JNIEnv* in first argument (X0).
       __ LoadRawPtr(Arm64ManagedRegister::FromXRegister(IP1),
                       Arm64ManagedRegister::FromXRegister(X0),
@@ -137,19 +129,20 @@ static std::unique_ptr<const std::vector<uint8_t>> CreateTrampoline(ArenaAllocat
                                                                     EntryPointCallingConvention abi,
                                                                     ThreadOffset64 offset) {
   Riscv64Assembler assembler(allocator);
+  ScratchRegisterScope srs(&assembler);
+  XRegister tmp = srs.AllocateXRegister();
 
   switch (abi) {
-    case kInterpreterAbi:  // Thread* is first argument (A0) in interpreter ABI.
-      __ Loadd(TMP, A0, offset.Int32Value());
-      __ Jr(TMP);
-      break;
     case kJniAbi:  // Load via Thread* held in JNIEnv* in first argument (A0).
-      // TODO(riscv64): implement this.
-      __ Unimp();
+      __ Loadd(tmp,
+               A0,
+               JNIEnvExt::SelfOffset(static_cast<size_t>(kRiscv64PointerSize)).Int32Value());
+      __ Loadd(tmp, tmp, offset.Int32Value());
+      __ Jr(tmp);
       break;
     case kQuickAbi:  // TR holds Thread*.
-      __ Loadd(TMP, TR, offset.Int32Value());
-      __ Jr(TMP);
+      __ Loadd(tmp, TR, offset.Int32Value());
+      __ Jr(tmp);
       break;
   }
 

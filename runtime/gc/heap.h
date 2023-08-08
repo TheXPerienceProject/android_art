@@ -138,14 +138,14 @@ class Heap {
   static constexpr size_t kDefaultInitialSize = 2 * MB;
   static constexpr size_t kDefaultMaximumSize = 256 * MB;
   static constexpr size_t kDefaultNonMovingSpaceCapacity = 64 * MB;
-  static constexpr size_t kDefaultMaxFree = 2 * MB;
+  static constexpr size_t kDefaultMaxFree = 32 * MB;
   static constexpr size_t kDefaultMinFree = kDefaultMaxFree / 4;
   static constexpr size_t kDefaultLongPauseLogThreshold = MsToNs(5);
   static constexpr size_t kDefaultLongPauseLogThresholdGcStress = MsToNs(50);
   static constexpr size_t kDefaultLongGCLogThreshold = MsToNs(100);
   static constexpr size_t kDefaultLongGCLogThresholdGcStress = MsToNs(1000);
   static constexpr size_t kDefaultTLABSize = 32 * KB;
-  static constexpr double kDefaultTargetUtilization = 0.75;
+  static constexpr double kDefaultTargetUtilization = 0.6;
   static constexpr double kDefaultHeapGrowthMultiplier = 2.0;
   // Primitive arrays larger than this size are put in the large object space.
   static constexpr size_t kMinLargeObjectThreshold = 3 * kPageSize;
@@ -389,7 +389,7 @@ class Heap {
 
   // Clear all of the mark bits, doesn't clear bitmaps which have the same live bits as mark bits.
   // Mutator lock is required for GetContinuousSpaces.
-  void ClearMarkedObjects()
+  void ClearMarkedObjects(bool release_eagerly = true)
       REQUIRES(Locks::heap_bitmap_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -558,17 +558,8 @@ class Heap {
   size_t GetObjectsAllocated() const
       REQUIRES(!Locks::heap_bitmap_lock_);
 
-  // Returns the total number of objects allocated since the heap was created.
-  uint64_t GetObjectsAllocatedEver() const;
-
   // Returns the total number of bytes allocated since the heap was created.
   uint64_t GetBytesAllocatedEver() const;
-
-  // Returns the total number of objects freed since the heap was created.
-  // With default memory order, this should be viewed only as a hint.
-  uint64_t GetObjectsFreedEver(std::memory_order mo = std::memory_order_relaxed) const {
-    return total_objects_freed_ever_.load(mo);
-  }
 
   // Returns the total number of bytes freed since the heap was created.
   // With default memory order, this should be viewed only as a hint.

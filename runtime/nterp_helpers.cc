@@ -235,6 +235,9 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
     return false;
   }
   if (isa == InstructionSet::kRiscv64) {
+    if (method->GetDexFile()->IsCompactDexFile()) {
+      return false;  // Riscv64 nterp does not support compact dex yet.
+    }
     if (method->DexInstructionData().TriesSize() != 0u) {
       return false;  // Riscv64 nterp does not support exception handling yet.
     }
@@ -245,11 +248,7 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
       // TODO(riscv64): Add support for more instructions.
       // Remove the check when all instructions are supported.
       switch (pair->Opcode()) {
-        // Unused opcodes are rejected by the verifier, so we should not see them here.
-        // Use one of them to avoid compilation error:
-        // `error: loop will run at most once (loop increment never executed)
-        // [-Werror,-Wunreachable-code-loop-increment]`
-        case Instruction::UNUSED_3F:
+        case Instruction::RETURN_VOID:
           break;
         default:
           return false;
