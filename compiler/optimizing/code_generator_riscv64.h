@@ -50,22 +50,9 @@ static constexpr size_t kRuntimeParameterFpuRegistersLength =
 
 #define UNIMPLEMENTED_INTRINSIC_LIST_RISCV64(V) \
   V(IntegerReverse)                             \
-  V(IntegerReverseBytes)                        \
-  V(IntegerBitCount)                            \
   V(IntegerDivideUnsigned)                      \
-  V(IntegerHighestOneBit)                       \
-  V(IntegerLowestOneBit)                        \
-  V(IntegerNumberOfLeadingZeros)                \
-  V(IntegerNumberOfTrailingZeros)               \
   V(LongReverse)                                \
-  V(LongReverseBytes)                           \
-  V(LongBitCount)                               \
   V(LongDivideUnsigned)                         \
-  V(LongHighestOneBit)                          \
-  V(LongLowestOneBit)                           \
-  V(LongNumberOfLeadingZeros)                   \
-  V(LongNumberOfTrailingZeros)                  \
-  V(ShortReverseBytes)                          \
   V(MathFmaDouble)                              \
   V(MathFmaFloat)                               \
   V(MathCos)                                    \
@@ -406,10 +393,6 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
                       bool value_can_be_null);
   void HandleFieldGet(HInstruction* instruction, const FieldInfo& field_info);
 
-  void GenerateMinMaxInt(LocationSummary* locations, bool is_min);
-  void GenerateMinMaxFP(LocationSummary* locations, bool is_min, DataType::Type type);
-  void GenerateMinMax(HBinaryOperation* minmax, bool is_min);
-
   // Generate a heap reference load using one register `out`:
   //
   //   out <- *(out + offset)
@@ -490,6 +473,8 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
   void FpBinOp(Reg rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FAdd(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FSub(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FMin(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FMax(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FEq(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FLt(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FLe(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
