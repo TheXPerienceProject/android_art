@@ -86,6 +86,7 @@ art_cc_binary {
         "com.android.art.debug",
         "test_broken_com.android.art",
     ],
+    sdclang: false,
 }
 
 // Collect all the static defaults and build a host-only static library, which

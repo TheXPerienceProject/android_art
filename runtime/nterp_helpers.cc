@@ -235,6 +235,9 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
     return false;
   }
   if (isa == InstructionSet::kRiscv64) {
+    if (method->NeedsClinitCheckBeforeCall()) {
+      return false;  // Riscv64 nterp does not implement ExecuteNterpWithClinitImpl.
+    }
     if (method->GetDexFile()->IsCompactDexFile()) {
       return false;  // Riscv64 nterp does not support compact dex yet.
     }
@@ -247,9 +250,107 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
     for (DexInstructionPcPair pair : method->DexInstructions()) {
       // TODO(riscv64): Add support for more instructions.
       // Remove the check when all instructions are supported.
+      // Cases are listed in opcode order (DEX_INSTRUCTION_LIST).
       switch (pair->Opcode()) {
+        case Instruction::NOP:
+        case Instruction::MOVE:
+        case Instruction::MOVE_FROM16:
+        case Instruction::MOVE_16:
+        case Instruction::MOVE_WIDE:
+        case Instruction::MOVE_WIDE_FROM16:
+        case Instruction::MOVE_WIDE_16:
+        case Instruction::MOVE_OBJECT:
+        case Instruction::MOVE_OBJECT_FROM16:
+        case Instruction::MOVE_OBJECT_16:
+        case Instruction::MOVE_RESULT:
+        case Instruction::MOVE_RESULT_WIDE:
+        case Instruction::MOVE_RESULT_OBJECT:
+        case Instruction::MOVE_EXCEPTION:
         case Instruction::RETURN_VOID:
-          break;
+        case Instruction::RETURN:
+        case Instruction::RETURN_WIDE:
+        case Instruction::RETURN_OBJECT:
+        case Instruction::CONST_4:
+        case Instruction::CONST_16:
+        case Instruction::CONST:
+        case Instruction::CONST_HIGH16:
+        case Instruction::CONST_WIDE_16:
+        case Instruction::CONST_WIDE_32:
+        case Instruction::CONST_WIDE:
+        case Instruction::CONST_WIDE_HIGH16:
+        case Instruction::NEG_INT:
+        case Instruction::NOT_INT:
+        case Instruction::NEG_LONG:
+        case Instruction::NOT_LONG:
+        case Instruction::INT_TO_LONG:
+        case Instruction::LONG_TO_INT:
+        case Instruction::INT_TO_BYTE:
+        case Instruction::INT_TO_CHAR:
+        case Instruction::INT_TO_SHORT:
+        case Instruction::ADD_INT:
+        case Instruction::SUB_INT:
+        case Instruction::MUL_INT:
+        case Instruction::DIV_INT:
+        case Instruction::REM_INT:
+        case Instruction::AND_INT:
+        case Instruction::OR_INT:
+        case Instruction::XOR_INT:
+        case Instruction::SHL_INT:
+        case Instruction::SHR_INT:
+        case Instruction::USHR_INT:
+        case Instruction::ADD_LONG:
+        case Instruction::SUB_LONG:
+        case Instruction::MUL_LONG:
+        case Instruction::DIV_LONG:
+        case Instruction::REM_LONG:
+        case Instruction::AND_LONG:
+        case Instruction::OR_LONG:
+        case Instruction::XOR_LONG:
+        case Instruction::SHL_LONG:
+        case Instruction::SHR_LONG:
+        case Instruction::USHR_LONG:
+        case Instruction::ADD_INT_2ADDR:
+        case Instruction::SUB_INT_2ADDR:
+        case Instruction::MUL_INT_2ADDR:
+        case Instruction::DIV_INT_2ADDR:
+        case Instruction::REM_INT_2ADDR:
+        case Instruction::AND_INT_2ADDR:
+        case Instruction::OR_INT_2ADDR:
+        case Instruction::XOR_INT_2ADDR:
+        case Instruction::SHL_INT_2ADDR:
+        case Instruction::SHR_INT_2ADDR:
+        case Instruction::USHR_INT_2ADDR:
+        case Instruction::ADD_LONG_2ADDR:
+        case Instruction::SUB_LONG_2ADDR:
+        case Instruction::MUL_LONG_2ADDR:
+        case Instruction::DIV_LONG_2ADDR:
+        case Instruction::REM_LONG_2ADDR:
+        case Instruction::AND_LONG_2ADDR:
+        case Instruction::OR_LONG_2ADDR:
+        case Instruction::XOR_LONG_2ADDR:
+        case Instruction::SHL_LONG_2ADDR:
+        case Instruction::SHR_LONG_2ADDR:
+        case Instruction::USHR_LONG_2ADDR:
+        case Instruction::ADD_INT_LIT16:
+        case Instruction::RSUB_INT:
+        case Instruction::MUL_INT_LIT16:
+        case Instruction::DIV_INT_LIT16:
+        case Instruction::REM_INT_LIT16:
+        case Instruction::AND_INT_LIT16:
+        case Instruction::OR_INT_LIT16:
+        case Instruction::XOR_INT_LIT16:
+        case Instruction::ADD_INT_LIT8:
+        case Instruction::RSUB_INT_LIT8:
+        case Instruction::MUL_INT_LIT8:
+        case Instruction::DIV_INT_LIT8:
+        case Instruction::REM_INT_LIT8:
+        case Instruction::AND_INT_LIT8:
+        case Instruction::OR_INT_LIT8:
+        case Instruction::XOR_INT_LIT8:
+        case Instruction::SHL_INT_LIT8:
+        case Instruction::SHR_INT_LIT8:
+        case Instruction::USHR_INT_LIT8:
+          continue;
         default:
           return false;
       }

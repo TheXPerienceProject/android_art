@@ -36,6 +36,22 @@ else
   out_dir=${OUT_DIR}
 fi
 
+# On master-art, we need to copy ART-local riscv64 prebuilts for conscrypt and
+# statsd into their own repositories, as mainline doesn't support riscv64 yet.
+# Android.bp files are stored with as ArtThinBuild.bp to prevent Soong from
+# adding them to the build graph, so they must be renamed after copying.
+#
+# TODO(b/286551985): Remove this after riscv64 support is added to mainline.
+if [[ $TARGET_ARCH = "riscv64" && ! ( -d frameworks/base ) ]]; then
+  cp -r prebuilts/runtime/mainline/local_riscv64/prebuilts/module_sdk/conscrypt \
+    prebuilts/module_sdk
+  cp -r prebuilts/runtime/mainline/local_riscv64/prebuilts/module_sdk/StatsD \
+    prebuilts/module_sdk
+  for f in $(find prebuilts/module_sdk -name ArtThinBuild.bp) ; do
+    mv "$f" "$(dirname $f)/Android.bp"
+  done
+fi
+
 java_libraries_dir=${out_dir}/target/common/obj/JAVA_LIBRARIES
 common_targets="vogar core-tests core-ojtests apache-harmony-jdwp-tests-hostdex jsr166-tests libartpalette-system mockito-target"
 # These build targets have different names on device and host.
@@ -102,13 +118,8 @@ if [ -d frameworks/base ]; then
 else
   # Allow to build successfully in master-art.
   extra_args="SOONG_ALLOW_MISSING_DEPENDENCIES=true BUILD_BROKEN_DISABLE_BAZEL=true"
-
-  if [[ "$ART_TEST_ON_VM" == "true" ]]; then
-    extra_args="$extra_args TARGET_BUILD_UNBUNDLED=false"
-  else
-    # Switch the build system to unbundled mode in the reduced manifest branch.
-    extra_args="$extra_args TARGET_BUILD_UNBUNDLED=true"
-  fi
+  # Switch the build system to unbundled mode in the reduced manifest branch.
+  extra_args="$extra_args TARGET_BUILD_UNBUNDLED=true"
 fi
 
 apexes=(
@@ -212,26 +223,25 @@ if [[ $build_target == "yes" ]]; then
     if [[ $TARGET_ARCH = arm* ]]; then
       arch32=arm
       arch64=arm64
+    elif [[ $TARGET_ARCH = riscv64 ]]; then
+      arch32=none # there is no 32-bit arch for RISC-V
+      arch64=riscv64
     else
       arch32=x86
       arch64=x86_64
     fi
-    if [ "$TARGET_ARCH" = riscv64 ]; then
-      true # no 32-bit arch for RISC-V
-    else
-      for so in ${implementation_libs[@]}; do
-        if [ -d "$ANDROID_PRODUCT_OUT/system/lib" ]; then
-          cmd="cp -p prebuilts/runtime/mainline/platform/impl/$arch32/${so}.so $ANDROID_PRODUCT_OUT/system/lib/${so}.so"
-          msginfo "Executing" "$cmd"
-          eval "$cmd"
-        fi
-        if [ -d "$ANDROID_PRODUCT_OUT/system/lib64" ]; then
-          cmd="cp -p prebuilts/runtime/mainline/platform/impl/$arch64/${so}.so $ANDROID_PRODUCT_OUT/system/lib64/${so}.so"
-          msginfo "Executing" "$cmd"
-          eval "$cmd"
-        fi
-      done
-    fi
+    for so in ${implementation_libs[@]}; do
+      if [ -d "$ANDROID_PRODUCT_OUT/system/lib" -a $arch32 != none ]; then
+        cmd="cp -p prebuilts/runtime/mainline/platform/impl/$arch32/${so}.so $ANDROID_PRODUCT_OUT/system/lib/${so}.so"
+        msginfo "Executing" "$cmd"
+        eval "$cmd"
+      fi
+      if [ -d "$ANDROID_PRODUCT_OUT/system/lib64" -a $arch64 != none ]; then
+        cmd="cp -p prebuilts/runtime/mainline/platform/impl/$arch64/${so}.so $ANDROID_PRODUCT_OUT/system/lib64/${so}.so"
+        msginfo "Executing" "$cmd"
+        eval "$cmd"
+      fi
+    done
   fi
 
   # Create canonical name -> file name symlink in the symbol directory for the

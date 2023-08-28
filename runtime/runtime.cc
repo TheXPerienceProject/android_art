@@ -210,7 +210,7 @@ Runtime* Runtime::instance_ = nullptr;
 
 struct TraceConfig {
   Trace::TraceMode trace_mode;
-  Trace::TraceOutputMode trace_output_mode;
+  TraceOutputMode trace_output_mode;
   std::string trace_file;
   size_t trace_file_size;
   TraceClockSource clock_source;
@@ -250,6 +250,7 @@ Runtime::Runtime()
       must_relocate_(false),
       is_concurrent_gc_enabled_(true),
       is_explicit_gc_disabled_(false),
+      is_eagerly_release_explicit_gc_disabled_(false),
       image_dex2oat_enabled_(true),
       default_stack_size_(0),
       heap_(nullptr),
@@ -1282,17 +1283,17 @@ static size_t OpenBootDexFiles(ArrayRef<const std::string> dex_filenames,
   for (size_t i = 0; i < dex_filenames.size(); i++) {
     const char* dex_filename = dex_filenames[i].c_str();
     const char* dex_location = dex_locations[i].c_str();
-    const int dex_fd = i < dex_fds.size() ? dex_fds[i] : -1;
+    File file = File(i < dex_fds.size() ? dex_fds[i] : -1, /*check_usage=*/false);
     static constexpr bool kVerifyChecksum = true;
     std::string error_msg;
-    if (!OS::FileExists(dex_filename) && dex_fd < 0) {
+    if (!OS::FileExists(dex_filename) && file.IsValid()) {
       LOG(WARNING) << "Skipping non-existent dex file '" << dex_filename << "'";
       continue;
     }
     bool verify = Runtime::Current()->IsVerificationEnabled();
-    ArtDexFileLoader dex_file_loader(dex_filename, dex_fd, dex_location);
+    ArtDexFileLoader dex_file_loader(dex_filename, &file, dex_location);
     if (!dex_file_loader.Open(verify, kVerifyChecksum, &error_msg, dex_files)) {
-      LOG(WARNING) << "Failed to open .dex from file '" << dex_filename << "' / fd " << dex_fd
+      LOG(WARNING) << "Failed to open .dex from file '" << dex_filename << "' / fd " << file.Fd()
                    << ": " << error_msg;
       ++failure_count;
     }
@@ -1504,6 +1505,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   is_zygote_ = runtime_options.Exists(Opt::Zygote);
   is_primary_zygote_ = runtime_options.Exists(Opt::PrimaryZygote);
   is_explicit_gc_disabled_ = runtime_options.Exists(Opt::DisableExplicitGC);
+  is_eagerly_release_explicit_gc_disabled_ =
+      runtime_options.Exists(Opt::DisableEagerlyReleaseExplicitGC);
   image_dex2oat_enabled_ = runtime_options.GetOrDefault(Opt::ImageDex2Oat);
   dump_native_stack_on_sig_quit_ = runtime_options.GetOrDefault(Opt::DumpNativeStackOnSigQuit);
   allow_in_memory_compilation_ = runtime_options.Exists(Opt::AllowInMemoryCompilation);
@@ -1916,8 +1919,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     trace_config_->trace_file_size = runtime_options.ReleaseOrDefault(Opt::MethodTraceFileSize);
     trace_config_->trace_mode = Trace::TraceMode::kMethodTracing;
     trace_config_->trace_output_mode = runtime_options.Exists(Opt::MethodTraceStreaming) ?
-        Trace::TraceOutputMode::kStreaming :
-        Trace::TraceOutputMode::kFile;
+                                           TraceOutputMode::kStreaming :
+                                           TraceOutputMode::kFile;
     trace_config_->clock_source = runtime_options.GetOrDefault(Opt::MethodTraceClock);
   }
 
@@ -3014,7 +3017,7 @@ std::string Runtime::GetFaultMessage() {
 void Runtime::AddCurrentRuntimeFeaturesAsDex2OatArguments(std::vector<std::string>* argv)
     const {
   if (GetInstrumentation()->InterpretOnly()) {
-    argv->push_back("--compiler-filter=quicken");
+    argv->push_back("--compiler-filter=verify");
   }
 
   // Make the dex2oat instruction set match that of the launching runtime. If we have multiple

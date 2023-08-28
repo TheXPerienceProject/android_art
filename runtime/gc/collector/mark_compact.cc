@@ -116,17 +116,13 @@ static uint64_t gUffdFeatures = 0;
 static constexpr uint64_t kUffdFeaturesForMinorFault =
     UFFD_FEATURE_MISSING_SHMEM | UFFD_FEATURE_MINOR_SHMEM;
 static constexpr uint64_t kUffdFeaturesForSigbus = UFFD_FEATURE_SIGBUS;
+
 // We consider SIGBUS feature necessary to enable this GC as it's superior than
 // threading-based implementation for janks. However, since we have the latter
 // already implemented, for testing purposes, we allow choosing either of the
 // two at boot time in the constructor below.
-// Note that having minor-fault feature implies having SIGBUS feature as the
-// latter was introduced earlier than the former. In other words, having
-// minor-fault feature implies having SIGBUS. We still want minor-fault to be
-// available for making jit-code-cache updation concurrent, which uses shmem.
-static constexpr uint64_t kUffdFeaturesRequired =
-    kUffdFeaturesForMinorFault | kUffdFeaturesForSigbus;
-
+// We may want minor-fault in future to be available for making jit-code-cache
+// updation concurrent, which uses shmem.
 bool KernelSupportsUffd() {
 #ifdef __linux__
   if (gHaveMremapDontunmap) {
@@ -144,8 +140,8 @@ bool KernelSupportsUffd() {
       CHECK_EQ(ioctl(fd, UFFDIO_API, &api), 0) << "ioctl_userfaultfd : API:" << strerror(errno);
       gUffdFeatures = api.features;
       close(fd);
-      // Allow this GC to be used only if minor-fault and sigbus feature is available.
-      return (api.features & kUffdFeaturesRequired) == kUffdFeaturesRequired;
+      // Minimum we need is sigbus feature for using userfaultfd.
+      return (api.features & kUffdFeaturesForSigbus) == kUffdFeaturesForSigbus;
     }
   }
 #endif
@@ -249,8 +245,9 @@ static bool GetCachedBoolProperty(const std::string& key, bool default_value) {
 static bool SysPropSaysUffdGc() {
   // The phenotype flag can change at time time after boot, but it shouldn't take effect until a
   // reboot. Therefore, we read the phenotype flag from the cache info, which is generated on boot.
-  return GetCachedBoolProperty("persist.device_config.runtime_native_boot.enable_uffd_gc",
-                               GetBoolProperty("ro.dalvik.vm.enable_uffd_gc", false));
+  return GetCachedBoolProperty("persist.device_config.runtime_native_boot.enable_uffd_gc_2",
+                               false) ||
+         GetBoolProperty("ro.dalvik.vm.enable_uffd_gc", false);
 }
 #else
 // Never called.
@@ -343,8 +340,21 @@ bool MarkCompact::CreateUserfaultfd(bool post_fork) {
       } else {
         DCHECK(IsValidFd(uffd_));
         // Initialize uffd with the features which are required and available.
-        struct uffdio_api api = {.api = UFFD_API, .features = gUffdFeatures, .ioctls = 0};
-        api.features &= use_uffd_sigbus_ ? kUffdFeaturesRequired : kUffdFeaturesForMinorFault;
+        // Using private anonymous mapping in threading mode is the default,
+        // for which we don't need to ask for any features. Note: this mode
+        // is not used in production.
+        struct uffdio_api api = {.api = UFFD_API, .features = 0, .ioctls = 0};
+        if (use_uffd_sigbus_) {
+          // We should add SIGBUS feature only if we plan on using it as
+          // requesting it here will mean threading mode will not work.
+          CHECK_EQ(gUffdFeatures & kUffdFeaturesForSigbus, kUffdFeaturesForSigbus);
+          api.features |= kUffdFeaturesForSigbus;
+        }
+        if (uffd_minor_fault_supported_) {
+          // NOTE: This option is currently disabled.
+          CHECK_EQ(gUffdFeatures & kUffdFeaturesForMinorFault, kUffdFeaturesForMinorFault);
+          api.features |= kUffdFeaturesForMinorFault;
+        }
         CHECK_EQ(ioctl(uffd_, UFFDIO_API, &api), 0)
             << "ioctl_userfaultfd: API: " << strerror(errno);
       }
@@ -365,7 +375,7 @@ MarkCompact::LiveWordsBitmap<kAlignment>* MarkCompact::LiveWordsBitmap<kAlignmen
 
 static bool IsSigbusFeatureAvailable() {
   MarkCompact::GetUffdAndMinorFault();
-  return gUffdFeatures & UFFD_FEATURE_SIGBUS;
+  return (gUffdFeatures & kUffdFeaturesForSigbus) == kUffdFeaturesForSigbus;
 }
 
 MarkCompact::MarkCompact(Heap* heap)
@@ -562,27 +572,28 @@ void MarkCompact::AddLinearAllocSpaceData(uint8_t* begin, size_t len) {
                                          is_shared);
 }
 
-void MarkCompact::BindAndResetBitmaps() {
-  // TODO: We need to hold heap_bitmap_lock_ only for populating immune_spaces.
-  // The card-table and mod-union-table processing can be done without it. So
-  // change the logic below. Note that the bitmap clearing would require the
-  // lock.
+void MarkCompact::PrepareCardTableForMarking(bool clear_alloc_space_cards) {
   TimingLogger::ScopedTiming t(__FUNCTION__, GetTimings());
   accounting::CardTable* const card_table = heap_->GetCardTable();
+  // immune_spaces_ is emptied in InitializePhase() before marking starts. This
+  // function is invoked twice during marking. We only need to populate immune_spaces_
+  // once per GC cycle. And when it's done (below), all the immune spaces are
+  // added to it. We can never have partially filled immune_spaces_.
+  bool update_immune_spaces = immune_spaces_.IsEmpty();
   // Mark all of the spaces we never collect as immune.
   for (const auto& space : GetHeap()->GetContinuousSpaces()) {
     if (space->GetGcRetentionPolicy() == space::kGcRetentionPolicyNeverCollect ||
         space->GetGcRetentionPolicy() == space::kGcRetentionPolicyFullCollect) {
       CHECK(space->IsZygoteSpace() || space->IsImageSpace());
-      immune_spaces_.AddSpace(space);
+      if (update_immune_spaces) {
+        immune_spaces_.AddSpace(space);
+      }
       accounting::ModUnionTable* table = heap_->FindModUnionTableFromSpace(space);
       if (table != nullptr) {
         table->ProcessCards();
       } else {
-        // Keep cards aged if we don't have a mod-union table since we may need
+        // Keep cards aged if we don't have a mod-union table since we need
         // to scan them in future GCs. This case is for app images.
-        // TODO: We could probably scan the objects right here to avoid doing
-        // another scan through the card-table.
         card_table->ModifyCardsAtomic(
             space->Begin(),
             space->End(),
@@ -593,7 +604,7 @@ void MarkCompact::BindAndResetBitmaps() {
             },
             /* card modified visitor */ VoidFunctor());
       }
-    } else {
+    } else if (clear_alloc_space_cards) {
       CHECK(!space->IsZygoteSpace());
       CHECK(!space->IsImageSpace());
       // The card-table corresponding to bump-pointer and non-moving space can
@@ -606,6 +617,16 @@ void MarkCompact::BindAndResetBitmaps() {
         non_moving_space_ = space;
         non_moving_space_bitmap_ = space->GetMarkBitmap();
       }
+    } else {
+      card_table->ModifyCardsAtomic(
+          space->Begin(),
+          space->End(),
+          [](uint8_t card) {
+            return (card == gc::accounting::CardTable::kCardDirty) ?
+                       gc::accounting::CardTable::kCardAged :
+                       gc::accounting::CardTable::kCardClean;
+          },
+          /* card modified visitor */ VoidFunctor());
     }
   }
 }
@@ -704,10 +725,6 @@ void MarkCompact::RunPhases() {
       bump_pointer_space_->AssertAllThreadLocalBuffersAreRevoked();
     }
   }
-  // To increase likelihood of black allocations. For testing purposes only.
-  if (kIsDebugBuild && heap_->GetTaskProcessor()->GetRunningThread() == thread_running_gc_) {
-    usleep(500'000);
-  }
   {
     ReaderMutexLock mu(self, *Locks::mutator_lock_);
     ReclaimPhase();
@@ -737,7 +754,6 @@ void MarkCompact::RunPhases() {
 
   FinishPhase();
   thread_running_gc_ = nullptr;
-  GetHeap()->PostGcVerification(this);
 }
 
 void MarkCompact::InitMovingSpaceFirstObjects(const size_t vec_len) {
@@ -3796,26 +3812,6 @@ void MarkCompact::MarkReachableObjects() {
   ProcessMarkStack();
 }
 
-class MarkCompact::CardModifiedVisitor {
- public:
-  explicit CardModifiedVisitor(MarkCompact* const mark_compact,
-                               accounting::ContinuousSpaceBitmap* const bitmap,
-                               accounting::CardTable* const card_table)
-      : visitor_(mark_compact), bitmap_(bitmap), card_table_(card_table) {}
-
-  void operator()(uint8_t* card, uint8_t expected_value, [[maybe_unused]] uint8_t new_value) const {
-    if (expected_value == accounting::CardTable::kCardDirty) {
-      uintptr_t start = reinterpret_cast<uintptr_t>(card_table_->AddrFromCard(card));
-      bitmap_->VisitMarkedRange(start, start + accounting::CardTable::kCardSize, visitor_);
-    }
-  }
-
- private:
-  ScanObjectVisitor visitor_;
-  accounting::ContinuousSpaceBitmap* bitmap_;
-  accounting::CardTable* const card_table_;
-};
-
 void MarkCompact::ScanDirtyObjects(bool paused, uint8_t minimum_age) {
   accounting::CardTable* card_table = heap_->GetCardTable();
   for (const auto& space : heap_->GetContinuousSpaces()) {
@@ -3835,58 +3831,8 @@ void MarkCompact::ScanDirtyObjects(bool paused, uint8_t minimum_age) {
       UNREACHABLE();
     }
     TimingLogger::ScopedTiming t(name, GetTimings());
-    ScanObjectVisitor visitor(this);
-    const bool is_immune_space = space->IsZygoteSpace() || space->IsImageSpace();
-    if (paused) {
-      DCHECK_EQ(minimum_age, gc::accounting::CardTable::kCardDirty);
-      // We can clear the card-table for any non-immune space.
-      if (is_immune_space) {
-        card_table->Scan</*kClearCard*/false>(space->GetMarkBitmap(),
-                                              space->Begin(),
-                                              space->End(),
-                                              visitor,
-                                              minimum_age);
-      } else {
-        card_table->Scan</*kClearCard*/true>(space->GetMarkBitmap(),
-                                             space->Begin(),
-                                             space->End(),
-                                             visitor,
-                                             minimum_age);
-      }
-    } else {
-      DCHECK_EQ(minimum_age, gc::accounting::CardTable::kCardAged);
-      accounting::ModUnionTable* table = heap_->FindModUnionTableFromSpace(space);
-      if (table) {
-        table->ProcessCards();
-        card_table->Scan</*kClearCard*/false>(space->GetMarkBitmap(),
-                                              space->Begin(),
-                                              space->End(),
-                                              visitor,
-                                              minimum_age);
-      } else {
-        CardModifiedVisitor card_modified_visitor(this, space->GetMarkBitmap(), card_table);
-        // For the alloc spaces we should age the dirty cards and clear the rest.
-        // For image and zygote-space without mod-union-table, age the dirty
-        // cards but keep the already aged cards unchanged.
-        // In either case, visit the objects on the cards that were changed from
-        // dirty to aged.
-        if (is_immune_space) {
-          card_table->ModifyCardsAtomic(space->Begin(),
-                                        space->End(),
-                                        [](uint8_t card) {
-                                          return (card == gc::accounting::CardTable::kCardClean)
-                                                  ? card
-                                                  : gc::accounting::CardTable::kCardAged;
-                                        },
-                                        card_modified_visitor);
-        } else {
-          card_table->ModifyCardsAtomic(space->Begin(),
-                                        space->End(),
-                                        AgeCardVisitor(),
-                                        card_modified_visitor);
-        }
-      }
-    }
+    card_table->Scan</*kClearCard*/ false>(
+        space->GetMarkBitmap(), space->Begin(), space->End(), ScanObjectVisitor(this), minimum_age);
   }
 }
 
@@ -3910,6 +3856,10 @@ void MarkCompact::MarkRoots(VisitRootFlags flags) {
 void MarkCompact::PreCleanCards() {
   TimingLogger::ScopedTiming t(__FUNCTION__, GetTimings());
   CHECK(!Locks::mutator_lock_->IsExclusiveHeld(thread_running_gc_));
+  // Age the card-table before thread stack scanning checkpoint in MarkRoots()
+  // as it ensures that there are no in-progress write barriers which started
+  // prior to aging the card-table.
+  PrepareCardTableForMarking(/*clear_alloc_space_cards*/ false);
   MarkRoots(static_cast<VisitRootFlags>(kVisitRootFlagClearRootLog | kVisitRootFlagNewRoots));
   RecursiveMarkDirtyObjects(/*paused*/ false, accounting::CardTable::kCardDirty - 1);
 }
@@ -3930,7 +3880,7 @@ void MarkCompact::MarkingPhase() {
   TimingLogger::ScopedTiming t(__FUNCTION__, GetTimings());
   DCHECK_EQ(thread_running_gc_, Thread::Current());
   WriterMutexLock mu(thread_running_gc_, *Locks::heap_bitmap_lock_);
-  BindAndResetBitmaps();
+  PrepareCardTableForMarking(/*clear_alloc_space_cards*/ true);
   MarkZygoteLargeObjects();
   MarkRoots(
         static_cast<VisitRootFlags>(kVisitRootFlagAllRoots | kVisitRootFlagStartLoggingNewRoots));

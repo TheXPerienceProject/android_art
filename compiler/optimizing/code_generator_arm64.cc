@@ -35,6 +35,7 @@
 #include "interpreter/mterp/nterp.h"
 #include "intrinsics.h"
 #include "intrinsics_arm64.h"
+#include "intrinsics_list.h"
 #include "intrinsics_utils.h"
 #include "linker/linker_patch.h"
 #include "lock_word.h"
@@ -940,6 +941,7 @@ Location CriticalNativeCallingConventionVisitorARM64::GetMethodLocation() const 
 }
 
 namespace detail {
+
 // Mark which intrinsics we don't have handcrafted code for.
 template <Intrinsics T>
 struct IsUnimplemented {
@@ -954,15 +956,13 @@ struct IsUnimplemented {
 UNIMPLEMENTED_INTRINSIC_LIST_ARM64(TRUE_OVERRIDE)
 #undef TRUE_OVERRIDE
 
-#include "intrinsics_list.h"
 static constexpr bool kIsIntrinsicUnimplemented[] = {
-  false,  // kNone
+    false,  // kNone
 #define IS_UNIMPLEMENTED(Intrinsic, ...) \
-  IsUnimplemented<Intrinsics::k##Intrinsic>().is_unimplemented,
-  INTRINSICS_LIST(IS_UNIMPLEMENTED)
+    IsUnimplemented<Intrinsics::k##Intrinsic>().is_unimplemented,
+    ART_INTRINSICS_LIST(IS_UNIMPLEMENTED)
 #undef IS_UNIMPLEMENTED
 };
-#undef INTRINSICS_LIST
 
 }  // namespace detail
 
@@ -3779,7 +3779,7 @@ void InstructionCodeGeneratorARM64::GenerateTestAndBranch(HInstruction* instruct
     // The condition instruction has been materialized, compare the output to 0.
     Location cond_val = instruction->GetLocations()->InAt(condition_input_index);
     DCHECK(cond_val.IsRegister());
-      if (true_target == nullptr) {
+    if (true_target == nullptr) {
       __ Cbz(InputRegisterAt(instruction, condition_input_index), false_target);
     } else {
       __ Cbnz(InputRegisterAt(instruction, condition_input_index), true_target);
@@ -4808,14 +4808,12 @@ void CodeGeneratorARM64::GenerateStaticOrDirectCall(
       __ Ldr(XRegisterFrom(temp), MemOperand(tr, offset));
       break;
     }
-    case MethodLoadKind::kRecursive: {
+    case MethodLoadKind::kRecursive:
       callee_method = invoke->GetLocations()->InAt(invoke->GetCurrentMethodIndex());
       break;
-    }
-    case MethodLoadKind::kRuntimeCall: {
+    case MethodLoadKind::kRuntimeCall:
       GenerateInvokeStaticOrDirectRuntimeCall(invoke, temp, slow_path);
       return;  // No code pointer retrieval; the runtime performs the call directly.
-    }
     case MethodLoadKind::kBootImageLinkTimePcRelative:
       DCHECK(GetCompilerOptions().IsBootImage() || GetCompilerOptions().IsBootImageExtension());
       if (invoke->GetCodePtrLocation() == CodePtrLocation::kCallCriticalNative) {
@@ -4831,10 +4829,9 @@ void CodeGeneratorARM64::GenerateStaticOrDirectCall(
         break;
       }
       FALLTHROUGH_INTENDED;
-    default: {
+    default:
       LoadMethod(invoke->GetMethodLoadKind(), temp, invoke);
       break;
-    }
   }
 
   auto call_lr = [&]() {
@@ -4939,6 +4936,7 @@ void CodeGeneratorARM64::GenerateVirtualCall(
   }
   // Instead of simply (possibly) unpoisoning `temp` here, we should
   // emit a read barrier for the previous class reference load.
+  // However this is not required in practice, as this is an
   // intermediate/temporary reference and because the current
   // concurrent copying collector keeps the from-space memory
   // intact/accessible until the end of the marking phase (the
@@ -5374,13 +5372,8 @@ void InstructionCodeGeneratorARM64::VisitInvokeVirtual(HInvokeVirtual* invoke) {
     return;
   }
 
-  {
-    // Ensure that between the BLR (emitted by GenerateVirtualCall) and RecordPcInfo there
-    // are no pools emitted.
-    EmissionCheckScope guard(GetVIXLAssembler(), kInvokeCodeMarginSizeInBytes);
-    codegen_->GenerateVirtualCall(invoke, invoke->GetLocations()->GetTemp(0));
-    DCHECK(!codegen_->IsLeafMethod());
-  }
+  codegen_->GenerateVirtualCall(invoke, invoke->GetLocations()->GetTemp(0));
+  DCHECK(!codegen_->IsLeafMethod());
 
   codegen_->MaybeGenerateMarkingRegisterCheck(/* code= */ __LINE__);
 }
@@ -5438,7 +5431,9 @@ void LocationsBuilderARM64::VisitLoadClass(HLoadClass* cls) {
     locations->SetInAt(0, Location::RequiresRegister());
   }
   locations->SetOut(Location::RequiresRegister());
-  if (cls->GetLoadKind() == HLoadClass::LoadKind::kBssEntry) {
+  if (load_kind == HLoadClass::LoadKind::kBssEntry ||
+      load_kind == HLoadClass::LoadKind::kBssEntryPublic ||
+      load_kind == HLoadClass::LoadKind::kBssEntryPackage) {
     if (!gUseReadBarrier || kUseBakerReadBarrier) {
       // Rely on the type resolution or initialization and marking to save everything we need.
       locations->SetCustomSlowPathCallerSaves(OneRegInReferenceOutSaveEverythingCallerSaves());
@@ -6356,6 +6351,9 @@ void LocationsBuilderARM64::VisitSuspendCheck(HSuspendCheck* instruction) {
   // In suspend check slow path, usually there are no caller-save registers at all.
   // If SIMD instructions are present, however, we force spilling all live SIMD
   // registers in full width (since the runtime only saves/restores lower part).
+  // Note that only a suspend check can see live SIMD registers. In the
+  // loop optimization, we make sure this does not happen for any other slow
+  // path.
   locations->SetCustomSlowPathCallerSaves(
       GetGraph()->HasSIMD() ? RegisterSet::AllFpu() : RegisterSet::Empty());
 }

@@ -552,18 +552,35 @@ ENTRY art_quick_proxy_invoke_handler
 END art_quick_proxy_invoke_handler
 
 
+.macro NO_ARG_RUNTIME_EXCEPTION_SAVE_EVERYTHING c_name, cxx_name
+.extern \cxx_name
+ENTRY \c_name
+    SETUP_SAVE_ALL_CALLEE_SAVES_FRAME // save all registers as basis for long jump context.
+    mv  a0, xSELF                     // pass Thread::Current.
+    call \cxx_name                    // \cxx_name(arg, Thread*).
+    ebreak
+END \c_name
+.endm
+
+
 .macro ONE_ARG_RUNTIME_EXCEPTION c_name, cxx_name
 .extern \cxx_name
 ENTRY \c_name
     SETUP_SAVE_ALL_CALLEE_SAVES_FRAME // save all registers as basis for long jump context.
     mv  a1, xSELF                     // pass Thread::Current.
-    call \cxx_name                     // \cxx_name(arg, Thread*).
+    call \cxx_name                    // \cxx_name(arg, Thread*).
     ebreak
 END \c_name
 .endm
 
+
+// Called by managed code to deliver an ArithmeticException.
+NO_ARG_RUNTIME_EXCEPTION_SAVE_EVERYTHING art_quick_throw_div_zero, artThrowDivZeroFromCode
+
+
 // Called by managed code to deliver an exception.
 ONE_ARG_RUNTIME_EXCEPTION art_quick_deliver_exception, artDeliverExceptionFromCode
+
 
 // Called to attempt to execute an obsolete method.
 ONE_ARG_RUNTIME_EXCEPTION art_invoke_obsolete_method_stub, artInvokeObsoleteMethod
@@ -603,13 +620,151 @@ ENTRY art_quick_test_suspend
 END
 
 
+ENTRY art_quick_compile_optimized
+    SETUP_SAVE_EVERYTHING_FRAME
+    ld   a0, FRAME_SIZE_SAVE_EVERYTHING(sp)   // pass ArtMethod
+    mv   a1, xSELF                            // pass Thread::Current
+    call artCompileOptimized                  // (ArtMethod*, Thread*)
+    RESTORE_SAVE_EVERYTHING_FRAME
+    // Note: If we implement implicit suspend checks or a marking register for GC, we don't need
+    // to restore such registers here, as artCompileOptimized doesn't allow thread suspension.
+    ret
+END art_quick_compile_optimized
+
+
+/*  extern"C" void art_quick_osr_stub(void*          stack,                 A0
+ *                                    size_t         stack_size_in_bytes,   A1
+ *                                    const uint8_t* native_pc,             A2
+ *                                    JValue*        result,                A3
+ *                                    char*          shorty,                A4
+ *                                    Thread*        self)                  A5
+ */
+ENTRY art_quick_osr_stub
+    // Save all callee-save registers (we do not fill the spill area in the OSR frame, so we
+    // need to preserve them here) and A3 (it will be needed after the OSR method returns).
+    // Also add space for the `ArtMethod*` slot (null to indicate transition) and padding.
+    SAVE_SIZE=(12 + 12 + /* RA */ 1 + /* A3 */ 1 + /* ArtMethod* */ 1 + /* padding */ 1) * 8
+    INCREASE_FRAME SAVE_SIZE
+    sd zero, 0*8(sp)          // Store null to the `ArtMethod*` slot to indicate transition.
+                              // Skip padding.
+    SAVE_GPR a3, 2*8          // Save `result`.
+    SAVE_FPR fs0, 3*8
+    SAVE_FPR fs1, 4*8
+    SAVE_FPR fs2, 5*8
+    SAVE_FPR fs3, 6*8
+    SAVE_FPR fs4, 7*8
+    SAVE_FPR fs5, 8*8
+    SAVE_FPR fs6, 9*8
+    SAVE_FPR fs7, 10*8
+    SAVE_FPR fs8, 11*8
+    SAVE_FPR fs9, 12*8
+    SAVE_FPR fs10, 13*8
+    SAVE_FPR fs11, 14*8
+    SAVE_GPR s2, 15*8
+    SAVE_GPR s3, 16*8
+    SAVE_GPR s4, 17*8
+    SAVE_GPR s5, 18*8
+    SAVE_GPR s6, 19*8
+    SAVE_GPR s7, 20*8
+    SAVE_GPR s8, 21*8
+    SAVE_GPR s9, 22*8
+    SAVE_GPR s10, 23*8
+    SAVE_GPR s11, 24*8
+    SAVE_GPR xSELF, 25*8       // Save xSELF/S1.
+    SAVE_GPR fp, 26*8          // Save FP/S0.
+    SAVE_GPR ra, 27*8          // Save return address.
+
+    // Make the new FP point to the location where we stored the old FP.
+    // Some stack-walking tools may rely on this simply-linked list of saved FPs.
+    addi fp, sp, (26*8)  // save frame pointer
+    .cfi_def_cfa fp, SAVE_SIZE - (26*8)
+
+    mv   xSELF, a5
+
+    CFI_REMEMBER_STATE
+    jal .Losr_entry
+
+    // The called method removes the stack frame created in `.Losr_entry`.
+    // The SP is already correctly restored, we do not need to restore it from FP.
+    .cfi_def_cfa sp, SAVE_SIZE
+
+    // Restore saved registers including the result address.
+    RESTORE_GPR a3, 2*8       // Restore `result`.
+    RESTORE_FPR fs0, 3*8
+    RESTORE_FPR fs1, 4*8
+    RESTORE_FPR fs2, 5*8
+    RESTORE_FPR fs3, 6*8
+    RESTORE_FPR fs4, 7*8
+    RESTORE_FPR fs5, 8*8
+    RESTORE_FPR fs6, 9*8
+    RESTORE_FPR fs7, 10*8
+    RESTORE_FPR fs8, 11*8
+    RESTORE_FPR fs9, 12*8
+    RESTORE_FPR fs10, 13*8
+    RESTORE_FPR fs11, 14*8
+    RESTORE_GPR s2, 15*8
+    RESTORE_GPR s3, 16*8
+    RESTORE_GPR s4, 17*8
+    RESTORE_GPR s5, 18*8
+    RESTORE_GPR s6, 19*8
+    RESTORE_GPR s7, 20*8
+    RESTORE_GPR s8, 21*8
+    RESTORE_GPR s9, 22*8
+    RESTORE_GPR s10, 23*8
+    RESTORE_GPR s11, 24*8
+    RESTORE_GPR xSELF, 25*8   // Restore xSELF/S1.
+    RESTORE_GPR fp, 26*8      // Restore FP/S0.
+    RESTORE_GPR ra, 27*8      // Restore return address.
+    DECREASE_FRAME SAVE_SIZE
+
+    // The compiler put the result in A0. Doesn't matter if it is 64 or 32 bits.
+    sd   a0, (a3)
+    ret
+
+.Losr_entry:
+    CFI_RESTORE_STATE_AND_DEF_CFA fp, SAVE_SIZE - (26*8)
+
+    // Prepare the destination register for backward copy of arguments.
+    addi t1, sp, -8
+
+    // Update stack pointer for the callee frame.
+    sub  sp, sp, a1
+
+    // Subtract the return address slot size from args size.
+    addi a1, a1, -8
+
+    // Update return address slot expected by the callee.
+    sd   ra, (t1)
+
+    // Prepare the source register for backward copy of arguments.
+    add  t0, a0, a1
+
+    // Copy arguments into stack frame. Use simple backward-copy routine for now.
+    // There is always at least the `ArtMethod*` to to copy.
+    // A0 - source address
+    // A1 - args length
+    // SP - destination address.
+    // T0 - loop variable initialized to A0 + A1 for backward copy
+    // T1 - loop variable initialized to SP + A1 for backward copy
+    // T2 - temporary for holding the copied value
+.Losr_loop:
+    addi t0, t0, -8
+    ld   t2, (t0)
+    addi t1, t1, -8
+    sd   t2, (t1)
+    bne  t1, sp, .Losr_loop
+
+    // Branch to the OSR entry point.
+    jr   a2
+
+END art_quick_osr_stub
+
+
 UNDEFINED art_quick_imt_conflict_trampoline
 UNDEFINED art_quick_deoptimize_from_compiled_code
 UNDEFINED art_quick_string_builder_append
-UNDEFINED art_quick_compile_optimized
 UNDEFINED art_quick_method_entry_hook
 UNDEFINED art_quick_check_instance_of
-UNDEFINED art_quick_osr_stub
 
 UNDEFINED art_quick_alloc_array_resolved_dlmalloc
 UNDEFINED art_quick_alloc_array_resolved_dlmalloc_instrumented
@@ -798,7 +953,6 @@ UNDEFINED art_quick_invoke_virtual_trampoline_with_access_check
 UNDEFINED art_quick_invoke_polymorphic
 UNDEFINED art_quick_invoke_custom
 UNDEFINED art_quick_throw_array_bounds
-UNDEFINED art_quick_throw_div_zero
 UNDEFINED art_quick_throw_null_pointer_exception
 UNDEFINED art_quick_throw_stack_overflow
 UNDEFINED art_quick_throw_string_bounds

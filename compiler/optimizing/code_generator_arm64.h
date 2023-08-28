@@ -51,30 +51,29 @@ class CodeGeneratorARM64;
 // Use a local definition to prevent copying mistakes.
 static constexpr size_t kArm64WordSize = static_cast<size_t>(kArm64PointerSize);
 
-// These constants are used as an approximate margin when emission of veneer and literal pools
+// This constant is used as an approximate margin when emission of veneer and literal pools
 // must be blocked.
 static constexpr int kMaxMacroInstructionSizeInBytes = 15 * vixl::aarch64::kInstructionSize;
-static constexpr int kInvokeCodeMarginSizeInBytes = 6 * kMaxMacroInstructionSizeInBytes;
 
 static const vixl::aarch64::Register kParameterCoreRegisters[] = {
-  vixl::aarch64::x1,
-  vixl::aarch64::x2,
-  vixl::aarch64::x3,
-  vixl::aarch64::x4,
-  vixl::aarch64::x5,
-  vixl::aarch64::x6,
-  vixl::aarch64::x7
+    vixl::aarch64::x1,
+    vixl::aarch64::x2,
+    vixl::aarch64::x3,
+    vixl::aarch64::x4,
+    vixl::aarch64::x5,
+    vixl::aarch64::x6,
+    vixl::aarch64::x7
 };
 static constexpr size_t kParameterCoreRegistersLength = arraysize(kParameterCoreRegisters);
 static const vixl::aarch64::VRegister kParameterFPRegisters[] = {
-  vixl::aarch64::d0,
-  vixl::aarch64::d1,
-  vixl::aarch64::d2,
-  vixl::aarch64::d3,
-  vixl::aarch64::d4,
-  vixl::aarch64::d5,
-  vixl::aarch64::d6,
-  vixl::aarch64::d7
+    vixl::aarch64::d0,
+    vixl::aarch64::d1,
+    vixl::aarch64::d2,
+    vixl::aarch64::d3,
+    vixl::aarch64::d4,
+    vixl::aarch64::d5,
+    vixl::aarch64::d6,
+    vixl::aarch64::d7
 };
 static constexpr size_t kParameterFPRegistersLength = arraysize(kParameterFPRegisters);
 
@@ -193,34 +192,34 @@ class JumpTableARM64 : public DeletableArenaObject<kArenaAllocSwitchTable> {
   DISALLOW_COPY_AND_ASSIGN(JumpTableARM64);
 };
 
-static const vixl::aarch64::Register kRuntimeParameterCoreRegisters[] =
-    { vixl::aarch64::x0,
-      vixl::aarch64::x1,
-      vixl::aarch64::x2,
-      vixl::aarch64::x3,
-      vixl::aarch64::x4,
-      vixl::aarch64::x5,
-      vixl::aarch64::x6,
-      vixl::aarch64::x7 };
+static const vixl::aarch64::Register kRuntimeParameterCoreRegisters[] = {
+    vixl::aarch64::x0,
+    vixl::aarch64::x1,
+    vixl::aarch64::x2,
+    vixl::aarch64::x3,
+    vixl::aarch64::x4,
+    vixl::aarch64::x5,
+    vixl::aarch64::x6,
+    vixl::aarch64::x7
+};
 static constexpr size_t kRuntimeParameterCoreRegistersLength =
     arraysize(kRuntimeParameterCoreRegisters);
-static const vixl::aarch64::VRegister kRuntimeParameterFpuRegisters[] =
-    { vixl::aarch64::d0,
-      vixl::aarch64::d1,
-      vixl::aarch64::d2,
-      vixl::aarch64::d3,
-      vixl::aarch64::d4,
-      vixl::aarch64::d5,
-      vixl::aarch64::d6,
-      vixl::aarch64::d7 };
+static const vixl::aarch64::VRegister kRuntimeParameterFpuRegisters[] = {
+    vixl::aarch64::d0,
+    vixl::aarch64::d1,
+    vixl::aarch64::d2,
+    vixl::aarch64::d3,
+    vixl::aarch64::d4,
+    vixl::aarch64::d5,
+    vixl::aarch64::d6,
+    vixl::aarch64::d7
+};
 static constexpr size_t kRuntimeParameterFpuRegistersLength =
     arraysize(kRuntimeParameterCoreRegisters);
 
 class InvokeRuntimeCallingConvention : public CallingConvention<vixl::aarch64::Register,
                                                                 vixl::aarch64::VRegister> {
  public:
-  static constexpr size_t kParameterCoreRegistersLength = arraysize(kParameterCoreRegisters);
-
   InvokeRuntimeCallingConvention()
       : CallingConvention(kRuntimeParameterCoreRegisters,
                           kRuntimeParameterCoreRegistersLength,
@@ -552,12 +551,31 @@ class InstructionCodeGeneratorARM64Sve : public InstructionCodeGeneratorARM64 {
   // register size (full SIMD register is used).
   void ValidateVectorLength(HVecOperation* instr) const;
 
-  // Returns default predicate register which is used as governing vector predicate
-  // to implement predicated loop execution.
+  vixl::aarch64::PRegister GetVecGoverningPReg(HVecOperation* instr) {
+    return GetVecPredSetFixedOutPReg(instr->GetGoverningPredicate());
+  }
+
+  // Returns a fixed p-reg for predicate setting instruction.
   //
-  // TODO: This is a hack to be addressed when register allocator supports SIMD types.
-  static vixl::aarch64::PRegister LoopPReg() {
-    return vixl::aarch64::p0;
+  // Currently we only support diamond CF loops for predicated vectorization; also we don't have
+  // register allocator support for vector predicates. Thus we use fixed P-regs for loop main,
+  // True and False predicates as a temporary solution.
+  //
+  // TODO: Support SIMD types and registers in ART.
+  static vixl::aarch64::PRegister GetVecPredSetFixedOutPReg(HVecPredSetOperation* instr) {
+    if (instr->IsVecPredWhile() || instr->IsVecPredSetAll()) {
+      // VecPredWhile and VecPredSetAll live ranges never overlap due to the current vectorization
+      // scheme: the former only is live inside a vectorized loop and the later is never in a
+      // loop and never spans across loops.
+      return vixl::aarch64::p0;
+    } else if (instr->IsVecPredNot()) {
+      // This relies on the fact that we only use PredNot manually in the autovectorizer,
+      // so there is only one of them in each loop.
+      return vixl::aarch64::p1;
+    } else {
+      DCHECK(instr->IsVecCondition());
+      return vixl::aarch64::p2;
+    }
   }
 };
 
