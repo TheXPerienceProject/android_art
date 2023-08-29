@@ -547,13 +547,14 @@ bool OatFileBase::Setup(const std::vector<const DexFile*>& dex_files, std::strin
       return false;
     }
     // Create an OatDexFile and add it to the owning container.
-    OatDexFile* oat_dex_file = new OatDexFile(
-        this,
-        dex_file->Begin(),
-        dex_file->GetLocationChecksum(),
-        dex_location,
-        canonical_location,
-        type_lookup_table_data);
+    OatDexFile* oat_dex_file = new OatDexFile(this,
+                                              dex_file->Begin(),
+                                              dex_file->GetHeader().magic_,
+                                              dex_file->GetLocationChecksum(),
+                                              dex_file->GetSha1(),
+                                              dex_location,
+                                              canonical_location,
+                                              type_lookup_table_data);
     oat_dex_files_storage_.push_back(oat_dex_file);
 
     // Add the location and canonical location (if different) to the oat_dex_files_ table.
@@ -743,6 +744,16 @@ bool OatFileBase::Setup(int zip_fd,
       }
     }
 
+    DexFile::Magic dex_file_magic;
+    if (UNLIKELY(!ReadOatDexFileData(*this, &oat, &dex_file_magic))) {
+      *error_msg = StringPrintf(
+          "In oat file '%s' found OatDexFile #%zu for '%s' truncated after dex file magic",
+          GetLocation().c_str(),
+          i,
+          dex_file_location.c_str());
+      return false;
+    }
+
     uint32_t dex_file_checksum;
     if (UNLIKELY(!ReadOatDexFileData(*this, &oat, &dex_file_checksum))) {
       *error_msg = StringPrintf("In oat file '%s' found OatDexFile #%zu for '%s' truncated after "
@@ -750,6 +761,16 @@ bool OatFileBase::Setup(int zip_fd,
                                 GetLocation().c_str(),
                                 i,
                                 dex_file_location.c_str());
+      return false;
+    }
+
+    DexFile::Sha1 dex_file_sha1;
+    if (UNLIKELY(!ReadOatDexFileData(*this, &oat, &dex_file_sha1))) {
+      *error_msg = StringPrintf(
+          "In oat file '%s' found OatDexFile #%zu for '%s' truncated after dex file sha1",
+          GetLocation().c_str(),
+          i,
+          dex_file_location.c_str());
       return false;
     }
 
@@ -790,18 +811,21 @@ bool OatFileBase::Setup(int zip_fd,
         bool loaded = false;
         CHECK(zip_fd == -1 || dex_fds.empty());  // Allow only the supported combinations.
         if (zip_fd != -1) {
-          ArtDexFileLoader dex_file_loader(zip_fd, dex_file_location);
+          File file(zip_fd, /*check_usage=*/false);
+          ArtDexFileLoader dex_file_loader(&file, dex_file_location);
           loaded = dex_file_loader.Open(/*verify=*/false,
                                         /*verify_checksum=*/false,
                                         error_msg,
                                         &new_dex_files);
         } else if (dex_fd != -1) {
           // Note that we assume dex_fds are backing by jars.
-          ArtDexFileLoader dex_file_loader(DupCloexec(dex_fd), dex_file_location);
+          File file(dex_fd, /*check_usage=*/false);
+          ArtDexFileLoader dex_file_loader(&file, dex_file_location);
           loaded = dex_file_loader.Open(/*verify=*/false,
                                         /*verify_checksum=*/false,
                                         error_msg,
                                         &new_dex_files);
+          file.Release();  // Don't close the file.
         } else {
           ArtDexFileLoader dex_file_loader(dex_file_name.c_str(), dex_file_location);
           loaded = dex_file_loader.Open(/*verify=*/false,
@@ -816,9 +840,8 @@ bool OatFileBase::Setup(int zip_fd,
             LOG(WARNING) << "Could not find associated dex files of oat file. "
                          << "Oatdump will only dump the header.";
             return true;
-          } else {
-            return false;
           }
+          return false;
         }
         // The oat file may be out of date wrt/ the dex-file location. We need to be defensive
         // here and ensure that at least the number of dex files still matches.
@@ -848,6 +871,7 @@ bool OatFileBase::Setup(int zip_fd,
       // expects this check to happen during oat file setup when the oat file
       // does not contain dex code.
       if (dex_file_checksum != external_dex_files_[i]->GetLocationChecksum()) {
+        CHECK(dex_file_sha1 != external_dex_files_[i]->GetSha1());
         *error_msg = StringPrintf("In oat file '%s', dex file checksum 0x%08x does not match"
                                       " checksum 0x%08x of external dex file '%s'",
                                   GetLocation().c_str(),
@@ -856,6 +880,7 @@ bool OatFileBase::Setup(int zip_fd,
                                   external_dex_files_[i]->GetLocation().c_str());
         return false;
       }
+      CHECK(dex_file_sha1 == external_dex_files_[i]->GetSha1());
       dex_file_pointer = external_dex_files_[i]->Begin();
     } else {
       // Do not support mixed-mode oat files.
@@ -1001,20 +1026,22 @@ bool OatFileBase::Setup(int zip_fd,
     }
 
     // Create the OatDexFile and add it to the owning container.
-    OatDexFile* oat_dex_file = new OatDexFile(
-        this,
-        dex_file_location,
-        DexFileLoader::GetDexCanonicalLocation(dex_file_name.c_str()),
-        dex_file_checksum,
-        dex_file_pointer,
-        lookup_table_data,
-        method_bss_mapping,
-        type_bss_mapping,
-        public_type_bss_mapping,
-        package_type_bss_mapping,
-        string_bss_mapping,
-        class_offsets_pointer,
-        dex_layout_sections);
+    OatDexFile* oat_dex_file =
+        new OatDexFile(this,
+                       dex_file_location,
+                       DexFileLoader::GetDexCanonicalLocation(dex_file_name.c_str()),
+                       dex_file_magic,
+                       dex_file_checksum,
+                       dex_file_sha1,
+                       dex_file_pointer,
+                       lookup_table_data,
+                       method_bss_mapping,
+                       type_bss_mapping,
+                       public_type_bss_mapping,
+                       package_type_bss_mapping,
+                       string_bss_mapping,
+                       class_offsets_pointer,
+                       dex_layout_sections);
     oat_dex_files_storage_.push_back(oat_dex_file);
 
     // Add the location and canonical location (if different) to the oat_dex_files_ table.
@@ -1782,7 +1809,9 @@ class OatFileBackedByVdex final : public OatFileBase {
 
         OatDexFile* oat_dex_file = new OatDexFile(oat_file.get(),
                                                   dex_file_start,
+                                                  header->magic_,
                                                   vdex_file->GetLocationChecksum(i),
+                                                  header->signature_,
                                                   location,
                                                   canonical_location,
                                                   type_lookup_table_data);
@@ -1801,7 +1830,8 @@ class OatFileBackedByVdex final : public OatFileBase {
       // a vdex file.
       bool loaded = false;
       if (zip_fd != -1) {
-        ArtDexFileLoader dex_file_loader(zip_fd, dex_location);
+        File file(zip_fd, /*check_usage=*/false);
+        ArtDexFileLoader dex_file_loader(&file, dex_location);
         loaded = dex_file_loader.Open(/*verify=*/false,
                                       /*verify_checksum=*/false,
                                       error_msg,
@@ -2084,9 +2114,7 @@ ArrayRef<GcRoot<mirror::Object>> OatFile::GetBssGcRoots() const {
   }
 }
 
-const OatDexFile* OatFile::GetOatDexFile(const char* dex_location,
-                                         const uint32_t* dex_location_checksum,
-                                         std::string* error_msg) const {
+const OatDexFile* OatFile::GetOatDexFile(const char* dex_location, std::string* error_msg) const {
   // NOTE: We assume here that the canonical location for a given dex_location never
   // changes. If it does (i.e. some symlink used by the filename changes) we may return
   // an incorrect OatDexFile. As long as we have a checksum to check, we shall return
@@ -2138,25 +2166,15 @@ const OatDexFile* OatFile::GetOatDexFile(const char* dex_location,
     return nullptr;
   }
 
-  if (dex_location_checksum != nullptr &&
-      oat_dex_file->GetDexFileLocationChecksum() != *dex_location_checksum) {
-    if (error_msg != nullptr) {
-      std::string dex_canonical_location = DexFileLoader::GetDexCanonicalLocation(dex_location);
-      std::string checksum = StringPrintf("0x%08x", oat_dex_file->GetDexFileLocationChecksum());
-      std::string required_checksum = StringPrintf("0x%08x", *dex_location_checksum);
-      *error_msg = "OatDexFile for DexFile " + std::string(dex_location)
-          + " (canonical path " + dex_canonical_location + ") in OatFile " + GetLocation()
-          + " has checksum " + checksum + " but " + required_checksum + " was required";
-    }
-    return nullptr;
-  }
   return oat_dex_file;
 }
 
 OatDexFile::OatDexFile(const OatFile* oat_file,
                        const std::string& dex_file_location,
                        const std::string& canonical_dex_file_location,
+                       DexFile::Magic dex_file_magic,
                        uint32_t dex_file_location_checksum,
+                       DexFile::Sha1 dex_file_sha1,
                        const uint8_t* dex_file_pointer,
                        const uint8_t* lookup_table_data,
                        const IndexBssMapping* method_bss_mapping_data,
@@ -2169,7 +2187,9 @@ OatDexFile::OatDexFile(const OatFile* oat_file,
     : oat_file_(oat_file),
       dex_file_location_(dex_file_location),
       canonical_dex_file_location_(canonical_dex_file_location),
+      dex_file_magic_(dex_file_magic),
       dex_file_location_checksum_(dex_file_location_checksum),
+      dex_file_sha1_(dex_file_sha1),
       dex_file_pointer_(dex_file_pointer),
       lookup_table_data_(lookup_table_data),
       method_bss_mapping_(method_bss_mapping_data),
@@ -2206,14 +2226,18 @@ void OatDexFile::InitializeTypeLookupTable() {
 
 OatDexFile::OatDexFile(const OatFile* oat_file,
                        const uint8_t* dex_file_pointer,
+                       DexFile::Magic dex_file_magic,
                        uint32_t dex_file_location_checksum,
+                       DexFile::Sha1 dex_file_sha1,
                        const std::string& dex_file_location,
                        const std::string& canonical_dex_file_location,
                        const uint8_t* lookup_table_data)
     : oat_file_(oat_file),
       dex_file_location_(dex_file_location),
       canonical_dex_file_location_(canonical_dex_file_location),
+      dex_file_magic_(dex_file_magic),
       dex_file_location_checksum_(dex_file_location_checksum),
+      dex_file_sha1_(dex_file_sha1),
       dex_file_pointer_(dex_file_pointer),
       lookup_table_data_(lookup_table_data) {
   InitializeTypeLookupTable();

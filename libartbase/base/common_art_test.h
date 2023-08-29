@@ -157,10 +157,10 @@ class CommonArtTestImpl {
   // Gets the paths of the libcore dex files.
   std::vector<std::string> GetLibCoreDexFileNames() const;
 
-  // Gets the locations of the libcore dex files for given modules.
+  // Gets the on-host or on-device locations of the libcore dex files for given modules.
   std::vector<std::string> GetLibCoreDexLocations(const std::vector<std::string>& modules) const;
 
-  // Gets the locations of the libcore dex files.
+  // Gets the on-host or on-device locations of the libcore dex files.
   std::vector<std::string> GetLibCoreDexLocations() const;
 
   static std::string GetClassPathOption(const char* option,
@@ -310,6 +310,11 @@ std::vector<pid_t> GetPidByName(const std::string& process_name);
 #define TEST_DISABLED_FOR_NON_STATIC_HOST_BUILDS()                       \
   if (!kHostStaticBuildEnabled) {                                        \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR NON-STATIC HOST BUILDS"; \
+  }
+
+#define TEST_DISABLED_FOR_DEBUG_BUILD()                       \
+  if (kIsDebugBuild) {                                        \
+    GTEST_SKIP() << "WARNING: TEST DISABLED FOR DEBUG BUILD"; \
   }
 
 #define TEST_DISABLED_FOR_MEMORY_TOOL()                       \

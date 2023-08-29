@@ -228,6 +228,7 @@ art_cc_library {
         symbol_file: "libdexfile.map.txt",
         versions: ["1"],
     },
+    sdclang: false,
 }
 
 art_cc_library {
@@ -571,6 +572,7 @@ cc_library_static {
         "art_defaults",
         "libdexfile_support_static_defaults",
     ],
+    sdclang: false,
 }
 
 art_cc_test {

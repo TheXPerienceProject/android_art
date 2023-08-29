@@ -32,6 +32,7 @@
 #include "base/array_ref.h"
 #include "base/compiler_filter.h"
 #include "base/file_utils.h"
+#include "base/globals.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/macros.h"
 #include "base/os.h"
@@ -200,7 +201,9 @@ OatFileAssistant::OatFileAssistant(const char* dex_location,
       vdex_for_oat_.Reset(vdex_file_name, UseFdToReadFiles(), zip_fd, vdex_fd, oat_fd);
       std::string dm_file_name = GetDmFilename(dex_location);
       dm_for_oat_.Reset(dm_file_name, UseFdToReadFiles(), zip_fd, vdex_fd, oat_fd);
-    } else {
+    } else if (kIsTargetAndroid) {
+      // No need to warn on host. We are probably in oatdump, where we only need OatFileAssistant to
+      // validate BCP checksums.
       LOG(WARNING) << "Failed to determine oat file name for dex location " << dex_location_ << ": "
                    << error_msg;
     }
@@ -418,8 +421,7 @@ bool OatFileAssistant::LoadDexFiles(const OatFile& oat_file,
                                     std::vector<std::unique_ptr<const DexFile>>* out_dex_files) {
   // Load the main dex file.
   std::string error_msg;
-  const OatDexFile* oat_dex_file =
-      oat_file.GetOatDexFile(dex_location.c_str(), nullptr, &error_msg);
+  const OatDexFile* oat_dex_file = oat_file.GetOatDexFile(dex_location.c_str(), &error_msg);
   if (oat_dex_file == nullptr) {
     LOG(WARNING) << error_msg;
     return false;
@@ -435,7 +437,7 @@ bool OatFileAssistant::LoadDexFiles(const OatFile& oat_file,
   // Load the rest of the multidex entries
   for (size_t i = 1;; i++) {
     std::string multidex_dex_location = DexFileLoader::GetMultiDexLocation(i, dex_location.c_str());
-    oat_dex_file = oat_file.GetOatDexFile(multidex_dex_location.c_str(), nullptr);
+    oat_dex_file = oat_file.GetOatDexFile(multidex_dex_location.c_str());
     if (oat_dex_file == nullptr) {
       // There are no more multidex entries to load.
       break;
@@ -484,7 +486,7 @@ bool OatFileAssistant::DexChecksumUpToDate(const OatFile& file, std::string* err
   uint32_t number_of_dex_files = file.GetOatHeader().GetDexFileCount();
   for (uint32_t i = 0; i < number_of_dex_files; i++) {
     std::string dex = DexFileLoader::GetMultiDexLocation(i, dex_location_.c_str());
-    const OatDexFile* oat_dex_file = file.GetOatDexFile(dex.c_str(), nullptr);
+    const OatDexFile* oat_dex_file = file.GetOatDexFile(dex.c_str());
     if (oat_dex_file == nullptr) {
       *error_msg = StringPrintf("failed to find %s in %s", dex.c_str(), file.GetLocation().c_str());
       return false;
@@ -721,7 +723,8 @@ bool OatFileAssistant::GetRequiredDexChecksum(std::optional<uint32_t>* checksum,
   if (!required_dex_checksums_attempted_) {
     required_dex_checksums_attempted_ = true;
 
-    ArtDexFileLoader dex_loader(DupCloexec(zip_fd_), dex_location_);
+    File file(zip_fd_, /*check_usage=*/false);
+    ArtDexFileLoader dex_loader(&file, dex_location_);
     std::optional<uint32_t> checksum2;
     std::string error2;
     if (dex_loader.GetMultiDexChecksum(
@@ -732,6 +735,7 @@ bool OatFileAssistant::GetRequiredDexChecksum(std::optional<uint32_t>* checksum,
       cached_required_dex_checksums_ = std::nullopt;
       cached_required_dex_checksums_error_ = error2;
     }
+    file.Release();  // Don't close the file yet (we have only read the checksum).
   }
 
   if (cached_required_dex_checksums_error_.has_value()) {

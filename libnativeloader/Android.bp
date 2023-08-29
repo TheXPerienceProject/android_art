@@ -73,6 +73,7 @@ art_cc_library {
         symbol_file: "libnativeloader.map.txt",
         versions: ["1"],
     },
+    sdclang: false,
 }
 
 // TODO(b/124250621) eliminate the need for this library

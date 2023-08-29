@@ -14,9 +14,6 @@
       "name": "art-run-test-004-InterfaceTest[com.google.android.art.apex]"
     },
     {
-      "name": "art-run-test-004-NativeAllocations[com.google.android.art.apex]"
-    },
-    {
       "name": "art-run-test-004-checker-UnsafeTest18[com.google.android.art.apex]"
     },
     {
@@ -492,6 +489,9 @@
     },
     {
       "name": "art-run-test-2260-checker-inline-unimplemented-intrinsics[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2262-checker-return-sinking[com.google.android.art.apex]"
     },
     {
       "name": "art-run-test-300-package-override[com.google.android.art.apex]"
@@ -1181,6 +1181,9 @@
       "name": "art-run-test-660-checker-simd-sad[com.google.android.art.apex]"
     },
     {
+      "name": "art-run-test-661-checker-simd-cf-loops[com.google.android.art.apex]"
+    },
+    {
       "name": "art-run-test-661-checker-simd-reduc[com.google.android.art.apex]"
     },
     {
@@ -1437,9 +1440,6 @@
     },
     {
       "name": "art-run-test-004-InterfaceTest"
-    },
-    {
-      "name": "art-run-test-004-NativeAllocations"
     },
     {
       "name": "art-run-test-004-checker-UnsafeTest18"
@@ -1917,6 +1917,9 @@
     },
     {
       "name": "art-run-test-2260-checker-inline-unimplemented-intrinsics"
+    },
+    {
+      "name": "art-run-test-2262-checker-return-sinking"
     },
     {
       "name": "art-run-test-300-package-override"
@@ -2606,6 +2609,9 @@
       "name": "art-run-test-660-checker-simd-sad"
     },
     {
+      "name": "art-run-test-661-checker-simd-cf-loops"
+    },
+    {
       "name": "art-run-test-661-checker-simd-reduc"
     },
     {
@@ -2830,6 +2836,9 @@
       "name": "ArtServiceTests"
     },
     {
+      "name": "BootImageProfileTest"
+    },
+    {
       "name": "art-apex-update-rollback"
     },
     {
@@ -2846,9 +2855,6 @@
     },
     {
       "name": "art-run-test-004-InterfaceTest"
-    },
-    {
-      "name": "art-run-test-004-NativeAllocations"
     },
     {
       "name": "art-run-test-004-checker-UnsafeTest18"
@@ -3326,6 +3332,9 @@
     },
     {
       "name": "art-run-test-2260-checker-inline-unimplemented-intrinsics"
+    },
+    {
+      "name": "art-run-test-2262-checker-return-sinking"
     },
     {
       "name": "art-run-test-300-package-override"

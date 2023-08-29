@@ -71,4 +71,5 @@ art_cc_binary {
         "libbase",
         "libunwindstack",
     ],
+    sdclang: false,
 }

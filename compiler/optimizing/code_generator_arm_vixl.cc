@@ -33,6 +33,7 @@
 #include "interpreter/mterp/nterp.h"
 #include "intrinsics.h"
 #include "intrinsics_arm_vixl.h"
+#include "intrinsics_list.h"
 #include "intrinsics_utils.h"
 #include "linker/linker_patch.h"
 #include "mirror/array-inl.h"
@@ -1909,6 +1910,7 @@ vixl32::Label* CodeGeneratorARMVIXL::GetFinalLabel(HInstruction* instruction,
 }
 
 namespace detail {
+
 // Mark which intrinsics we don't have handcrafted code for.
 template <Intrinsics T>
 struct IsUnimplemented {
@@ -1923,15 +1925,13 @@ struct IsUnimplemented {
 UNIMPLEMENTED_INTRINSIC_LIST_ARM(TRUE_OVERRIDE)
 #undef TRUE_OVERRIDE
 
-#include "intrinsics_list.h"
 static constexpr bool kIsIntrinsicUnimplemented[] = {
-  false,  // kNone
+    false,  // kNone
 #define IS_UNIMPLEMENTED(Intrinsic, ...) \
-  IsUnimplemented<Intrinsics::k##Intrinsic>().is_unimplemented,
-  INTRINSICS_LIST(IS_UNIMPLEMENTED)
+    IsUnimplemented<Intrinsics::k##Intrinsic>().is_unimplemented,
+    ART_INTRINSICS_LIST(IS_UNIMPLEMENTED)
 #undef IS_UNIMPLEMENTED
 };
-#undef INTRINSICS_LIST
 
 }  // namespace detail
 
@@ -7651,7 +7651,9 @@ void LocationsBuilderARMVIXL::VisitLoadClass(HLoadClass* cls) {
     locations->SetInAt(0, Location::RequiresRegister());
   }
   locations->SetOut(Location::RequiresRegister());
-  if (load_kind == HLoadClass::LoadKind::kBssEntry) {
+  if (load_kind == HLoadClass::LoadKind::kBssEntry ||
+      load_kind == HLoadClass::LoadKind::kBssEntryPublic ||
+      load_kind == HLoadClass::LoadKind::kBssEntryPackage) {
     if (!gUseReadBarrier || kUseBakerReadBarrier) {
       // Rely on the type resolution or initialization and marking to save everything we need.
       locations->SetCustomSlowPathCallerSaves(OneRegInReferenceOutSaveEverythingCallerSaves());
