@@ -31,8 +31,6 @@ namespace artd {
 // Returns all existing files that are managed by artd.
 android::base::Result<std::vector<std::string>> ListManagedFiles();
 
-android::base::Result<void> ValidateDexPath(const std::string& dex_path);
-
 android::base::Result<std::string> BuildArtBinPath(const std::string& binary_name);
 
 // Returns the absolute path to the OAT file built from the `ArtifactsPath`.
