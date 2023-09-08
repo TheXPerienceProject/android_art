@@ -651,11 +651,7 @@ bool OatFileAssistant::DexLocationToOdexFilename(const std::string& location,
   // Get the base part of the file without the extension.
   std::string file = location.substr(pos + 1);
   pos = file.rfind('.');
-  if (pos == std::string::npos) {
-    *error_msg = "Dex location " + location + " has no extension.";
-    return false;
-  }
-  std::string base = file.substr(0, pos);
+  std::string base = pos != std::string::npos ? file.substr(0, pos) : file;
 
   *odex_filename = dir + "/" + base + ".odex";
   return true;
@@ -1182,12 +1178,21 @@ bool OatFileAssistant::OatFileInfo::ShouldRecompileForFilter(CompilerFilter::Fil
     return true;
   }
 
+  // Don't regress the compiler filter for the triggers handled below.
+  if (CompilerFilter::IsBetter(current, target)) {
+    VLOG(oat) << "Should not recompile: current filter is better";
+    return false;
+  }
+
   if (dexopt_trigger.primaryBootImageBecomesUsable &&
-      CompilerFilter::DependsOnImageChecksum(current)) {
+      CompilerFilter::IsAotCompilationEnabled(current)) {
     // If the oat file has been compiled without an image, and the runtime is
     // now running with an image loaded from disk, return that we need to
     // re-compile. The recompilation will generate a better oat file, and with an app
     // image for profile guided compilation.
+    // However, don't recompile for "verify". Although verification depends on the boot image, the
+    // penalty of being verified without a boot image is low. Consider the case where a dex file
+    // is verified by "ab-ota", we don't want it to be re-verified by "boot-after-ota".
     const char* oat_boot_class_path_checksums =
         file->GetOatHeader().GetStoreValueByKey(OatHeader::kBootClassPathChecksumsKey);
     if (oat_boot_class_path_checksums != nullptr &&
@@ -1319,7 +1324,7 @@ void OatFileAssistant::GetOptimizationStatus(std::string* out_odex_location,
                                              std::string* out_compilation_reason,
                                              std::string* out_odex_status) {
   OatFileInfo& oat_file_info = GetBestInfo();
-  const OatFile* oat_file = GetBestInfo().GetFile();
+  const OatFile* oat_file = oat_file_info.GetFile();
 
   if (oat_file == nullptr) {
     std::string error_msg;
