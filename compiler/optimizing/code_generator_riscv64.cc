@@ -2557,13 +2557,11 @@ void InstructionCodeGeneratorRISCV64::VisitMax(HMax* instruction) {
 }
 
 void LocationsBuilderRISCV64::VisitMemoryBarrier(HMemoryBarrier* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  instruction->SetLocations(nullptr);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitMemoryBarrier(HMemoryBarrier* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  codegen_->GenerateMemoryBarrier(instruction->GetBarrierKind());
 }
 
 void LocationsBuilderRISCV64::VisitMethodEntryHook(HMethodEntryHook* instruction) {
@@ -3022,50 +3020,70 @@ void InstructionCodeGeneratorRISCV64::VisitStringBuilderAppend(HStringBuilderApp
 
 void LocationsBuilderRISCV64::VisitUnresolvedInstanceFieldGet(
     HUnresolvedInstanceFieldGet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  FieldAccessCallingConventionRISCV64 calling_convention;
+  codegen_->CreateUnresolvedFieldLocationSummary(
+      instruction, instruction->GetFieldType(), calling_convention);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitUnresolvedInstanceFieldGet(
     HUnresolvedInstanceFieldGet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  FieldAccessCallingConventionRISCV64 calling_convention;
+  codegen_->GenerateUnresolvedFieldAccess(instruction,
+                                          instruction->GetFieldType(),
+                                          instruction->GetFieldIndex(),
+                                          instruction->GetDexPc(),
+                                          calling_convention);
 }
 
 void LocationsBuilderRISCV64::VisitUnresolvedInstanceFieldSet(
     HUnresolvedInstanceFieldSet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  FieldAccessCallingConventionRISCV64 calling_convention;
+  codegen_->CreateUnresolvedFieldLocationSummary(
+      instruction, instruction->GetFieldType(), calling_convention);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitUnresolvedInstanceFieldSet(
     HUnresolvedInstanceFieldSet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  FieldAccessCallingConventionRISCV64 calling_convention;
+  codegen_->GenerateUnresolvedFieldAccess(instruction,
+                                          instruction->GetFieldType(),
+                                          instruction->GetFieldIndex(),
+                                          instruction->GetDexPc(),
+                                          calling_convention);
 }
 
 void LocationsBuilderRISCV64::VisitUnresolvedStaticFieldGet(
     HUnresolvedStaticFieldGet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  FieldAccessCallingConventionRISCV64 calling_convention;
+  codegen_->CreateUnresolvedFieldLocationSummary(
+      instruction, instruction->GetFieldType(), calling_convention);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitUnresolvedStaticFieldGet(
     HUnresolvedStaticFieldGet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  FieldAccessCallingConventionRISCV64 calling_convention;
+  codegen_->GenerateUnresolvedFieldAccess(instruction,
+                                          instruction->GetFieldType(),
+                                          instruction->GetFieldIndex(),
+                                          instruction->GetDexPc(),
+                                          calling_convention);
 }
 
 void LocationsBuilderRISCV64::VisitUnresolvedStaticFieldSet(
     HUnresolvedStaticFieldSet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  FieldAccessCallingConventionRISCV64 calling_convention;
+  codegen_->CreateUnresolvedFieldLocationSummary(
+      instruction, instruction->GetFieldType(), calling_convention);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitUnresolvedStaticFieldSet(
     HUnresolvedStaticFieldSet* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  FieldAccessCallingConventionRISCV64 calling_convention;
+  codegen_->GenerateUnresolvedFieldAccess(instruction,
+                                          instruction->GetFieldType(),
+                                          instruction->GetFieldIndex(),
+                                          instruction->GetDexPc(),
+                                          calling_convention);
 }
 
 void LocationsBuilderRISCV64::VisitSelect(HSelect* instruction) {
@@ -3111,23 +3129,26 @@ void InstructionCodeGeneratorRISCV64::VisitSuspendCheck(HSuspendCheck* instructi
 }
 
 void LocationsBuilderRISCV64::VisitThrow(HThrow* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = new (GetGraph()->GetAllocator())
+      LocationSummary(instruction, LocationSummary::kCallOnMainOnly);
+  InvokeRuntimeCallingConvention calling_convention;
+  locations->SetInAt(0, Location::RegisterLocation(calling_convention.GetRegisterAt(0)));
 }
 
 void InstructionCodeGeneratorRISCV64::VisitThrow(HThrow* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  codegen_->InvokeRuntime(kQuickDeliverException, instruction, instruction->GetDexPc());
+  CheckEntrypointTypes<kQuickDeliverException, void, mirror::Object*>();
 }
 
 void LocationsBuilderRISCV64::VisitTryBoundary(HTryBoundary* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  instruction->SetLocations(nullptr);
 }
 
 void InstructionCodeGeneratorRISCV64::VisitTryBoundary(HTryBoundary* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  HBasicBlock* successor = instruction->GetNormalFlowSuccessor();
+  if (!successor->IsExitBlock()) {
+    HandleGoto(instruction, successor);
+  }
 }
 
 void LocationsBuilderRISCV64::VisitTypeConversion(HTypeConversion* instruction) {
