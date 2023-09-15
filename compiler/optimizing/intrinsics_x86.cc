@@ -1691,6 +1691,12 @@ static void GenUnsafeGet(HInvoke* invoke,
   Location output_loc = locations->Out();
 
   switch (type) {
+    case DataType::Type::kInt8: {
+      Register output = output_loc.AsRegister<Register>();
+      __ movsxb(output, Address(base, offset, ScaleFactor::TIMES_1, 0));
+      break;
+    }
+
     case DataType::Type::kInt32: {
       Register output = output_loc.AsRegister<Register>();
       __ movl(output, Address(base, offset, ScaleFactor::TIMES_1, 0));
@@ -1802,7 +1808,9 @@ void IntrinsicLocationsBuilderX86::VisitUnsafeGetObject(HInvoke* invoke) {
 void IntrinsicLocationsBuilderX86::VisitUnsafeGetObjectVolatile(HInvoke* invoke) {
   VisitJdkUnsafeGetObjectVolatile(invoke);
 }
-
+void IntrinsicLocationsBuilderX86::VisitUnsafeGetByte(HInvoke* invoke) {
+  VisitJdkUnsafeGetByte(invoke);
+}
 
 void IntrinsicCodeGeneratorX86::VisitUnsafeGet(HInvoke* invoke) {
   VisitJdkUnsafeGet(invoke);
@@ -1822,7 +1830,9 @@ void IntrinsicCodeGeneratorX86::VisitUnsafeGetObject(HInvoke* invoke) {
 void IntrinsicCodeGeneratorX86::VisitUnsafeGetObjectVolatile(HInvoke* invoke) {
   VisitJdkUnsafeGetObjectVolatile(invoke);
 }
-
+void IntrinsicCodeGeneratorX86::VisitUnsafeGetByte(HInvoke* invoke) {
+  VisitJdkUnsafeGetByte(invoke);
+}
 
 void IntrinsicLocationsBuilderX86::VisitJdkUnsafeGet(HInvoke* invoke) {
   CreateIntIntIntToIntLocations(
@@ -1856,6 +1866,10 @@ void IntrinsicLocationsBuilderX86::VisitJdkUnsafeGetObjectAcquire(HInvoke* invok
   CreateIntIntIntToIntLocations(
       allocator_, invoke, DataType::Type::kReference, /*is_volatile=*/ true);
 }
+void IntrinsicLocationsBuilderX86::VisitJdkUnsafeGetByte(HInvoke* invoke) {
+  CreateIntIntIntToIntLocations(
+      allocator_, invoke, DataType::Type::kInt8, /*is_volatile=*/ false);
+}
 
 void IntrinsicCodeGeneratorX86::VisitJdkUnsafeGet(HInvoke* invoke) {
   GenUnsafeGet(invoke, DataType::Type::kInt32, /*is_volatile=*/ false, codegen_);
@@ -1883,6 +1897,9 @@ void IntrinsicCodeGeneratorX86::VisitJdkUnsafeGetObjectVolatile(HInvoke* invoke)
 }
 void IntrinsicCodeGeneratorX86::VisitJdkUnsafeGetObjectAcquire(HInvoke* invoke) {
   GenUnsafeGet(invoke, DataType::Type::kReference, /*is_volatile=*/ true, codegen_);
+}
+void IntrinsicCodeGeneratorX86::VisitJdkUnsafeGetByte(HInvoke* invoke) {
+  GenUnsafeGet(invoke, DataType::Type::kInt8, /*is_volatile=*/ false, codegen_);
 }
 
 static void CreateIntIntIntIntToVoidPlusTempsLocations(ArenaAllocator* allocator,
@@ -1933,6 +1950,9 @@ void IntrinsicLocationsBuilderX86::VisitUnsafePutLongOrdered(HInvoke* invoke) {
 void IntrinsicLocationsBuilderX86::VisitUnsafePutLongVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutLongVolatile(invoke);
 }
+void IntrinsicLocationsBuilderX86::VisitUnsafePutByte(HInvoke* invoke) {
+  VisitJdkUnsafePutByte(invoke);
+}
 
 void IntrinsicLocationsBuilderX86::VisitJdkUnsafePut(HInvoke* invoke) {
   CreateIntIntIntIntToVoidPlusTempsLocations(
@@ -1981,6 +2001,10 @@ void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutLongVolatile(HInvoke* invoke
 void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutLongRelease(HInvoke* invoke) {
   CreateIntIntIntIntToVoidPlusTempsLocations(
       allocator_, DataType::Type::kInt64, invoke, /*is_volatile=*/ true);
+}
+void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutByte(HInvoke* invoke) {
+  CreateIntIntIntIntToVoidPlusTempsLocations(
+      allocator_, DataType::Type::kInt8, invoke, /*is_volatile=*/ false);
 }
 
 // We don't care for ordered: it requires an AnyStore barrier, which is already given by the x86
@@ -2058,6 +2082,9 @@ void IntrinsicCodeGeneratorX86::VisitUnsafePutLongOrdered(HInvoke* invoke) {
 void IntrinsicCodeGeneratorX86::VisitUnsafePutLongVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutLongVolatile(invoke);
 }
+void IntrinsicCodeGeneratorX86::VisitUnsafePutByte(HInvoke* invoke) {
+  VisitJdkUnsafePutByte(invoke);
+}
 
 void IntrinsicCodeGeneratorX86::VisitJdkUnsafePut(HInvoke* invoke) {
   GenUnsafePut(invoke->GetLocations(), DataType::Type::kInt32, /*is_volatile=*/ false, codegen_);
@@ -2098,6 +2125,9 @@ void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutLongVolatile(HInvoke* invoke) {
 }
 void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutLongRelease(HInvoke* invoke) {
   GenUnsafePut(invoke->GetLocations(), DataType::Type::kInt64, /*is_volatile=*/ true, codegen_);
+}
+void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutByte(HInvoke* invoke) {
+  GenUnsafePut(invoke->GetLocations(), DataType::Type::kInt8, /*is_volatile=*/ false, codegen_);
 }
 
 static void CreateIntIntIntIntIntToInt(ArenaAllocator* allocator,
