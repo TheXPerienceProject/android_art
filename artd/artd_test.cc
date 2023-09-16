@@ -81,6 +81,7 @@ using ::aidl::com::android::server::art::OutputArtifacts;
 using ::aidl::com::android::server::art::OutputProfile;
 using ::aidl::com::android::server::art::PriorityClass;
 using ::aidl::com::android::server::art::ProfilePath;
+using ::aidl::com::android::server::art::RuntimeArtifactsPath;
 using ::aidl::com::android::server::art::VdexPath;
 using ::android::base::Append;
 using ::android::base::Error;
@@ -118,8 +119,6 @@ using ::testing::WithArg;
 using PrimaryCurProfilePath = ProfilePath::PrimaryCurProfilePath;
 using PrimaryRefProfilePath = ProfilePath::PrimaryRefProfilePath;
 using TmpProfilePath = ProfilePath::TmpProfilePath;
-
-constexpr uid_t kRootUid = 0;
 
 ScopeGuard<std::function<void()>> ScopedSetLogger(android::base::LogFunction&& logger) {
   android::base::LogFunction old_logger = android::base::SetLogger(std::move(logger));
@@ -326,6 +325,8 @@ class ArtdTest : public CommonArtTest {
     scratch_path_ = scratch_dir_->GetPath();
     // Remove the trailing '/';
     scratch_path_.resize(scratch_path_.length() - 1);
+
+    TestOnlySetListRootDir(scratch_path_);
 
     ON_CALL(mock_fstat_, Call).WillByDefault(fstat);
 
@@ -1971,11 +1972,6 @@ TEST_F(ArtdTest, mergeProfilesWithOptionsDumpClassesAndMethods) {
 }
 
 TEST_F(ArtdTest, cleanup) {
-  // TODO(b/289037540): Fix this.
-  if (getuid() != kRootUid) {
-    GTEST_SKIP() << "This test requires root access";
-  }
-
   std::vector<std::string> gc_removed_files;
   std::vector<std::string> gc_kept_files;
 
@@ -2015,6 +2011,13 @@ TEST_F(ArtdTest, cleanup) {
   CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex");
   CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.vdex");
   CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.art");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/cache/oat_primary/arm64/base.art");
+  CreateGcKeptFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/arm64/base.art");
+  CreateGcKeptFile(android_data_ + "/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
+  CreateGcKeptFile(android_expand_ +
+                   "/123456-7890/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
+  CreateGcKeptFile(android_data_ +
+                   "/user/0/com.android.foo/cache/not_oat_dir/oat_primary/arm64/base.art");
 
   // Files to remove.
   CreateGcRemovedFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof");
@@ -2049,6 +2052,12 @@ TEST_F(ArtdTest, cleanup) {
   CreateGcRemovedFile(android_data_ +
                       "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art.123456.tmp");
   CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.bar/aaa/oat/arm64/1.vdex");
+  CreateGcRemovedFile(android_data_ +
+                      "/user/0/com.android.different_package/cache/oat_primary/arm64/base.art");
+  CreateGcRemovedFile(android_data_ +
+                      "/user/0/com.android.foo/cache/oat_primary/arm64/different_dex.art");
+  CreateGcRemovedFile(android_data_ +
+                      "/user/0/com.android.foo/cache/oat_primary/different_isa/base.art");
 
   int64_t aidl_return;
   ASSERT_TRUE(
@@ -2079,6 +2088,10 @@ TEST_F(ArtdTest, cleanup) {
                       .dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/1.apk",
                       .isa = "arm64",
                       .isInDalvikCache = false}},
+              },
+              {
+                  RuntimeArtifactsPath{
+                      .packageName = "com.android.foo", .isa = "arm64", .dexPath = "/a/b/base.apk"},
               },
               &aidl_return)
           .isOk());
@@ -2116,6 +2129,98 @@ TEST_F(ArtdTest, isInDalvikCache) {
 
   // Test a path where we don't expect to find packages. The method should still work.
   EXPECT_THAT(is_in_dalvik_cache("/foo"), HasValue(true));
+}
+
+TEST_F(ArtdTest, deleteRuntimeArtifacts) {
+  std::vector<std::string> removed_files;
+  std::vector<std::string> kept_files;
+
+  auto CreateRemovedFile = [&](const std::string& path) {
+    CreateFile(path);
+    removed_files.push_back(path);
+  };
+
+  auto CreateKeptFile = [&](const std::string& path) {
+    CreateFile(path);
+    kept_files.push_back(path);
+  };
+
+  CreateKeptFile(android_data_ +
+                 "/user/0/com.android.different_package/cache/oat_primary/arm64/base.art");
+  CreateKeptFile(android_data_ +
+                 "/user/0/com.android.foo/cache/oat_primary/arm64/different_dex.art");
+  CreateKeptFile(android_data_ +
+                 "/user/0/com.android.foo/cache/oat_primary/different_isa/base.art");
+  CreateKeptFile(android_data_ +
+                 "/user/0/com.android.foo/cache/not_oat_dir/oat_primary/arm64/base.art");
+
+  CreateRemovedFile(android_data_ + "/user_de/0/com.android.foo/cache/oat_primary/arm64/base.art");
+  CreateRemovedFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/arm64/base.art");
+  CreateRemovedFile(android_data_ + "/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
+  CreateRemovedFile(android_expand_ +
+                    "/123456-7890/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
+
+  int64_t aidl_return;
+  ASSERT_TRUE(
+      artd_
+          ->deleteRuntimeArtifacts(
+              {.packageName = "com.android.foo", .dexPath = "/a/b/base.apk", .isa = "arm64"},
+              &aidl_return)
+          .isOk());
+
+  for (const std::string& path : removed_files) {
+    EXPECT_FALSE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be removed", path);
+  }
+
+  for (const std::string& path : kept_files) {
+    EXPECT_TRUE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be kept", path);
+  }
+}
+
+TEST_F(ArtdTest, deleteRuntimeArtifactsSpecialChars) {
+  std::vector<std::string> removed_files;
+  std::vector<std::string> kept_files;
+
+  auto CreateRemovedFile = [&](const std::string& path) {
+    CreateFile(path);
+    removed_files.push_back(path);
+  };
+
+  auto CreateKeptFile = [&](const std::string& path) {
+    CreateFile(path);
+    kept_files.push_back(path);
+  };
+
+  CreateKeptFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/arm64/base.art");
+
+  CreateRemovedFile(android_data_ + "/user/0/*/cache/oat_primary/arm64/base.art");
+  CreateRemovedFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/*/base.art");
+  CreateRemovedFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/arm64/*.art");
+
+  int64_t aidl_return;
+  ASSERT_TRUE(
+      artd_
+          ->deleteRuntimeArtifacts({.packageName = "*", .dexPath = "/a/b/base.apk", .isa = "arm64"},
+                                   &aidl_return)
+          .isOk());
+  ASSERT_TRUE(artd_
+                  ->deleteRuntimeArtifacts(
+                      {.packageName = "com.android.foo", .dexPath = "/a/b/*.apk", .isa = "arm64"},
+                      &aidl_return)
+                  .isOk());
+  ASSERT_TRUE(artd_
+                  ->deleteRuntimeArtifacts(
+                      {.packageName = "com.android.foo", .dexPath = "/a/b/base.apk", .isa = "*"},
+                      &aidl_return)
+                  .isOk());
+
+  for (const std::string& path : removed_files) {
+    EXPECT_FALSE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be removed", path);
+  }
+
+  for (const std::string& path : kept_files) {
+    EXPECT_TRUE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be kept", path);
+  }
 }
 
 }  // namespace

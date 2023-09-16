@@ -162,9 +162,15 @@ class Artd : public aidl::com::android::server::art::BnArtd {
       const std::vector<aidl::com::android::server::art::ProfilePath>& in_profilesToKeep,
       const std::vector<aidl::com::android::server::art::ArtifactsPath>& in_artifactsToKeep,
       const std::vector<aidl::com::android::server::art::VdexPath>& in_vdexFilesToKeep,
+      const std::vector<aidl::com::android::server::art::RuntimeArtifactsPath>&
+          in_runtimeArtifactsToKeep,
       int64_t* _aidl_return) override;
 
   ndk::ScopedAStatus isInDalvikCache(const std::string& in_dexFile, bool* _aidl_return) override;
+
+  ndk::ScopedAStatus deleteRuntimeArtifacts(
+      const aidl::com::android::server::art::RuntimeArtifactsPath& in_runtimeArtifactsPath,
+      int64_t* _aidl_return) override;
 
   ndk::ScopedAStatus validateDexPath(const std::string& in_dexPath,
                                      std::optional<std::string>* _aidl_return) override;

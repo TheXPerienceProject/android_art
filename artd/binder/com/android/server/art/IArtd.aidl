@@ -22,7 +22,10 @@ interface IArtd {
     boolean isAlive();
 
     /**
-     * Deletes artifacts and returns the released space, in bytes.
+     * Deletes dexopt artifacts and returns the released space, in bytes.
+     *
+     * Note that this method doesn't delete runtime artifacts. To delete them, call
+     * `deleteRuntimeArtifacts`.
      *
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */
@@ -169,7 +172,8 @@ interface IArtd {
      */
     long cleanup(in List<com.android.server.art.ProfilePath> profilesToKeep,
             in List<com.android.server.art.ArtifactsPath> artifactsToKeep,
-            in List<com.android.server.art.VdexPath> vdexFilesToKeep);
+            in List<com.android.server.art.VdexPath> vdexFilesToKeep,
+            in List<com.android.server.art.RuntimeArtifactsPath> runtimeArtifactsToKeep);
 
     /**
      * Returns whether the artifacts of the primary dex files should be in the global dalvik-cache
@@ -178,6 +182,14 @@ interface IArtd {
      * Throws fatal and non-fatal errors.
      */
     boolean isInDalvikCache(@utf8InCpp String dexFile);
+
+    /**
+     * Deletes runtime artifacts and returns the released space, in bytes.
+     *
+     * Throws fatal errors. Logs and ignores non-fatal errors.
+     */
+    long deleteRuntimeArtifacts(
+            in com.android.server.art.RuntimeArtifactsPath runtimeArtifactsPath);
 
     /**
      * Returns an error message if the given dex path is invalid, or null if the validation
