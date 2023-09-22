@@ -411,6 +411,7 @@ EOF
   msginfo "Generating linkerconfig" "in $linkerconfig_out"
   rm -rf $linkerconfig_out
   mkdir -p $linkerconfig_out
-  $ANDROID_HOST_OUT/bin/linkerconfig --target $linkerconfig_out --root $linkerconfig_root --vndk $platform_version
+  # TODO(b/300291157): Remove VNDK versions and enable Treble once VNDK deprecation is set as default
+  $ANDROID_HOST_OUT/bin/linkerconfig --target $linkerconfig_out --root $linkerconfig_root --vndk $platform_version --product_vndk $platform_version
   msgnote "Don't be scared by \"Unable to access VNDK APEX\" message, it's not fatal"
 fi
