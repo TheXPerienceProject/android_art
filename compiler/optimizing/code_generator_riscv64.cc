@@ -3401,6 +3401,7 @@ void CodeGeneratorRISCV64::GenerateFrameEntry() {
       FrameNeedsStackCheck(GetFrameSize(), InstructionSet::kRiscv64) || !IsLeafMethod();
 
   if (do_overflow_check) {
+    DCHECK(GetCompilerOptions().GetImplicitStackOverflowChecks());
     __ Loadw(
         Zero, SP, -static_cast<int32_t>(GetStackOverflowReservedBytes(InstructionSet::kRiscv64)));
     RecordPcInfo(nullptr, 0);
@@ -4104,9 +4105,8 @@ void CodeGeneratorRISCV64::LoadMethod(MethodLoadKind load_kind, Location temp, H
       break;
     }
     case MethodLoadKind::kJitDirectAddress: {
-      __ Li(temp.AsFpuRegister<XRegister>(),
-            reinterpret_cast<uint64_t>(invoke->GetResolvedMethod()));
-      __ Ld(temp.AsRegister<XRegister>(), temp.AsFpuRegister<XRegister>(), 0);
+      __ LoadConst64(temp.AsRegister<XRegister>(),
+                     reinterpret_cast<uint64_t>(invoke->GetResolvedMethod()));
       break;
     }
     case MethodLoadKind::kRuntimeCall: {
@@ -4179,13 +4179,13 @@ void CodeGeneratorRISCV64::GenerateStaticOrDirectCall(HInvokeStaticOrDirect* inv
                                     kNativeStackAlignment,
                                     GetCriticalNativeDirectCallFrameSize>(invoke);
       if (invoke->GetMethodLoadKind() == MethodLoadKind::kBootImageLinkTimePcRelative) {
-        __ Jalr(TMP);
+        // Entrypoint is already loaded in RA.
       } else {
-        // TMP2 = callee_method->ptr_sized_fields_.data_;  // EntryPointFromJni
+        // RA = callee_method->ptr_sized_fields_.data_;  // EntryPointFromJni
         MemberOffset offset = ArtMethod::EntryPointFromJniOffset(kRiscv64PointerSize);
-        __ Loadd(TMP2, callee_method.AsRegister<XRegister>(), offset.Int32Value());
-        __ Jalr(TMP2);
+        __ Loadd(RA, callee_method.AsRegister<XRegister>(), offset.Int32Value());
       }
+      __ Jalr(RA);
       RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
       // The result is returned the same way in native ABI and managed ABI. No result conversion is
       // needed, see comments in `Riscv64JniCallingConvention::RequiresSmallResultTypeExtension()`.
@@ -4211,11 +4211,17 @@ void CodeGeneratorRISCV64::MaybeGenerateInlineCacheCheck(HInstruction* instructi
     InlineCache* cache = info->GetInlineCache(instruction->GetDexPc());
     uint64_t address = reinterpret_cast64<uint64_t>(cache);
     Riscv64Label done;
+    // The `art_quick_update_inline_cache` expects the inline cache in T5.
+    XRegister ic_reg = T5;
+    ScratchRegisterScope srs(GetAssembler());
+    DCHECK_EQ(srs.AvailableXRegisters(), 2u);
+    srs.ExcludeXRegister(ic_reg);
+    DCHECK_EQ(srs.AvailableXRegisters(), 1u);
+    __ LoadConst64(ic_reg, address);
     {
-      ScratchRegisterScope srs(GetAssembler());
-      XRegister tmp = srs.AllocateXRegister();
-      __ LoadConst64(tmp, address);
-      __ Loadd(tmp, tmp, InlineCache::ClassesOffset().Int32Value());
+      ScratchRegisterScope srs2(GetAssembler());
+      XRegister tmp = srs2.AllocateXRegister();
+      __ Loadd(tmp, ic_reg, InlineCache::ClassesOffset().Int32Value());
       // Fast path for a monomorphic cache.
       __ Beq(klass, tmp, &done);
     }
