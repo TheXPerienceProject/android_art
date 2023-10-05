@@ -775,28 +775,25 @@ static bool CanAssembleGraphForRiscv64(HGraph* graph) {
         case HInstruction::kAbs:
         case HInstruction::kBooleanNot:
         case HInstruction::kMul:
+        case HInstruction::kNeg:
+        case HInstruction::kNot:
+        case HInstruction::kMin:
+        case HInstruction::kMax:
+        case HInstruction::kInvokeVirtual:
+        case HInstruction::kInvokeInterface:
+        case HInstruction::kCurrentMethod:
+        case HInstruction::kNullCheck:
           break;
-        case HInstruction::kInvokeStaticOrDirect: {
-          Intrinsics intrinsic = it.Current()->AsInvokeStaticOrDirect()->GetIntrinsic();
-          if (intrinsic != Intrinsics::kDoubleDoubleToRawLongBits &&
-              intrinsic != Intrinsics::kDoubleIsInfinite &&
-              intrinsic != Intrinsics::kDoubleLongBitsToDouble &&
-              intrinsic != Intrinsics::kFloatFloatToRawIntBits &&
-              intrinsic != Intrinsics::kFloatIsInfinite &&
-              intrinsic != Intrinsics::kFloatIntBitsToFloat &&
-              intrinsic != Intrinsics::kMemoryPeekByte &&
-              intrinsic != Intrinsics::kMemoryPeekIntNative &&
-              intrinsic != Intrinsics::kMemoryPeekLongNative &&
-              intrinsic != Intrinsics::kMemoryPeekShortNative &&
-              intrinsic != Intrinsics::kMemoryPokeByte &&
-              intrinsic != Intrinsics::kMemoryPokeIntNative &&
-              intrinsic != Intrinsics::kMemoryPokeLongNative &&
-              intrinsic != Intrinsics::kMemoryPokeShortNative) {
+        case HInstruction::kInvokeStaticOrDirect:
+          if (it.Current()->AsInvokeStaticOrDirect()->GetCodePtrLocation() ==
+                  CodePtrLocation::kCallCriticalNative &&
+              it.Current()->AsInvokeStaticOrDirect()->GetNumberOfArguments() >= 8u) {
+            // TODO(riscv64): If there are more than 8 FP args, some may be passed in GPRs
+            // and this requires a `CriticalNativeAbiFixupRiscv64` pass similar to the one
+            // we have for ARM. This is not yet implemented. For simplicity, we reject all
+            // direct @CriticalNative calls with more than 8 args.
             return false;
           }
-          break;
-        }
-        case HInstruction::kCurrentMethod:
           break;
         default:
           // Unimplemented instruction.

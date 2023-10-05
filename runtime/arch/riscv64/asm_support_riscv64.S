@@ -124,6 +124,13 @@
 .endm
 
 
+.macro RESTORE_GPR_NE skip, reg, offset
+    .ifnc \skip, \reg
+    RESTORE_GPR_BASE sp, \reg, \offset
+    .endif
+.endm
+
+
 .macro SAVE_FPR reg, offset
     fsd \reg, (\offset)(sp)
     .cfi_rel_offset \reg, (\offset)
@@ -240,12 +247,12 @@
 .endm
 
 
-.macro SETUP_CALLEE_SAVE_FRAME_COMMON tmpreg, offset
+.macro SETUP_CALLEE_SAVE_FRAME_COMMON tmpreg, runtime_method_offset
     // art::Runtime* tmpreg = art::Runtime::instance_;
     LOAD_RUNTIME_INSTANCE \tmpreg
 
     // ArtMethod* tmpreg = Runtime::instance_->callee_save_methods_[<callee-save-frame-type>];
-    ld  \tmpreg, \offset(\tmpreg)
+    ld  \tmpreg, \runtime_method_offset(\tmpreg)
 
     SETUP_CALLEE_SAVE_FRAME_COMMON_INTERNAL \tmpreg
 .endm
@@ -356,7 +363,7 @@
 .endm
 
 
-.macro SETUP_SAVE_EVERYTHING_FRAME offset
+.macro SETUP_SAVE_EVERYTHING_FRAME runtime_method_offset = RUNTIME_SAVE_EVERYTHING_METHOD_OFFSET
 #if (FRAME_SIZE_SAVE_EVERYTHING != 8*(1 + 32 + 27))
 #error "FRAME_SIZE_SAVE_EVERYTHING(RISCV64) size not as expected."
 #endif
@@ -430,7 +437,7 @@
 
     SAVE_GPR ra,  8*59  // x1, return address
 
-    SETUP_CALLEE_SAVE_FRAME_COMMON t0, \offset
+    SETUP_CALLEE_SAVE_FRAME_COMMON t0, \runtime_method_offset
 .endm
 
 
@@ -525,7 +532,7 @@
     SAVE_GPR s6,  (8*7)   // x22
     SAVE_GPR s7,  (8*8)   // x23
     SAVE_GPR s8,  (8*9)   // x24
-    SAVE_GPR s9,  (8*10)   // x25
+    SAVE_GPR s9,  (8*10)  // x25
     SAVE_GPR s10, (8*11)  // x26
     SAVE_GPR s11, (8*12)  // x27
     SAVE_GPR ra,  (8*13)  // x1
@@ -545,7 +552,7 @@
     RESTORE_GPR s6,  (8*7)   // x22
     RESTORE_GPR s7,  (8*8)   // x23
     RESTORE_GPR s8,  (8*9)   // x24
-    RESTORE_GPR s9,  (8*10)   // x25
+    RESTORE_GPR s9,  (8*10)  // x25
     RESTORE_GPR s10, (8*11)  // x26
     RESTORE_GPR s11, (8*12)  // x27
     RESTORE_GPR ra,  (8*13)  // x1
