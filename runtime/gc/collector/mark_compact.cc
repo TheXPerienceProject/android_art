@@ -58,6 +58,7 @@
 #include "thread_list.h"
 
 #ifdef ART_TARGET_ANDROID
+#include "android-modules-utils/sdk_level.h"
 #include "com_android_art.h"
 #endif
 
@@ -89,6 +90,7 @@ namespace {
 using ::android::base::GetBoolProperty;
 using ::android::base::ParseBool;
 using ::android::base::ParseBoolResult;
+using ::android::modules::sdklevel::IsAtLeastU;
 
 }  // namespace
 #endif
@@ -186,7 +188,7 @@ static int GetOverrideCacheInfoFd() {
   return -1;
 }
 
-static bool GetCachedBoolProperty(const std::string& key, bool default_value) {
+static std::unordered_map<std::string, std::string> GetCachedProperties() {
   // For simplicity, we don't handle multiple calls because otherwise we would have to reset the fd.
   static bool called = false;
   CHECK(!called) << "GetCachedBoolProperty can be called only once";
@@ -197,7 +199,7 @@ static bool GetCachedBoolProperty(const std::string& key, bool default_value) {
   if (fd >= 0) {
     if (!android::base::ReadFdToString(fd, &cache_info_contents)) {
       PLOG(ERROR) << "Failed to read cache-info from fd " << fd;
-      return default_value;
+      return {};
     }
   } else {
     std::string path = GetApexDataDalvikCacheDirectory(InstructionSet::kNone) + "/cache-info.xml";
@@ -208,7 +210,7 @@ static bool GetCachedBoolProperty(const std::string& key, bool default_value) {
       if (errno != ENOENT) {
         PLOG(ERROR) << "Failed to read cache-info from the default path";
       }
-      return default_value;
+      return {};
     }
   }
 
@@ -217,37 +219,51 @@ static bool GetCachedBoolProperty(const std::string& key, bool default_value) {
   if (!cache_info.has_value()) {
     // This should never happen.
     LOG(ERROR) << "Failed to parse cache-info";
-    return default_value;
+    return {};
   }
   const com::android::art::KeyValuePairList* list = cache_info->getFirstSystemProperties();
   if (list == nullptr) {
     // This should never happen.
     LOG(ERROR) << "Missing system properties from cache-info";
-    return default_value;
+    return {};
   }
   const std::vector<com::android::art::KeyValuePair>& properties = list->getItem();
+  std::unordered_map<std::string, std::string> result;
   for (const com::android::art::KeyValuePair& pair : properties) {
-    if (pair.getK() == key) {
-      ParseBoolResult result = ParseBool(pair.getV());
-      switch (result) {
-        case ParseBoolResult::kTrue:
-          return true;
-        case ParseBoolResult::kFalse:
-          return false;
-        case ParseBoolResult::kError:
-          return default_value;
-      }
-    }
+    result[pair.getK()] = pair.getV();
   }
-  return default_value;
+  return result;
+}
+
+static bool GetCachedBoolProperty(
+    const std::unordered_map<std::string, std::string>& cached_properties,
+    const std::string& key,
+    bool default_value) {
+  auto it = cached_properties.find(key);
+  if (it == cached_properties.end()) {
+    return default_value;
+  }
+  ParseBoolResult result = ParseBool(it->second);
+  switch (result) {
+    case ParseBoolResult::kTrue:
+      return true;
+    case ParseBoolResult::kFalse:
+      return false;
+    case ParseBoolResult::kError:
+      return default_value;
+  }
 }
 
 static bool SysPropSaysUffdGc() {
   // The phenotype flag can change at time time after boot, but it shouldn't take effect until a
   // reboot. Therefore, we read the phenotype flag from the cache info, which is generated on boot.
-  return GetCachedBoolProperty("persist.device_config.runtime_native_boot.enable_uffd_gc_2",
-                               false) ||
-         GetBoolProperty("ro.dalvik.vm.enable_uffd_gc", false);
+  std::unordered_map<std::string, std::string> cached_properties = GetCachedProperties();
+  bool phenotype_enable = GetCachedBoolProperty(
+      cached_properties, "persist.device_config.runtime_native_boot.enable_uffd_gc_2", false);
+  bool phenotype_force_disable = GetCachedBoolProperty(
+      cached_properties, "persist.device_config.runtime_native_boot.force_disable_uffd_gc", false);
+  bool build_enable = GetBoolProperty("ro.dalvik.vm.enable_uffd_gc", false);
+  return (phenotype_enable || build_enable || IsAtLeastU()) && !phenotype_force_disable;
 }
 #else
 // Never called.
@@ -289,7 +305,7 @@ static constexpr size_t kMaxNumUffdWorkers = 2;
 // of mutator threads trying to access the moving-space during one compaction
 // phase. Using a lower number in debug builds to hopefully catch the issue
 // before it becomes a problem on user builds.
-static constexpr size_t kMutatorCompactionBufferCount = kIsDebugBuild ? 256 : 512;
+static constexpr size_t kMutatorCompactionBufferCount = kIsDebugBuild ? 256 : 2048;
 // Minimum from-space chunk to be madvised (during concurrent compaction) in one go.
 static constexpr ssize_t kMinFromSpaceMadviseSize = 1 * MB;
 // Concurrent compaction termination logic is different (and slightly more efficient) if the

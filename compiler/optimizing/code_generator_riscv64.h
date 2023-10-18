@@ -376,10 +376,8 @@ class LocationsBuilderRISCV64 : public HGraphVisitor {
   void HandleBinaryOp(HBinaryOperation* operation);
   void HandleCondition(HCondition* instruction);
   void HandleShift(HBinaryOperation* operation);
-  void HandleFieldSet(HInstruction* instruction, const FieldInfo& field_info);
+  void HandleFieldSet(HInstruction* instruction);
   void HandleFieldGet(HInstruction* instruction);
-  Location RegisterOrZeroConstant(HInstruction* instruction);
-  Location FpuRegisterOrConstantForStore(HInstruction* instruction);
 
   InvokeDexCallingConventionVisitorRISCV64 parameter_visitor_;
 
@@ -417,7 +415,8 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
   void HandleShift(HBinaryOperation* operation);
   void HandleFieldSet(HInstruction* instruction,
                       const FieldInfo& field_info,
-                      bool value_can_be_null);
+                      bool value_can_be_null,
+                      WriteBarrierKind write_barrier_kind);
   void HandleFieldGet(HInstruction* instruction, const FieldInfo& field_info);
 
   // Generate a heap reference load using one register `out`:
@@ -518,6 +517,7 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
   void FClass(XRegister rd, FRegister rs1, DataType::Type type);
 
   void Load(Location out, XRegister rs1, int32_t offset, DataType::Type type);
+  void Store(Location value, XRegister rs1, int32_t offset, DataType::Type type);
 
   void ShNAdd(XRegister rd, XRegister rs1, XRegister rs2, DataType::Type type);
 
@@ -712,6 +712,17 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   void EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* linker_patches) override;
 
   Literal* DeduplicateBootImageAddressLiteral(uint64_t address);
+  void PatchJitRootUse(uint8_t* code,
+                       const uint8_t* roots_data,
+                       const Literal* literal,
+                       uint64_t index_in_table) const;
+  Literal* DeduplicateJitStringLiteral(const DexFile& dex_file,
+                                       dex::StringIndex string_index,
+                                       Handle<mirror::String> handle);
+  Literal* DeduplicateJitClassLiteral(const DexFile& dex_file,
+                                      dex::TypeIndex type_index,
+                                      Handle<mirror::Class> handle);
+  void EmitJitRootPatches(uint8_t* code, const uint8_t* roots_data) override;
 
   void LoadMethod(MethodLoadKind load_kind, Location temp, HInvoke* invoke);
   void GenerateStaticOrDirectCall(HInvokeStaticOrDirect* invoke,
@@ -812,6 +823,9 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   // The `out` location contains the value returned by
   // artReadBarrierForRootSlow.
   void GenerateReadBarrierForRootSlow(HInstruction* instruction, Location out, Location root);
+
+  void MarkGCCard(XRegister object, XRegister value, bool value_can_be_null);
+
   //
   // Heap poisoning.
   //
@@ -886,6 +900,11 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   // PC-relative patch info for IntrinsicObjects for the boot image,
   // and for method/type/string patches for kBootImageRelRo otherwise.
   ArenaDeque<PcRelativePatchInfo> boot_image_other_patches_;
+
+  // Patches for string root accesses in JIT compiled code.
+  StringToLiteralMap jit_string_patches_;
+  // Patches for class root accesses in JIT compiled code.
+  TypeToLiteralMap jit_class_patches_;
 };
 
 }  // namespace riscv64
