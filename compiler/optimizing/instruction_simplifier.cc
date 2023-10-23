@@ -1050,51 +1050,60 @@ void InstructionSimplifierVisitor::VisitSelect(HSelect* select) {
     HInstruction* b = condition->InputAt(1);
     DataType::Type t_type = true_value->GetType();
     DataType::Type f_type = false_value->GetType();
-    // Here we have a <cmp> b ? true_value : false_value.
-    // Test if both values are compatible integral types (resulting MIN/MAX/ABS
-    // type will be int or long, like the condition). Replacements are general,
-    // but assume conditions prefer constants on the right.
     if (DataType::IsIntegralType(t_type) && DataType::Kind(t_type) == DataType::Kind(f_type)) {
-      // Allow a <  100 ? max(a, -100) : ..
-      //    or a > -100 ? min(a,  100) : ..
-      // to use min/max instead of a to detect nested min/max expressions.
-      HInstruction* new_a = AllowInMinMax(cmp, a, b, true_value);
-      if (new_a != nullptr) {
-        a = new_a;
-      }
-      // Try to replace typical integral MIN/MAX/ABS constructs.
-      if ((cmp == kCondLT || cmp == kCondLE || cmp == kCondGT || cmp == kCondGE) &&
-          ((a == true_value && b == false_value) ||
-           (b == true_value && a == false_value))) {
-        // Found a < b ? a : b (MIN) or a < b ? b : a (MAX)
-        //    or a > b ? a : b (MAX) or a > b ? b : a (MIN).
-        bool is_min = (cmp == kCondLT || cmp == kCondLE) == (a == true_value);
-        replace_with = NewIntegralMinMax(GetGraph()->GetAllocator(), a, b, select, is_min);
-      } else if (((cmp == kCondLT || cmp == kCondLE) && true_value->IsNeg()) ||
-                 ((cmp == kCondGT || cmp == kCondGE) && false_value->IsNeg())) {
-        bool negLeft = (cmp == kCondLT || cmp == kCondLE);
-        HInstruction* the_negated = negLeft ? true_value->InputAt(0) : false_value->InputAt(0);
-        HInstruction* not_negated = negLeft ? false_value : true_value;
-        if (a == the_negated && a == not_negated && IsInt64Value(b, 0)) {
-          // Found a < 0 ? -a :  a
-          //    or a > 0 ?  a : -a
-          // which can be replaced by ABS(a).
-          replace_with = NewIntegralAbs(GetGraph()->GetAllocator(), a, select);
+      if (cmp == kCondEQ || cmp == kCondNE) {
+        // Turns
+        // * Select[a, b, EQ(a,b)] / Select[a, b, EQ(b,a)] into a
+        // * Select[a, b, NE(a,b)] / Select[a, b, NE(b,a)] into b
+        // Note that the order in EQ/NE is irrelevant.
+        if ((a == true_value && b == false_value) || (a == false_value && b == true_value)) {
+          replace_with = cmp == kCondEQ ? false_value : true_value;
         }
-      } else if (true_value->IsSub() && false_value->IsSub()) {
-        HInstruction* true_sub1 = true_value->InputAt(0);
-        HInstruction* true_sub2 = true_value->InputAt(1);
-        HInstruction* false_sub1 = false_value->InputAt(0);
-        HInstruction* false_sub2 = false_value->InputAt(1);
-        if ((((cmp == kCondGT || cmp == kCondGE) &&
-              (a == true_sub1 && b == true_sub2 && a == false_sub2 && b == false_sub1)) ||
-             ((cmp == kCondLT || cmp == kCondLE) &&
-              (a == true_sub2 && b == true_sub1 && a == false_sub1 && b == false_sub2))) &&
-            AreLowerPrecisionArgs(t_type, a, b)) {
-          // Found a > b ? a - b  : b - a
-          //    or a < b ? b - a  : a - b
-          // which can be replaced by ABS(a - b) for lower precision operands a, b.
-          replace_with = NewIntegralAbs(GetGraph()->GetAllocator(), true_value, select);
+      } else {
+        // Test if both values are compatible integral types (resulting MIN/MAX/ABS
+        // type will be int or long, like the condition). Replacements are general,
+        // but assume conditions prefer constants on the right.
+
+        // Allow a <  100 ? max(a, -100) : ..
+        //    or a > -100 ? min(a,  100) : ..
+        // to use min/max instead of a to detect nested min/max expressions.
+        HInstruction* new_a = AllowInMinMax(cmp, a, b, true_value);
+        if (new_a != nullptr) {
+          a = new_a;
+        }
+        // Try to replace typical integral MIN/MAX/ABS constructs.
+        if ((cmp == kCondLT || cmp == kCondLE || cmp == kCondGT || cmp == kCondGE) &&
+            ((a == true_value && b == false_value) || (b == true_value && a == false_value))) {
+          // Found a < b ? a : b (MIN) or a < b ? b : a (MAX)
+          //    or a > b ? a : b (MAX) or a > b ? b : a (MIN).
+          bool is_min = (cmp == kCondLT || cmp == kCondLE) == (a == true_value);
+          replace_with = NewIntegralMinMax(GetGraph()->GetAllocator(), a, b, select, is_min);
+        } else if (((cmp == kCondLT || cmp == kCondLE) && true_value->IsNeg()) ||
+                   ((cmp == kCondGT || cmp == kCondGE) && false_value->IsNeg())) {
+          bool negLeft = (cmp == kCondLT || cmp == kCondLE);
+          HInstruction* the_negated = negLeft ? true_value->InputAt(0) : false_value->InputAt(0);
+          HInstruction* not_negated = negLeft ? false_value : true_value;
+          if (a == the_negated && a == not_negated && IsInt64Value(b, 0)) {
+            // Found a < 0 ? -a :  a
+            //    or a > 0 ?  a : -a
+            // which can be replaced by ABS(a).
+            replace_with = NewIntegralAbs(GetGraph()->GetAllocator(), a, select);
+          }
+        } else if (true_value->IsSub() && false_value->IsSub()) {
+          HInstruction* true_sub1 = true_value->InputAt(0);
+          HInstruction* true_sub2 = true_value->InputAt(1);
+          HInstruction* false_sub1 = false_value->InputAt(0);
+          HInstruction* false_sub2 = false_value->InputAt(1);
+          if ((((cmp == kCondGT || cmp == kCondGE) &&
+                (a == true_sub1 && b == true_sub2 && a == false_sub2 && b == false_sub1)) ||
+               ((cmp == kCondLT || cmp == kCondLE) &&
+                (a == true_sub2 && b == true_sub1 && a == false_sub1 && b == false_sub2))) &&
+              AreLowerPrecisionArgs(t_type, a, b)) {
+            // Found a > b ? a - b  : b - a
+            //    or a < b ? b - a  : a - b
+            // which can be replaced by ABS(a - b) for lower precision operands a, b.
+            replace_with = NewIntegralAbs(GetGraph()->GetAllocator(), true_value, select);
+          }
         }
       }
     }
@@ -2242,6 +2251,7 @@ void InstructionSimplifierVisitor::VisitSub(HSub* instruction) {
   }
 
   if (left->IsAdd()) {
+    // Cases (x + y) - y = x, and (x + y) - x = y.
     // Replace code patterns looking like
     //    ADD dst1, x, y        ADD dst1, x, y
     //    SUB dst2, dst1, y     SUB dst2, dst1, x
@@ -2250,14 +2260,75 @@ void InstructionSimplifierVisitor::VisitSub(HSub* instruction) {
     // SUB instruction is not needed in this case, we may use
     // one of inputs of ADD instead.
     // It is applicable to integral types only.
+    HAdd* add = left->AsAdd();
     DCHECK(DataType::IsIntegralType(type));
-    if (left->InputAt(1) == right) {
-      instruction->ReplaceWith(left->InputAt(0));
+    if (add->GetRight() == right) {
+      instruction->ReplaceWith(add->GetLeft());
       RecordSimplification();
       instruction->GetBlock()->RemoveInstruction(instruction);
       return;
-    } else if (left->InputAt(0) == right) {
-      instruction->ReplaceWith(left->InputAt(1));
+    } else if (add->GetLeft() == right) {
+      instruction->ReplaceWith(add->GetRight());
+      RecordSimplification();
+      instruction->GetBlock()->RemoveInstruction(instruction);
+      return;
+    }
+  } else if (right->IsAdd()) {
+    // Cases y - (x + y) = -x, and  x - (x + y) = -y.
+    // Replace code patterns looking like
+    //    ADD dst1, x, y        ADD dst1, x, y
+    //    SUB dst2, y, dst1     SUB dst2, x, dst1
+    // with
+    //    ADD dst1, x, y        ADD dst1, x, y
+    //    NEG x                 NEG y
+    // SUB instruction is not needed in this case, we may use
+    // one of inputs of ADD instead with a NEG.
+    // It is applicable to integral types only.
+    HAdd* add = right->AsAdd();
+    DCHECK(DataType::IsIntegralType(type));
+    if (add->GetRight() == left) {
+      HNeg* neg = new (GetGraph()->GetAllocator()) HNeg(add->GetType(), add->GetLeft());
+      instruction->GetBlock()->ReplaceAndRemoveInstructionWith(instruction, neg);
+      RecordSimplification();
+      return;
+    } else if (add->GetLeft() == left) {
+      HNeg* neg = new (GetGraph()->GetAllocator()) HNeg(add->GetType(), add->GetRight());
+      instruction->GetBlock()->ReplaceAndRemoveInstructionWith(instruction, neg);
+      RecordSimplification();
+      return;
+    }
+  } else if (left->IsSub()) {
+    // Case (x - y) - x = -y.
+    // Replace code patterns looking like
+    //    SUB dst1, x, y
+    //    SUB dst2, dst1, x
+    // with
+    //    SUB dst1, x, y
+    //    NEG y
+    // The second SUB is not needed in this case, we may use the second input of the first SUB
+    // instead with a NEG.
+    // It is applicable to integral types only.
+    HSub* sub = left->AsSub();
+    DCHECK(DataType::IsIntegralType(type));
+    if (sub->GetLeft() == right) {
+      HNeg* neg = new (GetGraph()->GetAllocator()) HNeg(sub->GetType(), sub->GetRight());
+      instruction->GetBlock()->ReplaceAndRemoveInstructionWith(instruction, neg);
+      RecordSimplification();
+      return;
+    }
+  } else if (right->IsSub()) {
+    // Case x - (x - y) = y.
+    // Replace code patterns looking like
+    //    SUB dst1, x, y
+    //    SUB dst2, x, dst1
+    // with
+    //    SUB dst1, x, y
+    // The second SUB is not needed in this case, we may use the second input of the first SUB.
+    // It is applicable to integral types only.
+    HSub* sub = right->AsSub();
+    DCHECK(DataType::IsIntegralType(type));
+    if (sub->GetLeft() == left) {
+      instruction->ReplaceWith(sub->GetRight());
       RecordSimplification();
       instruction->GetBlock()->RemoveInstruction(instruction);
       return;
