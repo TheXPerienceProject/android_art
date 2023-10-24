@@ -48,7 +48,6 @@ cc_library {
         "com.android.art",
         "com.android.art.debug",
     ],
-    sdclang: false,
 }
 
 art_cc_defaults {
