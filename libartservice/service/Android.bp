@@ -30,8 +30,11 @@ cc_defaults {
     srcs: [
         "native/service.cc",
     ],
+    export_include_dirs: ["native"],
     shared_libs: [
+        "libarttools", // Contains "libc++fs".
         "libbase",
+        "libnativehelper",
     ],
 }
 
@@ -43,7 +46,10 @@ cc_library {
         "com.android.art.debug",
     ],
     shared_libs: [
+        "libart",
+        "libartbase",
     ],
+    sdclang: false,
 }
 
 cc_library {
@@ -57,6 +63,8 @@ cc_library {
         "com.android.art.debug",
     ],
     shared_libs: [
+        "libartd",
+        "libartbased",
     ],
 }
 
@@ -178,6 +186,9 @@ art_cc_defaults {
     srcs: [
         "native/service_test.cc",
     ],
+    static_libs: [
+        "libgmock",
+    ],
 }
 
 // Version of ART gtest `art_libartservice_tests` bundled with the ART APEX on target.
@@ -208,6 +219,11 @@ android_test {
         "javatests/**/*.java",
     ],
 
+    // disable the target when prebuilt modules are used
+    defaults: [
+        "art_module_source_build_java_defaults",
+    ],
+
     static_libs: [
         "androidx.test.ext.junit",
         "androidx.test.ext.truth",
@@ -225,6 +241,7 @@ android_test {
     ],
 
     jni_libs: [
+        "libartservice",
         // The two libraries below are required by ExtendedMockito.
         "libdexmakerjvmtiagent",
         "libstaticjvmtiagent",

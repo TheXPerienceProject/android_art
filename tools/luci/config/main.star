@@ -156,13 +156,12 @@ luci.gitiles_poller(
 
 def ci_builder(name, category, short_name, dimensions, properties={}, is_fyi=False):
     default_properties = {
-        "use_props": False,
         "builder_group": "client.art",
         "concurrent_collector": True,
         "generational_cc": True,
     }
 
-    default_properties.update(properties)
+    default_properties = default_properties | properties
 
     luci.builder(
         name = name,
@@ -217,72 +216,130 @@ def target_builders():
         category="angler|armv7",
         short_name="dbg",
         dimensions=target_dims,
+        properties={
+            "device": "angler-armv7",
+            "debug": True,
+        }
     )
     ci_builder(
         name="angler-armv7-non-gen-cc",
         category="angler|armv7",
         short_name="ngen",
-        dimensions=userfault_gc_target_dims
+        dimensions=userfault_gc_target_dims,
+        properties={
+            "device": "angler-armv7",
+            "debug": True,
+            "concurrent_collector": False,
+            "generational_cc": False,
+        }
     )
     ci_builder(
         name="angler-armv7-ndebug",
         category="angler|armv7",
         short_name="ndbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "angler-armv7",
+            "debug": False,
+        }
     )
     ci_builder(
         name="angler-armv8-debug",
         category="angler|armv8",
         short_name="dbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "angler-armv8",
+            "debug": True,
+        }
     )
     ci_builder(
         name="angler-armv8-non-gen-cc",
         category="angler|armv8",
         short_name="ngen",
-        dimensions=userfault_gc_target_dims
+        dimensions=userfault_gc_target_dims,
+        properties={
+            "device": "angler-armv8",
+            "debug": True,
+            "concurrent_collector": False,
+            "generational_cc": False,
+        }
     )
     ci_builder(
         name="angler-armv8-ndebug",
         category="angler|armv8",
         short_name="ndbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "angler-armv8",
+            "debug": False,
+        }
     )
     ci_builder(
         name="bullhead-armv7-gcstress-ndebug",
         category="bullhead|armv7|gcstress",
         short_name="dbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "bullhead-armv7",
+            "debug": False,
+            "gcstress": True,
+        }
     )
     ci_builder(
         name="bullhead-armv8-gcstress-debug",
         category="bullhead|armv8|gcstress",
         short_name="dbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "bullhead-armv8",
+            "debug": True,
+            "gcstress": True,
+        }
     )
     ci_builder(
         name="bullhead-armv8-gcstress-ndebug",
         category="bullhead|armv8|gcstress",
         short_name="ndbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "bullhead-armv8",
+            "debug": False,
+            "gcstress": True,
+        }
     )
     ci_builder(
         name="walleye-armv7-poison-debug",
         category="walleye|armv7|poison",
         short_name="dbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "walleye-armv7",
+            "debug": True,
+            "heap_poisoning": True,
+        }
     )
     ci_builder(
         name="walleye-armv8-poison-debug",
         category="walleye|armv8|poison",
         short_name="dbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "walleye-armv8",
+            "debug": True,
+            "heap_poisoning": True,
+        }
     )
     ci_builder(
         name="walleye-armv8-poison-ndebug",
         category="walleye|armv8|poison",
         short_name="ndbg",
-        dimensions=target_dims
+        dimensions=target_dims,
+        properties={
+            "device": "walleye-armv8",
+            "debug": False,
+            "heap_poisoning": True,
+        }
     )
 
 def host_builders():
@@ -293,7 +350,6 @@ def host_builders():
         short_name="cms",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "debug": True,
             "bitness": 32,
             "concurrent_collector": False,
@@ -306,7 +362,6 @@ def host_builders():
         short_name="dbg",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "debug": True,
             "bitness": 32,
         }
@@ -317,7 +372,6 @@ def host_builders():
         short_name="ndbg",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "debug": False,
             "bitness": 32,
         }
@@ -328,7 +382,6 @@ def host_builders():
         short_name="gcs",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "debug": True,
             "gcstress": True,
             "bitness": 32,
@@ -340,7 +393,6 @@ def host_builders():
         short_name="psn",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "bitness": 32,
             "debug": True,
             "heap_poisoning": True,
@@ -364,7 +416,6 @@ def host_builders():
         short_name="cms",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "bitness": 64,
             "concurrent_collector": False,
             "debug": True,
@@ -377,7 +428,6 @@ def host_builders():
         short_name="dbg",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "bitness": 64,
             "debug": True,
         }
@@ -388,7 +438,6 @@ def host_builders():
         short_name="ngen",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "bitness": 64,
             "debug": True,
             "generational_cc": False,
@@ -400,7 +449,6 @@ def host_builders():
         short_name="ndbg",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "bitness": 64,
             "debug": False,
         }
@@ -411,7 +459,6 @@ def host_builders():
         short_name="psn",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "bitness": 64,
             "debug": True,
             "heap_poisoning": True,
@@ -424,7 +471,6 @@ def host_builders():
         dimensions=host_dims,
         is_fyi=True,
         properties={
-            "use_props": True,
             "debug": False,
             "device": "qemu-riscv64",
             "on_virtual_machine": True,
@@ -436,7 +482,6 @@ def host_builders():
         short_name="bo",
         dimensions=host_dims,
         properties={
-            "use_props": True,
             "build_only": True,
             "debug": False,
             "device": "qemu-riscv64",

@@ -2155,6 +2155,194 @@ public class Main {
     return y + sub;
   }
 
+  // Sub/Add and Sub/Sub simplifications
+
+  /// CHECK-START: int Main.$noinline$testSubAddInt(int, int) instruction_simplifier (before)
+  /// CHECK: <<x:i\d+>>   ParameterValue
+  /// CHECK: <<y:i\d+>>   ParameterValue
+  /// CHECK: <<add:i\d+>> Add [<<x>>,<<y>>]
+  /// CHECK: <<sub:i\d+>> Sub [<<y>>,<<add>>]
+  /// CHECK:              Return [<<sub>>]
+
+  /// CHECK-START: int Main.$noinline$testSubAddInt(int, int) instruction_simplifier (after)
+  /// CHECK: <<x:i\d+>>   ParameterValue
+  /// CHECK: <<y:i\d+>>   ParameterValue
+  /// CHECK: <<add:i\d+>> Add [<<x>>,<<y>>]
+  /// CHECK: <<neg:i\d+>> Neg [<<x>>]
+  /// CHECK:              Return [<<neg>>]
+
+  /// CHECK-START: int Main.$noinline$testSubAddInt(int, int) instruction_simplifier (after)
+  /// CHECK-NOT: Sub
+
+  /// CHECK-START: int Main.$noinline$testSubAddInt(int, int) dead_code_elimination$initial (after)
+  /// CHECK-NOT: Add
+  static int $noinline$testSubAddInt(int x, int y) {
+    return y - (x + y);
+  }
+
+  /// CHECK-START: int Main.$noinline$testSubAddOtherVersionInt(int, int) instruction_simplifier (before)
+  /// CHECK: <<x:i\d+>>   ParameterValue
+  /// CHECK: <<y:i\d+>>   ParameterValue
+  /// CHECK: <<add:i\d+>> Add [<<x>>,<<y>>]
+  /// CHECK: <<sub:i\d+>> Sub [<<x>>,<<add>>]
+  /// CHECK:              Return [<<sub>>]
+
+  /// CHECK-START: int Main.$noinline$testSubAddOtherVersionInt(int, int) instruction_simplifier (after)
+  /// CHECK: <<x:i\d+>>   ParameterValue
+  /// CHECK: <<y:i\d+>>   ParameterValue
+  /// CHECK: <<add:i\d+>> Add [<<x>>,<<y>>]
+  /// CHECK: <<neg:i\d+>> Neg [<<y>>]
+  /// CHECK:              Return [<<neg>>]
+
+  /// CHECK-START: int Main.$noinline$testSubAddOtherVersionInt(int, int) instruction_simplifier (after)
+  /// CHECK-NOT: Sub
+
+  /// CHECK-START: int Main.$noinline$testSubAddOtherVersionInt(int, int) dead_code_elimination$initial (after)
+  /// CHECK-NOT: Add
+  static int $noinline$testSubAddOtherVersionInt(int x, int y) {
+    return x - (x + y);
+  }
+
+  /// CHECK-START: int Main.$noinline$testSubSubInt(int, int) instruction_simplifier (before)
+  /// CHECK: <<x:i\d+>>    ParameterValue
+  /// CHECK: <<y:i\d+>>    ParameterValue
+  /// CHECK: <<sub1:i\d+>> Sub [<<x>>,<<y>>]
+  /// CHECK: <<sub2:i\d+>> Sub [<<sub1>>,<<x>>]
+  /// CHECK:               Return [<<sub2>>]
+
+  /// CHECK-START: int Main.$noinline$testSubSubInt(int, int) instruction_simplifier (after)
+  /// CHECK: <<x:i\d+>>    ParameterValue
+  /// CHECK: <<y:i\d+>>    ParameterValue
+  /// CHECK: <<sub1:i\d+>> Sub [<<x>>,<<y>>]
+  /// CHECK: <<neg:i\d+>>  Neg [<<y>>]
+  /// CHECK:               Return [<<neg>>]
+
+  /// CHECK-START: int Main.$noinline$testSubSubInt(int, int) instruction_simplifier (after)
+  /// CHECK:     Sub
+  /// CHECK-NOT: Sub
+
+  /// CHECK-START: int Main.$noinline$testSubSubInt(int, int) dead_code_elimination$initial (after)
+  /// CHECK-NOT: Sub
+  static int $noinline$testSubSubInt(int x, int y) {
+    return (x - y) - x;
+  }
+
+  /// CHECK-START: int Main.$noinline$testSubSubOtherVersionInt(int, int) instruction_simplifier (before)
+  /// CHECK: <<x:i\d+>>    ParameterValue
+  /// CHECK: <<y:i\d+>>    ParameterValue
+  /// CHECK: <<sub1:i\d+>> Sub [<<x>>,<<y>>]
+  /// CHECK: <<sub2:i\d+>> Sub [<<x>>,<<sub1>>]
+  /// CHECK:               Return [<<sub2>>]
+
+  /// CHECK-START: int Main.$noinline$testSubSubOtherVersionInt(int, int) instruction_simplifier (after)
+  /// CHECK: <<x:i\d+>>    ParameterValue
+  /// CHECK: <<y:i\d+>>    ParameterValue
+  /// CHECK: <<sub1:i\d+>> Sub [<<x>>,<<y>>]
+  /// CHECK:               Return [<<y>>]
+
+  /// CHECK-START: int Main.$noinline$testSubSubOtherVersionInt(int, int) instruction_simplifier (after)
+  /// CHECK:     Sub
+  /// CHECK-NOT: Sub
+
+  /// CHECK-START: int Main.$noinline$testSubSubOtherVersionInt(int, int) dead_code_elimination$initial (after)
+  /// CHECK-NOT: Sub
+  static int $noinline$testSubSubOtherVersionInt(int x, int y) {
+    return x - (x - y);
+  }
+
+  /// CHECK-START: long Main.$noinline$testSubAddLong(long, long) instruction_simplifier (before)
+  /// CHECK: <<x:j\d+>>   ParameterValue
+  /// CHECK: <<y:j\d+>>   ParameterValue
+  /// CHECK: <<add:j\d+>> Add [<<x>>,<<y>>]
+  /// CHECK: <<sub:j\d+>> Sub [<<y>>,<<add>>]
+  /// CHECK:              Return [<<sub>>]
+
+  /// CHECK-START: long Main.$noinline$testSubAddLong(long, long) instruction_simplifier (after)
+  /// CHECK: <<x:j\d+>>   ParameterValue
+  /// CHECK: <<y:j\d+>>   ParameterValue
+  /// CHECK: <<add:j\d+>> Add [<<x>>,<<y>>]
+  /// CHECK: <<neg:j\d+>> Neg [<<x>>]
+  /// CHECK:              Return [<<neg>>]
+
+  /// CHECK-START: long Main.$noinline$testSubAddLong(long, long) instruction_simplifier (after)
+  /// CHECK-NOT: Sub
+
+  /// CHECK-START: long Main.$noinline$testSubAddLong(long, long) dead_code_elimination$initial (after)
+  /// CHECK-NOT: Add
+  static long $noinline$testSubAddLong(long x, long y) {
+    return y - (x + y);
+  }
+
+  /// CHECK-START: long Main.$noinline$testSubAddOtherVersionLong(long, long) instruction_simplifier (before)
+  /// CHECK: <<x:j\d+>>   ParameterValue
+  /// CHECK: <<y:j\d+>>   ParameterValue
+  /// CHECK: <<add:j\d+>> Add [<<x>>,<<y>>]
+  /// CHECK: <<sub:j\d+>> Sub [<<x>>,<<add>>]
+  /// CHECK:              Return [<<sub>>]
+
+  /// CHECK-START: long Main.$noinline$testSubAddOtherVersionLong(long, long) instruction_simplifier (after)
+  /// CHECK: <<x:j\d+>>   ParameterValue
+  /// CHECK: <<y:j\d+>>   ParameterValue
+  /// CHECK: <<add:j\d+>> Add [<<x>>,<<y>>]
+  /// CHECK: <<neg:j\d+>> Neg [<<y>>]
+  /// CHECK:              Return [<<neg>>]
+
+  /// CHECK-START: long Main.$noinline$testSubAddOtherVersionLong(long, long) instruction_simplifier (after)
+  /// CHECK-NOT: Sub
+
+  /// CHECK-START: long Main.$noinline$testSubAddOtherVersionLong(long, long) dead_code_elimination$initial (after)
+  /// CHECK-NOT: Add
+  static long $noinline$testSubAddOtherVersionLong(long x, long y) {
+    return x - (x + y);
+  }
+
+  /// CHECK-START: long Main.$noinline$testSubSubLong(long, long) instruction_simplifier (before)
+  /// CHECK: <<x:j\d+>>    ParameterValue
+  /// CHECK: <<y:j\d+>>    ParameterValue
+  /// CHECK: <<sub1:j\d+>> Sub [<<x>>,<<y>>]
+  /// CHECK: <<sub2:j\d+>> Sub [<<sub1>>,<<x>>]
+  /// CHECK:               Return [<<sub2>>]
+
+  /// CHECK-START: long Main.$noinline$testSubSubLong(long, long) instruction_simplifier (after)
+  /// CHECK: <<x:j\d+>>    ParameterValue
+  /// CHECK: <<y:j\d+>>    ParameterValue
+  /// CHECK: <<sub1:j\d+>> Sub [<<x>>,<<y>>]
+  /// CHECK: <<neg:j\d+>>  Neg [<<y>>]
+  /// CHECK:               Return [<<neg>>]
+
+  /// CHECK-START: long Main.$noinline$testSubSubLong(long, long) instruction_simplifier (after)
+  /// CHECK:     Sub
+  /// CHECK-NOT: Sub
+
+  /// CHECK-START: long Main.$noinline$testSubSubLong(long, long) dead_code_elimination$initial (after)
+  /// CHECK-NOT: Sub
+  static long $noinline$testSubSubLong(long x, long y) {
+    return (x - y) - x;
+  }
+
+  /// CHECK-START: long Main.$noinline$testSubSubOtherVersionLong(long, long) instruction_simplifier (before)
+  /// CHECK: <<x:j\d+>>    ParameterValue
+  /// CHECK: <<y:j\d+>>    ParameterValue
+  /// CHECK: <<sub1:j\d+>> Sub [<<x>>,<<y>>]
+  /// CHECK: <<sub2:j\d+>> Sub [<<x>>,<<sub1>>]
+  /// CHECK:               Return [<<sub2>>]
+
+  /// CHECK-START: long Main.$noinline$testSubSubOtherVersionLong(long, long) instruction_simplifier (after)
+  /// CHECK: <<x:j\d+>>    ParameterValue
+  /// CHECK: <<y:j\d+>>    ParameterValue
+  /// CHECK: <<sub1:j\d+>> Sub [<<x>>,<<y>>]
+  /// CHECK:               Return [<<y>>]
+
+  /// CHECK-START: long Main.$noinline$testSubSubOtherVersionLong(long, long) instruction_simplifier (after)
+  /// CHECK:     Sub
+  /// CHECK-NOT: Sub
+
+  /// CHECK-START: long Main.$noinline$testSubSubOtherVersionLong(long, long) dead_code_elimination$initial (after)
+  /// CHECK-NOT: Sub
+  static long $noinline$testSubSubOtherVersionLong(long x, long y) {
+    return x - (x - y);
+  }
+
   /// CHECK-START: int Main.$noinline$getUint8FromInstanceByteField(Main) instruction_simplifier (before)
   /// CHECK-DAG:      <<Const255:i\d+>> IntConstant 255
   /// CHECK-DAG:      <<Get:b\d+>>      InstanceFieldGet
@@ -2794,6 +2982,144 @@ public class Main {
     return array[0];
   }
 
+  // If a == b returns b (which is equal to a) else returns a. This can be simplified to just
+  // return a.
+
+  /// CHECK-START: int Main.$noinline$returnSecondIfEqualElseFirstInt(int, int) instruction_simplifier$after_gvn (before)
+  /// CHECK:     <<Param1:i\d+>> ParameterValue
+  /// CHECK:     <<Param2:i\d+>> ParameterValue
+  /// CHECK:     <<Select:i\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+
+  /// CHECK-START: int Main.$noinline$returnSecondIfEqualElseFirstInt(int, int) instruction_simplifier$after_gvn (after)
+  /// CHECK:     <<Param1:i\d+>> ParameterValue
+  /// CHECK:     <<Param2:i\d+>> ParameterValue
+  /// CHECK:     <<Return:v\d+>> Return [<<Param1>>]
+
+  /// CHECK-START: int Main.$noinline$returnSecondIfEqualElseFirstInt(int, int) instruction_simplifier$after_gvn (after)
+  /// CHECK-NOT: Select
+  private static int $noinline$returnSecondIfEqualElseFirstInt(int a, int b) {
+    return a == b ? b : a;
+  }
+
+  /// CHECK-START: long Main.$noinline$returnSecondIfEqualElseFirstLong(long, long) instruction_simplifier$after_gvn (before)
+  /// CHECK:     <<Param1:j\d+>> ParameterValue
+  /// CHECK:     <<Param2:j\d+>> ParameterValue
+  /// CHECK:     <<Select:j\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+
+  /// CHECK-START: long Main.$noinline$returnSecondIfEqualElseFirstLong(long, long) instruction_simplifier$after_gvn (after)
+  /// CHECK:     <<Param1:j\d+>> ParameterValue
+  /// CHECK:     <<Param2:j\d+>> ParameterValue
+  /// CHECK:     <<Return:v\d+>> Return [<<Param1>>]
+
+  /// CHECK-START: long Main.$noinline$returnSecondIfEqualElseFirstLong(long, long) instruction_simplifier$after_gvn (after)
+  /// CHECK-NOT: Select
+  private static long $noinline$returnSecondIfEqualElseFirstLong(long a, long b) {
+    return a == b ? b : a;
+  }
+
+  // Note that we do not do the optimization for Float/Double.
+
+  /// CHECK-START: float Main.$noinline$returnSecondIfEqualElseFirstFloat(float, float) instruction_simplifier$after_gvn (before)
+  /// CHECK:     <<Param1:f\d+>> ParameterValue
+  /// CHECK:     <<Param2:f\d+>> ParameterValue
+  /// CHECK:     <<Select:f\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+
+  /// CHECK-START: float Main.$noinline$returnSecondIfEqualElseFirstFloat(float, float) disassembly (after)
+  /// CHECK:     <<Param1:f\d+>> ParameterValue
+  /// CHECK:     <<Param2:f\d+>> ParameterValue
+  /// CHECK:     <<Select:f\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+  private static float $noinline$returnSecondIfEqualElseFirstFloat(float a, float b) {
+    return a == b ? b : a;
+  }
+
+  /// CHECK-START: double Main.$noinline$returnSecondIfEqualElseFirstDouble(double, double) instruction_simplifier$after_gvn (before)
+  /// CHECK:     <<Param1:d\d+>> ParameterValue
+  /// CHECK:     <<Param2:d\d+>> ParameterValue
+  /// CHECK:     <<Select:d\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+
+  /// CHECK-START: double Main.$noinline$returnSecondIfEqualElseFirstDouble(double, double) disassembly (after)
+  /// CHECK:     <<Param1:d\d+>> ParameterValue
+  /// CHECK:     <<Param2:d\d+>> ParameterValue
+  /// CHECK:     <<Select:d\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+  private static double $noinline$returnSecondIfEqualElseFirstDouble(double a, double b) {
+    return a == b ? b : a;
+  }
+
+  // If a != b returns b else returns a (which is equal to b). This can be simplified to just
+  // return b.
+
+  /// CHECK-START: int Main.$noinline$returnSecondIfNotEqualElseFirstInt(int, int) instruction_simplifier$after_gvn (before)
+  /// CHECK:     <<Param1:i\d+>> ParameterValue
+  /// CHECK:     <<Param2:i\d+>> ParameterValue
+  /// CHECK:     <<Select:i\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+
+  /// CHECK-START: int Main.$noinline$returnSecondIfNotEqualElseFirstInt(int, int) instruction_simplifier$after_gvn (after)
+  /// CHECK:     <<Param1:i\d+>> ParameterValue
+  /// CHECK:     <<Param2:i\d+>> ParameterValue
+  /// CHECK:     <<Return:v\d+>> Return [<<Param2>>]
+
+  /// CHECK-START: int Main.$noinline$returnSecondIfNotEqualElseFirstInt(int, int) instruction_simplifier$after_gvn (after)
+  /// CHECK-NOT: Select
+  private static int $noinline$returnSecondIfNotEqualElseFirstInt(int a, int b) {
+    return a != b ? b : a;
+  }
+
+  /// CHECK-START: long Main.$noinline$returnSecondIfNotEqualElseFirstLong(long, long) instruction_simplifier$after_gvn (before)
+  /// CHECK:     <<Param1:j\d+>> ParameterValue
+  /// CHECK:     <<Param2:j\d+>> ParameterValue
+  /// CHECK:     <<Select:j\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+
+  /// CHECK-START: long Main.$noinline$returnSecondIfNotEqualElseFirstLong(long, long) instruction_simplifier$after_gvn (after)
+  /// CHECK:     <<Param1:j\d+>> ParameterValue
+  /// CHECK:     <<Param2:j\d+>> ParameterValue
+  /// CHECK:     <<Return:v\d+>> Return [<<Param2>>]
+
+  /// CHECK-START: long Main.$noinline$returnSecondIfNotEqualElseFirstLong(long, long) instruction_simplifier$after_gvn (after)
+  /// CHECK-NOT: Select
+  private static long $noinline$returnSecondIfNotEqualElseFirstLong(long a, long b) {
+    return a != b ? b : a;
+  }
+
+  // Note that we do not do the optimization for Float/Double.
+
+  /// CHECK-START: float Main.$noinline$returnSecondIfNotEqualElseFirstFloat(float, float) instruction_simplifier$after_gvn (before)
+  /// CHECK:     <<Param1:f\d+>> ParameterValue
+  /// CHECK:     <<Param2:f\d+>> ParameterValue
+  /// CHECK:     <<Select:f\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+
+  /// CHECK-START: float Main.$noinline$returnSecondIfNotEqualElseFirstFloat(float, float) disassembly (after)
+  /// CHECK:     <<Param1:f\d+>> ParameterValue
+  /// CHECK:     <<Param2:f\d+>> ParameterValue
+  /// CHECK:     <<Select:f\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+  private static float $noinline$returnSecondIfNotEqualElseFirstFloat(float a, float b) {
+    return a != b ? b : a;
+  }
+
+  /// CHECK-START: double Main.$noinline$returnSecondIfNotEqualElseFirstDouble(double, double) instruction_simplifier$after_gvn (before)
+  /// CHECK:     <<Param1:d\d+>> ParameterValue
+  /// CHECK:     <<Param2:d\d+>> ParameterValue
+  /// CHECK:     <<Select:d\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+
+  /// CHECK-START: double Main.$noinline$returnSecondIfNotEqualElseFirstDouble(double, double) disassembly (after)
+  /// CHECK:     <<Param1:d\d+>> ParameterValue
+  /// CHECK:     <<Param2:d\d+>> ParameterValue
+  /// CHECK:     <<Select:d\d+>> Select [<<Param2>>,<<Param1>>,<<Cond:z\d+>>]
+  /// CHECK:     <<Return:v\d+>> Return [<<Select>>]
+  private static double $noinline$returnSecondIfNotEqualElseFirstDouble(double a, double b) {
+    return a != b ? b : a;
+  }
+
   public static void main(String[] args) throws Exception {
     Class smaliTests2 = Class.forName("SmaliTests2");
     Method $noinline$XorAllOnes = smaliTests2.getMethod("$noinline$XorAllOnes", int.class);
@@ -3005,6 +3331,36 @@ public class Main {
     assertFloatEquals(floatArg, $noinline$floatSubAddSimplifyLeft(floatArg, 654321.125f));
     assertFloatEquals(floatArg, $noinline$floatSubAddSimplifyRight(floatArg, 654321.125f));
 
+    // Sub/Add and Sub/Sub simplifications
+    final int[] int_inputs = {0, 1, -1, Integer.MIN_VALUE, Integer.MAX_VALUE, 42, -9000};
+    for (int x : int_inputs) {
+      for (int y : int_inputs) {
+        // y - (x + y) = -x
+        assertIntEquals(-x, $noinline$testSubAddInt(x, y));
+        // x - (x + y) = -y.
+        assertIntEquals(-y, $noinline$testSubAddOtherVersionInt(x, y));
+        // (x - y) - x = -y.
+        assertIntEquals(-y, $noinline$testSubSubInt(x, y));
+        // x - (x - y) = y.
+        assertIntEquals(y, $noinline$testSubSubOtherVersionInt(x, y));
+      }
+    }
+
+    final long[] long_inputs = {0L, 1L, -1L, Long.MIN_VALUE, Long.MAX_VALUE, 0x100000000L,
+            0x100000001L, -9000L, 0x0123456789ABCDEFL};
+    for (long x : long_inputs) {
+      for (long y : long_inputs) {
+        // y - (x + y) = -x
+        assertLongEquals(-x, $noinline$testSubAddLong(x, y));
+        // x - (x + y) = -y.
+        assertLongEquals(-y, $noinline$testSubAddOtherVersionLong(x, y));
+        // (x - y) - x = -y.
+        assertLongEquals(-y, $noinline$testSubSubLong(x, y));
+        // x - (x - y) = y.
+        assertLongEquals(y, $noinline$testSubSubOtherVersionLong(x, y));
+      }
+    }
+
     Main m = new Main();
     m.instanceByteField = -1;
     assertIntEquals(0xff, $noinline$getUint8FromInstanceByteField(m));
@@ -3103,6 +3459,20 @@ public class Main {
     assertIntEquals(111, $noinline$redundantAndRegressionNotConstant(-1, 0x6f45));
 
     assertIntEquals(50, $noinline$deadAddAfterUnrollingAndSimplification(new int[] { 0 }));
+
+    for (int x : int_inputs) {
+      for (int y : int_inputs) {
+        assertIntEquals(x, $noinline$returnSecondIfEqualElseFirstInt(x, y));
+        assertIntEquals(y, $noinline$returnSecondIfNotEqualElseFirstInt(x, y));
+      }
+    }
+
+    for (long x : long_inputs) {
+      for (long y : long_inputs) {
+        assertLongEquals(x, $noinline$returnSecondIfEqualElseFirstLong(x, y));
+        assertLongEquals(y, $noinline$returnSecondIfNotEqualElseFirstLong(x, y));
+      }
+    }
   }
 
   private static boolean $inline$true() { return true; }

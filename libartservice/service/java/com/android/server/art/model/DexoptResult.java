@@ -23,12 +23,14 @@ import android.annotation.Nullable;
 import android.annotation.SystemApi;
 
 import com.android.internal.annotations.Immutable;
+import com.android.internal.annotations.VisibleForTesting;
 
 import com.google.auto.value.AutoValue;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /** @hide */
@@ -60,21 +62,39 @@ public abstract class DexoptResult {
     @Retention(RetentionPolicy.SOURCE)
     public @interface DexoptResultStatus {}
 
-    // Possible values of {@link #DexoptResultExtraStatus}.
-    /** @hide */
-    public static final int EXTRA_SKIPPED_STORAGE_LOW = 1 << 0;
-    /** @hide */
-    public static final int EXTRA_SKIPPED_NO_DEX_CODE = 1 << 1;
+    // Possible values of {@link #DexoptResultExtendedStatusFlags}.
+    /** Dexopt is skipped because the remaining storage space is low. */
+    public static final int EXTENDED_SKIPPED_STORAGE_LOW = 1 << 0;
+    /**
+     * Dexopt is skipped because the dex container file has no dex code while the manifest declares
+     * that it does.
+     *
+     * Note that this flag doesn't apply to dex container files that are not declared to have code.
+     * Instead, those files are not listed in {@link
+     * PackageDexoptResult#getDexContainerFileDexoptResults} in the first place.
+     */
+    public static final int EXTENDED_SKIPPED_NO_DEX_CODE = 1 << 1;
+    /**
+     * Dexopt encountered errors when processing the profiles that are external to the device,
+     * including the profile in the DM file and the profile embedded in the dex container file.
+     * Details of the errors can be found in {@link
+     * DexContainerFileDexoptResult#getExternalProfileErrors}.
+     *
+     * This is not a critical error. Dexopt may still have succeeded after ignoring the bad external
+     * profiles.
+     */
+    public static final int EXTENDED_BAD_EXTERNAL_PROFILE = 1 << 2;
 
     /** @hide */
     // clang-format off
-    @IntDef(flag = true, prefix = {"EXTRA_"}, value = {
-        EXTRA_SKIPPED_STORAGE_LOW,
-        EXTRA_SKIPPED_NO_DEX_CODE,
+    @IntDef(flag = true, prefix = {"EXTENDED_"}, value = {
+        EXTENDED_SKIPPED_STORAGE_LOW,
+        EXTENDED_SKIPPED_NO_DEX_CODE,
+        EXTENDED_BAD_EXTERNAL_PROFILE,
     })
     // clang-format on
     @Retention(RetentionPolicy.SOURCE)
-    public @interface DexoptResultExtraStatus {}
+    public @interface DexoptResultExtendedStatusFlags {}
 
     /** @hide */
     protected DexoptResult() {}
@@ -144,13 +164,17 @@ public abstract class DexoptResult {
 
     /** @hide */
     @NonNull
-    public static String dexoptResultExtraStatusToString(@DexoptResultExtraStatus int extraStatus) {
+    public static String dexoptResultExtendedStatusFlagsToString(
+            @DexoptResultExtendedStatusFlags int flags) {
         var strs = new ArrayList<String>();
-        if ((extraStatus & DexoptResult.EXTRA_SKIPPED_STORAGE_LOW) != 0) {
-            strs.add("EXTRA_SKIPPED_STORAGE_LOW");
+        if ((flags & DexoptResult.EXTENDED_SKIPPED_STORAGE_LOW) != 0) {
+            strs.add("EXTENDED_SKIPPED_STORAGE_LOW");
         }
-        if ((extraStatus & DexoptResult.EXTRA_SKIPPED_NO_DEX_CODE) != 0) {
-            strs.add("EXTRA_SKIPPED_NO_DEX_CODE");
+        if ((flags & DexoptResult.EXTENDED_SKIPPED_NO_DEX_CODE) != 0) {
+            strs.add("EXTENDED_SKIPPED_NO_DEX_CODE");
+        }
+        if ((flags & DexoptResult.EXTENDED_BAD_EXTERNAL_PROFILE) != 0) {
+            strs.add("EXTENDED_BAD_EXTERNAL_PROFILE");
         }
         return String.join(", ", strs);
     }
@@ -213,6 +237,7 @@ public abstract class DexoptResult {
     @SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
     @Immutable
     @AutoValue
+    @SuppressWarnings("AutoValueImmutableFields") // Can't use ImmutableList because it's in Guava.
     public static abstract class DexContainerFileDexoptResult {
         /** @hide */
         protected DexContainerFileDexoptResult() {}
@@ -222,10 +247,23 @@ public abstract class DexoptResult {
                 boolean isPrimaryAbi, @NonNull String abi, @NonNull String compilerFilter,
                 @DexoptResultStatus int status, long dex2oatWallTimeMillis,
                 long dex2oatCpuTimeMillis, long sizeBytes, long sizeBeforeBytes,
-                @DexoptResultExtraStatus int extraStatus) {
+                @DexoptResultExtendedStatusFlags int extendedStatusFlags,
+                @NonNull List<String> externalProfileErrors) {
             return new AutoValue_DexoptResult_DexContainerFileDexoptResult(dexContainerFile,
                     isPrimaryAbi, abi, compilerFilter, status, dex2oatWallTimeMillis,
-                    dex2oatCpuTimeMillis, sizeBytes, sizeBeforeBytes, extraStatus);
+                    dex2oatCpuTimeMillis, sizeBytes, sizeBeforeBytes, extendedStatusFlags,
+                    Collections.unmodifiableList(externalProfileErrors));
+        }
+
+        /** @hide */
+        @VisibleForTesting
+        public static @NonNull DexContainerFileDexoptResult create(@NonNull String dexContainerFile,
+                boolean isPrimaryAbi, @NonNull String abi, @NonNull String compilerFilter,
+                @DexoptResultStatus int status) {
+            return create(dexContainerFile, isPrimaryAbi, abi, compilerFilter, status,
+                    0 /* dex2oatWallTimeMillis */, 0 /* dex2oatCpuTimeMillis */, 0 /* sizeBytes */,
+                    0 /* sizeBeforeBytes */, 0 /* extendedStatusFlags */,
+                    List.of() /* externalProfileErrors */);
         }
 
         /** The absolute path to the dex container file. */
@@ -279,8 +317,27 @@ public abstract class DexoptResult {
          */
         public abstract long getSizeBeforeBytes();
 
-        /** @hide */
-        public abstract @DexoptResultExtraStatus int getExtraStatus();
+        /**
+         * A bitfield of the extended status flags.
+         *
+         * Flags that starts with `EXTENDED_SKIPPED_` are a subset of the reasons why dexopt is
+         * skipped. Note that they don't cover all possible reasons. At most one `EXTENDED_SKIPPED_`
+         * flag will be set, even if the situation meets multiple `EXTENDED_SKIPPED_` flags. The
+         * order of precedence of those flags is undefined.
+         */
+        public abstract @DexoptResultExtendedStatusFlags int getExtendedStatusFlags();
+
+        /**
+         * Details of errors occurred when processing external profiles, one error per profile file
+         * that the dexopter tried to read.
+         *
+         * If the same dex container file is dexopted for multiple ABIs, the same profile errors
+         * will be repeated for each ABI in the {@link DexContainerFileDexoptResult}s of the same
+         * dex container file.
+         *
+         * @see #EXTENDED_BAD_EXTERNAL_PROFILE.
+         */
+        public abstract @NonNull List<String> getExternalProfileErrors();
 
         @Override
         @NonNull
@@ -295,12 +352,12 @@ public abstract class DexoptResult {
                             + "dex2oatCpuTimeMillis=%d, "
                             + "sizeBytes=%d, "
                             + "sizeBeforeBytes=%d, "
-                            + "extraStatus=[%s]}",
+                            + "extendedStatusFlags=[%s]}",
                     getDexContainerFile(), isPrimaryAbi(), getAbi(), getActualCompilerFilter(),
                     DexoptResult.dexoptResultStatusToString(getStatus()),
                     getDex2oatWallTimeMillis(), getDex2oatCpuTimeMillis(), getSizeBytes(),
                     getSizeBeforeBytes(),
-                    DexoptResult.dexoptResultExtraStatusToString(getExtraStatus()));
+                    DexoptResult.dexoptResultExtendedStatusFlagsToString(getExtendedStatusFlags()));
         }
     }
 }

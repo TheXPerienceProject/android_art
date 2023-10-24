@@ -327,6 +327,33 @@ class ParallelMoveResolverRISCV64 : public ParallelMoveResolverWithSwap {
   DISALLOW_COPY_AND_ASSIGN(ParallelMoveResolverRISCV64);
 };
 
+class FieldAccessCallingConventionRISCV64 : public FieldAccessCallingConvention {
+ public:
+  FieldAccessCallingConventionRISCV64() {}
+
+  Location GetObjectLocation() const override {
+    return Location::RegisterLocation(A1);
+  }
+  Location GetFieldIndexLocation() const override {
+    return Location::RegisterLocation(A0);
+  }
+  Location GetReturnLocation(DataType::Type type ATTRIBUTE_UNUSED) const override {
+    return Location::RegisterLocation(A0);
+  }
+  Location GetSetValueLocation(DataType::Type type ATTRIBUTE_UNUSED,
+                               bool is_instance) const override {
+    return is_instance
+        ? Location::RegisterLocation(A2)
+        : Location::RegisterLocation(A1);
+  }
+  Location GetFpuLocation(DataType::Type type ATTRIBUTE_UNUSED) const override {
+    return Location::FpuRegisterLocation(FA0);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FieldAccessCallingConventionRISCV64);
+};
+
 class LocationsBuilderRISCV64 : public HGraphVisitor {
  public:
   LocationsBuilderRISCV64(HGraph* graph, CodeGeneratorRISCV64* codegen)
@@ -349,10 +376,8 @@ class LocationsBuilderRISCV64 : public HGraphVisitor {
   void HandleBinaryOp(HBinaryOperation* operation);
   void HandleCondition(HCondition* instruction);
   void HandleShift(HBinaryOperation* operation);
-  void HandleFieldSet(HInstruction* instruction, const FieldInfo& field_info);
-  void HandleFieldGet(HInstruction* instruction, const FieldInfo& field_info);
-  Location RegisterOrZeroConstant(HInstruction* instruction);
-  Location FpuRegisterOrConstantForStore(HInstruction* instruction);
+  void HandleFieldSet(HInstruction* instruction);
+  void HandleFieldGet(HInstruction* instruction);
 
   InvokeDexCallingConventionVisitorRISCV64 parameter_visitor_;
 
@@ -381,6 +406,8 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
 
   void GenerateMemoryBarrier(MemBarrierKind kind);
 
+  void ShNAdd(XRegister rd, XRegister rs1, XRegister rs2, DataType::Type type);
+
  protected:
   void GenerateClassInitializationCheck(SlowPathCodeRISCV64* slow_path, XRegister class_reg);
   void GenerateBitstringTypeCheckCompare(HTypeCheckInstruction* check, XRegister temp);
@@ -390,7 +417,8 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
   void HandleShift(HBinaryOperation* operation);
   void HandleFieldSet(HInstruction* instruction,
                       const FieldInfo& field_info,
-                      bool value_can_be_null);
+                      bool value_can_be_null,
+                      WriteBarrierKind write_barrier_kind);
   void HandleFieldGet(HInstruction* instruction, const FieldInfo& field_info);
 
   // Generate a heap reference load using one register `out`:
@@ -473,11 +501,25 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
   void FpBinOp(Reg rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FAdd(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FSub(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FDiv(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FMul(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FMin(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FMax(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FEq(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FLt(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FLe(XRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+
+  template <typename Reg,
+            void (Riscv64Assembler::*opS)(Reg, FRegister),
+            void (Riscv64Assembler::*opD)(Reg, FRegister)>
+  void FpUnOp(Reg rd, FRegister rs1, DataType::Type type);
+  void FAbs(FRegister rd, FRegister rs1, DataType::Type type);
+  void FNeg(FRegister rd, FRegister rs1, DataType::Type type);
+  void FMv(FRegister rd, FRegister rs1, DataType::Type type);
+  void FClass(XRegister rd, FRegister rs1, DataType::Type type);
+
+  void Load(Location out, XRegister rs1, int32_t offset, DataType::Type type);
+  void Store(Location value, XRegister rs1, int32_t offset, DataType::Type type);
 
   Riscv64Assembler* const assembler_;
   CodeGeneratorRISCV64* const codegen_;
@@ -497,7 +539,11 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
 
   void Bind(HBasicBlock* block) override;
 
-  size_t GetWordSize() const override { return kRiscv64WordSize; }
+  size_t GetWordSize() const override {
+    // The "word" for the compiler is the core register size (64-bit for riscv64) while the
+    // riscv64 assembler uses "word" for 32-bit values and "double word" for 64-bit values.
+    return kRiscv64DoublewordSize;
+  }
 
   bool SupportsPredicatedSIMD() const override {
     // TODO(riscv64): Check the vector extension.
@@ -666,6 +712,17 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   void EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* linker_patches) override;
 
   Literal* DeduplicateBootImageAddressLiteral(uint64_t address);
+  void PatchJitRootUse(uint8_t* code,
+                       const uint8_t* roots_data,
+                       const Literal* literal,
+                       uint64_t index_in_table) const;
+  Literal* DeduplicateJitStringLiteral(const DexFile& dex_file,
+                                       dex::StringIndex string_index,
+                                       Handle<mirror::String> handle);
+  Literal* DeduplicateJitClassLiteral(const DexFile& dex_file,
+                                      dex::TypeIndex type_index,
+                                      Handle<mirror::Class> handle);
+  void EmitJitRootPatches(uint8_t* code, const uint8_t* roots_data) override;
 
   void LoadMethod(MethodLoadKind load_kind, Location temp, HInvoke* invoke);
   void GenerateStaticOrDirectCall(HInvokeStaticOrDirect* invoke,
@@ -681,6 +738,84 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   void MaybeIncrementHotness(bool is_frame_entry);
 
   bool CanUseImplicitSuspendCheck() const;
+
+
+  // Fast path implementation of ReadBarrier::Barrier for a heap
+  // reference field load when Baker's read barriers are used.
+  void GenerateFieldLoadWithBakerReadBarrier(HInstruction* instruction,
+                                             Location ref,
+                                             XRegister obj,
+                                             uint32_t offset,
+                                             Location temp,
+                                             bool needs_null_check);
+  // Fast path implementation of ReadBarrier::Barrier for a heap
+  // reference array load when Baker's read barriers are used.
+  void GenerateArrayLoadWithBakerReadBarrier(HInstruction* instruction,
+                                             Location ref,
+                                             XRegister obj,
+                                             uint32_t data_offset,
+                                             Location index,
+                                             Location temp,
+                                             bool needs_null_check);
+  // Factored implementation, used by GenerateFieldLoadWithBakerReadBarrier
+  // and GenerateArrayLoadWithBakerReadBarrier.
+  void GenerateReferenceLoadWithBakerReadBarrier(HInstruction* instruction,
+                                                 Location ref,
+                                                 XRegister obj,
+                                                 uint32_t offset,
+                                                 Location index,
+                                                 Location temp,
+                                                 bool needs_null_check);
+
+  // Generate a read barrier for a heap reference within `instruction`
+  // using a slow path.
+  //
+  // A read barrier for an object reference read from the heap is
+  // implemented as a call to the artReadBarrierSlow runtime entry
+  // point, which is passed the values in locations `ref`, `obj`, and
+  // `offset`:
+  //
+  //   mirror::Object* artReadBarrierSlow(mirror::Object* ref,
+  //                                      mirror::Object* obj,
+  //                                      uint32_t offset);
+  //
+  // The `out` location contains the value returned by
+  // artReadBarrierSlow.
+  //
+  // When `index` is provided (i.e. for array accesses), the offset
+  // value passed to artReadBarrierSlow is adjusted to take `index`
+  // into account.
+  void GenerateReadBarrierSlow(HInstruction* instruction,
+                               Location out,
+                               Location ref,
+                               Location obj,
+                               uint32_t offset,
+                               Location index = Location::NoLocation());
+
+  // If read barriers are enabled, generate a read barrier for a heap
+  // reference using a slow path. If heap poisoning is enabled, also
+  // unpoison the reference in `out`.
+  void MaybeGenerateReadBarrierSlow(HInstruction* instruction,
+                                    Location out,
+                                    Location ref,
+                                    Location obj,
+                                    uint32_t offset,
+                                    Location index = Location::NoLocation());
+
+  // Generate a read barrier for a GC root within `instruction` using
+  // a slow path.
+  //
+  // A read barrier for an object reference GC root is implemented as
+  // a call to the artReadBarrierForRootSlow runtime entry point,
+  // which is passed the value in location `root`:
+  //
+  //   mirror::Object* artReadBarrierForRootSlow(GcRoot<mirror::Object>* root);
+  //
+  // The `out` location contains the value returned by
+  // artReadBarrierForRootSlow.
+  void GenerateReadBarrierForRootSlow(HInstruction* instruction, Location out, Location root);
+
+  void MarkGCCard(XRegister object, XRegister value, bool value_can_be_null);
 
   //
   // Heap poisoning.
@@ -756,6 +891,11 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   // PC-relative patch info for IntrinsicObjects for the boot image,
   // and for method/type/string patches for kBootImageRelRo otherwise.
   ArenaDeque<PcRelativePatchInfo> boot_image_other_patches_;
+
+  // Patches for string root accesses in JIT compiled code.
+  StringToLiteralMap jit_string_patches_;
+  // Patches for class root accesses in JIT compiled code.
+  TypeToLiteralMap jit_class_patches_;
 };
 
 }  // namespace riscv64

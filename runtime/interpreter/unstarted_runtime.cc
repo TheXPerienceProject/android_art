@@ -16,6 +16,8 @@
 
 #include "unstarted_runtime.h"
 
+#include <android-base/logging.h>
+#include <android-base/stringprintf.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -25,15 +27,14 @@
 #include <limits>
 #include <locale>
 
-#include <android-base/logging.h>
-#include <android-base/stringprintf.h>
-
 #include "art_method-inl.h"
 #include "base/casts.h"
 #include "base/enums.h"
 #include "base/hash_map.h"
 #include "base/macros.h"
+#include "base/os.h"
 #include "base/quasi_atomic.h"
+#include "base/unix_file/fd_file.h"
 #include "base/zip_archive.h"
 #include "class_linker.h"
 #include "common_throws.h"
@@ -574,17 +575,17 @@ static void GetResourceAsStream(Thread* self,
     return;
   }
 
-  const std::vector<int>& boot_class_path_fds = Runtime::Current()->GetBootClassPathFds();
-  DCHECK(boot_class_path_fds.empty() || boot_class_path_fds.size() == boot_class_path.size());
+  ArrayRef<File> boot_class_path_files = Runtime::Current()->GetBootClassPathFiles();
+  DCHECK(boot_class_path_files.empty() || boot_class_path_files.size() == boot_class_path.size());
 
   MemMap mem_map;
   size_t map_size;
   std::string last_error_msg;  // Only store the last message (we could concatenate).
 
-  bool has_bcp_fds = !boot_class_path_fds.empty();
+  bool has_bcp_fds = !boot_class_path_files.empty();
   for (size_t i = 0; i < boot_class_path.size(); ++i) {
     const std::string& jar_file = boot_class_path[i];
-    const int jar_fd = has_bcp_fds ? boot_class_path_fds[i] : -1;
+    const int jar_fd = has_bcp_fds ? boot_class_path_files[i].Fd() : -1;
     mem_map = FindAndExtractEntry(jar_file, jar_fd, resource_cstr, &map_size, &last_error_msg);
     if (mem_map.IsValid()) {
       break;
@@ -1549,19 +1550,29 @@ void UnstartedRuntime::UnstartedUnsafeCompareAndSwapObject(
 void UnstartedRuntime::UnstartedUnsafeGetObjectVolatile(
     Thread* self, ShadowFrame* shadow_frame, JValue* result, size_t arg_offset)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  UnstartedJdkUnsafeGetObjectVolatile(self, shadow_frame, result, arg_offset);
+  UnstartedJdkUnsafeGetReferenceVolatile(self, shadow_frame, result, arg_offset);
 }
 
 void UnstartedRuntime::UnstartedUnsafePutObjectVolatile(
     Thread* self, ShadowFrame* shadow_frame, JValue* result, size_t arg_offset)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  UnstartedJdkUnsafePutObjectVolatile(self, shadow_frame, result, arg_offset);
+  UnstartedJdkUnsafePutReferenceVolatile(self, shadow_frame, result, arg_offset);
 }
 
 void UnstartedRuntime::UnstartedUnsafePutOrderedObject(
     Thread* self, ShadowFrame* shadow_frame, JValue* result, size_t arg_offset)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   UnstartedJdkUnsafePutOrderedObject(self, shadow_frame, result, arg_offset);
+}
+
+void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSetLong(
+    Thread* self, ShadowFrame* shadow_frame, JValue* result, size_t arg_offset) {
+  UnstartedJdkUnsafeCompareAndSwapLong(self, shadow_frame, result, arg_offset);
+}
+
+void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSetReference(
+    Thread* self, ShadowFrame* shadow_frame, JValue* result, size_t arg_offset) {
+  UnstartedJdkUnsafeCompareAndSwapObject(self, shadow_frame, result, arg_offset);
 }
 
 void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSwapLong(
@@ -1591,11 +1602,6 @@ void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSwapLong(
                                                                  newValue);
   }
   result->SetZ(success ? 1 : 0);
-}
-
-void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSetLong(
-    Thread* self, ShadowFrame* shadow_frame, JValue* result, size_t arg_offset) {
-  UnstartedJdkUnsafeCompareAndSwapLong(self, shadow_frame, result, arg_offset);
 }
 
 void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSwapObject(
@@ -1648,12 +1654,7 @@ void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSwapObject(
   result->SetZ(success ? 1 : 0);
 }
 
-void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSetObject(
-    Thread* self, ShadowFrame* shadow_frame, JValue* result, size_t arg_offset) {
-  UnstartedJdkUnsafeCompareAndSwapObject(self, shadow_frame, result, arg_offset);
-}
-
-void UnstartedRuntime::UnstartedJdkUnsafeGetObjectVolatile(
+void UnstartedRuntime::UnstartedJdkUnsafeGetReferenceVolatile(
     Thread* self, ShadowFrame* shadow_frame, JValue* result, size_t arg_offset)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Argument 0 is the Unsafe instance, skip.
@@ -1667,10 +1668,10 @@ void UnstartedRuntime::UnstartedJdkUnsafeGetObjectVolatile(
   result->SetL(value);
 }
 
-void UnstartedRuntime::UnstartedJdkUnsafePutObjectVolatile(Thread* self,
-                                                           ShadowFrame* shadow_frame,
-                                                           [[maybe_unused]] JValue* result,
-                                                           size_t arg_offset)
+void UnstartedRuntime::UnstartedJdkUnsafePutReferenceVolatile(Thread* self,
+                                                              ShadowFrame* shadow_frame,
+                                                              [[maybe_unused]] JValue* result,
+                                                              size_t arg_offset)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Argument 0 is the Unsafe instance, skip.
   mirror::Object* obj = shadow_frame->GetVRegReference(arg_offset + 1);

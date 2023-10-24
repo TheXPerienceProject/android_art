@@ -3006,10 +3006,10 @@ void InstructionCodeGeneratorX86::VisitX86FPNeg(HX86FPNeg* neg) {
                                                  constant_area));
     __ xorps(out.AsFpuRegister<XmmRegister>(), mask);
   } else {
-     __ movsd(mask, codegen_->LiteralInt64Address(INT64_C(0x8000000000000000),
-                                                  neg->GetBaseMethodAddress(),
-                                                  constant_area));
-     __ xorpd(out.AsFpuRegister<XmmRegister>(), mask);
+    __ movsd(mask, codegen_->LiteralInt64Address(INT64_C(0x8000000000000000),
+                                                 neg->GetBaseMethodAddress(),
+                                                 constant_area));
+    __ xorpd(out.AsFpuRegister<XmmRegister>(), mask);
   }
 }
 
@@ -7522,7 +7522,6 @@ void InstructionCodeGeneratorX86::VisitLoadString(HLoadString* load) NO_THREAD_S
       break;
   }
 
-  // TODO: Re-add the compiler code to do string dex cache lookup again.
   InvokeRuntimeCallingConvention calling_convention;
   DCHECK_EQ(calling_convention.GetRegisterAt(0), out);
   __ movl(calling_convention.GetRegisterAt(0), Immediate(load->GetStringIndex().index_));
@@ -7890,7 +7889,6 @@ void LocationsBuilderX86::VisitCheckCast(HCheckCast* instruction) {
   } else {
     locations->SetInAt(1, Location::Any());
   }
-  // Add temps for read barriers and other uses. One is used by TypeCheckSlowPathX86.
   locations->AddRegisterTemps(NumberOfCheckCastTemps(type_check_kind));
 }
 
@@ -8078,11 +8076,11 @@ void InstructionCodeGeneratorX86::VisitCheckCast(HCheckCast* instruction) {
                                         kWithoutReadBarrier);
 
       // /* HeapReference<Class> */ temp = temp->iftable_
-      GenerateReferenceLoadTwoRegisters(instruction,
-                                        temp_loc,
-                                        temp_loc,
-                                        iftable_offset,
-                                        kWithoutReadBarrier);
+      GenerateReferenceLoadOneRegister(instruction,
+                                       temp_loc,
+                                       iftable_offset,
+                                       maybe_temp2_loc,
+                                       kWithoutReadBarrier);
       // Iftable is never null.
       __ movl(maybe_temp2_loc.AsRegister<Register>(), Address(temp, array_length_offset));
       // Maybe poison the `cls` for direct comparison with memory.
@@ -9077,7 +9075,7 @@ void CodeGeneratorX86::PatchJitRootUse(uint8_t* code,
       reinterpret_cast<uintptr_t>(roots_data) + index_in_table * sizeof(GcRoot<mirror::Object>);
   using unaligned_uint32_t __attribute__((__aligned__(1))) = uint32_t;
   reinterpret_cast<unaligned_uint32_t*>(code + code_offset)[0] =
-     dchecked_integral_cast<uint32_t>(address);
+      dchecked_integral_cast<uint32_t>(address);
 }
 
 void CodeGeneratorX86::EmitJitRootPatches(uint8_t* code, const uint8_t* roots_data) {
