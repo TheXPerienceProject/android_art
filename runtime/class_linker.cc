@@ -1191,9 +1191,8 @@ void ClassLinker::RunRootClinits(Thread* self) {
       WellKnownClasses::java_lang_reflect_InvocationTargetException_init,
       // Ensure `Parameter` class is initialized (avoid check at runtime).
       WellKnownClasses::java_lang_reflect_Parameter_init,
-      // Ensure `MethodHandles` and `MethodType` classes are initialized (avoid check at runtime).
+      // Ensure `MethodHandles` class is initialized (avoid check at runtime).
       WellKnownClasses::java_lang_invoke_MethodHandles_lookup,
-      WellKnownClasses::java_lang_invoke_MethodType_makeImpl,
       // Ensure `DirectByteBuffer` class is initialized (avoid check at runtime).
       WellKnownClasses::java_nio_DirectByteBuffer_init,
       // Ensure `FloatingDecimal` class is initialized (avoid check at runtime).
@@ -3441,6 +3440,7 @@ ObjPtr<mirror::Class> ClassLinker::DefineClass(Thread* self,
     return sdc.Finish(nullptr);
   }
 
+  ScopedTrace trace(descriptor);
   if (klass == nullptr) {
     // Allocate a class with the status of not ready.
     // Interface object should get the right size here. Regular class will

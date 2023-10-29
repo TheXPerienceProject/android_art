@@ -17,6 +17,8 @@
 #include "asm_support_riscv64.S"
 #include "interpreter/cfi_asm_support.h"
 
+#include "arch/quick_alloc_entrypoints.S"
+
 
 // Wrap ExecuteSwitchImpl in assembly method which specifies DEX PC for unwinding.
 //  Argument 0: a0: The context pointer for ExecuteSwitchImpl.
@@ -417,6 +419,20 @@ ENTRY art_quick_to_interpreter_bridge
 END art_quick_to_interpreter_bridge
 
 
+    .extern artMethodEntryHook
+ENTRY art_quick_method_entry_hook
+    SETUP_SAVE_EVERYTHING_FRAME
+
+    ld   a0, FRAME_SIZE_SAVE_EVERYTHING(sp)   // Pass ArtMethod*.
+    mv   a1, xSELF                            // Pass Thread::Current().
+    mv   a2, sp                               // pass SP
+    call artMethodEntryHook                   // (ArtMethod*, Thread*, SP)
+
+    RESTORE_SAVE_EVERYTHING_FRAME
+    ret
+END art_quick_method_entry_hook
+
+
     .extern artMethodExitHook
 ENTRY art_quick_method_exit_hook
     SETUP_SAVE_EVERYTHING_FRAME
@@ -537,7 +553,21 @@ END art_quick_do_long_jump
 .endm
 
 
-.macro RETURN_OR_DEOPT_IF_A0_IS_ZERO_OR_DELIVER
+.macro RETURN_OR_DEOPT_IF_RESULT_IS_NON_NULL_OR_DELIVER
+    beqz  a0, 1f
+    DEOPT_OR_RETURN a1, /*is_ref=*/ 1
+1:
+    DELIVER_PENDING_EXCEPTION
+.endm
+
+
+// TODO: Rename the macro used by the shared `arch/quick_alloc_entrypoints.S` and drop this macro.
+.macro RETURN_IF_RESULT_IS_NON_ZERO_OR_DEOPT_OR_DELIVER
+    RETURN_OR_DEOPT_IF_RESULT_IS_NON_NULL_OR_DELIVER
+.endm
+
+
+.macro RETURN_OR_DEOPT_IF_RESULT_IS_ZERO_OR_DELIVER
     bnez  a0, 1f
     DEOPT_OR_RETURN a1
 1:
@@ -555,7 +585,7 @@ END art_quick_do_long_jump
   CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
   sd      a0, SAVE_EVERYTHING_FRAME_OFFSET_A0(sp)    // update result in the frame
   li      a2, \is_ref                                // pass if result is a reference
-  mv      a1, x0                                     // pass the result
+  mv      a1, a0                                     // pass the result
   mv      a0, xSELF                                  // Thread::Current
   call    artDeoptimizeIfNeeded
   CFI_REMEMBER_STATE
@@ -582,7 +612,7 @@ ENTRY art_quick_lock_object_no_inline
     mv    a1, xSELF                   // pass Thread::Current
     call  artLockObjectFromCode       // (Object*, Thread*)
     RESTORE_SAVE_REFS_ONLY_FRAME
-    RETURN_OR_DEOPT_IF_A0_IS_ZERO_OR_DELIVER
+    RETURN_OR_DEOPT_IF_RESULT_IS_ZERO_OR_DELIVER
 END art_quick_lock_object_no_inline
 
 
@@ -604,7 +634,7 @@ ENTRY art_quick_unlock_object_no_inline
     mv    a1, xSELF                   // pass Thread::Current
     call  artUnlockObjectFromCode     // (Object*, Thread*)
     RESTORE_SAVE_REFS_ONLY_FRAME
-    RETURN_OR_DEOPT_IF_A0_IS_ZERO_OR_DELIVER
+    RETURN_OR_DEOPT_IF_RESULT_IS_ZERO_OR_DELIVER
 END art_quick_unlock_object_no_inline
 
 
@@ -1067,6 +1097,7 @@ ENTRY \name
 END \name
 .endm
 
+
 .macro ONE_ARG_SAVE_EVERYTHING_DOWNCALL_FOR_CLINIT name, entrypoint
     ONE_ARG_SAVE_EVERYTHING_DOWNCALL \
             \name, \entrypoint, RUNTIME_SAVE_EVERYTHING_FOR_CLINIT_METHOD_OFFSET
@@ -1081,6 +1112,182 @@ ONE_ARG_SAVE_EVERYTHING_DOWNCALL \
 ONE_ARG_SAVE_EVERYTHING_DOWNCALL art_quick_resolve_method_handle, artResolveMethodHandleFromCode
 ONE_ARG_SAVE_EVERYTHING_DOWNCALL art_quick_resolve_method_type, artResolveMethodTypeFromCode
 ONE_ARG_SAVE_EVERYTHING_DOWNCALL art_quick_resolve_string, artResolveStringFromCode
+
+
+// Helper macros for `art_quick_aput_obj`.
+#ifdef USE_READ_BARRIER
+#ifdef USE_BAKER_READ_BARRIER
+.macro BAKER_RB_CHECK_GRAY_BIT_AND_LOAD dest, obj, offset, gray_slow_path_label
+    lw    t6, MIRROR_OBJECT_LOCK_WORD_OFFSET(\obj)
+    slliw t6, t6, 31 - LOCK_WORD_READ_BARRIER_STATE_SHIFT  // Shift the state bit to sign bit.
+    bltz  t6, \gray_slow_path_label
+    // False dependency to avoid needing load/load fence.
+    xor   t6, t6, t6
+    add   \obj, \obj, t6
+    lwu   \dest, \offset(\obj)                     // Heap reference = 32b; zero-extends to `dest`.
+    UNPOISON_HEAP_REF \dest
+.endm
+
+.macro BAKER_RB_LOAD_AND_MARK dest, obj, offset, mark_function
+    lwu   \dest, \offset(\obj)                     // Heap reference = 32b; zero-extends to `dest`.
+    UNPOISON_HEAP_REF \dest
+    // Save RA in a register preserved by `art_quick_read_barrier_mark_regNN`
+    // and unused by the `art_quick_aput_obj`.
+    mv    t2, ra
+    call  \mark_function
+    mv    ra, t2                                   // Restore RA.
+.endm
+#else  // USE_BAKER_READ_BARRIER
+    .extern artReadBarrierSlow
+.macro READ_BARRIER_SLOW dest, obj, offset
+    // Store registers used in art_quick_aput_obj (a0-a4, RA), stack is 16B aligned.
+    INCREASE_FRAME 48
+    SAVE_GPR a0, 0*8
+    SAVE_GPR a1, 1*8
+    SAVE_GPR a2, 2*8
+    SAVE_GPR a3, 3*8
+    SAVE_GPR a4, 4*8
+    SAVE_GPR ra, 5*8
+
+    // mv a0, \ref                  // Pass ref in A0 (no-op for now since parameter ref is unused).
+    .ifnc \obj, a1
+        mv a1, \obj                 // Pass `obj`.
+    .endif
+    li    a2, \offset               // Pass offset.
+    call  artReadBarrierSlow        // artReadBarrierSlow(ref, obj, offset)
+    // No need to unpoison return value in A0, `artReadBarrierSlow()` would do the unpoisoning.
+    .ifnc \dest, a0
+        mv \dest, a0                // save return value in dest
+    .endif
+
+    // Conditionally restore saved registers
+    RESTORE_GPR_NE a0, 0*8, \dest
+    RESTORE_GPR_NE a1, 1*8, \dest
+    RESTORE_GPR_NE a2, 2*8, \dest
+    RESTORE_GPR_NE a3, 3*8, \dest
+    RESTORE_GPR_NE a4, 4*8, \dest
+    RESTORE_GPR ra, 5*8
+    DECREASE_FRAME 48
+.endm
+#endif // USE_BAKER_READ_BARRIER
+#endif  // USE_READ_BARRIER
+
+ENTRY art_quick_aput_obj
+    beqz  a2, .Laput_obj_null
+#if defined(USE_READ_BARRIER) && !defined(USE_BAKER_READ_BARRIER)
+    READ_BARRIER_SLOW a3, a0, MIRROR_OBJECT_CLASS_OFFSET
+    READ_BARRIER_SLOW a3, a3, MIRROR_CLASS_COMPONENT_TYPE_OFFSET
+    READ_BARRIER_SLOW a4, a2, MIRROR_OBJECT_CLASS_OFFSET
+#else  // !defined(USE_READ_BARRIER) || defined(USE_BAKER_READ_BARRIER)
+#ifdef USE_READ_BARRIER
+    // TODO(riscv64): Define marking register to avoid this load.
+    lw    t6, THREAD_IS_GC_MARKING_OFFSET(xSELF)
+    bnez  t6, .Laput_obj_gc_marking
+#endif  // USE_READ_BARRIER
+    lwu   a3, MIRROR_OBJECT_CLASS_OFFSET(a0)           // Heap reference = 32b; zero-extends to a3.
+    UNPOISON_HEAP_REF a3
+    lwu   a3, MIRROR_CLASS_COMPONENT_TYPE_OFFSET(a3)   // Heap reference = 32b; zero-extends to a3.
+    UNPOISON_HEAP_REF a3
+    lwu   a4, MIRROR_OBJECT_CLASS_OFFSET(a2)           // Heap reference = 32b; zero-extends to a4.
+    UNPOISON_HEAP_REF a4
+#endif  // !defined(USE_READ_BARRIER) || defined(USE_BAKER_READ_BARRIER)
+    // value's type == array's component type - trivial assignability
+    bne   a3, a4, .Laput_obj_check_assignability
+.Laput_obj_store:
+    sh2add a3, a1, a0
+    POISON_HEAP_REF a2
+    sw    a2, MIRROR_OBJECT_ARRAY_DATA_OFFSET(a3)      // Heap reference = 32b.
+    ld    a3, THREAD_CARD_TABLE_OFFSET(xSELF)
+    srli  a0, a0, CARD_TABLE_CARD_SHIFT
+    add   a0, a0, a3
+    sb    a3, (a0)
+    ret
+
+.Laput_obj_null:
+    sh2add a3, a1, a0
+    sw    a2, MIRROR_OBJECT_ARRAY_DATA_OFFSET(a3)      // Heap reference = 32b.
+    ret
+
+.Laput_obj_check_assignability:
+    // Store arguments and return register
+    INCREASE_FRAME 32
+    SAVE_GPR a0, 0*8
+    SAVE_GPR a1, 1*8
+    SAVE_GPR a2, 2*8
+    SAVE_GPR ra, 3*8
+
+    // Call runtime code
+    mv    a0, a3          // Heap reference, 32b, "uncompress" = do nothing, already zero-extended.
+    mv    a1, a4          // Heap reference, 32b, "uncompress" = do nothing, already zero-extended.
+    call  artIsAssignableFromCode
+
+    // Check for exception
+    CFI_REMEMBER_STATE
+    beqz a0, .Laput_obj_throw_array_store_exception
+
+    // Restore
+    RESTORE_GPR a0, 0*8
+    RESTORE_GPR a1, 1*8
+    RESTORE_GPR a2, 2*8
+    RESTORE_GPR ra, 3*8
+    DECREASE_FRAME 32
+
+    sh2add a3, a1, a0
+    POISON_HEAP_REF a2
+    sw    a2, MIRROR_OBJECT_ARRAY_DATA_OFFSET(a3)      // Heap reference = 32b.
+    ld    a3, THREAD_CARD_TABLE_OFFSET(xSELF)
+    srli  a0, a0, CARD_TABLE_CARD_SHIFT
+    add   a0, a0, a3
+    sb    a3, (a0)
+    ret
+
+.Laput_obj_throw_array_store_exception:
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, 32
+    RESTORE_GPR a0, 0*8
+    RESTORE_GPR a1, 1*8
+    RESTORE_GPR a2, 2*8
+    RESTORE_GPR ra, 3*8
+    DECREASE_FRAME 32
+
+#if defined(USE_READ_BARRIER) && defined(USE_BAKER_READ_BARRIER)
+    CFI_REMEMBER_STATE
+#endif  // defined(USE_READ_BARRIER) && defined(USE_BAKER_READ_BARRIER)
+    SETUP_SAVE_ALL_CALLEE_SAVES_FRAME
+    mv    a1, a2                        // Pass value.
+    mv    a2, xSELF                     // Pass Thread::Current().
+    call  artThrowArrayStoreException   // (Object*, Object*, Thread*).
+    unimp                               // Unreachable.
+
+#if defined(USE_READ_BARRIER) && defined(USE_BAKER_READ_BARRIER)
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, 0
+.Laput_obj_gc_marking:
+    BAKER_RB_CHECK_GRAY_BIT_AND_LOAD \
+        a3, a0, MIRROR_OBJECT_CLASS_OFFSET, .Laput_obj_mark_array_class
+.Laput_obj_mark_array_class_continue:
+    BAKER_RB_CHECK_GRAY_BIT_AND_LOAD \
+        a3, a3, MIRROR_CLASS_COMPONENT_TYPE_OFFSET, .Laput_obj_mark_array_element
+.Laput_obj_mark_array_element_continue:
+    BAKER_RB_CHECK_GRAY_BIT_AND_LOAD \
+        a4, a2, MIRROR_OBJECT_CLASS_OFFSET, .Laput_obj_mark_object_class
+.Laput_obj_mark_object_class_continue:
+    // value's type == array's component type - trivial assignability
+    bne   a3, a4, .Laput_obj_check_assignability
+    j     .Laput_obj_store
+
+.Laput_obj_mark_array_class:
+    BAKER_RB_LOAD_AND_MARK a3, a0, MIRROR_OBJECT_CLASS_OFFSET, art_quick_read_barrier_mark_reg13
+    j     .Laput_obj_mark_array_class_continue
+
+.Laput_obj_mark_array_element:
+    BAKER_RB_LOAD_AND_MARK \
+        a3, a3, MIRROR_CLASS_COMPONENT_TYPE_OFFSET, art_quick_read_barrier_mark_reg13
+    j     .Laput_obj_mark_array_element_continue
+
+.Laput_obj_mark_object_class:
+    BAKER_RB_LOAD_AND_MARK a4, a2, MIRROR_OBJECT_CLASS_OFFSET, art_quick_read_barrier_mark_reg14
+    j     .Laput_obj_mark_object_class_continue
+#endif  // defined(USE_READ_BARRIER) && defined(USE_BAKER_READ_BARRIER)
+END art_quick_aput_obj
 
 
 // Create a function `name` calling the art::ReadBarrier::Mark routine, getting its argument and
@@ -1245,155 +1452,377 @@ READ_BARRIER_MARK_REG art_quick_read_barrier_mark_reg30, t5
 READ_BARRIER_MARK_REG art_quick_read_barrier_mark_reg31, t6
 
 
+.macro N_ARG_DOWNCALL n, name, entrypoint, return
+    .extern \entrypoint
+ENTRY \name
+    SETUP_SAVE_REFS_ONLY_FRAME        // Save callee saves in case of GC.
+    mv    a\n, xSELF                  // Pass Thread::Current().
+    call  \entrypoint                 // (<n args>, Thread*)
+    RESTORE_SAVE_REFS_ONLY_FRAME
+    \return
+END \name
+.endm
+
+
+.macro ONE_ARG_DOWNCALL name, entrypoint, return
+    N_ARG_DOWNCALL 1, \name, \entrypoint, \return
+.endm
+
+
+.macro TWO_ARG_DOWNCALL name, entrypoint, return
+    N_ARG_DOWNCALL 2, \name, \entrypoint, \return
+.endm
+
+
+.macro THREE_ARG_DOWNCALL name, entrypoint, return
+    N_ARG_DOWNCALL 3, \name, \entrypoint, \return
+.endm
+
+
+.macro FOUR_ARG_DOWNCALL name, entrypoint, return
+    N_ARG_DOWNCALL 4, \name, \entrypoint, \return
+.endm
+
+
+// Generate the allocation entrypoints for each allocator.
+GENERATE_ALLOC_ENTRYPOINTS_FOR_NON_TLAB_ALLOCATORS
+// Comment out allocators that have riscv64 specific asm.
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_OBJECT_RESOLVED(_region_tlab, RegionTLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_OBJECT_INITIALIZED(_region_tlab, RegionTLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_OBJECT_WITH_ACCESS_CHECK(_region_tlab, RegionTLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_STRING_OBJECT(_region_tlab, RegionTLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED(_region_tlab, RegionTLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED8(_region_tlab, RegionTLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED16(_region_tlab, RegionTLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED32(_region_tlab, RegionTLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED64(_region_tlab, RegionTLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_STRING_FROM_BYTES(_region_tlab, RegionTLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_STRING_FROM_CHARS(_region_tlab, RegionTLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_STRING_FROM_STRING(_region_tlab, RegionTLAB)
+
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_OBJECT_RESOLVED(_tlab, TLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_OBJECT_INITIALIZED(_tlab, TLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_OBJECT_WITH_ACCESS_CHECK(_tlab, TLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_STRING_OBJECT(_tlab, TLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED(_tlab, TLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED8(_tlab, TLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED16(_tlab, TLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED32(_tlab, TLAB)
+// GENERATE_ALLOC_ENTRYPOINTS_ALLOC_ARRAY_RESOLVED64(_tlab, TLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_STRING_FROM_BYTES(_tlab, TLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_STRING_FROM_CHARS(_tlab, TLAB)
+GENERATE_ALLOC_ENTRYPOINTS_ALLOC_STRING_FROM_STRING(_tlab, TLAB)
+
+// If isInitialized=1 then the compiler assumes the object's class has already been initialized.
+// If isInitialized=0 the compiler can only assume it's been at least resolved.
+.macro ART_QUICK_ALLOC_OBJECT_ROSALLOC c_name, cxx_name, isInitialized
+ENTRY \c_name
+    // Fast path rosalloc allocation.
+    // a0: type, xSELF(s1): Thread::Current
+    // a1-a7: free.
+    ld    a3, THREAD_LOCAL_ALLOC_STACK_TOP_OFFSET(xSELF)    // Check if the thread local
+                                                            // allocation stack has room.
+                                                            // ldp won't work due to large offset.
+    ld    a4, THREAD_LOCAL_ALLOC_STACK_END_OFFSET(xSELF)
+    bgeu  a3, a4, .Lslow_path\c_name
+    lwu   a3, MIRROR_CLASS_OBJECT_SIZE_ALLOC_FAST_PATH_OFFSET(a0)  // Load the object size (a3)
+    li    a5, ROSALLOC_MAX_THREAD_LOCAL_BRACKET_SIZE        // Check if the size is for a thread
+                                                            // local allocation.
+    // If the class is not yet visibly initialized, or it is finalizable,
+    // the object size will be very large to force the branch below to be taken.
+    //
+    // See Class::SetStatus() in class.cc for more details.
+    bgeu  a3, a5, .Lslow_path\c_name
+                                                            // Compute the rosalloc bracket index
+                                                            // from the size. Since the size is
+                                                            // already aligned we can combine the
+                                                            // two shifts together.
+#if ROSALLOC_BRACKET_QUANTUM_SIZE_SHIFT != POINTER_SIZE_SHIFT
+#error "Unexpected ROSALLOC_BRACKET_QUANTUM_SIZE_SHIFT != POINTER_SIZE_SHIFT"
+#endif
+    // No-op: srli  a3, a3, (ROSALLOC_BRACKET_QUANTUM_SIZE_SHIFT - POINTER_SIZE_SHIFT)
+    add   a4, xSELF, a3
+                                                            // Subtract pointer size since there
+                                                            // are no runs for 0 byte allocations
+                                                            // and the size is already aligned.
+    ld    a4, (THREAD_ROSALLOC_RUNS_OFFSET - __SIZEOF_POINTER__)(a4)
+                                                            // Load the free list head (a3). This
+                                                            // will be the return val.
+    ld    a3, (ROSALLOC_RUN_FREE_LIST_OFFSET + ROSALLOC_RUN_FREE_LIST_HEAD_OFFSET)(a4)
+    beqz  a3, .Lslow_path\c_name
+    // "Point of no slow path". Won't go to the slow path from here on. OK to clobber a0 and a1.
+    ld    a1, ROSALLOC_SLOT_NEXT_OFFSET(a3)                 // Load the next pointer of the head
+                                                            // and update the list head with the
+                                                            // next pointer.
+    sd    a1, (ROSALLOC_RUN_FREE_LIST_OFFSET + ROSALLOC_RUN_FREE_LIST_HEAD_OFFSET)(a4)
+                                                            // Store the class pointer in the
+                                                            // header. This also overwrites the
+                                                            // next pointer. The offsets are
+                                                            // asserted to match.
+
+#if ROSALLOC_SLOT_NEXT_OFFSET != MIRROR_OBJECT_CLASS_OFFSET
+#error "Class pointer needs to overwrite next pointer."
+#endif
+    POISON_HEAP_REF a0
+    sw    a0, MIRROR_OBJECT_CLASS_OFFSET(a3)
+                                                            // Push the new object onto the thread
+                                                            // local allocation stack and
+                                                            // increment the thread local
+                                                            // allocation stack top.
+    ld    a1, THREAD_LOCAL_ALLOC_STACK_TOP_OFFSET(xSELF)
+    sw    a3, (a1)
+    addi  a1, a1, COMPRESSED_REFERENCE_SIZE                 // Increment A1 to point to next slot.
+    sd    a1, THREAD_LOCAL_ALLOC_STACK_TOP_OFFSET(xSELF)    // Decrement the size of the free list.
+
+    // After this "SD" the object is published to the thread local allocation stack,
+    // and it will be observable from a runtime internal (eg. Heap::VisitObjects) point of view.
+    // It is not yet visible to the running (user) compiled code until after the return.
+    //
+    // To avoid the memory barrier prior to the "SD", a trick is employed, by differentiating
+    // the state of the allocation stack slot. It can be a pointer to one of:
+    // 0) Null entry, because the stack was bumped but the new pointer wasn't written yet.
+    //       (The stack initial state is "null" pointers).
+    // 1) A partially valid object, with an invalid class pointer to the next free rosalloc slot.
+    // 2) A fully valid object, with a valid class pointer pointing to a real class.
+    // Other states are not allowed.
+    //
+    // An object that is invalid only temporarily, and will eventually become valid.
+    // The internal runtime code simply checks if the object is not null or is partial and then
+    // ignores it.
+    //
+    // (Note: The actual check is done by seeing if a non-null object has a class pointer pointing
+    // to ClassClass, and that the ClassClass's class pointer is self-cyclic. A rosalloc free slot
+    // "next" pointer is not-cyclic.)
+    //
+    // See also b/28790624 for a listing of CLs dealing with this race.
+    lwu   a1, (ROSALLOC_RUN_FREE_LIST_OFFSET + ROSALLOC_RUN_FREE_LIST_SIZE_OFFSET)(a4)
+    addi  a1, a1, -1
+    sw    a1, (ROSALLOC_RUN_FREE_LIST_OFFSET + ROSALLOC_RUN_FREE_LIST_SIZE_OFFSET)(a4)
+
+    mv    a0, a3                                            // Set the return value and return.
+    // No barrier. The class is already observably initialized (otherwise the fast
+    // path size check above would fail) and new-instance allocations are protected
+    // from publishing by the compiler which inserts its own StoreStore barrier.
+    ret
+.Lslow_path\c_name:
+    SETUP_SAVE_REFS_ONLY_FRAME                              // Save callee saves in case of GC.
+    mv    a1, xSELF                                         // Pass Thread::Current().
+    call  \cxx_name
+    RESTORE_SAVE_REFS_ONLY_FRAME
+    RETURN_OR_DEOPT_IF_RESULT_IS_NON_NULL_OR_DELIVER
+END \c_name
+.endm
+
+ART_QUICK_ALLOC_OBJECT_ROSALLOC art_quick_alloc_object_resolved_rosalloc, \
+                                artAllocObjectFromCodeResolvedRosAlloc, /* isInitialized */ 0
+ART_QUICK_ALLOC_OBJECT_ROSALLOC art_quick_alloc_object_initialized_rosalloc, \
+                                artAllocObjectFromCodeInitializedRosAlloc, /* isInitialized */ 1
+
+// If isInitialized=1 then the compiler assumes the object's class has already been initialized.
+// If isInitialized=0 the compiler can only assume it's been at least resolved.
+.macro ALLOC_OBJECT_TLAB_FAST_PATH_RESOLVED slowPathLabel isInitialized
+    ld    a4, THREAD_LOCAL_POS_OFFSET(xSELF)
+    ld    a5, THREAD_LOCAL_END_OFFSET(xSELF)
+    lwu   a7, MIRROR_CLASS_OBJECT_SIZE_ALLOC_FAST_PATH_OFFSET(a0)  // Load the object size (a7).
+    add   a6, a4, a7                                        // Add object size to tlab pos.
+                                                            // Check if it fits, overflow works
+                                                            // since the tlab pos and end are 32
+                                                            // bit values.
+
+    // If the class is not yet visibly initialized, or it is finalizable,
+    // the object size will be very large to force the branch below to be taken.
+    //
+    // See Class::SetStatus() in class.cc for more details.
+    bgtu  a6, a5, \slowPathLabel
+    sd    a6, THREAD_LOCAL_POS_OFFSET(xSELF)                // Store new thread_local_pos.
+    POISON_HEAP_REF a0
+    sw    a0, MIRROR_OBJECT_CLASS_OFFSET(a4)                // Store the class pointer.
+    mv    a0, a4
+    // No barrier. The class is already observably initialized (otherwise the fast
+    // path size check above would fail) and new-instance allocations are protected
+    // from publishing by the compiler which inserts its own StoreStore barrier.
+    ret
+.endm
+
+// The common code for art_quick_alloc_object_*region_tlab
+// Currently the implementation ignores isInitialized. TODO(b/172087402): clean this up.
+// Caller must execute a constructor fence after this.
+.macro GENERATE_ALLOC_OBJECT_RESOLVED_TLAB name, entrypoint, isInitialized
+ENTRY \name
+    // Fast path region tlab allocation.
+    // a0: type, xSELF(s1): Thread::Current
+    // a1-a7: free.
+    ALLOC_OBJECT_TLAB_FAST_PATH_RESOLVED .Lslow_path\name, \isInitialized
+.Lslow_path\name:
+    SETUP_SAVE_REFS_ONLY_FRAME                              // Save callee saves in case of GC.
+    mv    a1, xSELF                                         // Pass Thread::Current().
+    call  \entrypoint                                       // (mirror::Class*, Thread*)
+    RESTORE_SAVE_REFS_ONLY_FRAME
+    RETURN_OR_DEOPT_IF_RESULT_IS_NON_NULL_OR_DELIVER
+END \name
+.endm
+
+GENERATE_ALLOC_OBJECT_RESOLVED_TLAB \
+    art_quick_alloc_object_resolved_region_tlab, \
+    artAllocObjectFromCodeResolvedRegionTLAB, /* isInitialized */ 0
+GENERATE_ALLOC_OBJECT_RESOLVED_TLAB \
+    art_quick_alloc_object_initialized_region_tlab, \
+    artAllocObjectFromCodeInitializedRegionTLAB, /* isInitialized */ 1
+GENERATE_ALLOC_OBJECT_RESOLVED_TLAB \
+    art_quick_alloc_object_resolved_tlab, \
+    artAllocObjectFromCodeResolvedTLAB, /* isInitialized */ 0
+GENERATE_ALLOC_OBJECT_RESOLVED_TLAB \
+    art_quick_alloc_object_initialized_tlab, \
+    artAllocObjectFromCodeInitializedTLAB, /* isInitialized */ 1
+
+.macro ALLOC_ARRAY_TLAB_FAST_PATH_RESOLVED_WITH_SIZE \
+    slowPathLabel, class, count, temp0, temp1, temp2
+    andi  \temp1, \temp1, OBJECT_ALIGNMENT_MASK_TOGGLED64   // Apply alignment mask
+                                                            // (addr + 7) & ~7. The mask must
+                                                            // be 64 bits to keep high bits in
+                                                            // case of overflow.
+    // Negative sized arrays are handled here since xCount holds a zero extended 32 bit value.
+    // Negative ints become large 64 bit unsigned ints which will always be larger than max signed
+    // 32 bit int. Since the max shift for arrays is 3, it can not become a negative 64 bit int.
+    li    \temp2, MIN_LARGE_OBJECT_THRESHOLD                // Possibly a large object, go slow
+    bgeu  \temp1, \temp2, \slowPathLabel                    // path.
+
+    ld    \temp0, THREAD_LOCAL_POS_OFFSET(xSELF)            // Check tlab for space, note that
+                                                            // we use (end - begin) to handle
+                                                            // negative size arrays. It is
+                                                            // assumed that a negative size will
+                                                            // always be greater unsigned than
+                                                            // region size.
+    ld    \temp2, THREAD_LOCAL_END_OFFSET(xSELF)
+    sub   \temp2, \temp2, \temp0
+
+    // The array class is always initialized here. Unlike new-instance,
+    // this does not act as a double test.
+    bgtu  \temp1, \temp2, \slowPathLabel
+    // "Point of no slow path". Won't go to the slow path from here on. OK to clobber x0 and x1.
+                                                            // Move old thread_local_pos to x0
+                                                            // for the return value.
+    mv    a0, \temp0
+    add   \temp0, \temp0, \temp1
+    sd    \temp0, THREAD_LOCAL_POS_OFFSET(xSELF)            // Store new thread_local_pos.
+    POISON_HEAP_REF class
+    sw    \class, MIRROR_OBJECT_CLASS_OFFSET(a0)            // Store the class pointer.
+    sw    \count, MIRROR_ARRAY_LENGTH_OFFSET(a0)            // Store the array length.
+// new-array is special. The class is loaded and immediately goes to the Initialized state
+// before it is published. Therefore the only fence needed is for the publication of the object.
+// See ClassLinker::CreateArrayClass() for more details.
+
+// For publication of the new array, we don't need a 'fence w, w' here.
+// The compiler generates 'fence w, w' for all new-array insts.
+    ret
+.endm
+
+// Caller must execute a constructor fence after this.
+.macro GENERATE_ALLOC_ARRAY_TLAB name, entrypoint, size_setup
+ENTRY \name
+    // Fast path array allocation for region tlab allocation.
+    // a0: mirror::Class* type
+    // a1: int32_t component_count
+    // a2-a7: free.
+    mv    a3, a0
+    \size_setup a3, a1, a4, a5, a6
+    ALLOC_ARRAY_TLAB_FAST_PATH_RESOLVED_WITH_SIZE .Lslow_path\name, a3, a1, a4, a5, a6
+.Lslow_path\name:
+    // a0: mirror::Class* klass
+    // a1: int32_t component_count
+    // a2: Thread* self
+    SETUP_SAVE_REFS_ONLY_FRAME                              // Save callee saves in case of GC.
+    mv    a2, xSELF                                         // Pass Thread::Current().
+    call  \entrypoint
+    RESTORE_SAVE_REFS_ONLY_FRAME
+    RETURN_OR_DEOPT_IF_RESULT_IS_NON_NULL_OR_DELIVER
+END \name
+.endm
+
+.macro COMPUTE_ARRAY_SIZE_UNKNOWN class, count, temp0, temp1, temp2
+    // Array classes are never finalizable or uninitialized, no need to check.
+    lwu   \temp0, MIRROR_CLASS_COMPONENT_TYPE_OFFSET(\class) // Load component type
+    UNPOISON_HEAP_REF \temp0
+    lwu   \temp0, MIRROR_CLASS_OBJECT_PRIMITIVE_TYPE_OFFSET(\temp0)
+    srli  \temp0, \temp0, PRIMITIVE_TYPE_SIZE_SHIFT_SHIFT   // Component size shift is in high 16
+                                                            // bits.
+                                                            // xCount is holding a 32 bit value,
+                                                            // it can not overflow.
+    sll   \temp1, \count, \temp0                            // Calculate data size
+    // Add array data offset and alignment.
+    addi   \temp1, \temp1, (MIRROR_INT_ARRAY_DATA_OFFSET + OBJECT_ALIGNMENT_MASK)
+#if MIRROR_LONG_ARRAY_DATA_OFFSET != MIRROR_INT_ARRAY_DATA_OFFSET + 4
+#error Long array data offset must be 4 greater than int array data offset.
+#endif
+
+    addi  \temp0, \temp0, 1                                 // Add 4 to the length only if the
+                                                            // component size shift is 3
+                                                            // (for 64 bit alignment).
+    andi  \temp0, \temp0, 4
+    add   \temp1, \temp1, \temp0
+.endm
+
+.macro COMPUTE_ARRAY_SIZE_8 class, count, temp0, temp1, temp2
+    // Add array data offset and alignment adjustment to the `\count`.
+    addi   \temp1, \count, (MIRROR_INT_ARRAY_DATA_OFFSET + OBJECT_ALIGNMENT_MASK)
+.endm
+
+.macro COMPUTE_ARRAY_SIZE_16 class, count, temp0, temp1, temp2
+    // Add array data offset and alignment adjustment to the shifted `\count`.
+    li     \temp1, (MIRROR_INT_ARRAY_DATA_OFFSET + OBJECT_ALIGNMENT_MASK)
+    sh1add \temp1, \count, \temp1
+.endm
+
+.macro COMPUTE_ARRAY_SIZE_32 class, count, temp0, temp1, temp2
+    // Add array data offset and alignment adjustment to the shifted `\count`.
+    li     \temp1, (MIRROR_INT_ARRAY_DATA_OFFSET + OBJECT_ALIGNMENT_MASK)
+    sh2add \temp1, \count, \temp1
+.endm
+
+.macro COMPUTE_ARRAY_SIZE_64 class, count, temp0, temp1, temp2
+    // Add array data offset and alignment adjustment to the shifted `\count`.
+    li     \temp1, (MIRROR_WIDE_ARRAY_DATA_OFFSET + OBJECT_ALIGNMENT_MASK)
+    sh3add \temp1, \count, \temp1
+.endm
+
+// TODO(ngeoffray): art_quick_alloc_array_resolved_region_tlab is not used for arm64, remove
+// the entrypoint once all backends have been updated to use the size variants.
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved_region_tlab, \
+                          artAllocArrayFromCodeResolvedRegionTLAB, \
+                          COMPUTE_ARRAY_SIZE_UNKNOWN
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved8_region_tlab, \
+                          artAllocArrayFromCodeResolvedRegionTLAB, \
+                          COMPUTE_ARRAY_SIZE_8
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved16_region_tlab, \
+                          artAllocArrayFromCodeResolvedRegionTLAB, \
+                          COMPUTE_ARRAY_SIZE_16
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved32_region_tlab, \
+                          artAllocArrayFromCodeResolvedRegionTLAB, \
+                          COMPUTE_ARRAY_SIZE_32
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved64_region_tlab, \
+                          artAllocArrayFromCodeResolvedRegionTLAB, \
+                          COMPUTE_ARRAY_SIZE_64
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved_tlab, \
+                          artAllocArrayFromCodeResolvedTLAB, \
+                          COMPUTE_ARRAY_SIZE_UNKNOWN
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved8_tlab, \
+                          artAllocArrayFromCodeResolvedTLAB, \
+                          COMPUTE_ARRAY_SIZE_8
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved16_tlab, \
+                          artAllocArrayFromCodeResolvedTLAB, \
+                          COMPUTE_ARRAY_SIZE_16
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved32_tlab, \
+                          artAllocArrayFromCodeResolvedTLAB, \
+                          COMPUTE_ARRAY_SIZE_32
+GENERATE_ALLOC_ARRAY_TLAB art_quick_alloc_array_resolved64_tlab, \
+                          artAllocArrayFromCodeResolvedTLAB, \
+                          COMPUTE_ARRAY_SIZE_64
+
+
 UNDEFINED art_quick_deoptimize_from_compiled_code
 UNDEFINED art_quick_string_builder_append
-UNDEFINED art_quick_method_entry_hook
 UNDEFINED art_quick_check_instance_of
 
-UNDEFINED art_quick_alloc_array_resolved_dlmalloc
-UNDEFINED art_quick_alloc_array_resolved_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved8_dlmalloc
-UNDEFINED art_quick_alloc_array_resolved8_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved16_dlmalloc
-UNDEFINED art_quick_alloc_array_resolved16_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved32_dlmalloc
-UNDEFINED art_quick_alloc_array_resolved32_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved64_dlmalloc
-UNDEFINED art_quick_alloc_array_resolved64_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_object_resolved_dlmalloc
-UNDEFINED art_quick_alloc_object_resolved_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_object_initialized_dlmalloc
-UNDEFINED art_quick_alloc_object_initialized_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_object_with_checks_dlmalloc
-UNDEFINED art_quick_alloc_object_with_checks_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_string_object_dlmalloc
-UNDEFINED art_quick_alloc_string_object_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_string_from_bytes_dlmalloc
-UNDEFINED art_quick_alloc_string_from_bytes_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_string_from_chars_dlmalloc
-UNDEFINED art_quick_alloc_string_from_chars_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_string_from_string_dlmalloc
-UNDEFINED art_quick_alloc_string_from_string_dlmalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved_rosalloc
-UNDEFINED art_quick_alloc_array_resolved_rosalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved8_rosalloc
-UNDEFINED art_quick_alloc_array_resolved8_rosalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved16_rosalloc
-UNDEFINED art_quick_alloc_array_resolved16_rosalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved32_rosalloc
-UNDEFINED art_quick_alloc_array_resolved32_rosalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved64_rosalloc
-UNDEFINED art_quick_alloc_array_resolved64_rosalloc_instrumented
-UNDEFINED art_quick_alloc_object_resolved_rosalloc
-UNDEFINED art_quick_alloc_object_resolved_rosalloc_instrumented
-UNDEFINED art_quick_alloc_object_initialized_rosalloc
-UNDEFINED art_quick_alloc_object_initialized_rosalloc_instrumented
-UNDEFINED art_quick_alloc_object_with_checks_rosalloc
-UNDEFINED art_quick_alloc_object_with_checks_rosalloc_instrumented
-UNDEFINED art_quick_alloc_string_object_rosalloc
-UNDEFINED art_quick_alloc_string_object_rosalloc_instrumented
-UNDEFINED art_quick_alloc_string_from_bytes_rosalloc
-UNDEFINED art_quick_alloc_string_from_bytes_rosalloc_instrumented
-UNDEFINED art_quick_alloc_string_from_chars_rosalloc
-UNDEFINED art_quick_alloc_string_from_chars_rosalloc_instrumented
-UNDEFINED art_quick_alloc_string_from_string_rosalloc
-UNDEFINED art_quick_alloc_string_from_string_rosalloc_instrumented
-UNDEFINED art_quick_alloc_array_resolved_bump_pointer
-UNDEFINED art_quick_alloc_array_resolved_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_array_resolved8_bump_pointer
-UNDEFINED art_quick_alloc_array_resolved8_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_array_resolved16_bump_pointer
-UNDEFINED art_quick_alloc_array_resolved16_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_array_resolved32_bump_pointer
-UNDEFINED art_quick_alloc_array_resolved32_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_array_resolved64_bump_pointer
-UNDEFINED art_quick_alloc_array_resolved64_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_object_resolved_bump_pointer
-UNDEFINED art_quick_alloc_object_resolved_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_object_initialized_bump_pointer
-UNDEFINED art_quick_alloc_object_initialized_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_object_with_checks_bump_pointer
-UNDEFINED art_quick_alloc_object_with_checks_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_string_object_bump_pointer
-UNDEFINED art_quick_alloc_string_object_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_string_from_bytes_bump_pointer
-UNDEFINED art_quick_alloc_string_from_bytes_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_string_from_chars_bump_pointer
-UNDEFINED art_quick_alloc_string_from_chars_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_string_from_string_bump_pointer
-UNDEFINED art_quick_alloc_string_from_string_bump_pointer_instrumented
-UNDEFINED art_quick_alloc_array_resolved_tlab
-UNDEFINED art_quick_alloc_array_resolved_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved8_tlab
-UNDEFINED art_quick_alloc_array_resolved8_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved16_tlab
-UNDEFINED art_quick_alloc_array_resolved16_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved32_tlab
-UNDEFINED art_quick_alloc_array_resolved32_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved64_tlab
-UNDEFINED art_quick_alloc_array_resolved64_tlab_instrumented
-UNDEFINED art_quick_alloc_object_resolved_tlab
-UNDEFINED art_quick_alloc_object_resolved_tlab_instrumented
-UNDEFINED art_quick_alloc_object_initialized_tlab
-UNDEFINED art_quick_alloc_object_initialized_tlab_instrumented
-UNDEFINED art_quick_alloc_object_with_checks_tlab
-UNDEFINED art_quick_alloc_object_with_checks_tlab_instrumented
-UNDEFINED art_quick_alloc_string_object_tlab
-UNDEFINED art_quick_alloc_string_object_tlab_instrumented
-UNDEFINED art_quick_alloc_string_from_bytes_tlab
-UNDEFINED art_quick_alloc_string_from_bytes_tlab_instrumented
-UNDEFINED art_quick_alloc_string_from_chars_tlab
-UNDEFINED art_quick_alloc_string_from_chars_tlab_instrumented
-UNDEFINED art_quick_alloc_string_from_string_tlab
-UNDEFINED art_quick_alloc_string_from_string_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved_region
-UNDEFINED art_quick_alloc_array_resolved_region_instrumented
-UNDEFINED art_quick_alloc_array_resolved8_region
-UNDEFINED art_quick_alloc_array_resolved8_region_instrumented
-UNDEFINED art_quick_alloc_array_resolved16_region
-UNDEFINED art_quick_alloc_array_resolved16_region_instrumented
-UNDEFINED art_quick_alloc_array_resolved32_region
-UNDEFINED art_quick_alloc_array_resolved32_region_instrumented
-UNDEFINED art_quick_alloc_array_resolved64_region
-UNDEFINED art_quick_alloc_array_resolved64_region_instrumented
-UNDEFINED art_quick_alloc_object_resolved_region
-UNDEFINED art_quick_alloc_object_resolved_region_instrumented
-UNDEFINED art_quick_alloc_object_initialized_region
-UNDEFINED art_quick_alloc_object_initialized_region_instrumented
-UNDEFINED art_quick_alloc_object_with_checks_region
-UNDEFINED art_quick_alloc_object_with_checks_region_instrumented
-UNDEFINED art_quick_alloc_string_object_region
-UNDEFINED art_quick_alloc_string_object_region_instrumented
-UNDEFINED art_quick_alloc_string_from_bytes_region
-UNDEFINED art_quick_alloc_string_from_bytes_region_instrumented
-UNDEFINED art_quick_alloc_string_from_chars_region
-UNDEFINED art_quick_alloc_string_from_chars_region_instrumented
-UNDEFINED art_quick_alloc_string_from_string_region
-UNDEFINED art_quick_alloc_string_from_string_region_instrumented
-UNDEFINED art_quick_alloc_array_resolved_region_tlab
-UNDEFINED art_quick_alloc_array_resolved_region_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved8_region_tlab
-UNDEFINED art_quick_alloc_array_resolved8_region_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved16_region_tlab
-UNDEFINED art_quick_alloc_array_resolved16_region_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved32_region_tlab
-UNDEFINED art_quick_alloc_array_resolved32_region_tlab_instrumented
-UNDEFINED art_quick_alloc_array_resolved64_region_tlab
-UNDEFINED art_quick_alloc_array_resolved64_region_tlab_instrumented
-UNDEFINED art_quick_alloc_object_resolved_region_tlab
-UNDEFINED art_quick_alloc_object_resolved_region_tlab_instrumented
-UNDEFINED art_quick_alloc_object_initialized_region_tlab
-UNDEFINED art_quick_alloc_object_initialized_region_tlab_instrumented
-UNDEFINED art_quick_alloc_object_with_checks_region_tlab
-UNDEFINED art_quick_alloc_object_with_checks_region_tlab_instrumented
-UNDEFINED art_quick_alloc_string_object_region_tlab
-UNDEFINED art_quick_alloc_string_object_region_tlab_instrumented
-UNDEFINED art_quick_alloc_string_from_bytes_region_tlab
-UNDEFINED art_quick_alloc_string_from_bytes_region_tlab_instrumented
-UNDEFINED art_quick_alloc_string_from_chars_region_tlab
-UNDEFINED art_quick_alloc_string_from_chars_region_tlab_instrumented
-UNDEFINED art_quick_alloc_string_from_string_region_tlab
-UNDEFINED art_quick_alloc_string_from_string_region_tlab_instrumented
 UNDEFINED art_quick_set8_instance
 UNDEFINED art_quick_set8_static
 UNDEFINED art_quick_set16_instance
@@ -1418,5 +1847,4 @@ UNDEFINED art_quick_get_char_static
 UNDEFINED art_quick_get32_static
 UNDEFINED art_quick_get64_static
 UNDEFINED art_quick_get_obj_static
-UNDEFINED art_quick_aput_obj
 UNDEFINED art_quick_indexof
