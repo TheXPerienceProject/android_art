@@ -903,6 +903,8 @@ ENTRY art_quick_check_instance_of
     cbz x0, .Lthrow_class_cast_exception
 
     // Restore and return
+    // TODO: We do not need to restore X0 and X1 on success. We also do not need
+    // to record CFI for them as the information is not very useful.
     RESTORE_TWO_REGS_DECREASE_FRAME x0, x1, 32
     ret
 
@@ -1260,6 +1262,7 @@ ONE_ARG_REF_DOWNCALL art_quick_get32_static, \
 ONE_ARG_REF_DOWNCALL art_quick_get64_static, \
                      artGet64StaticFromCompiledCode, \
                      RETURN_OR_DEOPT_OR_DELIVER_PENDING_EXCEPTION
+// FIXME: This is passing `is_ref = 0` to `DEOPT_OR_DELIVER` but we have a reference!
 ONE_ARG_REF_DOWNCALL art_quick_get_obj_static, \
                      artGetObjStaticFromCompiledCode, \
                      RETURN_OR_DEOPT_OR_DELIVER_PENDING_EXCEPTION
@@ -1282,6 +1285,7 @@ TWO_ARG_REF_DOWNCALL art_quick_get32_instance, \
 TWO_ARG_REF_DOWNCALL art_quick_get64_instance, \
                      artGet64InstanceFromCompiledCode, \
                      RETURN_OR_DEOPT_OR_DELIVER_PENDING_EXCEPTION
+// FIXME: This is passing `is_ref = 0` to `DEOPT_OR_DELIVER` but we have a reference!
 TWO_ARG_REF_DOWNCALL art_quick_get_obj_instance, \
                      artGetObjInstanceFromCompiledCode, \
                      RETURN_OR_DEOPT_OR_DELIVER_PENDING_EXCEPTION

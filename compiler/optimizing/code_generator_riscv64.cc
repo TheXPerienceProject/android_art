@@ -70,9 +70,17 @@ static constexpr FRegister kFpuCalleeSaves[] = {
 #define QUICK_ENTRY_POINT(x) QUICK_ENTRYPOINT_OFFSET(kRiscv64PointerSize, x).Int32Value()
 
 Location RegisterOrZeroBitPatternLocation(HInstruction* instruction) {
+  DCHECK(!DataType::IsFloatingPointType(instruction->GetType()));
   return IsZeroBitPattern(instruction)
       ? Location::ConstantLocation(instruction)
       : Location::RequiresRegister();
+}
+
+Location FpuRegisterOrZeroBitPatternLocation(HInstruction* instruction) {
+  DCHECK(DataType::IsFloatingPointType(instruction->GetType()));
+  return IsZeroBitPattern(instruction)
+      ? Location::ConstantLocation(instruction)
+      : Location::RequiresFpuRegister();
 }
 
 XRegister InputXRegisterOrZero(Location location) {
@@ -207,11 +215,13 @@ Location CriticalNativeCallingConventionVisitorRiscv64::GetNextLocation(DataType
     if (fpr_index_ < kParameterFpuRegistersLength) {
       location = Location::FpuRegisterLocation(kParameterFpuRegisters[fpr_index_]);
       ++fpr_index_;
+    } else {
+      // Native ABI allows passing excessive FP args in GPRs. This is facilitated by
+      // inserting fake conversion intrinsic calls (`Double.doubleToRawLongBits()`
+      // or `Float.floatToRawIntBits()`) by `CriticalNativeAbiFixupRiscv64`.
+      // Remaining FP args shall be passed on the stack.
+      CHECK_EQ(gpr_index_, kRuntimeParameterCoreRegistersLength);
     }
-    // Native ABI allows passing excessive FP args in GPRs. This is facilitated by
-    // inserting fake conversion intrinsic calls (`Double.doubleToRawLongBits()`
-    // or `Float.floatToRawIntBits()`) by `CriticalNativeAbiFixupRiscv64`.
-    // TODO(riscv64): Implement these  intrinsics and `CriticalNativeAbiFixupRiscv64`.
   } else {
     // Native ABI uses the same core registers as a runtime call.
     if (gpr_index_ < kRuntimeParameterCoreRegistersLength) {
@@ -220,10 +230,11 @@ Location CriticalNativeCallingConventionVisitorRiscv64::GetNextLocation(DataType
     }
   }
   if (location.IsInvalid()) {
-    if (DataType::Is64BitType(type)) {
-      location = Location::DoubleStackSlot(stack_offset_);
-    } else {
+    // Only a `float` gets a single slot. Integral args need to be sign-extended to 64 bits.
+    if (type == DataType::Type::kFloat32) {
       location = Location::StackSlot(stack_offset_);
+    } else {
+      location = Location::DoubleStackSlot(stack_offset_);
     }
     stack_offset_ += kFramePointerSize;
 
@@ -849,6 +860,11 @@ inline void InstructionCodeGeneratorRISCV64::FNeg(
 inline void InstructionCodeGeneratorRISCV64::FMv(
     FRegister rd, FRegister rs1, DataType::Type type) {
   FpUnOp<FRegister, &Riscv64Assembler::FMvS, &Riscv64Assembler::FMvD>(rd, rs1, type);
+}
+
+inline void InstructionCodeGeneratorRISCV64::FMvX(
+    XRegister rd, FRegister rs1, DataType::Type type) {
+  FpUnOp<XRegister, &Riscv64Assembler::FMvXW, &Riscv64Assembler::FMvXD>(rd, rs1, type);
 }
 
 inline void InstructionCodeGeneratorRISCV64::FClass(
@@ -1489,11 +1505,19 @@ void InstructionCodeGeneratorRISCV64::GenerateDivRemIntegral(HBinaryOperation* i
 void InstructionCodeGeneratorRISCV64::GenerateIntLongCondition(IfCondition cond,
                                                                LocationSummary* locations) {
   XRegister rd = locations->Out().AsRegister<XRegister>();
+  GenerateIntLongCondition(cond, locations, rd, /*to_all_bits=*/ false);
+}
+
+void InstructionCodeGeneratorRISCV64::GenerateIntLongCondition(IfCondition cond,
+                                                               LocationSummary* locations,
+                                                               XRegister rd,
+                                                               bool to_all_bits) {
   XRegister rs1 = locations->InAt(0).AsRegister<XRegister>();
   Location rs2_location = locations->InAt(1);
   bool use_imm = rs2_location.IsConstant();
   int64_t imm = use_imm ? CodeGenerator::GetInt64ValueOf(rs2_location.GetConstant()) : 0;
   XRegister rs2 = use_imm ? kNoXRegister : rs2_location.AsRegister<XRegister>();
+  bool reverse_condition = false;
   switch (cond) {
     case kCondEQ:
     case kCondNE:
@@ -1518,10 +1542,8 @@ void InstructionCodeGeneratorRISCV64::GenerateIntLongCondition(IfCondition cond,
       } else {
         __ Slt(rd, rs1, rs2);
       }
-      if (cond == kCondGE) {
-        // Calculate `rs1 >= rhs` as `!(rs1 < rhs)` since there's only the SLT but no SGE.
-        __ Xori(rd, rd, 1);
-      }
+      // Calculate `rs1 >= rhs` as `!(rs1 < rhs)` since there's only the SLT but no SGE.
+      reverse_condition = (cond == kCondGE);
       break;
 
     case kCondLE:
@@ -1533,11 +1555,9 @@ void InstructionCodeGeneratorRISCV64::GenerateIntLongCondition(IfCondition cond,
       } else {
         __ Slt(rd, rs2, rs1);
       }
-      if ((cond == kCondGT) == use_imm) {
-        // Calculate `rs1 > imm` as `!(rs1 < imm + 1)` and calculate
-        // `rs1 <= rs2` as `!(rs2 < rs1)` since there's only the SLT but no SGE.
-        __ Xori(rd, rd, 1);
-      }
+      // Calculate `rs1 > imm` as `!(rs1 < imm + 1)` and calculate
+      // `rs1 <= rs2` as `!(rs2 < rs1)` since there's only the SLT but no SGE.
+      reverse_condition = ((cond == kCondGT) == use_imm);
       break;
 
     case kCondB:
@@ -1551,10 +1571,8 @@ void InstructionCodeGeneratorRISCV64::GenerateIntLongCondition(IfCondition cond,
       } else {
         __ Sltu(rd, rs1, rs2);
       }
-      if (cond == kCondAE) {
-        // Calculate `rs1 AE rhs` as `!(rs1 B rhs)` since there's only the SLTU but no SGEU.
-        __ Xori(rd, rd, 1);
-      }
+      // Calculate `rs1 AE rhs` as `!(rs1 B rhs)` since there's only the SLTU but no SGEU.
+      reverse_condition = (cond == kCondAE);
       break;
 
     case kCondBE:
@@ -1569,12 +1587,22 @@ void InstructionCodeGeneratorRISCV64::GenerateIntLongCondition(IfCondition cond,
       } else {
         __ Sltu(rd, rs2, rs1);
       }
-      if ((cond == kCondA) == use_imm) {
-        // Calculate `rs1 A imm` as `!(rs1 B imm + 1)` and calculate
-        // `rs1 BE rs2` as `!(rs2 B rs1)` since there's only the SLTU but no SGEU.
-        __ Xori(rd, rd, 1);
-      }
+      // Calculate `rs1 A imm` as `!(rs1 B imm + 1)` and calculate
+      // `rs1 BE rs2` as `!(rs2 B rs1)` since there's only the SLTU but no SGEU.
+      reverse_condition = ((cond == kCondA) == use_imm);
       break;
+  }
+  if (to_all_bits) {
+    // Store the result to all bits; in other words, "true" is represented by -1.
+    if (reverse_condition) {
+      __ Addi(rd, rd, -1);  // 0 -> -1, 1 -> 0
+    } else {
+      __ Neg(rd, rd);  // 0 -> 0, 1 -> -1
+    }
+  } else {
+    if (reverse_condition) {
+      __ Xori(rd, rd, 1);
+    }
   }
 }
 
@@ -1654,6 +1682,20 @@ void InstructionCodeGeneratorRISCV64::GenerateFpCondition(IfCondition cond,
                                                           DataType::Type type,
                                                           LocationSummary* locations,
                                                           Riscv64Label* label) {
+  DCHECK_EQ(label != nullptr, locations->Out().IsInvalid());
+  ScratchRegisterScope srs(GetAssembler());
+  XRegister rd =
+      (label != nullptr) ? srs.AllocateXRegister() : locations->Out().AsRegister<XRegister>();
+  GenerateFpCondition(cond, gt_bias, type, locations, label, rd, /*to_all_bits=*/ false);
+}
+
+void InstructionCodeGeneratorRISCV64::GenerateFpCondition(IfCondition cond,
+                                                          bool gt_bias,
+                                                          DataType::Type type,
+                                                          LocationSummary* locations,
+                                                          Riscv64Label* label,
+                                                          XRegister rd,
+                                                          bool to_all_bits) {
   // RISCV-V FP compare instructions yield the following values:
   //                      l<r  l=r  l>r Unordered
   //             FEQ l,r   0    1    0    0
@@ -1689,12 +1731,7 @@ void InstructionCodeGeneratorRISCV64::GenerateFpCondition(IfCondition cond,
   FRegister rs1 = locations->InAt(0).AsFpuRegister<FRegister>();
   FRegister rs2 = locations->InAt(1).AsFpuRegister<FRegister>();
 
-  DCHECK_EQ(label != nullptr, locations->Out().IsInvalid());
-  ScratchRegisterScope srs(GetAssembler());
-  XRegister rd =
-      (label != nullptr) ? srs.AllocateXRegister() : locations->Out().AsRegister<XRegister>();
   bool reverse_condition = false;
-
   switch (cond) {
     case kCondEQ:
       FEq(rd, rs1, rs2, type);
@@ -1745,6 +1782,13 @@ void InstructionCodeGeneratorRISCV64::GenerateFpCondition(IfCondition cond,
       __ Beqz(rd, label);
     } else {
       __ Bnez(rd, label);
+    }
+  } else if (to_all_bits) {
+    // Store the result to all bits; in other words, "true" is represented by -1.
+    if (reverse_condition) {
+      __ Addi(rd, rd, -1);  // 0 -> -1, 1 -> 0
+    } else {
+      __ Neg(rd, rd);  // 0 -> 0, 1 -> -1
     }
   } else {
     if (reverse_condition) {
@@ -1966,11 +2010,6 @@ int32_t InstructionCodeGeneratorRISCV64::VecAddress(LocationSummary* locations,
   UNUSED(adjusted_base);
   LOG(FATAL) << "Unimplemented";
   UNREACHABLE();
-}
-
-void InstructionCodeGeneratorRISCV64::GenConditionalMove(HSelect* select) {
-  UNUSED(select);
-  LOG(FATAL) << "Unimplemented";
 }
 
 void LocationsBuilderRISCV64::HandleBinaryOp(HBinaryOperation* instruction) {
@@ -2368,12 +2407,9 @@ void InstructionCodeGeneratorRISCV64::HandleFieldSet(HInstruction* instruction,
         swap_src = srs.AllocateXRegister();
         __ Mv(swap_src, value.AsRegister<XRegister>());
         codegen_->PoisonHeapReference(swap_src);
-      } else if (type == DataType::Type::kFloat64 && !value.IsConstant()) {
+      } else if (DataType::IsFloatingPointType(type) && !value.IsConstant()) {
         swap_src = srs.AllocateXRegister();
-        __ FMvXD(swap_src, value.AsFpuRegister<FRegister>());
-      } else if (type == DataType::Type::kFloat32 && !value.IsConstant()) {
-        swap_src = srs.AllocateXRegister();
-        __ FMvXW(swap_src, value.AsFpuRegister<FRegister>());
+        FMvX(swap_src, value.AsFpuRegister<FRegister>(), type);
       } else {
         swap_src = InputXRegisterOrZero(value);
       }
@@ -4753,15 +4789,9 @@ void InstructionCodeGeneratorRISCV64::VisitReturn(HReturn* instruction) {
   if (GetGraph()->IsCompilingOsr()) {
     // To simplify callers of an OSR method, we put a floating point return value
     // in both floating point and core return registers.
-    switch (instruction->InputAt(0)->GetType()) {
-      case DataType::Type::kFloat32:
-        __ FMvXW(A0, FA0);
-        break;
-      case DataType::Type::kFloat64:
-        __ FMvXD(A0, FA0);
-        break;
-      default:
-        break;
+    DataType::Type type = instruction->InputAt(0)->GetType();
+    if (DataType::IsFloatingPointType(type)) {
+      FMvX(A0, FA0, type);
     }
   }
   codegen_->GenerateFrameExit();
@@ -4896,13 +4926,101 @@ void InstructionCodeGeneratorRISCV64::VisitUnresolvedStaticFieldSet(
 }
 
 void LocationsBuilderRISCV64::VisitSelect(HSelect* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
+  if (DataType::IsFloatingPointType(instruction->GetType())) {
+    locations->SetInAt(0, FpuRegisterOrZeroBitPatternLocation(instruction->GetFalseValue()));
+    locations->SetInAt(1, FpuRegisterOrZeroBitPatternLocation(instruction->GetTrueValue()));
+    locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
+    if (!locations->InAt(0).IsConstant() && !locations->InAt(1).IsConstant()) {
+      locations->AddTemp(Location::RequiresRegister());
+    }
+  }  else {
+    locations->SetInAt(0, RegisterOrZeroBitPatternLocation(instruction->GetFalseValue()));
+    locations->SetInAt(1, RegisterOrZeroBitPatternLocation(instruction->GetTrueValue()));
+    locations->SetOut(Location::RequiresRegister(), Location::kOutputOverlap);
+  }
+
+  if (IsBooleanValueOrMaterializedCondition(instruction->GetCondition())) {
+    locations->SetInAt(2, Location::RequiresRegister());
+  }
 }
 
 void InstructionCodeGeneratorRISCV64::VisitSelect(HSelect* instruction) {
-  UNUSED(instruction);
-  LOG(FATAL) << "Unimplemented";
+  LocationSummary* locations = instruction->GetLocations();
+  HInstruction* cond = instruction->GetCondition();
+  ScratchRegisterScope srs(GetAssembler());
+  XRegister tmp = srs.AllocateXRegister();
+  if (!IsBooleanValueOrMaterializedCondition(cond)) {
+    DataType::Type cond_type = cond->InputAt(0)->GetType();
+    IfCondition if_cond = cond->AsCondition()->GetCondition();
+    if (DataType::IsFloatingPointType(cond_type)) {
+      GenerateFpCondition(if_cond,
+                          cond->AsCondition()->IsGtBias(),
+                          cond_type,
+                          cond->GetLocations(),
+                          /*label=*/ nullptr,
+                          tmp,
+                          /*to_all_bits=*/ true);
+    } else {
+      GenerateIntLongCondition(if_cond, cond->GetLocations(), tmp, /*to_all_bits=*/ true);
+    }
+  } else {
+    // TODO(riscv64): Remove the normalizing SNEZ when we can ensure that booleans
+    // have only values 0 and 1. b/279302742
+    __ Snez(tmp, locations->InAt(2).AsRegister<XRegister>());
+    __ Neg(tmp, tmp);
+  }
+
+  XRegister true_reg, false_reg, xor_reg, out_reg;
+  DataType::Type type = instruction->GetType();
+  if (DataType::IsFloatingPointType(type)) {
+    if (locations->InAt(0).IsConstant()) {
+      DCHECK(locations->InAt(0).GetConstant()->IsZeroBitPattern());
+      false_reg = Zero;
+    } else {
+      false_reg = srs.AllocateXRegister();
+      FMvX(false_reg, locations->InAt(0).AsFpuRegister<FRegister>(), type);
+    }
+    if (locations->InAt(1).IsConstant()) {
+      DCHECK(locations->InAt(1).GetConstant()->IsZeroBitPattern());
+      true_reg = Zero;
+    } else {
+      true_reg = (false_reg == Zero) ? srs.AllocateXRegister()
+                                     : locations->GetTemp(0).AsRegister<XRegister>();
+      FMvX(true_reg, locations->InAt(1).AsFpuRegister<FRegister>(), type);
+    }
+    // We can clobber the "true value" with the XOR result.
+    // Note: The XOR is not emitted if `true_reg == Zero`, see below.
+    xor_reg = true_reg;
+    out_reg = tmp;
+  } else {
+    false_reg = InputXRegisterOrZero(locations->InAt(0));
+    true_reg = InputXRegisterOrZero(locations->InAt(1));
+    xor_reg = srs.AllocateXRegister();
+    out_reg = locations->Out().AsRegister<XRegister>();
+  }
+
+  // We use a branch-free implementation of `HSelect`.
+  // With `tmp` initialized to 0 for `false` and -1 for `true`:
+  //     xor xor_reg, false_reg, true_reg
+  //     and tmp, tmp, xor_reg
+  //     xor out_reg, tmp, false_reg
+  if (false_reg == Zero) {
+    xor_reg = true_reg;
+  } else if (true_reg == Zero) {
+    xor_reg = false_reg;
+  } else {
+    DCHECK_NE(xor_reg, Zero);
+    __ Xor(xor_reg, false_reg, true_reg);
+  }
+  __ And(tmp, tmp, xor_reg);
+  __ Xor(out_reg, tmp, false_reg);
+
+  if (type == DataType::Type::kFloat64) {
+    __ FMvDX(locations->Out().AsFpuRegister<FRegister>(), out_reg);
+  } else if (type == DataType::Type::kFloat32) {
+    __ FMvWX(locations->Out().AsFpuRegister<FRegister>(), out_reg);
+  }
 }
 
 void LocationsBuilderRISCV64::VisitSub(HSub* instruction) {
@@ -5840,10 +5958,13 @@ void CodeGeneratorRISCV64::MoveLocation(Location destination,
               destination.IsStackSlot() ? DataType::Type::kFloat32 : DataType::Type::kFloat64;
         }
       }
-      DCHECK((destination.IsDoubleStackSlot() == DataType::Is64BitType(dst_type)) &&
-             (source.IsFpuRegister() == DataType::IsFloatingPointType(dst_type)));
+      DCHECK_EQ(source.IsFpuRegister(), DataType::IsFloatingPointType(dst_type));
+      // For direct @CriticalNative calls, we need to sign-extend narrow integral args
+      // to 64 bits, so widening integral values is allowed. Narrowing is forbidden.
+      DCHECK_IMPLIES(DataType::IsFloatingPointType(dst_type) || destination.IsStackSlot(),
+                     destination.IsDoubleStackSlot() == DataType::Is64BitType(dst_type));
       // Move to stack from GPR/FPR
-      if (DataType::Is64BitType(dst_type)) {
+      if (destination.IsDoubleStackSlot()) {
         if (source.IsRegister()) {
           __ Stored(source.AsRegister<XRegister>(), SP, destination.GetStackIndex());
         } else {
@@ -5872,15 +5993,20 @@ void CodeGeneratorRISCV64::MoveLocation(Location destination,
       }
     } else {
       DCHECK(source.IsStackSlot() || source.IsDoubleStackSlot());
-      DCHECK_EQ(source.IsDoubleStackSlot(), destination.IsDoubleStackSlot());
+      // For direct @CriticalNative calls, we need to sign-extend narrow integral args
+      // to 64 bits, so widening move is allowed. Narrowing move is forbidden.
+      DCHECK_IMPLIES(destination.IsStackSlot(), source.IsStackSlot());
       // Move to stack from stack
       ScratchRegisterScope srs(GetAssembler());
       XRegister tmp = srs.AllocateXRegister();
-      if (destination.IsStackSlot()) {
+      if (source.IsStackSlot()) {
         __ Loadw(tmp, SP, source.GetStackIndex());
-        __ Storew(tmp, SP, destination.GetStackIndex());
       } else {
         __ Loadd(tmp, SP, source.GetStackIndex());
+      }
+      if (destination.IsStackSlot()) {
+        __ Storew(tmp, SP, destination.GetStackIndex());
+      } else {
         __ Stored(tmp, SP, destination.GetStackIndex());
       }
     }
@@ -5955,6 +6081,10 @@ void CodeGeneratorRISCV64::DumpCoreRegister(std::ostream& stream, int reg) const
 
 void CodeGeneratorRISCV64::DumpFloatingPointRegister(std::ostream& stream, int reg) const {
   stream << FRegister(reg);
+}
+
+const Riscv64InstructionSetFeatures& CodeGeneratorRISCV64::GetInstructionSetFeatures() const {
+  return *GetCompilerOptions().GetInstructionSetFeatures()->AsRiscv64InstructionSetFeatures();
 }
 
 void CodeGeneratorRISCV64::Finalize() {
