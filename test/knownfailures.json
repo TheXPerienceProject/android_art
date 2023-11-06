@@ -266,9 +266,10 @@
                         "suppressed when tracing."]
     },
     {
-        "tests": "638-checker-inline-cache-intrinsic",
+        "tests": ["638-checker-inline-cache-intrinsic",
+                  "850-checker-branches"],
         "variant": "interpreter | interp-ac",
-        "description": ["Test expects JIT compilation"]
+        "description": ["Tests expect JIT compilation"]
     },
     {
         "tests": "597-deopt-invoke-stub",
@@ -1023,6 +1024,7 @@
           "819-verification-runtime",
           "823-cha-inlining",
           "842-vdex-hard-failure",
+          "850-checker-branches",
           "900-hello-plugin",
           "901-hello-ti-agent",
           "903-hello-tagging",
@@ -1350,12 +1352,6 @@
         "variant": "gcstress",
         "bug": "b/137887811",
         "description": ["Occasional timeouts."]
-    },
-    {
-        "tests": ["909-attach-agent"],
-        "variant": "target",
-        "bug": "b/300654679",
-        "description": ["Library path issues."]
     },
     {
         "tests": ["175-alloc-big-bignums"],
