@@ -633,14 +633,15 @@ const OatQuickMethodHeader* ArtMethod::GetOatQuickMethodHeader(uintptr_t pc) {
       DCHECK(method_header->Contains(pc));
       return method_header;
     } else {
-      if (code_cache->ContainsPc(reinterpret_cast<const void*>(pc))) {
+      if (kIsDebugBuild && code_cache->ContainsPc(reinterpret_cast<const void*>(pc))) {
         code_cache->DumpAllCompiledMethods(LOG_STREAM(FATAL_WITHOUT_ABORT));
         LOG(FATAL)
             << PrettyMethod()
             << ", pc=" << std::hex << pc
             << ", entry_point=" << std::hex << reinterpret_cast<uintptr_t>(existing_entry_point)
             << ", copy=" << std::boolalpha << IsCopied()
-            << ", proxy=" << std::boolalpha << IsProxyMethod();
+            << ", proxy=" << std::boolalpha << IsProxyMethod()
+            << ", is_native=" << std::boolalpha << IsNative();
       }
     }
   }
@@ -672,7 +673,7 @@ const OatQuickMethodHeader* ArtMethod::GetOatQuickMethodHeader(uintptr_t pc) {
   }
   const void* oat_entry_point = oat_method.GetQuickCode();
   if (oat_entry_point == nullptr || class_linker->IsQuickGenericJniStub(oat_entry_point)) {
-    if (!IsNative()) {
+    if (kIsDebugBuild && !IsNative()) {
       PrintFileToLog("/proc/self/maps", LogSeverity::FATAL_WITHOUT_ABORT);
       MemMap::DumpMaps(LOG_STREAM(FATAL_WITHOUT_ABORT), /* terse= */ true);
       LOG(FATAL)
