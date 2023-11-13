@@ -96,6 +96,15 @@ bool DexFile::DisableWrite() const {
   return container_->DisableWrite();
 }
 
+template <typename T>
+ALWAYS_INLINE const T* DexFile::GetSection(const uint32_t* offset, DexFileContainer* container) {
+  size_t size = container->End() - begin_;
+  if (size < sizeof(Header)) {
+    return nullptr;  // Invalid dex file.
+  }
+  return reinterpret_cast<const T*>(begin_ + *offset);
+}
+
 DexFile::DexFile(const uint8_t* base,
                  const std::string& location,
                  uint32_t location_checksum,
@@ -107,12 +116,12 @@ DexFile::DexFile(const uint8_t* base,
       location_(location),
       location_checksum_(location_checksum),
       header_(reinterpret_cast<const Header*>(base)),
-      string_ids_(reinterpret_cast<const StringId*>(base + header_->string_ids_off_)),
-      type_ids_(reinterpret_cast<const TypeId*>(base + header_->type_ids_off_)),
-      field_ids_(reinterpret_cast<const FieldId*>(base + header_->field_ids_off_)),
-      method_ids_(reinterpret_cast<const MethodId*>(base + header_->method_ids_off_)),
-      proto_ids_(reinterpret_cast<const ProtoId*>(base + header_->proto_ids_off_)),
-      class_defs_(reinterpret_cast<const ClassDef*>(base + header_->class_defs_off_)),
+      string_ids_(GetSection<StringId>(&header_->string_ids_off_, container.get())),
+      type_ids_(GetSection<TypeId>(&header_->type_ids_off_, container.get())),
+      field_ids_(GetSection<FieldId>(&header_->field_ids_off_, container.get())),
+      method_ids_(GetSection<MethodId>(&header_->method_ids_off_, container.get())),
+      proto_ids_(GetSection<ProtoId>(&header_->proto_ids_off_, container.get())),
+      class_defs_(GetSection<ClassDef>(&header_->class_defs_off_, container.get())),
       method_handles_(nullptr),
       num_method_handles_(0),
       call_site_ids_(nullptr),
@@ -189,13 +198,14 @@ bool DexFile::CheckMagicAndVersion(std::string* error_msg) const {
 }
 
 ArrayRef<const uint8_t> DexFile::GetDataRange(const uint8_t* data, DexFileContainer* container) {
+  // NB: This function must survive random data to pass fuzzing and testing.
   CHECK(container != nullptr);
   CHECK_GE(data, container->Begin());
   CHECK_LE(data, container->End());
   size_t size = container->End() - data;
   if (size >= sizeof(StandardDexFile::Header) && StandardDexFile::IsMagicValid(data)) {
     auto header = reinterpret_cast<const DexFile::Header*>(data);
-    size = std::min<size_t>(size, header->file_size_);
+    size = header->file_size_;
   } else if (size >= sizeof(CompactDexFile::Header) && CompactDexFile::IsMagicValid(data)) {
     auto header = reinterpret_cast<const CompactDexFile::Header*>(data);
     // TODO: Remove. This is a hack. See comment of the Data method.
@@ -204,13 +214,11 @@ ArrayRef<const uint8_t> DexFile::GetDataRange(const uint8_t* data, DexFileContai
       return separate_data;
     }
     // Shared compact dex data is located at the end after all dex files.
-    data += header->data_off_;
+    data += std::min<size_t>(header->data_off_, size);
     size = header->data_size_;
-  } else {
-    // Invalid dex file header.
-    // Some tests create dex files using just zeroed memory.
   }
-  return {data, size};
+  // The returned range is guaranteed to be in bounds of the container memory.
+  return {data, std::min<size_t>(size, container->End() - data)};
 }
 
 void DexFile::InitializeSectionsFromMapList() {
@@ -665,14 +673,15 @@ EncodedArrayValueIterator::EncodedArrayValueIterator(const DexFile& dex_file,
       type_(kByte) {
   array_size_ = (ptr_ != nullptr) ? DecodeUnsignedLeb128(&ptr_) : 0;
   if (array_size_ > 0) {
-    Next();
+    bool ok [[maybe_unused]] = MaybeNext();
   }
 }
 
-void EncodedArrayValueIterator::Next() {
+bool EncodedArrayValueIterator::MaybeNext() {
   pos_++;
   if (pos_ >= array_size_) {
-    return;
+    type_ = kEndOfInput;
+    return true;
   }
   uint8_t value_type = *ptr_++;
   uint8_t value_arg = value_type >> kEncodedValueArgShift;
@@ -718,17 +727,16 @@ void EncodedArrayValueIterator::Next() {
   case kEnum:
   case kArray:
   case kAnnotation:
-    UNIMPLEMENTED(FATAL) << ": type " << type_;
-    UNREACHABLE();
+    return false;
   case kNull:
     jval_.l = nullptr;
     width = 0;
     break;
   default:
-    LOG(FATAL) << "Unreached";
-    UNREACHABLE();
+    return false;
   }
   ptr_ += width;
+  return true;
 }
 
 namespace dex {

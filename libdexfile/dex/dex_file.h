@@ -57,8 +57,9 @@ enum class Domain : char;
 // Owns the physical storage that backs one or more DexFiles (that is, it can be shared).
 // It frees the storage (e.g. closes file) when all DexFiles that use it are all closed.
 //
-// The Begin()-End() range represents exactly one DexFile (with the size from the header).
-// In particular, the End() does NOT include any shared cdex data from other DexFiles.
+// The memory range must include all data used by the DexFiles including any shared data.
+//
+// It might also include surrounding non-dex data (e.g. it might represent vdex file).
 class DexFileContainer {
  public:
   DexFileContainer() { }
@@ -845,9 +846,7 @@ class DexFile {
     return DataBegin() <= addr && addr < DataBegin() + DataSize();
   }
 
-  DexFileContainer* GetContainer() const {
-    return container_.get();
-  }
+  const std::shared_ptr<DexFileContainer>& GetContainer() const { return container_; }
 
   IterationRange<ClassIterator> GetClasses() const;
 
@@ -869,6 +868,9 @@ class DexFile {
           // Shared since several dex files may be stored in the same logical container.
           std::shared_ptr<DexFileContainer> container,
           bool is_compact_dex);
+
+  template <typename T>
+  const T* GetSection(const uint32_t* offset, DexFileContainer* container);
 
   // Top-level initializer that calls other Init methods.
   bool Init(std::string* error_msg);
@@ -992,7 +994,12 @@ class EncodedArrayValueIterator {
 
   bool HasNext() const { return pos_ < array_size_; }
 
-  void Next();
+  WARN_UNUSED bool MaybeNext();
+
+  ALWAYS_INLINE void Next() {
+    bool ok = MaybeNext();
+    DCHECK(ok) << "Unknown type: " << GetValueType();
+  }
 
   enum ValueType {
     kByte         = 0x00,
@@ -1013,6 +1020,7 @@ class EncodedArrayValueIterator {
     kAnnotation   = 0x1d,
     kNull         = 0x1e,
     kBoolean      = 0x1f,
+    kEndOfInput   = 0xff,
   };
 
   ValueType GetValueType() const { return type_; }
