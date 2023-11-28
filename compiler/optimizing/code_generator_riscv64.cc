@@ -1252,16 +1252,34 @@ void InstructionCodeGeneratorRISCV64::GenerateReferenceLoadTwoRegisters(
   }
 }
 
-void InstructionCodeGeneratorRISCV64::GenerateGcRootFieldLoad(HInstruction* instruction,
-                                                              Location root,
-                                                              XRegister obj,
-                                                              uint32_t offset,
-                                                              ReadBarrierOption read_barrier_option,
-                                                              Riscv64Label* label_low) {
+SlowPathCodeRISCV64* CodeGeneratorRISCV64::AddGcRootBakerBarrierBarrierSlowPath(
+    HInstruction* instruction, Location root, Location temp) {
+  SlowPathCodeRISCV64* slow_path =
+      new (GetScopedAllocator()) ReadBarrierMarkSlowPathRISCV64(instruction, root, temp);
+  AddSlowPath(slow_path);
+  return slow_path;
+}
+
+void CodeGeneratorRISCV64::EmitBakerReadBarierMarkingCheck(
+    SlowPathCodeRISCV64* slow_path, Location root, Location temp) {
+  const int32_t entry_point_offset = ReadBarrierMarkEntrypointOffset(root);
+  // Loading the entrypoint does not require a load acquire since it is only changed when
+  // threads are suspended or running a checkpoint.
+  __ Loadd(temp.AsRegister<XRegister>(), TR, entry_point_offset);
+  __ Bnez(temp.AsRegister<XRegister>(), slow_path->GetEntryLabel());
+  __ Bind(slow_path->GetExitLabel());
+}
+
+void CodeGeneratorRISCV64::GenerateGcRootFieldLoad(HInstruction* instruction,
+                                                   Location root,
+                                                   XRegister obj,
+                                                   uint32_t offset,
+                                                   ReadBarrierOption read_barrier_option,
+                                                   Riscv64Label* label_low) {
   DCHECK_IMPLIES(label_low != nullptr, offset == kLinkTimeOffsetPlaceholderLow) << offset;
   XRegister root_reg = root.AsRegister<XRegister>();
   if (read_barrier_option == kWithReadBarrier) {
-    DCHECK(codegen_->EmitReadBarrier());
+    DCHECK(EmitReadBarrier());
     if (kUseBakerReadBarrier) {
       // Note that we do not actually check the value of `GetIsGcMarking()`
       // to decide whether to mark the loaded GC root or not.  Instead, we
@@ -1293,19 +1311,11 @@ void InstructionCodeGeneratorRISCV64::GenerateGcRootFieldLoad(HInstruction* inst
                     "art::mirror::CompressedReference<mirror::Object> and int32_t "
                     "have different sizes.");
 
-      // Slow path marking the GC root `root`.
-      XRegister tmp = RA;  // Use RA as temp. It is clobbered in the slow path anyway.
+      // Use RA as temp. It is clobbered in the slow path anyway.
+      Location temp = Location::RegisterLocation(RA);
       SlowPathCodeRISCV64* slow_path =
-          new (codegen_->GetScopedAllocator()) ReadBarrierMarkSlowPathRISCV64(
-              instruction, root, Location::RegisterLocation(tmp));
-      codegen_->AddSlowPath(slow_path);
-
-      const int32_t entry_point_offset = ReadBarrierMarkEntrypointOffset(root);
-      // Loading the entrypoint does not require a load acquire since it is only changed when
-      // threads are suspended or running a checkpoint.
-      __ Loadd(tmp, TR, entry_point_offset);
-      __ Bnez(tmp, slow_path->GetEntryLabel());
-      __ Bind(slow_path->GetExitLabel());
+          AddGcRootBakerBarrierBarrierSlowPath(instruction, root, temp);
+      EmitBakerReadBarierMarkingCheck(slow_path, root, temp);
     } else {
       // GC root loaded through a slow path for read barriers other
       // than Baker's.
@@ -1315,7 +1325,7 @@ void InstructionCodeGeneratorRISCV64::GenerateGcRootFieldLoad(HInstruction* inst
       }
       __ AddConst32(root_reg, obj, offset);
       // /* mirror::Object* */ root = root->Read()
-      codegen_->GenerateReadBarrierForRootSlow(instruction, root, root);
+      GenerateReadBarrierForRootSlow(instruction, root, root);
     }
   } else {
     // Plain GC root load with no read barrier.
@@ -1915,6 +1925,22 @@ void CodeGeneratorRISCV64::GenerateReferenceLoadWithBakerReadBarrier(HInstructio
   __ Loadd(tmp, TR, entry_point_offset);
   __ Bnez(tmp, slow_path->GetEntryLabel());
   __ Bind(slow_path->GetExitLabel());
+}
+
+SlowPathCodeRISCV64* CodeGeneratorRISCV64::AddReadBarrierSlowPath(HInstruction* instruction,
+                                                                  Location out,
+                                                                  Location ref,
+                                                                  Location obj,
+                                                                  uint32_t offset,
+                                                                  Location index) {
+  UNUSED(instruction);
+  UNUSED(out);
+  UNUSED(ref);
+  UNUSED(obj);
+  UNUSED(offset);
+  UNUSED(index);
+  LOG(FATAL) << "Unimplemented";
+  UNREACHABLE();
 }
 
 void CodeGeneratorRISCV64::GenerateReadBarrierSlow(HInstruction* instruction,
@@ -3679,6 +3705,15 @@ void LocationsBuilderRISCV64::VisitIf(HIf* instruction) {
   LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
   if (IsBooleanValueOrMaterializedCondition(instruction->InputAt(0))) {
     locations->SetInAt(0, Location::RequiresRegister());
+    if (GetGraph()->IsCompilingBaseline() && !Runtime::Current()->IsAotCompiler()) {
+      DCHECK(instruction->InputAt(0)->IsCondition());
+      ProfilingInfo* info = GetGraph()->GetProfilingInfo();
+      DCHECK(info != nullptr);
+      BranchCache* cache = info->GetBranchCache(instruction->GetDexPc());
+      if (cache != nullptr) {
+        locations->AddTemp(Location::RequiresRegister());
+      }
+    }
   }
 }
 
@@ -3691,6 +3726,41 @@ void InstructionCodeGeneratorRISCV64::VisitIf(HIf* instruction) {
   Riscv64Label* false_target = codegen_->GoesToNextBlock(instruction->GetBlock(), false_successor)
       ? nullptr
       : codegen_->GetLabelOf(false_successor);
+  if (IsBooleanValueOrMaterializedCondition(instruction->InputAt(0))) {
+    if (GetGraph()->IsCompilingBaseline() && !Runtime::Current()->IsAotCompiler()) {
+      DCHECK(instruction->InputAt(0)->IsCondition());
+      ProfilingInfo* info = GetGraph()->GetProfilingInfo();
+      DCHECK(info != nullptr);
+      BranchCache* cache = info->GetBranchCache(instruction->GetDexPc());
+      // Currently, not all If branches are profiled.
+      if (cache != nullptr) {
+        uint64_t address =
+            reinterpret_cast64<uint64_t>(cache) + BranchCache::FalseOffset().Int32Value();
+        static_assert(
+            BranchCache::TrueOffset().Int32Value() - BranchCache::FalseOffset().Int32Value() == 2,
+            "Unexpected offsets for BranchCache");
+        Riscv64Label done;
+        XRegister condition = instruction->GetLocations()->InAt(0).AsRegister<XRegister>();
+        XRegister temp = instruction->GetLocations()->GetTemp(0).AsRegister<XRegister>();
+        __ LoadConst64(temp, address);
+        __ Sh1Add(temp, condition, temp);
+        ScratchRegisterScope srs(GetAssembler());
+        XRegister counter = srs.AllocateXRegister();
+        __ Loadhu(counter, temp, 0);
+        __ Addi(counter, counter, 1);
+        {
+          ScratchRegisterScope srs2(GetAssembler());
+          XRegister overflow = srs2.AllocateXRegister();
+          __ Srli(overflow, counter, 16);
+          __ Bnez(overflow, &done);
+        }
+        __ Storeh(counter, temp, 0);
+        __ Bind(&done);
+      }
+    }
+  } else {
+    DCHECK(!GetGraph()->IsCompilingBaseline()) << instruction->InputAt(0)->DebugName();
+  }
   GenerateTestAndBranch(instruction, /* condition_input_index= */ 0, true_target, false_target);
 }
 
@@ -4197,11 +4267,11 @@ void InstructionCodeGeneratorRISCV64::VisitLoadClass(HLoadClass* instruction)
       DCHECK(!instruction->MustGenerateClinitCheck());
       // /* GcRoot<mirror::Class> */ out = current_method->declaring_class_
       XRegister current_method = locations->InAt(0).AsRegister<XRegister>();
-      GenerateGcRootFieldLoad(instruction,
-                              out_loc,
-                              current_method,
-                              ArtMethod::DeclaringClassOffset().Int32Value(),
-                              read_barrier_option);
+      codegen_->GenerateGcRootFieldLoad(instruction,
+                                        out_loc,
+                                        current_method,
+                                        ArtMethod::DeclaringClassOffset().Int32Value(),
+                                        read_barrier_option);
       break;
     }
     case HLoadClass::LoadKind::kBootImageLinkTimePcRelative: {
@@ -4231,12 +4301,12 @@ void InstructionCodeGeneratorRISCV64::VisitLoadClass(HLoadClass* instruction)
       codegen_->EmitPcRelativeAuipcPlaceholder(bss_info_high, out);
       CodeGeneratorRISCV64::PcRelativePatchInfo* info_low = codegen_->NewTypeBssEntryPatch(
           instruction, bss_info_high);
-      GenerateGcRootFieldLoad(instruction,
-                              out_loc,
-                              out,
-                              /* offset= */ kLinkTimeOffsetPlaceholderLow,
-                              read_barrier_option,
-                              &info_low->label);
+      codegen_->GenerateGcRootFieldLoad(instruction,
+                                        out_loc,
+                                        out,
+                                        /* offset= */ kLinkTimeOffsetPlaceholderLow,
+                                        read_barrier_option,
+                                        &info_low->label);
       generate_null_check = true;
       break;
     }
@@ -4251,7 +4321,8 @@ void InstructionCodeGeneratorRISCV64::VisitLoadClass(HLoadClass* instruction)
       __ Loadwu(out, codegen_->DeduplicateJitClassLiteral(instruction->GetDexFile(),
                                                           instruction->GetTypeIndex(),
                                                           instruction->GetClass()));
-      GenerateGcRootFieldLoad(instruction, out_loc, out, /* offset= */ 0, read_barrier_option);
+      codegen_->GenerateGcRootFieldLoad(
+          instruction, out_loc, out, /* offset= */ 0, read_barrier_option);
       break;
     case HLoadClass::LoadKind::kRuntimeCall:
     case HLoadClass::LoadKind::kInvalid:
@@ -4361,12 +4432,12 @@ void InstructionCodeGeneratorRISCV64::VisitLoadString(HLoadString* instruction)
       codegen_->EmitPcRelativeAuipcPlaceholder(info_high, out);
       CodeGeneratorRISCV64::PcRelativePatchInfo* info_low = codegen_->NewStringBssEntryPatch(
           instruction->GetDexFile(), instruction->GetStringIndex(), info_high);
-      GenerateGcRootFieldLoad(instruction,
-                              out_loc,
-                              out,
-                              /* offset= */ kLinkTimeOffsetPlaceholderLow,
-                              codegen_->GetCompilerReadBarrierOption(),
-                              &info_low->label);
+      codegen_->GenerateGcRootFieldLoad(instruction,
+                                        out_loc,
+                                        out,
+                                        /* offset= */ kLinkTimeOffsetPlaceholderLow,
+                                        codegen_->GetCompilerReadBarrierOption(),
+                                        &info_low->label);
       SlowPathCodeRISCV64* slow_path =
           new (codegen_->GetScopedAllocator()) LoadStringSlowPathRISCV64(instruction);
       codegen_->AddSlowPath(slow_path);
@@ -4385,7 +4456,7 @@ void InstructionCodeGeneratorRISCV64::VisitLoadString(HLoadString* instruction)
           out,
           codegen_->DeduplicateJitStringLiteral(
               instruction->GetDexFile(), instruction->GetStringIndex(), instruction->GetString()));
-      GenerateGcRootFieldLoad(
+      codegen_->GenerateGcRootFieldLoad(
           instruction, out_loc, out, 0, codegen_->GetCompilerReadBarrierOption());
       return;
     default:
@@ -5144,7 +5215,7 @@ void InstructionCodeGeneratorRISCV64::VisitTypeConversion(HTypeConversion* instr
     XRegister src = locations->InAt(0).AsRegister<XRegister>();
     switch (result_type) {
       case DataType::Type::kUint8:
-        __ Andi(dst, src, 0xFF);
+        __ ZextB(dst, src);
         break;
       case DataType::Type::kInt8:
         __ SextB(dst, src);

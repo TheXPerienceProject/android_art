@@ -846,12 +846,12 @@ bool HDeadCodeElimination::RemoveEmptyIfs() {
         MaybeRecordStat(stats_, MethodCompilationStat::kRemovedDeadInstruction);
       }
     }
+
+    did_opt = true;
   }
 
   if (did_opt) {
-    graph_->ClearLoopInformation();
-    graph_->ClearDominanceInformation();
-    graph_->BuildDominatorTree();
+    graph_->RecomputeDominatorTree();
   }
 
   return did_opt;
@@ -917,6 +917,16 @@ void HDeadCodeElimination::RemoveDeadInstructions() {
       if (inst->IsDeadAndRemovable()) {
         block->RemoveInstruction(inst);
         MaybeRecordStat(stats_, MethodCompilationStat::kRemovedDeadInstruction);
+      }
+    }
+
+    // Same for Phis.
+    for (HBackwardInstructionIterator phi_it(block->GetPhis()); !phi_it.Done(); phi_it.Advance()) {
+      DCHECK(phi_it.Current()->IsPhi());
+      HPhi* phi = phi_it.Current()->AsPhi();
+      if (phi->IsDeadAndRemovable()) {
+        block->RemovePhi(phi);
+        MaybeRecordStat(stats_, MethodCompilationStat::kRemovedDeadPhi);
       }
     }
   }
