@@ -97,6 +97,7 @@ ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandle_asType;
 ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandle_invokeExact;
 ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandles_lookup;
 ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandles_Lookup_findConstructor;
+ArtMethod* WellKnownClasses::java_lang_invoke_MethodType_makeImpl;
 ArtMethod* WellKnownClasses::java_lang_ref_FinalizerReference_add;
 ArtMethod* WellKnownClasses::java_lang_ref_ReferenceQueue_add;
 ArtMethod* WellKnownClasses::java_lang_reflect_InvocationTargetException_init;
@@ -154,6 +155,7 @@ ArtField* WellKnownClasses::java_nio_ByteBuffer_hb;
 ArtField* WellKnownClasses::java_nio_ByteBuffer_isReadOnly;
 ArtField* WellKnownClasses::java_nio_ByteBuffer_offset;
 ArtField* WellKnownClasses::java_util_Collections_EMPTY_LIST;
+ArtField* WellKnownClasses::java_util_concurrent_ThreadLocalRandom_seeder;
 ArtField* WellKnownClasses::jdk_internal_math_FloatingDecimal_BinaryToASCIIBuffer_buffer;
 ArtField* WellKnownClasses::jdk_internal_math_FloatingDecimal_ExceptionalBinaryToASCIIBuffer_image;
 ArtField* WellKnownClasses::libcore_util_EmptyArray_STACK_TRACE_ELEMENT;
@@ -414,7 +416,7 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
   java_lang_Long_value = CacheValueInBoxField(
       class_linker, self, "Ljava/lang/Long;", "J");
 
-  StackHandleScope<42u> hs(self);
+  StackHandleScope<44u> hs(self);
   Handle<mirror::Class> d_s_bdcl =
       hs.NewHandle(FindSystemClass(class_linker, self, "Ldalvik/system/BaseDexClassLoader;"));
   Handle<mirror::Class> d_s_dlcl =
@@ -465,6 +467,8 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
       hs.NewHandle(FindSystemClass(class_linker, self, "Ljava/lang/invoke/MethodHandles;"));
   Handle<mirror::Class> j_l_i_MethodHandles_Lookup =
       hs.NewHandle(FindSystemClass(class_linker, self, "Ljava/lang/invoke/MethodHandles$Lookup;"));
+  Handle<mirror::Class> j_l_i_MethodType =
+      hs.NewHandle(FindSystemClass(class_linker, self, "Ljava/lang/invoke/MethodType;"));
   Handle<mirror::Class> j_l_r_fr =
       hs.NewHandle(FindSystemClass(class_linker, self, "Ljava/lang/ref/FinalizerReference;"));
   Handle<mirror::Class> j_l_r_rq =
@@ -481,6 +485,8 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
       hs.NewHandle(FindSystemClass(class_linker, self, "Ljava/nio/DirectByteBuffer;"));
   Handle<mirror::Class> j_u_c =
       hs.NewHandle(FindSystemClass(class_linker, self, "Ljava/util/Collections;"));
+  Handle<mirror::Class> j_u_c_tlr =
+      hs.NewHandle(FindSystemClass(class_linker, self, "Ljava/util/concurrent/ThreadLocalRandom;"));
   Handle<mirror::Class> j_u_f_c =
       hs.NewHandle(FindSystemClass(class_linker, self, "Ljava/util/function/Consumer;"));
   Handle<mirror::Class> j_i_m_fd =
@@ -634,6 +640,12 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
       /*is_static=*/ false,
       "findConstructor",
       "(Ljava/lang/Class;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;",
+      pointer_size);
+  java_lang_invoke_MethodType_makeImpl = CacheMethod(
+      j_l_i_MethodType.Get(),
+      /* is_static=*/ true,
+      "makeImpl",
+      "(Ljava/lang/Class;[Ljava/lang/Class;Z)Ljava/lang/invoke/MethodType;",
       pointer_size);
 
   java_lang_ref_FinalizerReference_add = CacheMethod(
@@ -797,6 +809,9 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
   java_util_Collections_EMPTY_LIST =
       CacheField(j_u_c.Get(), /*is_static=*/ true, "EMPTY_LIST", "Ljava/util/List;");
 
+  java_util_concurrent_ThreadLocalRandom_seeder = CacheField(
+      j_u_c_tlr.Get(), /*is_static=*/ true, "seeder", "Ljava/util/concurrent/atomic/AtomicLong;");
+
   jdk_internal_math_FloatingDecimal_BinaryToASCIIBuffer_buffer =
       CacheField(j_i_m_fd_btab.Get(), /*is_static=*/ false, "buffer", "[C");
   jdk_internal_math_FloatingDecimal_ExceptionalBinaryToASCIIBuffer_image = CacheField(
@@ -903,6 +918,7 @@ void WellKnownClasses::Clear() {
   java_lang_invoke_MethodHandle_invokeExact = nullptr;
   java_lang_invoke_MethodHandles_lookup = nullptr;
   java_lang_invoke_MethodHandles_Lookup_findConstructor = nullptr;
+  java_lang_invoke_MethodType_makeImpl = nullptr;
   java_lang_ref_FinalizerReference_add = nullptr;
   java_lang_ref_ReferenceQueue_add = nullptr;
   java_lang_reflect_InvocationTargetException_init = nullptr;
@@ -953,6 +969,7 @@ void WellKnownClasses::Clear() {
   java_nio_ByteBuffer_isReadOnly = nullptr;
   java_nio_ByteBuffer_offset = nullptr;
   java_util_Collections_EMPTY_LIST = nullptr;
+  java_util_concurrent_ThreadLocalRandom_seeder = nullptr;
   jdk_internal_math_FloatingDecimal_BinaryToASCIIBuffer_buffer = nullptr;
   jdk_internal_math_FloatingDecimal_ExceptionalBinaryToASCIIBuffer_image = nullptr;
   libcore_util_EmptyArray_STACK_TRACE_ELEMENT = nullptr;

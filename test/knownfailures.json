@@ -439,6 +439,7 @@
     },
     {
         "test_patterns": [
+            ".*const-method-type.*",
             ".*invoke-custom.*",
             ".*invoke-polymorphic.*",
             ".*methodhandle.*",
@@ -1546,15 +1547,9 @@
     },
     {
         "tests": ["1921-suspend-native-recursive-monitor"],
-        "description": ["Change of behavior when used with JDK 17."],
+        "description": ["RawMonitorEnter behaves differently on ART and RI since JDK17"],
         "bug": "b/242985234",
         "variant": "jvm"
-    },
-    {
-        "tests": ["2246-trace-stream"],
-        "env_vars": {"ART_TEST_DEBUG_GC": "true"},
-        "bug": "b/264844668",
-        "description": ["Test timing out on debug gc."]
     },
     {
         "tests": ["845-data-image", "846-multidex-data-image"],

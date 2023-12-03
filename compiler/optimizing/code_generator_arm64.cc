@@ -685,9 +685,9 @@ class ReadBarrierForHeapReferenceSlowPathARM64 : public SlowPathCodeARM64 {
         DCHECK(instruction_->IsInvoke()) << instruction_->DebugName();
         DCHECK(instruction_->GetLocations()->Intrinsified());
         HInvoke* invoke = instruction_->AsInvoke();
-        DCHECK(IsUnsafeGetObject(invoke) ||
+        DCHECK(IsUnsafeGetReference(invoke) ||
                IsVarHandleGet(invoke) ||
-               IsUnsafeCASObject(invoke) ||
+               IsUnsafeCASReference(invoke) ||
                IsVarHandleCASFamily(invoke)) << invoke->GetIntrinsic();
         DCHECK_EQ(offset_, 0u);
         DCHECK(index_.IsRegister());
@@ -6738,7 +6738,7 @@ void CodeGeneratorARM64::GenerateGcRootFieldLoad(
   MaybeGenerateMarkingRegisterCheck(/* code= */ __LINE__);
 }
 
-void CodeGeneratorARM64::GenerateIntrinsicCasMoveWithBakerReadBarrier(
+void CodeGeneratorARM64::GenerateIntrinsicMoveWithBakerReadBarrier(
     vixl::aarch64::Register marked_old_value,
     vixl::aarch64::Register old_value) {
   DCHECK(EmitBakerReadBarrier());

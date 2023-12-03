@@ -56,13 +56,6 @@ constexpr uint32_t kLinkTimeOffsetPlaceholderLow = 0x678;
 // We switch to the table-based method starting with 6 entries.
 static constexpr uint32_t kPackedSwitchCompareJumpThreshold = 6;
 
-// FCLASS returns a 10-bit classification mask with the two highest bits marking NaNs
-// (signaling and quiet). To detect a NaN, we can compare (either BGE or BGEU, the sign
-// bit is always clear) the result with the `kFClassNaNMinValue`.
-static_assert(kSignalingNaN == 0x100);
-static_assert(kQuietNaN == 0x200);
-static constexpr int32_t kFClassNaNMinValue = 0x100;
-
 static constexpr XRegister kCoreCalleeSaves[] = {
     // S1(TR) is excluded as the ART thread register.
     S0, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, RA
@@ -793,7 +786,7 @@ inline void InstructionCodeGeneratorRISCV64::FpBinOp(
   }
 }
 
-inline void InstructionCodeGeneratorRISCV64::FAdd(
+void InstructionCodeGeneratorRISCV64::FAdd(
     FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type) {
   FpBinOp<FRegister, &Riscv64Assembler::FAddS, &Riscv64Assembler::FAddD>(rd, rs1, rs2, type);
 }
@@ -872,7 +865,7 @@ inline void InstructionCodeGeneratorRISCV64::FMvX(
   FpUnOp<XRegister, &Riscv64Assembler::FMvXW, &Riscv64Assembler::FMvXD>(rd, rs1, type);
 }
 
-inline void InstructionCodeGeneratorRISCV64::FClass(
+void InstructionCodeGeneratorRISCV64::FClass(
     XRegister rd, FRegister rs1, DataType::Type type) {
   FpUnOp<XRegister, &Riscv64Assembler::FClassS, &Riscv64Assembler::FClassD>(rd, rs1, type);
 }
@@ -6588,6 +6581,38 @@ void CodeGeneratorRISCV64::LoadBootImageRelRoEntry(XRegister dest, uint32_t boot
   EmitPcRelativeLwuPlaceholder(info_low, dest, dest);
 }
 
+void CodeGeneratorRISCV64::LoadBootImageAddress(XRegister dest, uint32_t boot_image_reference) {
+  if (GetCompilerOptions().IsBootImage()) {
+    PcRelativePatchInfo* info_high = NewBootImageIntrinsicPatch(boot_image_reference);
+    EmitPcRelativeAuipcPlaceholder(info_high, dest);
+    PcRelativePatchInfo* info_low = NewBootImageIntrinsicPatch(boot_image_reference, info_high);
+    EmitPcRelativeAddiPlaceholder(info_low, dest, dest);
+  } else if (GetCompilerOptions().GetCompilePic()) {
+    LoadBootImageRelRoEntry(dest, boot_image_reference);
+  } else {
+    DCHECK(GetCompilerOptions().IsJitCompiler());
+    gc::Heap* heap = Runtime::Current()->GetHeap();
+    DCHECK(!heap->GetBootImageSpaces().empty());
+    const uint8_t* address = heap->GetBootImageSpaces()[0]->Begin() + boot_image_reference;
+    // Note: Boot image is in the low 4GiB (usually the low 2GiB, requiring just LUI+ADDI).
+    // We may not have an available scratch register for `LoadConst64()` but it never
+    // emits better code than `Li()` for 32-bit unsigned constants anyway.
+    __ Li(dest, reinterpret_cast32<uint32_t>(address));
+  }
+}
+
+void CodeGeneratorRISCV64::LoadIntrinsicDeclaringClass(XRegister dest, HInvoke* invoke) {
+  DCHECK_NE(invoke->GetIntrinsic(), Intrinsics::kNone);
+  if (GetCompilerOptions().IsBootImage()) {
+    MethodReference target_method = invoke->GetResolvedMethodReference();
+    dex::TypeIndex type_idx = target_method.dex_file->GetMethodId(target_method.index).class_idx_;
+    LoadTypeForBootImageIntrinsic(dest, TypeReference(target_method.dex_file, type_idx));
+  } else {
+    uint32_t boot_image_offset = GetBootImageOffsetOfIntrinsicDeclaringClass(invoke);
+    LoadBootImageAddress(dest, boot_image_offset);
+  }
+}
+
 void CodeGeneratorRISCV64::LoadClassRootForIntrinsic(XRegister dest, ClassRoot class_root) {
   if (GetCompilerOptions().IsBootImage()) {
     ScopedObjectAccess soa(Thread::Current());
@@ -6596,15 +6621,7 @@ void CodeGeneratorRISCV64::LoadClassRootForIntrinsic(XRegister dest, ClassRoot c
     LoadTypeForBootImageIntrinsic(dest, target_type);
   } else {
     uint32_t boot_image_offset = GetBootImageOffset(class_root);
-    if (GetCompilerOptions().GetCompilePic()) {
-      LoadBootImageRelRoEntry(dest, boot_image_offset);
-    } else {
-      DCHECK(GetCompilerOptions().IsJitCompiler());
-      gc::Heap* heap = Runtime::Current()->GetHeap();
-      DCHECK(!heap->GetBootImageSpaces().empty());
-      const uint8_t* address = heap->GetBootImageSpaces()[0]->Begin() + boot_image_offset;
-      __ Loadwu(dest, DeduplicateBootImageAddressLiteral(reinterpret_cast<uintptr_t>(address)));
-    }
+    LoadBootImageAddress(dest, boot_image_offset);
   }
 }
 
