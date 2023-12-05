@@ -2234,7 +2234,10 @@ bool ClassLinker::AddImageSpace(gc::space::ImageSpace* space,
     // boot image method optimization. We need to disable it before doing
     // ResetCounter below, as counters of shared memory method always hold the
     // "hot" value.
-    if (runtime->GetJITOptions()->GetProfileSaverOptions().GetProfileBootClassPath()) {
+    // For debuggable runtimes we don't use AOT code, so don't use shared memory
+    // optimization so the methods can be JITed better.
+    if (runtime->GetJITOptions()->GetProfileSaverOptions().GetProfileBootClassPath() ||
+        runtime->IsJavaDebuggable()) {
       header.VisitPackedArtMethods([&](ArtMethod& method) REQUIRES_SHARED(Locks::mutator_lock_) {
         method.ClearMemorySharedMethod();
       }, space->Begin(), image_pointer_size_);
