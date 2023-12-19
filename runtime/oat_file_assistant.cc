@@ -310,7 +310,7 @@ int OatFileAssistant::GetDexOptNeeded(CompilerFilter::Filter target_compiler_fil
                                       bool profile_changed,
                                       bool downgrade) {
   OatFileInfo& info = GetBestInfo();
-  if (info.CheckDisableCompactDexExperiment()) {  // TODO(b/256664509): Clean this up.
+  if (info.CheckDisableCompactDex()) {  // TODO(b/256664509): Clean this up.
     return kDex2OatFromScratch;
   }
   DexOptNeeded dexopt_needed = info.GetDexOptNeeded(
@@ -331,7 +331,7 @@ bool OatFileAssistant::GetDexOptNeeded(CompilerFilter::Filter target_compiler_fi
                                        DexOptTrigger dexopt_trigger,
                                        /*out*/ DexOptStatus* dexopt_status) {
   OatFileInfo& info = GetBestInfo();
-  if (info.CheckDisableCompactDexExperiment()) {  // TODO(b/256664509): Clean this up.
+  if (info.CheckDisableCompactDex()) {  // TODO(b/256664509): Clean this up.
     dexopt_status->location_ = kLocationNoneOrError;
     return true;
   }
@@ -1275,14 +1275,10 @@ std::unique_ptr<OatFile> OatFileAssistant::OatFileInfo::ReleaseFileForUse() {
   return std::unique_ptr<OatFile>();
 }
 
-// Check if we should reject vdex containing cdex code as part of the
-// disable_cdex experiment.
+// Check if we should reject vdex containing cdex code as part of the cdex
+// deprecation.
 // TODO(b/256664509): Clean this up.
-bool OatFileAssistant::OatFileInfo::CheckDisableCompactDexExperiment() {
-  std::string ph_disable_compact_dex = android::base::GetProperty(kPhDisableCompactDex, "false");
-  if (ph_disable_compact_dex != "true") {
-    return false;
-  }
+bool OatFileAssistant::OatFileInfo::CheckDisableCompactDex() {
   const OatFile* oat_file = GetFile();
   if (oat_file == nullptr) {
     return false;
