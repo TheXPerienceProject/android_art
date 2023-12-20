@@ -1061,6 +1061,7 @@ class ImageSpace::Loader {
         Thread* const self = Thread::Current();
         static constexpr size_t kMinBlocks = 2u;
         const bool use_parallel = pool != nullptr && image_header.GetBlockCount() >= kMinBlocks;
+        bool failed_decompression = false;
         for (const ImageHeader::Block& block : image_header.GetBlocks(temp_map.Begin())) {
           auto function = [&](Thread*) {
             const uint64_t start2 = NanoTime();
@@ -1068,8 +1069,11 @@ class ImageSpace::Loader {
             bool result = block.Decompress(/*out_ptr=*/map.Begin(),
                                            /*in_ptr=*/temp_map.Begin(),
                                            error_msg);
-            if (!result && error_msg != nullptr) {
-              *error_msg = "Failed to decompress image block " + *error_msg;
+            if (!result) {
+              failed_decompression = true;
+              if (error_msg != nullptr) {
+                *error_msg = "Failed to decompress image block " + *error_msg;
+              }
             }
             VLOG(image) << "Decompress block " << block.GetDataSize() << " -> "
                         << block.GetImageSize() << " in " << PrettyDuration(NanoTime() - start2);
@@ -1091,6 +1095,10 @@ class ImageSpace::Loader {
         VLOG(image) << "Decompressing image took " << PrettyDuration(time) << " ("
                     << PrettySize(static_cast<uint64_t>(map.Size()) * MsToNs(1000) / (time + 1))
                     << "/s)";
+        if (failed_decompression) {
+          DCHECK(error_msg == nullptr || !error_msg->empty());
+          return MemMap::Invalid();
+        }
       } else {
         DCHECK(!allow_direct_mapping);
         // We do not allow direct mapping for boot image extensions compiled to a memfd.
@@ -3773,8 +3781,8 @@ void ImageSpace::ReleaseMetadata() {
   const ImageSection& metadata = GetImageHeader().GetMetadataSection();
   VLOG(image) << "Releasing " << metadata.Size() << " image metadata bytes";
   // Avoid using ZeroAndReleasePages since the zero fill might not be word atomic.
-  uint8_t* const page_begin = AlignUp(Begin() + metadata.Offset(), kPageSize);
-  uint8_t* const page_end = AlignDown(Begin() + metadata.End(), kPageSize);
+  uint8_t* const page_begin = AlignUp(Begin() + metadata.Offset(), gPageSize);
+  uint8_t* const page_end = AlignDown(Begin() + metadata.End(), gPageSize);
   if (page_begin < page_end) {
     CHECK_NE(madvise(page_begin, page_end - page_begin, MADV_DONTNEED), -1) << "madvise failed";
   }

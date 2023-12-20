@@ -56,8 +56,6 @@ static_assert(kQuietNaN == 0x200);
 static constexpr int32_t kFClassNaNMinValue = 0x100;
 
 #define UNIMPLEMENTED_INTRINSIC_LIST_RISCV64(V) \
-  V(IntegerReverse)                             \
-  V(LongReverse)                                \
   V(SystemArrayCopyByte)                        \
   V(SystemArrayCopyChar)                        \
   V(SystemArrayCopyInt)                         \
@@ -97,25 +95,6 @@ static constexpr int32_t kFClassNaNMinValue = 0x100;
   V(StringBuilderAppendDouble)                  \
   V(StringBuilderLength)                        \
   V(StringBuilderToString)                      \
-  V(UnsafeCASInt)                               \
-  V(UnsafeCASLong)                              \
-  V(UnsafeCASObject)                            \
-  V(UnsafeGetAndAddInt)                         \
-  V(UnsafeGetAndAddLong)                        \
-  V(UnsafeGetAndSetInt)                         \
-  V(UnsafeGetAndSetLong)                        \
-  V(UnsafeGetAndSetObject)                      \
-  V(JdkUnsafeCASInt)                            \
-  V(JdkUnsafeCASLong)                           \
-  V(JdkUnsafeCASObject)                         \
-  V(JdkUnsafeCompareAndSetInt)                  \
-  V(JdkUnsafeCompareAndSetLong)                 \
-  V(JdkUnsafeCompareAndSetReference)            \
-  V(JdkUnsafeGetAndAddInt)                      \
-  V(JdkUnsafeGetAndAddLong)                     \
-  V(JdkUnsafeGetAndSetInt)                      \
-  V(JdkUnsafeGetAndSetLong)                     \
-  V(JdkUnsafeGetAndSetReference)                \
   V(ReferenceGetReferent)                       \
   V(ReferenceRefersTo)                          \
   V(ThreadInterrupted)                          \
