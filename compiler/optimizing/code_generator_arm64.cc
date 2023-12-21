@@ -3866,7 +3866,9 @@ void InstructionCodeGeneratorARM64::VisitIf(HIf* if_instr) {
     false_target = nullptr;
   }
   if (IsBooleanValueOrMaterializedCondition(if_instr->InputAt(0))) {
-    if (GetGraph()->IsCompilingBaseline() && !Runtime::Current()->IsAotCompiler()) {
+    if (GetGraph()->IsCompilingBaseline() &&
+        codegen_->GetCompilerOptions().ProfileBranches() &&
+        !Runtime::Current()->IsAotCompiler()) {
       DCHECK(if_instr->InputAt(0)->IsCondition());
       ProfilingInfo* info = GetGraph()->GetProfilingInfo();
       DCHECK(info != nullptr);
@@ -3891,8 +3893,6 @@ void InstructionCodeGeneratorARM64::VisitIf(HIf* if_instr) {
         __ Bind(&done);
       }
     }
-  } else {
-    DCHECK(!GetGraph()->IsCompilingBaseline()) << if_instr->InputAt(0)->DebugName();
   }
   GenerateTestAndBranch(if_instr, /* condition_input_index= */ 0, true_target, false_target);
 }
@@ -4636,9 +4636,9 @@ void CodeGeneratorARM64::MaybeGenerateInlineCacheCheck(HInstruction* instruction
     uint64_t address = reinterpret_cast64<uint64_t>(cache);
     vixl::aarch64::Label done;
     __ Mov(x8, address);
-    __ Ldr(x9, MemOperand(x8, InlineCache::ClassesOffset().Int32Value()));
+    __ Ldr(w9, MemOperand(x8, InlineCache::ClassesOffset().Int32Value()));
     // Fast path for a monomorphic cache.
-    __ Cmp(klass, x9);
+    __ Cmp(klass.W(), w9);
     __ B(eq, &done);
     InvokeRuntime(kQuickUpdateInlineCache, instruction, instruction->GetDexPc());
     __ Bind(&done);

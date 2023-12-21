@@ -1577,7 +1577,7 @@ void IntrinsicCodeGeneratorARM64::VisitUnsafeCASObject(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorARM64::VisitJdkUnsafeCASInt(HInvoke* invoke) {
-  // `jdk.internal.misc.Unsafe.compareAndSwapLong` has compare-and-set semantics (see javadoc).
+  // `jdk.internal.misc.Unsafe.compareAndSwapInt` has compare-and-set semantics (see javadoc).
   VisitJdkUnsafeCompareAndSetInt(invoke);
 }
 void IntrinsicCodeGeneratorARM64::VisitJdkUnsafeCASLong(HInvoke* invoke) {
@@ -1724,7 +1724,7 @@ static void GenUnsafeGetAndUpdate(HInvoke* invoke,
   Register out = RegisterFrom(locations->Out(), type);            // Result.
   Register base = WRegisterFrom(locations->InAt(1));              // Object pointer.
   Register offset = XRegisterFrom(locations->InAt(2));            // Long offset.
-  Register arg = RegisterFrom(locations->InAt(3), type);          // Expected.
+  Register arg = RegisterFrom(locations->InAt(3), type);          // New value or addend.
   Register tmp_ptr = XRegisterFrom(locations->GetTemp(0));        // Pointer to actual memory.
 
   // This needs to be before the temp registers, as MarkGCCard also uses VIXL temps.

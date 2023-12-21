@@ -626,7 +626,7 @@ bool OatFileBase::Setup(int zip_fd,
   // however not aligned to kElfSegmentAlignment. While technically this isn't
   // correct as per requirement in the ELF header, it has to be supported for
   // now. See also the comment at ImageHeader::RelocateImageReferences.
-  if (!IsAlignedParam(bss_begin_, kPageSize) ||
+  if (!IsAlignedParam(bss_begin_, gPageSize) ||
       !IsAlignedParam(bss_methods_, static_cast<size_t>(pointer_size)) ||
       !IsAlignedParam(bss_roots_, static_cast<size_t>(pointer_size)) ||
       !IsAligned<alignof(GcRoot<mirror::Object>)>(bss_end_)) {
@@ -2280,12 +2280,12 @@ std::unique_ptr<const DexFile> OatDexFile::OpenDexFile(std::string* error_msg) c
   static constexpr bool kVerify = false;
   static constexpr bool kVerifyChecksum = false;
   ArtDexFileLoader dex_file_loader(dex_file_container_, dex_file_location_);
-  return dex_file_loader.Open(dex_file_pointer_ - dex_file_container_->Begin(),
-                              dex_file_location_checksum_,
-                              this,
-                              kVerify,
-                              kVerifyChecksum,
-                              error_msg);
+  return dex_file_loader.OpenOne(dex_file_pointer_ - dex_file_container_->Begin(),
+                                 dex_file_location_checksum_,
+                                 this,
+                                 kVerify,
+                                 kVerifyChecksum,
+                                 error_msg);
 }
 
 uint32_t OatDexFile::GetOatClassOffset(uint16_t class_def_index) const {

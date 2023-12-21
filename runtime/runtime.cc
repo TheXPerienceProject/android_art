@@ -1495,7 +1495,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   using Opt = RuntimeArgumentMap;
   Opt runtime_options(std::move(runtime_options_in));
   ScopedTrace trace(__FUNCTION__);
-  CHECK_EQ(static_cast<size_t>(sysconf(_SC_PAGE_SIZE)), kPageSize);
+  CHECK_EQ(static_cast<size_t>(sysconf(_SC_PAGE_SIZE)), gPageSize);
 
   // Reload all the flags value (from system properties and device configs).
   ReloadAllFlags(__FUNCTION__);
@@ -1525,11 +1525,11 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   // Note: Don't request an error message. That will lead to a maps dump in the case of failure,
   //       leading to logspam.
   {
-    constexpr uintptr_t kSentinelAddr =
-        RoundDown(static_cast<uintptr_t>(Context::kBadGprBase), kPageSize);
+    const uintptr_t sentinel_addr =
+        RoundDown(static_cast<uintptr_t>(Context::kBadGprBase), gPageSize);
     protected_fault_page_ = MemMap::MapAnonymous("Sentinel fault page",
-                                                 reinterpret_cast<uint8_t*>(kSentinelAddr),
-                                                 kPageSize,
+                                                 reinterpret_cast<uint8_t*>(sentinel_addr),
+                                                 gPageSize,
                                                  PROT_NONE,
                                                  /*low_4gb=*/ true,
                                                  /*reuse=*/ false,
@@ -1537,7 +1537,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
                                                  /*error_msg=*/ nullptr);
     if (!protected_fault_page_.IsValid()) {
       LOG(WARNING) << "Could not reserve sentinel fault page";
-    } else if (reinterpret_cast<uintptr_t>(protected_fault_page_.Begin()) != kSentinelAddr) {
+    } else if (reinterpret_cast<uintptr_t>(protected_fault_page_.Begin()) != sentinel_addr) {
       LOG(WARNING) << "Could not reserve sentinel fault page at the right address.";
       protected_fault_page_.Reset();
     }
@@ -3351,10 +3351,12 @@ RuntimeCallbacks* Runtime::GetRuntimeCallbacks() {
   return callbacks_.get();
 }
 
-// Used to patch boot image method entry point to interpreter bridge.
-class UpdateEntryPointsClassVisitor : public ClassVisitor {
+// Used to update boot image to not use AOT code. This is used when transitioning the runtime to
+// java debuggable. This visitor re-initializes the entry points without using AOT code. This also
+// disables shared hotness counters so the necessary methods can be JITed more efficiently.
+class DeoptimizeBootImageClassVisitor : public ClassVisitor {
  public:
-  explicit UpdateEntryPointsClassVisitor(instrumentation::Instrumentation* instrumentation)
+  explicit DeoptimizeBootImageClassVisitor(instrumentation::Instrumentation* instrumentation)
       : instrumentation_(instrumentation) {}
 
   bool operator()(ObjPtr<mirror::Class> klass) override REQUIRES(Locks::mutator_lock_) {
@@ -3388,6 +3390,9 @@ class UpdateEntryPointsClassVisitor : public ClassVisitor {
         m.ClearPreCompiled();
         instrumentation_->InitializeMethodsCode(&m, /*aot_code=*/ nullptr);
       }
+
+      // Clear MemorySharedAccessFlags so the boot class methods can be JITed better.
+      m.ClearMemorySharedMethod();
     }
     return true;
   }
@@ -3408,7 +3413,7 @@ void Runtime::DeoptimizeBootImage() {
   // If we've already started and we are setting this runtime to debuggable,
   // we patch entry points of methods in boot image to interpreter bridge, as
   // boot image code may be AOT compiled as not debuggable.
-  UpdateEntryPointsClassVisitor visitor(GetInstrumentation());
+  DeoptimizeBootImageClassVisitor visitor(GetInstrumentation());
   GetClassLinker()->VisitClasses(&visitor);
   jit::Jit* jit = GetJit();
   if (jit != nullptr) {
@@ -3517,8 +3522,8 @@ void Runtime::MadviseFileForRange(size_t madvise_size_limit_bytes,
                                   const uint8_t* map_begin,
                                   const uint8_t* map_end,
                                   const std::string& file_name) {
-  map_begin = AlignDown(map_begin, kPageSize);
-  map_size_bytes = RoundUp(map_size_bytes, kPageSize);
+  map_begin = AlignDown(map_begin, gPageSize);
+  map_size_bytes = RoundUp(map_size_bytes, gPageSize);
 #ifdef ART_TARGET_ANDROID
   // Short-circuit the madvise optimization for background processes. This
   // avoids IO and memory contention with foreground processes, particularly
