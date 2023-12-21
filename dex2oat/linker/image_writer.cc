@@ -76,6 +76,7 @@
 #include "mirror/object_array-inl.h"
 #include "mirror/string-inl.h"
 #include "mirror/var_handle.h"
+#include "nterp_helpers-inl.h"
 #include "nterp_helpers.h"
 #include "oat.h"
 #include "oat_file.h"
@@ -188,7 +189,8 @@ class ReferenceFieldVisitor {
   void operator()(ObjPtr<mirror::Object> obj, MemberOffset offset, bool is_static) const
       REQUIRES_SHARED(Locks::mutator_lock_) {
     CHECK(!obj->IsObjectArray());
-    mirror::Object* field_obj = obj->GetFieldObject<mirror::Object>(offset);
+    mirror::Object* field_obj =
+        obj->GetFieldObject<mirror::Object, kVerifyNone, kWithoutReadBarrier>(offset);
     // Skip fields that contain null.
     if (field_obj == nullptr) {
       return;
@@ -205,7 +207,9 @@ class ReferenceFieldVisitor {
       CHECK(obj->IsClass());
       field = ArtField::FindStaticFieldWithOffset(obj->AsClass(), offset.Uint32Value());
     } else {
-      field = ArtField::FindInstanceFieldWithOffset(obj->GetClass(), offset.Uint32Value());
+      field = ArtField::
+          FindInstanceFieldWithOffset</*kExactOffset*/ true, kVerifyNone, kWithoutReadBarrier>(
+              obj->GetClass<kVerifyNone, kWithoutReadBarrier>(), offset.Uint32Value());
     }
     DCHECK(field != nullptr);
     visit_func_(*field_obj, *field);
@@ -283,9 +287,15 @@ HashMap<mirror::Object*, uint32_t> MatchDirtyObjectPaths(
       return nullptr;
     }
 
-    ObjPtr<mirror::Object> next_obj = array->GetWithoutChecks(idx);
+    ObjPtr<mirror::Object> next_obj =
+        array->GetWithoutChecks<kVerifyNone, kWithoutReadBarrier>(idx);
+    if (next_obj == nullptr) {
+      return nullptr;
+    }
+
     std::string temp;
-    if (next_obj == nullptr || next_obj->GetClass()->GetDescriptor(&temp) != ref_info.type) {
+    if (next_obj->GetClass<kVerifyNone, kWithoutReadBarrier>()->GetDescriptor(&temp) !=
+        ref_info.type) {
       return nullptr;
     }
     return next_obj.Ptr();
@@ -3459,6 +3469,7 @@ void ImageWriter::CopyAndFixupMethod(ArtMethod* orig,
 
   CopyAndFixupReference(copy->GetDeclaringClassAddressWithoutBarrier(),
                         orig->GetDeclaringClassUnchecked<kWithoutReadBarrier>());
+  ResetNterpFastPathFlags(copy, orig);
 
   // OatWriter replaces the code_ with an offset value. Here we re-adjust to a pointer relative to
   // oat_begin_
@@ -3750,6 +3761,33 @@ void ImageWriter::CopyAndFixupPointer(
 template <typename ValueType>
 void ImageWriter::CopyAndFixupPointer(void* object, MemberOffset offset, ValueType src_value) {
   return CopyAndFixupPointer(object, offset, src_value, target_ptr_size_);
+}
+
+void ImageWriter::ResetNterpFastPathFlags(ArtMethod* copy, ArtMethod* orig) {
+  DCHECK(copy != nullptr);
+  DCHECK(orig != nullptr);
+  if (orig->IsRuntimeMethod() || orig->IsProxyMethod()) {
+    return;  // !IsRuntimeMethod() and !IsProxyMethod() for GetShortyView()
+  }
+
+  // Clear old nterp fast path flags.
+  if (copy->HasNterpEntryPointFastPathFlag()) {
+    copy->ClearNterpEntryPointFastPathFlag();  // Flag has other uses, clear it conditionally.
+  }
+  copy->ClearNterpInvokeFastPathFlag();
+
+  // Check if nterp fast paths available on target ISA.
+  std::string_view shorty = orig->GetShortyView();  // Use orig, copy's class not yet ready.
+  uint32_t new_nterp_flags =
+      GetNterpFastPathFlags(shorty, copy->GetAccessFlags(), compiler_options_.GetInstructionSet());
+
+  // Set new nterp fast path flags, if approporiate.
+  if ((new_nterp_flags & kAccNterpEntryPointFastPathFlag) != 0) {
+    copy->SetNterpEntryPointFastPathFlag();
+  }
+  if ((new_nterp_flags & kAccNterpInvokeFastPathFlag) != 0) {
+    copy->SetNterpInvokeFastPathFlag();
+  }
 }
 
 }  // namespace linker

@@ -422,20 +422,6 @@ class JitCodeCache {
                               Thread* self)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  void VisitRoots(RootVisitor* visitor);
-
-  // Return whether `method` is being compiled with the given mode.
-  bool IsMethodBeingCompiled(ArtMethod* method, CompilationKind compilation_kind)
-      REQUIRES(Locks::jit_lock_);
-
-  // Remove `method` from the list of methods meing compiled with the given mode.
-  void RemoveMethodBeingCompiled(ArtMethod* method, CompilationKind compilation_kind)
-      REQUIRES(Locks::jit_lock_);
-
-  // Record that `method` is being compiled with the given mode.
-  void AddMethodBeingCompiled(ArtMethod* method, CompilationKind compilation_kind)
-      REQUIRES(Locks::jit_lock_);
-
  private:
   JitCodeCache();
 
@@ -496,12 +482,7 @@ class JitCodeCache {
   // Return whether the code cache's capacity is at its maximum.
   bool IsAtMaxCapacity() const REQUIRES(Locks::jit_lock_);
 
-  // Return whether we should do a full collection given the current state of the cache.
-  bool ShouldDoFullCollection()
-      REQUIRES(Locks::jit_lock_)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void DoCollection(Thread* self, bool collect_profiling_info)
+  void DoCollection(Thread* self)
       REQUIRES(!Locks::jit_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -525,9 +506,6 @@ class JitCodeCache {
   void WaitUntilInlineCacheAccessible(Thread* self)
       REQUIRES(!Locks::jit_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Return whether `method` is being compiled in any mode.
-  bool IsMethodBeingCompiled(ArtMethod* method) REQUIRES(Locks::jit_lock_);
 
   class JniStubKey;
   class JniStubData;
@@ -574,11 +552,6 @@ class JitCodeCache {
   // ProfilingInfo objects we have allocated.
   SafeMap<ArtMethod*, ProfilingInfo*> profiling_infos_ GUARDED_BY(Locks::jit_lock_);
 
-  // Methods we are currently compiling, one set for each kind of compilation.
-  std::set<ArtMethod*> current_optimized_compilations_ GUARDED_BY(Locks::jit_lock_);
-  std::set<ArtMethod*> current_osr_compilations_ GUARDED_BY(Locks::jit_lock_);
-  std::set<ArtMethod*> current_baseline_compilations_ GUARDED_BY(Locks::jit_lock_);
-
   // Methods that the zygote has compiled and can be shared across processes
   // forked from the zygote.
   ZygoteMap zygote_map_;
@@ -593,9 +566,6 @@ class JitCodeCache {
 
   // Bitmap for collecting code and data.
   std::unique_ptr<CodeCacheBitmap> live_bitmap_;
-
-  // Whether the last collection round increased the code cache.
-  bool last_collection_increased_code_cache_ GUARDED_BY(Locks::jit_lock_);
 
   // Whether we can do garbage collection. Not 'const' as tests may override this.
   bool garbage_collect_code_ GUARDED_BY(Locks::jit_lock_);
@@ -623,7 +593,6 @@ class JitCodeCache {
   // Histograms for keeping track of profiling info statistics.
   Histogram<uint64_t> histogram_profiling_info_memory_use_ GUARDED_BY(Locks::jit_lock_);
 
-  friend class art::JitJniStubTestHelper;
   friend class ScopedCodeCacheWrite;
   friend class MarkCodeClosure;
 
