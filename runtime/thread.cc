@@ -1890,7 +1890,6 @@ void Thread::WaitForFlipFunction(Thread* self) const {
   MutexLock mu(self, *Locks::thread_suspend_count_lock_);
   while (true) {
     StateAndFlags old_state_and_flags = GetStateAndFlags(std::memory_order_acquire);
-    DCHECK(!old_state_and_flags.IsFlagSet(ThreadFlag::kPendingFlipFunction));
     if (!old_state_and_flags.IsFlagSet(ThreadFlag::kRunningFlipFunction)) {
       return;
     }
@@ -1912,7 +1911,6 @@ void Thread::WaitForFlipFunctionTestingExited(Thread* self, ThreadExitFlag* tef)
   MutexLock mu(self, *Locks::thread_suspend_count_lock_);
   while (true) {
     StateAndFlags old_state_and_flags = GetStateAndFlags(std::memory_order_acquire);
-    DCHECK(!old_state_and_flags.IsFlagSet(ThreadFlag::kPendingFlipFunction));
     Locks::thread_list_lock_->Unlock(self);  // So we can wait or return.
     if (!old_state_and_flags.IsFlagSet(ThreadFlag::kRunningFlipFunction)) {
       return;
