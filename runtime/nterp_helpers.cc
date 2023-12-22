@@ -273,7 +273,12 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
         case Instruction::CONST_WIDE:
         case Instruction::CONST_WIDE_HIGH16:
         case Instruction::SPUT:
+        case Instruction::SPUT_WIDE:
         case Instruction::SPUT_OBJECT:
+        case Instruction::SPUT_BOOLEAN:
+        case Instruction::SPUT_BYTE:
+        case Instruction::SPUT_CHAR:
+        case Instruction::SPUT_SHORT:
         case Instruction::INVOKE_VIRTUAL:
         case Instruction::INVOKE_SUPER:
         case Instruction::INVOKE_DIRECT:
@@ -388,6 +393,10 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
         case Instruction::SHL_INT_LIT8:
         case Instruction::SHR_INT_LIT8:
         case Instruction::USHR_INT_LIT8:
+        case Instruction::INVOKE_POLYMORPHIC:
+        case Instruction::INVOKE_POLYMORPHIC_RANGE:
+        case Instruction::INVOKE_CUSTOM:
+        case Instruction::INVOKE_CUSTOM_RANGE:
           continue;
         default:
           return false;

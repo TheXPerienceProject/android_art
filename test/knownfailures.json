@@ -577,7 +577,8 @@
             "817-hiddenapi",
             "944-transform-classloaders",
             "999-redefine-hiddenapi",
-            "2038-hiddenapi-jvmti-ext"
+            "2038-hiddenapi-jvmti-ext",
+            "2270-mh-internal-hiddenapi-use"
         ],
         "description": [
             "Tests that use custom class loaders or other features not supported ",
@@ -1242,7 +1243,8 @@
                   "2246-trace-stream",
                   "2254-class-value-before-and-after-u",
                   "2261-badcleaner-in-systemcleaner",
-                  "2263-method-trace-jit"],
+                  "2263-method-trace-jit",
+                  "2270-mh-internal-hiddenapi-use"],
         "variant": "jvm",
         "description": ["Doesn't run on RI."]
     },

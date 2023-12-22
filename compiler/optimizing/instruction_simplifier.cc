@@ -115,7 +115,6 @@ class InstructionSimplifierVisitor final : public HGraphDelegateVisitor {
   void VisitInvoke(HInvoke* invoke) override;
   void VisitDeoptimize(HDeoptimize* deoptimize) override;
   void VisitVecMul(HVecMul* instruction) override;
-  void VisitPredicatedInstanceFieldGet(HPredicatedInstanceFieldGet* instruction) override;
   void SimplifyBoxUnbox(HInvoke* instruction, ArtField* field, DataType::Type type);
   void SimplifySystemArrayCopy(HInvoke* invoke);
   void SimplifyStringEquals(HInvoke* invoke);
@@ -950,67 +949,6 @@ static HInstruction* AllowInMinMax(IfCondition cmp,
   return nullptr;
 }
 
-// TODO This should really be done by LSE itself since there is significantly
-// more information available there.
-void InstructionSimplifierVisitor::VisitPredicatedInstanceFieldGet(
-    HPredicatedInstanceFieldGet* pred_get) {
-  HInstruction* target = pred_get->GetTarget();
-  HInstruction* default_val = pred_get->GetDefaultValue();
-  if (target->IsNullConstant()) {
-    pred_get->ReplaceWith(default_val);
-    pred_get->GetBlock()->RemoveInstruction(pred_get);
-    RecordSimplification();
-    return;
-  } else if (!target->CanBeNull()) {
-    HInstruction* replace_with = new (GetGraph()->GetAllocator())
-        HInstanceFieldGet(pred_get->GetTarget(),
-                          pred_get->GetFieldInfo().GetField(),
-                          pred_get->GetFieldType(),
-                          pred_get->GetFieldOffset(),
-                          pred_get->IsVolatile(),
-                          pred_get->GetFieldInfo().GetFieldIndex(),
-                          pred_get->GetFieldInfo().GetDeclaringClassDefIndex(),
-                          pred_get->GetFieldInfo().GetDexFile(),
-                          pred_get->GetDexPc());
-    if (pred_get->GetType() == DataType::Type::kReference) {
-      replace_with->SetReferenceTypeInfoIfValid(pred_get->GetReferenceTypeInfo());
-    }
-    pred_get->GetBlock()->InsertInstructionBefore(replace_with, pred_get);
-    pred_get->ReplaceWith(replace_with);
-    pred_get->GetBlock()->RemoveInstruction(pred_get);
-    RecordSimplification();
-    return;
-  }
-  if (!target->IsPhi() || !default_val->IsPhi() || default_val->GetBlock() != target->GetBlock()) {
-    // The iget has already been reduced. We know the target or the phi
-    // selection will differ between the target and default.
-    return;
-  }
-  DCHECK_EQ(default_val->InputCount(), target->InputCount());
-  // In the same block both phis only one non-null we can remove the phi from default_val.
-  HInstruction* single_value = nullptr;
-  auto inputs = target->GetInputs();
-  for (auto [input, idx] : ZipCount(MakeIterationRange(inputs))) {
-    if (input->CanBeNull()) {
-      if (single_value == nullptr) {
-        single_value = default_val->InputAt(idx);
-      } else if (single_value != default_val->InputAt(idx) &&
-                 !single_value->Equals(default_val->InputAt(idx))) {
-        // Multiple values are associated with potential nulls, can't combine.
-        return;
-      }
-    }
-  }
-  DCHECK(single_value != nullptr) << "All target values are non-null but the phi as a whole still"
-                                  << " can be null? This should not be possible." << std::endl
-                                  << pred_get->DumpWithArgs();
-  if (single_value->StrictlyDominates(pred_get)) {
-    // Combine all the maybe null values into one.
-    pred_get->ReplaceInput(single_value, 0);
-    RecordSimplification();
-  }
-}
-
 void InstructionSimplifierVisitor::VisitSelect(HSelect* select) {
   HInstruction* replace_with = nullptr;
   HInstruction* condition = select->GetCondition();
@@ -1233,9 +1171,6 @@ static bool CanRemoveRedundantAnd(HConstant* and_right,
 static inline bool TryReplaceFieldOrArrayGetType(HInstruction* maybe_get, DataType::Type new_type) {
   if (maybe_get->IsInstanceFieldGet()) {
     maybe_get->AsInstanceFieldGet()->SetType(new_type);
-    return true;
-  } else if (maybe_get->IsPredicatedInstanceFieldGet()) {
-    maybe_get->AsPredicatedInstanceFieldGet()->SetType(new_type);
     return true;
   } else if (maybe_get->IsStaticFieldGet()) {
     maybe_get->AsStaticFieldGet()->SetType(new_type);
@@ -2471,7 +2406,9 @@ static bool IsArrayLengthOf(HInstruction* potential_length, HInstruction* potent
 
 void InstructionSimplifierVisitor::SimplifySystemArrayCopy(HInvoke* instruction) {
   HInstruction* source = instruction->InputAt(0);
+  HInstruction* source_pos = instruction->InputAt(1);
   HInstruction* destination = instruction->InputAt(2);
+  HInstruction* destination_pos = instruction->InputAt(3);
   HInstruction* count = instruction->InputAt(4);
   SystemArrayCopyOptimizations optimizations(instruction);
   if (CanEnsureNotNullAt(source, instruction)) {
@@ -2482,6 +2419,10 @@ void InstructionSimplifierVisitor::SimplifySystemArrayCopy(HInvoke* instruction)
   }
   if (destination == source) {
     optimizations.SetDestinationIsSource();
+  }
+
+  if (source_pos == destination_pos) {
+    optimizations.SetSourcePositionIsDestinationPosition();
   }
 
   if (IsArrayLengthOf(count, source)) {

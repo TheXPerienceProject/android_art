@@ -39,7 +39,6 @@
 #include "barrier.h"
 #include "base/arena_allocator.h"
 #include "base/arena_bit_vector.h"
-#include "base/membarrier.h"
 #include "base/casts.h"
 #include "base/file_utils.h"
 #include "base/hash_map.h"
@@ -47,6 +46,7 @@
 #include "base/leb128.h"
 #include "base/logging.h"
 #include "base/mem_map_arena_pool.h"
+#include "base/membarrier.h"
 #include "base/metrics/metrics.h"
 #include "base/mutex-inl.h"
 #include "base/os.h"
@@ -135,6 +135,7 @@
 #include "mirror/var_handle.h"
 #include "native/dalvik_system_DexFile.h"
 #include "nativehelper/scoped_local_ref.h"
+#include "nterp_helpers-inl.h"
 #include "nterp_helpers.h"
 #include "oat.h"
 #include "oat_file-inl.h"
@@ -2404,6 +2405,10 @@ void ClassLinker::VisitClassRoots(RootVisitor* visitor, VisitRootFlags flags) {
   // enabling tracing requires the mutator lock, there are no race conditions here.
   const bool tracing_enabled = Trace::IsTracingEnabled();
   Thread* const self = Thread::Current();
+  // For simplicity, if there is JIT activity, we'll trace all class loaders.
+  // This prevents class unloading while a method is being compiled or is going
+  // to be compiled.
+  const bool is_jit_active = jit::Jit::IsActive(self);
   WriterMutexLock mu(self, *Locks::classlinker_classes_lock_);
   if (gUseReadBarrier) {
     // We do not track new roots for CC.
@@ -2434,8 +2439,8 @@ void ClassLinker::VisitClassRoots(RootVisitor* visitor, VisitRootFlags flags) {
     // these objects.
     UnbufferedRootVisitor root_visitor(visitor, RootInfo(kRootStickyClass));
     boot_class_table_->VisitRoots(root_visitor);
-    // If tracing is enabled, then mark all the class loaders to prevent unloading.
-    if ((flags & kVisitRootFlagClassLoader) != 0 || tracing_enabled) {
+    // If tracing is enabled or jit is active, mark all the class loaders to prevent unloading.
+    if ((flags & kVisitRootFlagClassLoader) != 0 || tracing_enabled || is_jit_active) {
       for (const ClassLoaderData& data : class_loaders_) {
         GcRoot<mirror::Object> root(GcRoot<mirror::Object>(self->DecodeJObject(data.weak_root)));
         root.VisitRoot(visitor, RootInfo(kRootVMInternal));
@@ -3997,26 +4002,7 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
     }
   }
 
-  // Check for nterp invoke fast-path based on shorty.
-  bool all_parameters_are_reference = true;
-  bool all_parameters_are_reference_or_int = true;
-  for (size_t i = 1; i < shorty.length(); ++i) {
-    if (shorty[i] != 'L') {
-      all_parameters_are_reference = false;
-      if (shorty[i] == 'F' || shorty[i] == 'D' || shorty[i] == 'J') {
-        all_parameters_are_reference_or_int = false;
-        break;
-      }
-    }
-  }
-  if (all_parameters_are_reference_or_int && shorty[0] != 'F' && shorty[0] != 'D') {
-    // FIXME(riscv64): This optimization is currently disabled because riscv64 needs
-    // to distinguish between zero-extended references and sign-extended integers.
-    // We should enable this for references only and fix corresponding nterp fast-paths.
-    if (kRuntimeISA != InstructionSet::kRiscv64) {
-      access_flags |= kAccNterpInvokeFastPathFlag;
-    }
-  }
+  access_flags |= GetNterpFastPathFlags(shorty, access_flags, kRuntimeISA);
 
   if (UNLIKELY((access_flags & kAccNative) != 0u)) {
     // Check if the native method is annotated with @FastNative or @CriticalNative.
@@ -4039,10 +4025,6 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
     DCHECK_EQ(method.GetCodeItemOffset(), 0u);
     dst->SetDataPtrSize(nullptr, image_pointer_size_);  // Single implementation not set yet.
   } else {
-    // Check for nterp entry fast-path based on shorty.
-    if (all_parameters_are_reference) {
-      access_flags |= kAccNterpEntryPointFastPathFlag;
-    }
     const dex::ClassDef& class_def = dex_file.GetClassDef(klass->GetDexClassDefIndex());
     if (annotations::MethodIsNeverCompile(dex_file, class_def, dex_method_idx)) {
       access_flags |= kAccCompileDontBother;

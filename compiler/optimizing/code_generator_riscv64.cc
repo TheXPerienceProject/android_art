@@ -265,12 +265,20 @@ void LocationsBuilderRISCV64::HandleInvoke(HInvoke* instruction) {
 
 class CompileOptimizedSlowPathRISCV64 : public SlowPathCodeRISCV64 {
  public:
-  CompileOptimizedSlowPathRISCV64() : SlowPathCodeRISCV64(/*instruction=*/ nullptr) {}
+  CompileOptimizedSlowPathRISCV64(XRegister base, int32_t imm12)
+      : SlowPathCodeRISCV64(/*instruction=*/ nullptr),
+        base_(base),
+        imm12_(imm12) {}
 
   void EmitNativeCode(CodeGenerator* codegen) override {
     uint32_t entrypoint_offset =
         GetThreadOffset<kRiscv64PointerSize>(kQuickCompileOptimized).Int32Value();
     __ Bind(GetEntryLabel());
+    CodeGeneratorRISCV64* riscv64_codegen = down_cast<CodeGeneratorRISCV64*>(codegen);
+    riscv64::ScratchRegisterScope srs(riscv64_codegen->GetAssembler());
+    XRegister counter = srs.AllocateXRegister();
+    __ LoadConst32(counter, ProfilingInfo::GetOptimizeThreshold());
+    __ Sh(counter, base_, imm12_);
     __ Loadd(RA, TR, entrypoint_offset);
     // Note: we don't record the call here (and therefore don't generate a stack
     // map), as the entrypoint should never be suspended.
@@ -281,6 +289,9 @@ class CompileOptimizedSlowPathRISCV64 : public SlowPathCodeRISCV64 {
   const char* GetDescription() const override { return "CompileOptimizedSlowPath"; }
 
  private:
+  XRegister base_;
+  const int32_t imm12_;
+
   DISALLOW_COPY_AND_ASSIGN(CompileOptimizedSlowPathRISCV64);
 };
 
@@ -684,7 +695,6 @@ class ReadBarrierMarkSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     DCHECK(locations->CanCall());
     DCHECK(!locations->GetLiveRegisters()->ContainsCoreRegister(ref_reg)) << ref_reg;
     DCHECK(instruction_->IsInstanceFieldGet() ||
-           instruction_->IsPredicatedInstanceFieldGet() ||
            instruction_->IsStaticFieldGet() ||
            instruction_->IsArrayGet() ||
            instruction_->IsArraySet() ||
@@ -2464,13 +2474,6 @@ void InstructionCodeGeneratorRISCV64::HandleFieldSet(HInstruction* instruction,
   DCHECK_IMPLIES(value.IsConstant(), IsZeroBitPattern(value.GetConstant()));
   bool is_volatile = field_info.IsVolatile();
   uint32_t offset = field_info.GetFieldOffset().Uint32Value();
-  bool is_predicated =
-      instruction->IsInstanceFieldSet() && instruction->AsInstanceFieldSet()->GetIsPredicatedSet();
-
-  Riscv64Label pred_is_null;
-  if (is_predicated) {
-    __ Beqz(obj, &pred_is_null);
-  }
 
   if (is_volatile) {
     StoreSeqCst(value, obj, offset, type, instruction);
@@ -2486,18 +2489,10 @@ void InstructionCodeGeneratorRISCV64::HandleFieldSet(HInstruction* instruction,
         value.AsRegister<XRegister>(),
         value_can_be_null && write_barrier_kind == WriteBarrierKind::kEmitWithNullCheck);
   }
-
-  if (is_predicated) {
-    __ Bind(&pred_is_null);
-  }
 }
 
 void LocationsBuilderRISCV64::HandleFieldGet(HInstruction* instruction) {
-  DCHECK(instruction->IsInstanceFieldGet() ||
-         instruction->IsStaticFieldGet() ||
-         instruction->IsPredicatedInstanceFieldGet());
-
-  bool is_predicated = instruction->IsPredicatedInstanceFieldGet();
+  DCHECK(instruction->IsInstanceFieldGet() || instruction->IsStaticFieldGet());
 
   bool object_field_get_with_read_barrier =
       (instruction->GetType() == DataType::Type::kReference) && codegen_->EmitReadBarrier();
@@ -2508,27 +2503,17 @@ void LocationsBuilderRISCV64::HandleFieldGet(HInstruction* instruction) {
           : LocationSummary::kNoCall);
 
   // Input for object receiver.
-  locations->SetInAt(is_predicated ? 1 : 0, Location::RequiresRegister());
+  locations->SetInAt(0, Location::RequiresRegister());
 
   if (DataType::IsFloatingPointType(instruction->GetType())) {
-    if (is_predicated) {
-      locations->SetInAt(0, Location::RequiresFpuRegister());
-      locations->SetOut(Location::SameAsFirstInput());
-    } else {
-      locations->SetOut(Location::RequiresFpuRegister());
-    }
+    locations->SetOut(Location::RequiresFpuRegister());
   } else {
-    if (is_predicated) {
-      locations->SetInAt(0, Location::RequiresRegister());
-      locations->SetOut(Location::SameAsFirstInput());
-    } else {
-      // The output overlaps for an object field get when read barriers
-      // are enabled: we do not want the load to overwrite the object's
-      // location, as we need it to emit the read barrier.
-      locations->SetOut(Location::RequiresRegister(),
-                        object_field_get_with_read_barrier ? Location::kOutputOverlap
-                                                           : Location::kNoOutputOverlap);
-    }
+    // The output overlaps for an object field get when read barriers
+    // are enabled: we do not want the load to overwrite the object's
+    // location, as we need it to emit the read barrier.
+    locations->SetOut(
+        Location::RequiresRegister(),
+        object_field_get_with_read_barrier ? Location::kOutputOverlap : Location::kNoOutputOverlap);
   }
 
   if (object_field_get_with_read_barrier && kUseBakerReadBarrier) {
@@ -2541,13 +2526,11 @@ void LocationsBuilderRISCV64::HandleFieldGet(HInstruction* instruction) {
 
 void InstructionCodeGeneratorRISCV64::HandleFieldGet(HInstruction* instruction,
                                                      const FieldInfo& field_info) {
-  DCHECK(instruction->IsInstanceFieldGet() ||
-         instruction->IsStaticFieldGet() ||
-         instruction->IsPredicatedInstanceFieldGet());
+  DCHECK(instruction->IsInstanceFieldGet() || instruction->IsStaticFieldGet());
   DCHECK_EQ(DataType::Size(field_info.GetFieldType()), DataType::Size(instruction->GetType()));
   DataType::Type type = instruction->GetType();
   LocationSummary* locations = instruction->GetLocations();
-  Location obj_loc = locations->InAt(instruction->IsPredicatedInstanceFieldGet() ? 1 : 0);
+  Location obj_loc = locations->InAt(0);
   XRegister obj = obj_loc.AsRegister<XRegister>();
   Location dst_loc = locations->Out();
   bool is_volatile = field_info.IsVolatile();
@@ -3776,21 +3759,6 @@ void InstructionCodeGeneratorRISCV64::VisitInstanceFieldSet(HInstanceFieldSet* i
                  instruction->GetFieldInfo(),
                  instruction->GetValueCanBeNull(),
                  instruction->GetWriteBarrierKind());
-}
-
-void LocationsBuilderRISCV64::VisitPredicatedInstanceFieldGet(
-    HPredicatedInstanceFieldGet* instruction) {
-  HandleFieldGet(instruction);
-}
-
-void InstructionCodeGeneratorRISCV64::VisitPredicatedInstanceFieldGet(
-    HPredicatedInstanceFieldGet* instruction) {
-  Riscv64Label finish;
-  LocationSummary* locations = instruction->GetLocations();
-  XRegister target = locations->InAt(1).AsRegister<XRegister>();
-  __ Beqz(target, &finish);
-  HandleFieldGet(instruction, instruction->GetFieldInfo());
-  __ Bind(&finish);
 }
 
 void LocationsBuilderRISCV64::VisitInstanceOf(HInstanceOf* instruction) {
@@ -5736,8 +5704,6 @@ void CodeGeneratorRISCV64::MaybeIncrementHotness(bool is_frame_entry) {
   }
 
   if (GetGraph()->IsCompilingBaseline() && !Runtime::Current()->IsAotCompiler()) {
-    SlowPathCodeRISCV64* slow_path = new (GetScopedAllocator()) CompileOptimizedSlowPathRISCV64();
-    AddSlowPath(slow_path);
     ProfilingInfo* info = GetGraph()->GetProfilingInfo();
     DCHECK(info != nullptr);
     DCHECK(!HasEmptyFrame());
@@ -5745,9 +5711,12 @@ void CodeGeneratorRISCV64::MaybeIncrementHotness(bool is_frame_entry) {
                        ProfilingInfo::BaselineHotnessCountOffset().SizeValue();
     auto [base_address, imm12] = SplitJitAddress(address);
     ScratchRegisterScope srs(GetAssembler());
-    XRegister tmp = srs.AllocateXRegister();
-    __ LoadConst64(tmp, base_address);
     XRegister counter = srs.AllocateXRegister();
+    XRegister tmp = RA;
+    __ LoadConst64(tmp, base_address);
+    SlowPathCodeRISCV64* slow_path =
+        new (GetScopedAllocator()) CompileOptimizedSlowPathRISCV64(tmp, imm12);
+    AddSlowPath(slow_path);
     __ Lhu(counter, tmp, imm12);
     __ Beqz(counter, slow_path->GetEntryLabel());  // Can clobber `TMP` if taken.
     __ Addi(counter, counter, -1);
