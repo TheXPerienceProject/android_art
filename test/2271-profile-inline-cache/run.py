@@ -1,6 +1,5 @@
-#!/bin/bash
 #
-# Copyright 2016 The Android Open Source Project
+# Copyright 2023 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,15 +17,14 @@
 def run(ctx, args):
   # Use
   # --compiler-filter=verify to make sure that the test is not compiled AOT
-  # and to make sure the test is not compiled  when loaded (by PathClassLoader)
+  # and to make sure the test is not compiled when loaded (by PathClassLoader)
   # -Xjitsaveprofilinginfo to enable profile saving
   # -Xjitinitialsize:32M to prevent profiling info creation failure.
   ctx.default_run(
       args,
       Xcompiler_option=["--compiler-filter=verify"],
       runtime_option=[
-          "-Xcompiler-option --compiler-filter=verify",
           "-Xjitinitialsize:32M",
           "-Xjitsaveprofilinginfo",
-          "-Xps-profile-boot-class-path",
+          "-Xps-inline-cache-threshold:3000",
       ])

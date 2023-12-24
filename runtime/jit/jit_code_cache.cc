@@ -1197,9 +1197,62 @@ void JitCodeCache::SetGarbageCollectCode(bool value) {
   garbage_collect_code_ = value;
 }
 
+void JitCodeCache::RemoveMethodBeingCompiled(ArtMethod* method, CompilationKind kind) {
+  ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
+  DCHECK(IsMethodBeingCompiled(method, kind));
+  switch (kind) {
+    case CompilationKind::kOsr:
+      current_osr_compilations_.erase(method);
+      break;
+    case CompilationKind::kBaseline:
+      current_baseline_compilations_.erase(method);
+      break;
+    case CompilationKind::kOptimized:
+      current_optimized_compilations_.erase(method);
+      break;
+  }
+}
+
+void JitCodeCache::AddMethodBeingCompiled(ArtMethod* method, CompilationKind kind) {
+  ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
+  DCHECK(!IsMethodBeingCompiled(method, kind));
+  switch (kind) {
+    case CompilationKind::kOsr:
+      current_osr_compilations_.insert(method);
+      break;
+    case CompilationKind::kBaseline:
+      current_baseline_compilations_.insert(method);
+      break;
+    case CompilationKind::kOptimized:
+      current_optimized_compilations_.insert(method);
+      break;
+  }
+}
+
+bool JitCodeCache::IsMethodBeingCompiled(ArtMethod* method, CompilationKind kind) {
+  ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
+  switch (kind) {
+    case CompilationKind::kOsr:
+      return ContainsElement(current_osr_compilations_, method);
+    case CompilationKind::kBaseline:
+      return ContainsElement(current_baseline_compilations_, method);
+    case CompilationKind::kOptimized:
+      return ContainsElement(current_optimized_compilations_, method);
+  }
+}
+
+bool JitCodeCache::IsMethodBeingCompiled(ArtMethod* method) {
+  ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
+  return ContainsElement(current_optimized_compilations_, method) ||
+      ContainsElement(current_osr_compilations_, method) ||
+      ContainsElement(current_baseline_compilations_, method);
+}
+
 ProfilingInfo* JitCodeCache::GetProfilingInfo(ArtMethod* method, Thread* self) {
   ScopedDebugDisallowReadBarriers sddrb(self);
   MutexLock mu(self, *Locks::jit_lock_);
+  DCHECK(IsMethodBeingCompiled(method))
+      << "GetProfilingInfo should only be called when the method is being compiled";
   auto it = profiling_infos_.find(method);
   if (it == profiling_infos_.end()) {
     return nullptr;
@@ -1423,7 +1476,8 @@ void* JitCodeCache::MoreCore(const void* mspace, intptr_t increment) {
 }
 
 void JitCodeCache::GetProfiledMethods(const std::set<std::string>& dex_base_locations,
-                                      std::vector<ProfileMethodInfo>& methods) {
+                                      std::vector<ProfileMethodInfo>& methods,
+                                      uint16_t inline_cache_threshold) {
   Thread* self = Thread::Current();
   WaitUntilInlineCacheAccessible(self);
   // TODO: Avoid read barriers for potentially dead methods.
@@ -1442,13 +1496,17 @@ void JitCodeCache::GetProfiledMethods(const std::set<std::string>& dex_base_loca
     }
     std::vector<ProfileMethodInfo::ProfileInlineCache> inline_caches;
 
-    // If the method is still baseline compiled, don't save the inline caches.
-    // They might be incomplete and cause unnecessary deoptimizations.
+    // If the method is still baseline compiled and doesn't meet the inline cache threshold, don't
+    // save the inline caches because they might be incomplete.
+    // Although we don't deoptimize for incomplete inline caches in AOT-compiled code, inlining
+    // leads to larger generated code.
     // If the inline cache is empty the compiler will generate a regular invoke virtual/interface.
     const void* entry_point = method->GetEntryPointFromQuickCompiledCode();
     if (ContainsPc(entry_point) &&
         CodeInfo::IsBaseline(
-            OatQuickMethodHeader::FromEntryPoint(entry_point)->GetOptimizedCodeInfoPtr())) {
+            OatQuickMethodHeader::FromEntryPoint(entry_point)->GetOptimizedCodeInfoPtr()) &&
+        (ProfilingInfo::GetOptimizeThreshold() - info->GetBaselineHotnessCount()) <
+            inline_cache_threshold) {
       methods.emplace_back(/*ProfileMethodInfo*/
           MethodReference(dex_file, method->GetDexMethodIndex()), inline_caches);
       continue;
@@ -1519,10 +1577,35 @@ bool JitCodeCache::IsOsrCompiled(ArtMethod* method) {
   return osr_code_map_.find(method) != osr_code_map_.end();
 }
 
+void JitCodeCache::VisitRoots(RootVisitor* visitor) {
+  if (Runtime::Current()->GetHeap()->IsPerformingUffdCompaction()) {
+    // In case of userfaultfd compaction, ArtMethods are updated concurrently
+    // via linear-alloc.
+    return;
+  }
+  MutexLock mu(Thread::Current(), *Locks::jit_lock_);
+  UnbufferedRootVisitor root_visitor(visitor, RootInfo(kRootStickyClass));
+  for (ArtMethod* method : current_optimized_compilations_) {
+    method->VisitRoots(root_visitor, kRuntimePointerSize);
+  }
+  for (ArtMethod* method : current_baseline_compilations_) {
+    method->VisitRoots(root_visitor, kRuntimePointerSize);
+  }
+  for (ArtMethod* method : current_osr_compilations_) {
+    method->VisitRoots(root_visitor, kRuntimePointerSize);
+  }
+}
+
 bool JitCodeCache::NotifyCompilationOf(ArtMethod* method,
                                        Thread* self,
                                        CompilationKind compilation_kind,
                                        bool prejit) {
+  if (kIsDebugBuild) {
+    MutexLock mu(self, *Locks::jit_lock_);
+    // Note: the compilation kind may have been adjusted after what was passed initially.
+    // We really just want to check that the method is indeed being compiled.
+    CHECK(IsMethodBeingCompiled(method));
+  }
   const void* existing_entry_point = method->GetEntryPointFromQuickCompiledCode();
   if (compilation_kind != CompilationKind::kOsr && ContainsPc(existing_entry_point)) {
     OatQuickMethodHeader* method_header =
@@ -1599,18 +1682,6 @@ bool JitCodeCache::NotifyCompilationOf(ArtMethod* method,
   } else {
     if (compilation_kind == CompilationKind::kBaseline) {
       DCHECK(CanAllocateProfilingInfo());
-      bool has_profiling_info = false;
-      {
-        MutexLock mu(self, *Locks::jit_lock_);
-        has_profiling_info = (profiling_infos_.find(method) != profiling_infos_.end());
-      }
-      if (!has_profiling_info) {
-        if (ProfilingInfo::Create(self, method) == nullptr) {
-          VLOG(jit) << method->PrettyMethod() << " needs a ProfilingInfo to be compiled baseline";
-          ClearMethodCounter(method, /*was_warm=*/ false);
-          return false;
-        }
-      }
     }
   }
   return true;

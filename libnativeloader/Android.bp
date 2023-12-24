@@ -184,6 +184,7 @@ art_cc_test {
     test_suites: [
         "cts",
         "mts-art",
+        "mcts-art",
     ],
 }
 

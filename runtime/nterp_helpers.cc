@@ -272,6 +272,20 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
         case Instruction::CONST_WIDE_32:
         case Instruction::CONST_WIDE:
         case Instruction::CONST_WIDE_HIGH16:
+        case Instruction::MONITOR_ENTER:
+        case Instruction::MONITOR_EXIT:
+        case Instruction::ARRAY_LENGTH:
+        case Instruction::FILLED_NEW_ARRAY:
+        case Instruction::FILLED_NEW_ARRAY_RANGE:
+        case Instruction::FILL_ARRAY_DATA:
+        case Instruction::THROW:
+        case Instruction::SGET:
+        case Instruction::SGET_WIDE:
+        case Instruction::SGET_OBJECT:
+        case Instruction::SGET_BOOLEAN:
+        case Instruction::SGET_BYTE:
+        case Instruction::SGET_CHAR:
+        case Instruction::SGET_SHORT:
         case Instruction::SPUT:
         case Instruction::SPUT_WIDE:
         case Instruction::SPUT_OBJECT:
