@@ -656,27 +656,34 @@ void ThreadList::FlipThreadRoots(Closure* thread_flip_visitor,
 
 bool ThreadList::WaitForSuspendBarrier(AtomicInteger* barrier) {
 #if ART_USE_FUTEXES
+  // Only fail after multiple timeouts, to make us robust against app freezing.
+  static constexpr int kIters = 5;
   timespec wait_timeout;
-  InitTimeSpec(false, CLOCK_MONOTONIC, NsToMs(thread_suspend_timeout_ns_), 0, &wait_timeout);
+  InitTimeSpec(
+      false, CLOCK_MONOTONIC, NsToMs(thread_suspend_timeout_ns_ / kIters), 0, &wait_timeout);
+#else
+  static constexpr int kIters = 10'000'000;
 #endif
-  while (true) {
+  for (int i = 0; i < kIters;) {
     int32_t cur_val = barrier->load(std::memory_order_acquire);
     if (cur_val <= 0) {
-      CHECK_EQ(cur_val, 0);
+      DCHECK_EQ(cur_val, 0);
       return true;
     }
 #if ART_USE_FUTEXES
     if (futex(barrier->Address(), FUTEX_WAIT_PRIVATE, cur_val, &wait_timeout, nullptr, 0) != 0) {
       if (errno == ETIMEDOUT) {
-        return false;
+        ++i;
       } else if (errno != EAGAIN && errno != EINTR) {
         PLOG(FATAL) << "futex wait for suspend barrier failed";
       }
     }
+#else
+    sched_yield();  // Not ideal, but ART_USE_FUTEXES is set on Linux, including all targets.
+    ++i;
 #endif
-    // Else spin wait. This is likely to be slow, but ART_USE_FUTEXES is set on Linux,
-    // including all targets.
   }
+  return barrier->load(std::memory_order_acquire) == 0;
 }
 
 void ThreadList::SuspendAll(const char* cause, bool long_suspend) {
@@ -1028,8 +1035,9 @@ Thread* ThreadList::SuspendThreadByPeer(jobject peer, SuspendReason reason) {
 
 static void ThreadSuspendByThreadIdWarning(LogSeverity severity,
                                            const char* message,
-                                           uint32_t thread_id) {
-  LOG(severity) << StringPrintf("%s: %d", message, thread_id);
+                                           uint32_t thread_id,
+                                           const char* thread_name) {
+  LOG(severity) << StringPrintf("%s: %d (%s)", message, thread_id, thread_name);
 }
 
 Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, SuspendReason reason) {
@@ -1047,9 +1055,8 @@ Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, SuspendReason re
       thread = FindThreadByThreadId(thread_id);
       if (thread == nullptr) {
         // There's a race in inflating a lock and the owner giving up ownership and then dying.
-        ThreadSuspendByThreadIdWarning(::android::base::WARNING,
-                                       "No such thread id for suspend",
-                                       thread_id);
+        ThreadSuspendByThreadIdWarning(
+            ::android::base::WARNING, "No such thread id for suspend", thread_id, "(not found)");
         return nullptr;
       }
       DCHECK(Contains(thread));
@@ -1097,8 +1104,10 @@ Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, SuspendReason re
   } else {
     // thread still has a pointer to wrapped_barrier. Returning and continuing would be unsafe
     // without additional cleanup.
+    std::string name;
+    thread->GetThreadName(name);
     ThreadSuspendByThreadIdWarning(
-        ::android::base::FATAL, "SuspendThreadByThreadId timed out", thread_id);
+        ::android::base::FATAL, "SuspendThreadByThreadId timed out", thread_id, name.c_str());
     UNREACHABLE();
   }
 }

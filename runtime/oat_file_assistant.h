@@ -257,7 +257,8 @@ class OatFileAssistant {
   void GetOptimizationStatus(std::string* out_odex_location,
                              std::string* out_compilation_filter,
                              std::string* out_compilation_reason,
-                             std::string* out_odex_status);
+                             std::string* out_odex_status,
+                             Location* out_location);
 
   static void GetOptimizationStatus(const std::string& filename,
                                     InstructionSet isa,
@@ -432,10 +433,10 @@ class OatFileAssistant {
     // the OatFileInfo object.
     std::unique_ptr<OatFile> ReleaseFileForUse();
 
-    // Check if we should reject vdex containing cdex code as part of the
-    // disable_cdex experiment.
+    // Check if we should reject vdex containing cdex code as part of the cdex
+    // deprecation.
     // TODO(b/256664509): Clean this up.
-    bool CheckDisableCompactDexExperiment();
+    bool CheckDisableCompactDex();
 
    private:
     // Returns true if the oat file is usable but at least one dexopt trigger is matched. This
@@ -525,6 +526,9 @@ class OatFileAssistant {
 
   // Returns whether the zip file only contains uncompressed dex.
   bool ZipFileOnlyContainsUncompressedDex();
+
+  // Returns the location of the given oat file.
+  Location GetLocation(OatFileInfo& info);
 
   std::string dex_location_;
 
