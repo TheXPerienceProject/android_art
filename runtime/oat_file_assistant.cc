@@ -313,8 +313,8 @@ int OatFileAssistant::GetDexOptNeeded(CompilerFilter::Filter target_compiler_fil
                                       bool profile_changed,
                                       bool downgrade) {
   OatFileInfo& info = GetBestInfo();
-  if (info.CheckDisableCompactDexExperiment()) {  // TODO(b/256664509): Clean this up.
-    VLOG(oat) << "Should recompile: disable cdex experiment";
+  if (info.CheckDisableCompactDex()) {  // TODO(b/256664509): Clean this up.
+    VLOG(oat) << "Should recompile: disable cdex";
     return kDex2OatFromScratch;
   }
   DexOptNeeded dexopt_needed = info.GetDexOptNeeded(
@@ -335,22 +335,12 @@ bool OatFileAssistant::GetDexOptNeeded(CompilerFilter::Filter target_compiler_fi
                                        DexOptTrigger dexopt_trigger,
                                        /*out*/ DexOptStatus* dexopt_status) {
   OatFileInfo& info = GetBestInfo();
-  if (info.CheckDisableCompactDexExperiment()) {  // TODO(b/256664509): Clean this up.
+  if (info.CheckDisableCompactDex()) {  // TODO(b/256664509): Clean this up.
     dexopt_status->location_ = kLocationNoneOrError;
     return true;
   }
   DexOptNeeded dexopt_needed = info.GetDexOptNeeded(target_compiler_filter, dexopt_trigger);
-  if (info.IsUseable()) {
-    if (&info == &dm_for_oat_ || &info == &dm_for_odex_) {
-      dexopt_status->location_ = kLocationDm;
-    } else if (info.IsOatLocation()) {
-      dexopt_status->location_ = kLocationOat;
-    } else {
-      dexopt_status->location_ = kLocationOdex;
-    }
-  } else {
-    dexopt_status->location_ = kLocationNoneOrError;
-  }
+  dexopt_status->location_ = GetLocation(info);
   return dexopt_needed != kNoDexOptNeeded;
 }
 
@@ -1281,14 +1271,10 @@ std::unique_ptr<OatFile> OatFileAssistant::OatFileInfo::ReleaseFileForUse() {
   return std::unique_ptr<OatFile>();
 }
 
-// Check if we should reject vdex containing cdex code as part of the
-// disable_cdex experiment.
+// Check if we should reject vdex containing cdex code as part of the cdex
+// deprecation.
 // TODO(b/256664509): Clean this up.
-bool OatFileAssistant::OatFileInfo::CheckDisableCompactDexExperiment() {
-  std::string ph_disable_compact_dex = android::base::GetProperty(kPhDisableCompactDex, "false");
-  if (ph_disable_compact_dex != "true") {
-    return false;
-  }
+bool OatFileAssistant::OatFileInfo::CheckDisableCompactDex() {
   const OatFile* oat_file = GetFile();
   if (oat_file == nullptr) {
     return false;
@@ -1316,16 +1302,22 @@ void OatFileAssistant::GetOptimizationStatus(const std::string& filename,
                                       ofa_context);
   std::string out_odex_location;  // unused
   std::string out_odex_status;    // unused
-  oat_file_assistant.GetOptimizationStatus(
-      &out_odex_location, out_compilation_filter, out_compilation_reason, &out_odex_status);
+  Location out_location;          // unused
+  oat_file_assistant.GetOptimizationStatus(&out_odex_location,
+                                           out_compilation_filter,
+                                           out_compilation_reason,
+                                           &out_odex_status,
+                                           &out_location);
 }
 
 void OatFileAssistant::GetOptimizationStatus(std::string* out_odex_location,
                                              std::string* out_compilation_filter,
                                              std::string* out_compilation_reason,
-                                             std::string* out_odex_status) {
+                                             std::string* out_odex_status,
+                                             Location* out_location) {
   OatFileInfo& oat_file_info = GetBestInfo();
   const OatFile* oat_file = oat_file_info.GetFile();
+  *out_location = GetLocation(oat_file_info);
 
   if (oat_file == nullptr) {
     std::string error_msg;
@@ -1397,6 +1389,20 @@ bool OatFileAssistant::ZipFileOnlyContainsUncompressedDex() {
     LOG(ERROR) << error_msg;
   }
   return zip_file_only_contains_uncompressed_dex_;
+}
+
+OatFileAssistant::Location OatFileAssistant::GetLocation(OatFileInfo& info) {
+  if (info.IsUseable()) {
+    if (&info == &dm_for_oat_ || &info == &dm_for_odex_) {
+      return kLocationDm;
+    } else if (info.IsOatLocation()) {
+      return kLocationOat;
+    } else {
+      return kLocationOdex;
+    }
+  } else {
+    return kLocationNoneOrError;
+  }
 }
 
 }  // namespace art
