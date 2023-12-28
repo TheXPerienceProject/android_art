@@ -112,6 +112,7 @@ Arm64FeaturesUniquePtr Arm64InstructionSetFeatures::FromVariant(
       "cortex-a75",
       "cortex-a76",
       "kryo585",
+      "kryo485",
       "kryo785",
   };
 
