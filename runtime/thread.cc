@@ -1496,11 +1496,11 @@ bool Thread::PassActiveSuspendBarriers() {
   {
     MutexLock mu(this, *Locks::thread_suspend_count_lock_);
     if (!ReadFlag(ThreadFlag::kActiveSuspendBarrier)) {
-      // quick exit test: the barriers have already been claimed - this is possible as there may
-      // be a race to claim and it doesn't matter who wins.
-      // All of the callers of this function (except the SuspendAllInternal) will first test the
-      // kActiveSuspendBarrier flag without lock. Here double-check whether the barrier has been
-      // passed with the suspend_count lock.
+      // Quick exit test: The barriers have already been claimed - this is possible as there may
+      // be a race to claim and it doesn't matter who wins.  All of the callers of this function
+      // (except SuspendAllInternal) will first test the kActiveSuspendBarrier flag without the
+      // lock. Here we double-check whether the barrier has been passed with the
+      // suspend_count_lock_.
       return false;
     }
     if (tlsPtr_.active_suspendall_barrier != nullptr) {
@@ -1709,7 +1709,9 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
       IncrementSuspendCount(self, nullptr, &wrapped_barrier, SuspendReason::kInternal);
       VerifyState();
       DCHECK_GT(GetSuspendCount(), 0);
-      DCHECK_EQ(self->GetSuspendCount(), 0);
+      if (wait_state != ThreadState::kRunnable) {
+        DCHECK_EQ(self->GetSuspendCount(), 0);
+      }
       // Since we've incremented the suspend count, "this" thread can no longer disappear.
       Locks::thread_list_lock_->ExclusiveUnlock(self);
       if (IsSuspended()) {
