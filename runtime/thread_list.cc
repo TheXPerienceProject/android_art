@@ -334,6 +334,7 @@ size_t ThreadList::RunCheckpoint(Closure* checkpoint_function,
             if (requested_suspend) {
               // The suspend request is now unnecessary.
               thread->DecrementSuspendCount(self);
+              Thread::resume_cond_->Broadcast(self);
               requested_suspend = false;
             }
             break;
@@ -927,15 +928,10 @@ bool ThreadList::Resume(Thread* thread, SuspendReason reason) {
       return false;
     }
     thread->DecrementSuspendCount(self, /*for_user_code=*/(reason == SuspendReason::kForUserCode));
-  }
-
-  {
-    VLOG(threads) << "Resume(" << reinterpret_cast<void*>(thread) << ") waking others";
-    MutexLock mu(self, *Locks::thread_suspend_count_lock_);
     Thread::resume_cond_->Broadcast(self);
   }
 
-  VLOG(threads) << "Resume(" << reinterpret_cast<void*>(thread) << ") complete";
+  VLOG(threads) << "Resume(" << reinterpret_cast<void*>(thread) << ") finished waking others";
   return true;
 }
 
@@ -1033,13 +1029,6 @@ Thread* ThreadList::SuspendThreadByPeer(jobject peer, SuspendReason reason) {
   }
 }
 
-static void ThreadSuspendByThreadIdWarning(LogSeverity severity,
-                                           const char* message,
-                                           uint32_t thread_id,
-                                           const char* thread_name) {
-  LOG(severity) << StringPrintf("%s: %d (%s)", message, thread_id, thread_name);
-}
-
 Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, SuspendReason reason) {
   bool is_suspended = false;
   Thread* const self = Thread::Current();
@@ -1055,8 +1044,7 @@ Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, SuspendReason re
       thread = FindThreadByThreadId(thread_id);
       if (thread == nullptr) {
         // There's a race in inflating a lock and the owner giving up ownership and then dying.
-        ThreadSuspendByThreadIdWarning(
-            ::android::base::WARNING, "No such thread id for suspend", thread_id, "(not found)");
+        LOG(WARNING) << StringPrintf("No such thread id %d for suspend", thread_id);
         return nullptr;
       }
       DCHECK(Contains(thread));
@@ -1106,8 +1094,20 @@ Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, SuspendReason re
     // without additional cleanup.
     std::string name;
     thread->GetThreadName(name);
-    ThreadSuspendByThreadIdWarning(
-        ::android::base::FATAL, "SuspendThreadByThreadId timed out", thread_id, name.c_str());
+    WrappedSuspend1Barrier* first_barrier;
+    {
+      MutexLock suspend_count_mu(self, *Locks::thread_suspend_count_lock_);
+      first_barrier = thread->tlsPtr_.active_suspend1_barriers;
+    }
+    LOG(FATAL) << StringPrintf(
+        "SuspendThreadByThreadId timed out: %d (%s), state&flags: 0x%x, priority: %d,"
+        " barriers: %p, ours: %p",
+        thread_id,
+        name.c_str(),
+        thread->GetStateAndFlags(std::memory_order_relaxed).GetValue(),
+        thread->GetNativePriority(),
+        first_barrier,
+        &wrapped_barrier);
     UNREACHABLE();
   }
 }
