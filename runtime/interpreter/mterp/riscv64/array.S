@@ -10,7 +10,7 @@
    andi t1, t1, 0xF        // t1 := A
    GET_INST_OPCODE t3
    lw t2, MIRROR_ARRAY_LENGTH_OFFSET(t0)
-   SET_VREG t2, t1, z0=t0
+%  set_vreg("t2", "t1", z0="t0")
    GOTO_OPCODE t3
 1:
    tail common_errNullObject
@@ -86,7 +86,7 @@
    beqz $array, $null_label
 
    srliw $index, $index, 8         // index := CC
-   GET_VREG $index, $index, is_unsigned=1  // index := fp[CC], zext for bounds check
+%  get_vreg(index, index, is_unsigned=True)  # index := fp[CC], zext for bounds check
    lw $length, MIRROR_ARRAY_LENGTH_OFFSET($array)  // length (signed 32b)
    bge $index, $length, $oob_label
 
@@ -94,26 +94,26 @@
 // aget vAA, vBB, vCC
 // Format 23x: AA|44 CC|BB
 // vAA := vBB[vCC]
-%def op_aget(width="32", zext=False):
+%def op_aget(width=32, zext=False):
 %  array_prelude(array="t0", index="t1", length="t2", null_label=f".L{opcode}_null", oob_label=f".L{opcode}_oob")
        // t0 := vBB array object, t1 := vCC zext index, t2 := array length
 
-%  if width == "8" and zext:
+%  if width == 8 and zext:
      add t0, t1, t0
      lbu t0, MIRROR_BOOLEAN_ARRAY_DATA_OFFSET(t0)
-%  elif width == "8":
+%  elif width == 8:
      add t0, t1, t0
      lb t0, MIRROR_BYTE_ARRAY_DATA_OFFSET(t0)
-%  elif width == "16" and zext:
+%  elif width == 16 and zext:
      sh1add t0, t1, t0
      lhu t0, MIRROR_CHAR_ARRAY_DATA_OFFSET(t0)
-%  elif width == "16":
+%  elif width == 16:
      sh1add t0, t1, t0
      lh t0, MIRROR_SHORT_ARRAY_DATA_OFFSET(t0)
-%  elif width == "32":
+%  elif width == 32:
      sh2add t0, t1, t0
      lw t0, MIRROR_INT_ARRAY_DATA_OFFSET(t0)
-%  elif width == "64":
+%  elif width == 64:
      sh3add t0, t1, t0
      ld t0, MIRROR_WIDE_ARRAY_DATA_OFFSET(t0)
 %  else:
@@ -121,8 +121,7 @@
 %#:
                        // t0 := *(array obj + data offset + idx * elem_size)
    srliw t1, xINST, 8  // t1 := AA
-%  is_wide = "1" if width == "64" else "0"
-   SET_VREG t0, t1, z0=t2, is_wide=$is_wide
+%  set_vreg("t0", "t1", z0="t2", width=width)
 
    FETCH_ADVANCE_INST 2
    GET_INST_OPCODE t0
@@ -139,7 +138,7 @@
 // aget-wide vAA, vBB, vCC
 // Format 23x: AA|45 CC|BB
 %def op_aget_wide():
-%  op_aget(width="64")
+%  op_aget(width=64)
 
 
 // aget-object vAA, vBB, vCC
@@ -174,53 +173,52 @@
 // aget-boolean vAA, vBB, vCC
 // Format 23x: AA|47 CC|BB
 %def op_aget_boolean():
-%  op_aget(width="8", zext=True)
+%  op_aget(width=8, zext=True)
 
 
 // aget-byte vAA, vBB, vCC
 // Format 23x: AA|48 CC|BB
 %def op_aget_byte():
-%  op_aget(width="8")
+%  op_aget(width=8)
 
 
 // aget_char vAA, vBB, vCC
 // Format 23x: AA|49 CC|BB
 %def op_aget_char():
-%  op_aget(width="16", zext=True)
+%  op_aget(width=16, zext=True)
 
 
 // aget-short vAA, vBB, vCC
 // Format 23x: AA|4a CC|BB
 %def op_aget_short():
-%  op_aget(width="16")
+%  op_aget(width=16)
 
 
 // aput vAA, vBB, vCC
 // Format 23x: AA|4b CC|BB
 // vBB[vCC] := vAA
-%def op_aput(width="32", zext=False):
+%def op_aput(width=32, zext=False):
 %  array_prelude(array="t0", index="t1", length="t2", null_label=f".L{opcode}_null", oob_label=f".L{opcode}_oob")
        // t0 := vBB array object, t1 := vCC zext index, t2 := array length
 
    srliw t2, xINST, 8      // t2 := AA
-%  is_wide = "1" if width == "64" else "0"
-   GET_VREG t2, t2, is_wide=$is_wide  // t2 := fp[AA]
-%  if width == "8" and zext:
+%  get_vreg("t2", "t2", width=width)  # t2 := fp[AA]
+%  if width == 8 and zext:
      add t0, t1, t0
      sb t2, MIRROR_BOOLEAN_ARRAY_DATA_OFFSET(t0)
-%  elif width == "8":
+%  elif width == 8:
      add t0, t1, t0
      sb t2, MIRROR_BYTE_ARRAY_DATA_OFFSET(t0)
-%  elif width == "16" and zext:
+%  elif width == 16 and zext:
      sh1add t0, t1, t0
      sh t2, MIRROR_CHAR_ARRAY_DATA_OFFSET(t0)
-%  elif width == "16":
+%  elif width == 16:
      sh1add t0, t1, t0
      sh t2, MIRROR_SHORT_ARRAY_DATA_OFFSET(t0)
-%  elif width == "32":
+%  elif width == 32:
      sh2add t0, t1, t0
      sw t2, MIRROR_INT_ARRAY_DATA_OFFSET(t0)
-%  elif width == "64":
+%  elif width == 64:
      sh3add t0, t1, t0
      sd t2, MIRROR_WIDE_ARRAY_DATA_OFFSET(t0)
 %  else:
@@ -241,7 +239,7 @@
 // aput-wide vAA, vBB, vCC
 // Format 23x: AA|4c CC|BB
 %def op_aput_wide():
-%  op_aput(width="64")
+%  op_aput(width=64)
 
 
 // aput-object vAA, vBB, vCC
@@ -270,22 +268,22 @@
 // aput-boolean vAA, vBB, vCC
 // Format 23x: AA|4e CC|BB
 %def op_aput_boolean():
-%  op_aput(width="8", zext=True)
+%  op_aput(width=8, zext=True)
 
 
 // aput-byte vAA, vBB, vCC
 // Format 23x: AA|4f CC|BB
 %def op_aput_byte():
-%  op_aput(width="8")
+%  op_aput(width=8)
 
 
 // aput-char vAA, vBB, vCC
 // Format 23x: AA|50 CC|BB
 %def op_aput_char():
-%  op_aput(width="16", zext=True)
+%  op_aput(width=16, zext=True)
 
 
 // aput-short vAA, vBB, vCC
 // Format 23x: AA|51 CC|BB
 %def op_aput_short():
-%  op_aput(width="16")
+%  op_aput(width=16)
