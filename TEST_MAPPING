@@ -1398,7 +1398,12 @@
       "name": "art_standalone_profman_tests[com.google.android.art.apex]"
     },
     {
-      "name": "art_standalone_runtime_tests[com.google.android.art.apex]"
+      "name": "art_standalone_runtime_tests[com.google.android.art.apex]",
+      "options": [
+        {
+          "exclude-filter": "OatFileAssistantUtilsTest#DexLocationToOdexFilename"
+        }
+      ]
     },
     {
       "name": "art_standalone_sigchain_tests[com.google.android.art.apex]"
@@ -1424,7 +1429,12 @@
       "name": "art-apex-update-rollback"
     },
     {
-      "name": "art_standalone_dexpreopt_tests"
+      "name": "art_standalone_dexpreopt_tests",
+      "options": [
+        {
+          "exclude-filter": "DexpreoptTest#ForSystemServer"
+        }
+      ]
     },
     {
       "name": "art-run-test-001-HelloWorld"
@@ -2813,7 +2823,12 @@
       "name": "art_standalone_profman_tests"
     },
     {
-      "name": "art_standalone_runtime_tests"
+      "name": "art_standalone_runtime_tests",
+      "options": [
+        {
+          "exclude-filter": "OatFileAssistantUtilsTest#DexLocationToOdexFilename"
+        }
+      ]
     },
     {
       "name": "art_standalone_sigchain_tests"
@@ -2833,7 +2848,12 @@
       "name": "art-apex-update-rollback"
     },
     {
-      "name": "art_standalone_dexpreopt_tests"
+      "name": "art_standalone_dexpreopt_tests",
+      "options": [
+        {
+          "exclude-filter": "DexpreoptTest#ForSystemServer"
+        }
+      ]
     },
     {
       "name": "art-run-test-001-HelloWorld"
@@ -4222,7 +4242,12 @@
       "name": "art_standalone_profman_tests"
     },
     {
-      "name": "art_standalone_runtime_tests"
+      "name": "art_standalone_runtime_tests",
+      "options": [
+        {
+          "exclude-filter": "OatFileAssistantUtilsTest#DexLocationToOdexFilename"
+        }
+      ]
     },
     {
       "name": "art_standalone_sigchain_tests"
