@@ -23,9 +23,8 @@
 
 #include "jni.h"
 
-// Unless explicitly mentioned otherwise, the following methods have been
-// introduced in version 1 API, corresponding to SDK level 31.
 #define PALETTE_METHOD_LIST(M)                                                                \
+  /* Methods in version 1 API, corresponding to SDK level 31. */                              \
   M(PaletteSchedSetPriority, int32_t tid, int32_t java_priority)                              \
   M(PaletteSchedGetPriority, int32_t tid, /*out*/ int32_t* java_priority)                     \
   M(PaletteWriteCrashThreadStacks, const char* stacks, size_t stacks_len)                     \
@@ -49,7 +48,7 @@
   M(PaletteNotifyBeginJniInvocation, JNIEnv* env)                                             \
   M(PaletteNotifyEndJniInvocation, JNIEnv* env)                                               \
                                                                                               \
-  /* Introduced in version 2 API, corresponding to SDK level 33. */                           \
+  /* Methods in version 2 API, corresponding to SDK level 33. */                              \
   M(PaletteReportLockContention,                                                              \
     JNIEnv* env,                                                                              \
     int32_t wait_ms,                                                                          \
@@ -62,7 +61,8 @@
     const char* proc_name,                                                                    \
     const char* thread_name)                                                                  \
                                                                                               \
-  /* Introduced in version 3 API, corresponding to SDK level 34. */                           \
+  /* Methods in version 3 API, corresponding to SDK level 34. */                              \
+                                                                                              \
   /* Calls through to SetTaskProfiles in libprocessgroup to set the */                        \
   /* [task profile](https:/-/source.android.com/docs/core/perf/cgroups#task-profiles-file) */ \
   /* for the given thread id. */                                                              \
