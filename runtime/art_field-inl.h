@@ -202,6 +202,10 @@ inline uint16_t ArtField::GetChar(ObjPtr<mirror::Object> object) {
   FIELD_GET(object, Char);
 }
 
+inline uint16_t ArtField::GetCharacter(ObjPtr<mirror::Object> object) {
+  return GetChar(object);
+}
+
 template<bool kTransactionActive>
 inline void ArtField::SetChar(ObjPtr<mirror::Object> object, uint16_t c) {
   if (kIsDebugBuild) {
@@ -234,6 +238,10 @@ inline int32_t ArtField::GetInt(ObjPtr<mirror::Object> object) {
     CHECK(type == Primitive::kPrimInt || type == Primitive::kPrimFloat) << PrettyField();
   }
   return Get32(object);
+}
+
+inline int32_t ArtField::GetInteger(ObjPtr<mirror::Object> object) {
+  return GetInt(object);
 }
 
 template<bool kTransactionActive>
@@ -409,7 +417,7 @@ static inline ArtField* FindFieldWithOffset(
   return nullptr;
 }
 
-template <bool kExactOffset>
+template <bool kExactOffset, VerifyObjectFlags kVerifyFlags, ReadBarrierOption kReadBarrierOption>
 inline ArtField* ArtField::FindInstanceFieldWithOffset(ObjPtr<mirror::Class> klass,
                                                        uint32_t field_offset) {
   DCHECK(klass != nullptr);
@@ -418,8 +426,11 @@ inline ArtField* ArtField::FindInstanceFieldWithOffset(ObjPtr<mirror::Class> kla
     return field;
   }
   // We did not find field in the class: look into superclass.
-  return (klass->GetSuperClass() != nullptr) ?
-      FindInstanceFieldWithOffset<kExactOffset>(klass->GetSuperClass(), field_offset) : nullptr;
+  ObjPtr<mirror::Class> super_class = klass->GetSuperClass<kVerifyFlags, kReadBarrierOption>();
+  return (super_class != nullptr)
+      ? FindInstanceFieldWithOffset<kExactOffset, kVerifyFlags, kReadBarrierOption>(
+          super_class, field_offset) :
+      nullptr;
 }
 
 template <bool kExactOffset>

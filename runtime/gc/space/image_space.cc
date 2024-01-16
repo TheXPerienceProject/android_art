@@ -107,19 +107,19 @@ ImageSpace::ImageSpace(const std::string& image_filename,
 }
 
 static int32_t ChooseRelocationOffsetDelta(int32_t min_delta, int32_t max_delta) {
-  CHECK_ALIGNED(min_delta, kPageSize);
-  CHECK_ALIGNED(max_delta, kPageSize);
+  CHECK_ALIGNED(min_delta, kElfSegmentAlignment);
+  CHECK_ALIGNED(max_delta, kElfSegmentAlignment);
   CHECK_LT(min_delta, max_delta);
 
   int32_t r = GetRandomNumber<int32_t>(min_delta, max_delta);
   if (r % 2 == 0) {
-    r = RoundUp(r, kPageSize);
+    r = RoundUp(r, kElfSegmentAlignment);
   } else {
-    r = RoundDown(r, kPageSize);
+    r = RoundDown(r, kElfSegmentAlignment);
   }
   CHECK_LE(min_delta, r);
   CHECK_GE(max_delta, r);
-  CHECK_ALIGNED(r, kPageSize);
+  CHECK_ALIGNED(r, kElfSegmentAlignment);
   return r;
 }
 
@@ -597,7 +597,8 @@ class ImageSpace::Loader {
         return nullptr;
       }
 
-      uint32_t expected_reservation_size = RoundUp(image_header.GetImageSize(), kPageSize);
+      uint32_t expected_reservation_size = RoundUp(image_header.GetImageSize(),
+          kElfSegmentAlignment);
       if (!CheckImageReservationSize(*space, expected_reservation_size, error_msg) ||
           !CheckImageComponentCount(*space, /*expected_component_count=*/ 1u, error_msg)) {
         return nullptr;
@@ -732,7 +733,7 @@ class ImageSpace::Loader {
     // The location we want to map from is the first aligned page after the end of the stored
     // (possibly compressed) data.
     const size_t image_bitmap_offset =
-        RoundUp(sizeof(ImageHeader) + image_header.GetDataSize(), kPageSize);
+        RoundUp(sizeof(ImageHeader) + image_header.GetDataSize(), kElfSegmentAlignment);
     const size_t end_of_bitmap = image_bitmap_offset + bitmap_section.Size();
     if (end_of_bitmap != image_file_size) {
       *error_msg = StringPrintf(
@@ -998,8 +999,11 @@ class ImageSpace::Loader {
     const bool is_compressed = image_header.HasCompressedBlock();
     if (!is_compressed && allow_direct_mapping) {
       uint8_t* address = (image_reservation != nullptr) ? image_reservation->Begin() : nullptr;
+      // The reserved memory size is aligned up to kElfSegmentAlignment to ensure
+      // that the next reserved area will be aligned to the value.
       return MemMap::MapFileAtAddress(address,
-                                      image_header.GetImageSize(),
+                                      CondRoundUp<kPageSizeAgnostic>(image_header.GetImageSize(),
+                                                                     kElfSegmentAlignment),
                                       PROT_READ | PROT_WRITE,
                                       MAP_PRIVATE,
                                       fd,
@@ -1012,8 +1016,11 @@ class ImageSpace::Loader {
     }
 
     // Reserve output and copy/decompress into it.
+    // The reserved memory size is aligned up to kElfSegmentAlignment to ensure
+    // that the next reserved area will be aligned to the value.
     MemMap map = MemMap::MapAnonymous(image_location,
-                                      image_header.GetImageSize(),
+                                      CondRoundUp<kPageSizeAgnostic>(image_header.GetImageSize(),
+                                                                     kElfSegmentAlignment),
                                       PROT_READ | PROT_WRITE,
                                       /*low_4gb=*/ true,
                                       image_reservation,
@@ -1054,6 +1061,7 @@ class ImageSpace::Loader {
         Thread* const self = Thread::Current();
         static constexpr size_t kMinBlocks = 2u;
         const bool use_parallel = pool != nullptr && image_header.GetBlockCount() >= kMinBlocks;
+        bool failed_decompression = false;
         for (const ImageHeader::Block& block : image_header.GetBlocks(temp_map.Begin())) {
           auto function = [&](Thread*) {
             const uint64_t start2 = NanoTime();
@@ -1061,8 +1069,11 @@ class ImageSpace::Loader {
             bool result = block.Decompress(/*out_ptr=*/map.Begin(),
                                            /*in_ptr=*/temp_map.Begin(),
                                            error_msg);
-            if (!result && error_msg != nullptr) {
-              *error_msg = "Failed to decompress image block " + *error_msg;
+            if (!result) {
+              failed_decompression = true;
+              if (error_msg != nullptr) {
+                *error_msg = "Failed to decompress image block " + *error_msg;
+              }
             }
             VLOG(image) << "Decompress block " << block.GetDataSize() << " -> "
                         << block.GetImageSize() << " in " << PrettyDuration(NanoTime() - start2);
@@ -1084,6 +1095,10 @@ class ImageSpace::Loader {
         VLOG(image) << "Decompressing image took " << PrettyDuration(time) << " ("
                     << PrettySize(static_cast<uint64_t>(map.Size()) * MsToNs(1000) / (time + 1))
                     << "/s)";
+        if (failed_decompression) {
+          DCHECK(error_msg == nullptr || !error_msg->empty());
+          return MemMap::Invalid();
+        }
       } else {
         DCHECK(!allow_direct_mapping);
         // We do not allow direct mapping for boot image extensions compiled to a memfd.
@@ -3164,8 +3179,8 @@ class ImageSpace::BootImageLoader {
   MemMap ReserveBootImageMemory(uint8_t* addr,
                                 uint32_t reservation_size,
                                 /*out*/std::string* error_msg) {
-    DCHECK_ALIGNED(reservation_size, kPageSize);
-    DCHECK_ALIGNED(addr, kPageSize);
+    DCHECK_ALIGNED(reservation_size, kElfSegmentAlignment);
+    DCHECK_ALIGNED(addr, kElfSegmentAlignment);
     return MemMap::MapAnonymous("Boot image reservation",
                                 addr,
                                 reservation_size,
@@ -3180,7 +3195,7 @@ class ImageSpace::BootImageLoader {
                              /*inout*/MemMap* image_reservation,
                              /*out*/MemMap* extra_reservation,
                              /*out*/std::string* error_msg) {
-    DCHECK_ALIGNED(extra_reservation_size, kPageSize);
+    DCHECK_ALIGNED(extra_reservation_size, kElfSegmentAlignment);
     DCHECK(!extra_reservation->IsValid());
     size_t expected_size = image_reservation->IsValid() ? image_reservation->Size() : 0u;
     if (extra_reservation_size != expected_size) {
@@ -3305,7 +3320,7 @@ bool ImageSpace::LoadBootImage(const std::vector<std::string>& boot_class_path,
 
   DCHECK(boot_image_spaces != nullptr);
   DCHECK(boot_image_spaces->empty());
-  DCHECK_ALIGNED(extra_reservation_size, kPageSize);
+  DCHECK_ALIGNED(extra_reservation_size, kElfSegmentAlignment);
   DCHECK(extra_reservation != nullptr);
   DCHECK_NE(image_isa, InstructionSet::kNone);
 
@@ -3470,7 +3485,7 @@ bool ImageSpace::ValidateOatFile(const OatFile& oat_file,
     File& dex_file = dex_file_index < dex_files.size() ? dex_files[dex_file_index] : no_file;
     dex_file_index++;
 
-    if (DexFileLoader::IsMultiDexLocation(oat_dex_files[i]->GetDexFileLocation().c_str())) {
+    if (DexFileLoader::IsMultiDexLocation(oat_dex_files[i]->GetDexFileLocation())) {
       return false;  // Expected primary dex file.
     }
     uint32_t oat_checksum = DexFileLoader::GetMultiDexChecksum(oat_dex_files, &i);
@@ -3546,7 +3561,7 @@ std::string ImageSpace::GetBootClassPathChecksums(
   ArrayRef<const DexFile* const> boot_class_path_tail =
       ArrayRef<const DexFile* const>(boot_class_path).SubArray(bcp_pos);
   DCHECK(boot_class_path_tail.empty() ||
-         !DexFileLoader::IsMultiDexLocation(boot_class_path_tail.front()->GetLocation().c_str()));
+         !DexFileLoader::IsMultiDexLocation(boot_class_path_tail.front()->GetLocation()));
   for (size_t i = 0; i < boot_class_path_tail.size();) {
     uint32_t checksum = DexFileLoader::GetMultiDexChecksum(boot_class_path_tail, &i);
     if (!boot_image_checksum.empty()) {
@@ -3654,11 +3669,11 @@ bool ImageSpace::VerifyBootClassPathChecksums(
         CHECK_NE(num_dex_files, 0u);
         const std::string main_location = oat_file->GetOatDexFiles()[0]->GetDexFileLocation();
         CHECK_EQ(main_location, boot_class_path_locations[bcp_pos + space_index]);
-        CHECK(!DexFileLoader::IsMultiDexLocation(main_location.c_str()));
+        CHECK(!DexFileLoader::IsMultiDexLocation(main_location));
         size_t num_base_locations = 1u;
         for (size_t i = 1u; i != num_dex_files; ++i) {
           if (!DexFileLoader::IsMultiDexLocation(
-                  oat_file->GetOatDexFiles()[i]->GetDexFileLocation().c_str())) {
+                  oat_file->GetOatDexFiles()[i]->GetDexFileLocation())) {
             CHECK_EQ(image_space_count, 1u);  // We can find base locations only for --single-image.
             ++num_base_locations;
           }
@@ -3766,8 +3781,8 @@ void ImageSpace::ReleaseMetadata() {
   const ImageSection& metadata = GetImageHeader().GetMetadataSection();
   VLOG(image) << "Releasing " << metadata.Size() << " image metadata bytes";
   // Avoid using ZeroAndReleasePages since the zero fill might not be word atomic.
-  uint8_t* const page_begin = AlignUp(Begin() + metadata.Offset(), kPageSize);
-  uint8_t* const page_end = AlignDown(Begin() + metadata.End(), kPageSize);
+  uint8_t* const page_begin = AlignUp(Begin() + metadata.Offset(), gPageSize);
+  uint8_t* const page_end = AlignDown(Begin() + metadata.End(), gPageSize);
   if (page_begin < page_end) {
     CHECK_NE(madvise(page_begin, page_end - page_begin, MADV_DONTNEED), -1) << "madvise failed";
   }

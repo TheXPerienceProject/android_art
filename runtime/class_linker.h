@@ -97,6 +97,7 @@ class MethodHandle;
 class MethodHandlesLookup;
 class MethodType;
 template<class T> class ObjectArray;
+class RawMethodType;
 class StackTraceElement;
 }  // namespace mirror
 
@@ -448,6 +449,14 @@ class ClassLinker {
                                                ArtMethod* referrer)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  bool ResolveMethodType(Thread* self,
+                         dex::ProtoIndex proto_idx,
+                         Handle<mirror::DexCache> dex_cache,
+                         Handle<mirror::ClassLoader> class_loader,
+                         /*out*/ mirror::RawMethodType method_type)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      REQUIRES(!Locks::dex_lock_, !Roles::uninterruptible_);
+
   // Resolve a method handle with a given ID from the DexFile. The
   // result is not cached in the DexCache as the instance will only be
   // used once in most circumstances.
@@ -783,6 +792,16 @@ class ClassLinker {
   ClassTable* ClassTableForClassLoader(ObjPtr<mirror::ClassLoader> class_loader)
       REQUIRES_SHARED(Locks::mutator_lock_)
       NO_THREAD_SAFETY_ANALYSIS;
+
+  // Dirty card in the card-table corresponding to the class_loader. Also log
+  // the root if we are logging new roots and class_loader is null.
+  void WriteBarrierOnClassLoaderLocked(ObjPtr<mirror::ClassLoader> class_loader,
+                                       ObjPtr<mirror::Object> root)
+      REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Locks::classlinker_classes_lock_);
+  void WriteBarrierOnClassLoader(Thread* self,
+                                 ObjPtr<mirror::ClassLoader> class_loader,
+                                 ObjPtr<mirror::Object> root) REQUIRES_SHARED(Locks::mutator_lock_)
+      REQUIRES(!Locks::classlinker_classes_lock_);
 
   // DO NOT use directly. Use `Runtime::AppendToBootClassPath`.
   void AppendToBootClassPath(Thread* self, const DexFile* dex_file)
@@ -1330,8 +1349,8 @@ class ClassLinker {
   // Boot class path table. Since the class loader for this is null.
   std::unique_ptr<ClassTable> boot_class_table_ GUARDED_BY(Locks::classlinker_classes_lock_);
 
-  // New class roots, only used by CMS since the GC needs to mark these in the pause.
-  std::vector<GcRoot<mirror::Class>> new_class_roots_ GUARDED_BY(Locks::classlinker_classes_lock_);
+  // New gc-roots, only used by CMS/CMC since the GC needs to mark these in the pause.
+  std::vector<GcRoot<mirror::Object>> new_roots_ GUARDED_BY(Locks::classlinker_classes_lock_);
 
   // Boot image oat files with new .bss GC roots to be visited in the pause by CMS.
   std::vector<const OatFile*> new_bss_roots_boot_oat_files_

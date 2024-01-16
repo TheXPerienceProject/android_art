@@ -168,7 +168,7 @@ END art_deliver_pending_exception
 
     // Load this (if instance method) and record the number of GPRs to fill.
     .ifc \sfx, _instance
-        lw   a1, (t0)                  // Load "this" parameter,
+        lwu  a1, (t0)                  // Load "this" parameter,
         addi t0, t0, 4                 // and increment arg pointer.
         .equ NUM_GPRS_TO_FILL, 6
     .else
@@ -1389,10 +1389,18 @@ ENTRY \name
     and t6, t6, t5
     CFI_REMEMBER_STATE
     bgez t6, .Lrb_full_\name
-    slliw \reg, t5, LOCK_WORD_STATE_FORWARDING_ADDRESS_SHIFT
+    // Extract and zero-extend the forwarding address.
+    slli \reg, t5, (LOCK_WORD_STATE_FORWARDING_ADDRESS_SHIFT + 32)
+    srli \reg, \reg, 32
+    .ifc \reg, t5
+      sd t5, (8*0)(sp)
+    .endif
+    .ifc \reg, t6
+      sd t6, (8*1)(sp)
+    .endif
 .Lrb_tmp_restore_\name:
-    RESTORE_GPR_NE \reg, t5, (8*0)
-    RESTORE_GPR_NE \reg, t6, (8*1)
+    RESTORE_GPR t5, (8*0)
+    RESTORE_GPR t6, (8*1)
     DECREASE_FRAME 16
 .Lrb_return_\name:
     ret
@@ -1557,6 +1565,13 @@ END \name
 .macro FOUR_ARG_DOWNCALL name, entrypoint, return
     N_ARG_DOWNCALL 4, \name, \entrypoint, \return
 .endm
+
+
+// Entry from managed code that calls artHandleFillArrayDataFromCode and
+// delivers exception on failure.
+TWO_ARG_DOWNCALL art_quick_handle_fill_data, \
+                 artHandleFillArrayDataFromCode, \
+                 RETURN_OR_DEOPT_IF_INT_RESULT_IS_ZERO_OR_DELIVER
 
 
 // Generate the allocation entrypoints for each allocator.

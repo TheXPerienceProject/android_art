@@ -135,7 +135,7 @@ ConcurrentCopying::ConcurrentCopying(Heap* heap,
     for (size_t i = 0; i < kMarkStackPoolSize; ++i) {
       accounting::AtomicStack<mirror::Object>* mark_stack =
           accounting::AtomicStack<mirror::Object>::Create(
-              "thread local mark stack", kMarkStackSize, kMarkStackSize);
+              "thread local mark stack", GetMarkStackSize(), GetMarkStackSize());
       pooled_mark_stacks_.push_back(mark_stack);
     }
   }
@@ -144,7 +144,7 @@ ConcurrentCopying::ConcurrentCopying(Heap* heap,
     std::string error_msg;
     sweep_array_free_buffer_mem_map_ = MemMap::MapAnonymous(
         "concurrent copying sweep array free buffer",
-        RoundUp(kSweepArrayChunkFreeSize * sizeof(mirror::Object*), kPageSize),
+        RoundUp(kSweepArrayChunkFreeSize * sizeof(mirror::Object*), gPageSize),
         PROT_READ | PROT_WRITE,
         /*low_4gb=*/ false,
         &error_msg);
@@ -467,7 +467,7 @@ void ConcurrentCopying::InitializePhase() {
   if (use_generational_cc_ && !young_gen_) {
     region_space_bitmap_->Clear(ShouldEagerlyReleaseMemoryToOS());
   }
-  mark_stack_mode_.store(ConcurrentCopying::kMarkStackModeThreadLocal, std::memory_order_relaxed);
+  mark_stack_mode_.store(ConcurrentCopying::kMarkStackModeThreadLocal, std::memory_order_release);
   // Mark all of the zygote large objects without graying them.
   MarkZygoteLargeObjects();
 }
@@ -480,7 +480,8 @@ class ConcurrentCopying::ThreadFlipVisitor : public Closure, public RootVisitor 
   }
 
   void Run(Thread* thread) override REQUIRES_SHARED(Locks::mutator_lock_) {
-    // Note: self is not necessarily equal to thread since thread may be suspended.
+    // We are either running this in the target thread, or the target thread will wait for us
+    // before switching back to runnable.
     Thread* self = Thread::Current();
     CHECK(thread == self || thread->GetState() != ThreadState::kRunnable)
         << thread->GetState() << " thread " << thread << " self " << self;
@@ -495,7 +496,6 @@ class ConcurrentCopying::ThreadFlipVisitor : public Closure, public RootVisitor 
     // We can use the non-CAS VisitRoots functions below because we update thread-local GC roots
     // only.
     thread->VisitRoots(this, kVisitRootFlagAllRoots);
-    concurrent_copying_->GetBarrier().Pass(self);
   }
 
   void VisitRoots(mirror::Object*** roots,
@@ -764,19 +764,14 @@ void ConcurrentCopying::FlipThreadRoots() {
   }
   Thread* self = Thread::Current();
   Locks::mutator_lock_->AssertNotHeld(self);
-  gc_barrier_->Init(self, 0);
   ThreadFlipVisitor thread_flip_visitor(this, heap_->use_tlab_);
   FlipCallback flip_callback(this);
 
-  size_t barrier_count = Runtime::Current()->GetThreadList()->FlipThreadRoots(
+  Runtime::Current()->GetThreadList()->FlipThreadRoots(
       &thread_flip_visitor, &flip_callback, this, GetHeap()->GetGcPauseListener());
 
-  {
-    ScopedThreadStateChange tsc(self, ThreadState::kWaitingForCheckPointsToRun);
-    gc_barrier_->Increment(self, barrier_count);
-  }
   is_asserting_to_space_invariant_ = true;
-  QuasiAtomic::ThreadFenceForConstructor();
+  QuasiAtomic::ThreadFenceForConstructor();  // TODO: Remove?
   if (kVerboseMode) {
     LOG(INFO) << "time=" << region_space_->Time();
     region_space_->DumpNonFreeRegions(LOG_STREAM(INFO));
@@ -1224,7 +1219,7 @@ bool ConcurrentCopying::TestAndSetMarkBitForRef(mirror::Object* ref) {
   } else {
     // Should be a large object. Must be page aligned and the LOS must exist.
     if (kIsDebugBuild
-        && (!IsAligned<kPageSize>(ref) || heap_->GetLargeObjectsSpace() == nullptr)) {
+        && (!IsAligned<kLargeObjectAlignment>(ref) || heap_->GetLargeObjectsSpace() == nullptr)) {
       // It must be heap corruption. Remove memory protection and dump data.
       region_space_->Unprotect();
       heap_->GetVerification()->LogHeapCorruption(/* obj */ nullptr,
@@ -1253,7 +1248,7 @@ bool ConcurrentCopying::TestMarkBitmapForRef(mirror::Object* ref) {
   } else {
     // Should be a large object. Must be page aligned and the LOS must exist.
     if (kIsDebugBuild
-        && (!IsAligned<kPageSize>(ref) || heap_->GetLargeObjectsSpace() == nullptr)) {
+        && (!IsAligned<kLargeObjectAlignment>(ref) || heap_->GetLargeObjectsSpace() == nullptr)) {
       // It must be heap corruption. Remove memory protection and dump data.
       region_space_->Unprotect();
       heap_->GetVerification()->LogHeapCorruption(/* obj */ nullptr,
@@ -1809,8 +1804,10 @@ void ConcurrentCopying::DisableMarking() {
     heap_->rb_table_->ClearAll();
     DCHECK(heap_->rb_table_->IsAllCleared());
   }
-  is_mark_stack_push_disallowed_.store(1, std::memory_order_seq_cst);
-  mark_stack_mode_.store(kMarkStackModeOff, std::memory_order_seq_cst);
+  if (kIsDebugBuild) {
+    is_mark_stack_push_disallowed_.store(1, std::memory_order_relaxed);
+  }
+  mark_stack_mode_.store(kMarkStackModeOff, std::memory_order_release);
 }
 
 void ConcurrentCopying::IssueEmptyCheckpoint() {
@@ -1835,10 +1832,10 @@ void ConcurrentCopying::ExpandGcMarkStack() {
 }
 
 void ConcurrentCopying::PushOntoMarkStack(Thread* const self, mirror::Object* to_ref) {
-  CHECK_EQ(is_mark_stack_push_disallowed_.load(std::memory_order_relaxed), 0)
+  DCHECK_EQ(is_mark_stack_push_disallowed_.load(std::memory_order_relaxed), 0)
       << " " << to_ref << " " << mirror::Object::PrettyTypeOf(to_ref);
   CHECK(thread_running_gc_ != nullptr);
-  MarkStackMode mark_stack_mode = mark_stack_mode_.load(std::memory_order_relaxed);
+  MarkStackMode mark_stack_mode = mark_stack_mode_.load(std::memory_order_acquire);
   if (LIKELY(mark_stack_mode == kMarkStackModeThreadLocal)) {
     if (LIKELY(self == thread_running_gc_)) {
       // If GC-running thread, use the GC mark stack instead of a thread-local mark stack.
@@ -2141,7 +2138,7 @@ bool ConcurrentCopying::ProcessMarkStackOnce() {
   DCHECK(self == thread_running_gc_);
   DCHECK(thread_running_gc_->GetThreadLocalMarkStack() == nullptr);
   size_t count = 0;
-  MarkStackMode mark_stack_mode = mark_stack_mode_.load(std::memory_order_relaxed);
+  MarkStackMode mark_stack_mode = mark_stack_mode_.load(std::memory_order_acquire);
   if (mark_stack_mode == kMarkStackModeThreadLocal) {
     // Process the thread-local mark stacks and the GC mark stack.
     count += ProcessThreadLocalMarkStacks(/* disable_weak_ref_access= */ false,
@@ -2308,7 +2305,7 @@ inline void ConcurrentCopying::ProcessMarkStackRef(mirror::Object* to_ref) {
             heap_->GetNonMovingSpace()->GetMarkBitmap();
         const bool is_los = !mark_bitmap->HasAddress(to_ref);
         if (is_los) {
-          if (!IsAligned<kPageSize>(to_ref)) {
+          if (!IsAligned<kLargeObjectAlignment>(to_ref)) {
             // Ref is a large object that is not aligned, it must be heap
             // corruption. Remove memory protection and dump data before
             // AtomicSetReadBarrierState since it will fault if the address is not
@@ -2424,10 +2421,9 @@ void ConcurrentCopying::SwitchToSharedMarkStackMode() {
   DCHECK(thread_running_gc_ != nullptr);
   DCHECK(self == thread_running_gc_);
   DCHECK(thread_running_gc_->GetThreadLocalMarkStack() == nullptr);
-  MarkStackMode before_mark_stack_mode = mark_stack_mode_.load(std::memory_order_relaxed);
-  CHECK_EQ(static_cast<uint32_t>(before_mark_stack_mode),
+  CHECK_EQ(static_cast<uint32_t>(mark_stack_mode_.load(std::memory_order_relaxed)),
            static_cast<uint32_t>(kMarkStackModeThreadLocal));
-  mark_stack_mode_.store(kMarkStackModeShared, std::memory_order_relaxed);
+  mark_stack_mode_.store(kMarkStackModeShared, std::memory_order_release);
   DisableWeakRefAccessCallback dwrac(this);
   // Process the thread local mark stacks one last time after switching to the shared mark stack
   // mode and disable weak ref accesses.
@@ -2447,11 +2443,9 @@ void ConcurrentCopying::SwitchToGcExclusiveMarkStackMode() {
   DCHECK(thread_running_gc_ != nullptr);
   DCHECK(self == thread_running_gc_);
   DCHECK(thread_running_gc_->GetThreadLocalMarkStack() == nullptr);
-  MarkStackMode before_mark_stack_mode = mark_stack_mode_.load(std::memory_order_relaxed);
-  CHECK_EQ(static_cast<uint32_t>(before_mark_stack_mode),
+  CHECK_EQ(static_cast<uint32_t>(mark_stack_mode_.load(std::memory_order_relaxed)),
            static_cast<uint32_t>(kMarkStackModeShared));
-  mark_stack_mode_.store(kMarkStackModeGcExclusive, std::memory_order_relaxed);
-  QuasiAtomic::ThreadFenceForConstructor();
+  mark_stack_mode_.store(kMarkStackModeGcExclusive, std::memory_order_release);
   if (kVerboseMode) {
     LOG(INFO) << "Switched to GC exclusive mark stack mode";
   }
@@ -2462,7 +2456,7 @@ void ConcurrentCopying::CheckEmptyMarkStack() {
   DCHECK(thread_running_gc_ != nullptr);
   DCHECK(self == thread_running_gc_);
   DCHECK(thread_running_gc_->GetThreadLocalMarkStack() == nullptr);
-  MarkStackMode mark_stack_mode = mark_stack_mode_.load(std::memory_order_relaxed);
+  MarkStackMode mark_stack_mode = mark_stack_mode_.load(std::memory_order_acquire);
   if (mark_stack_mode == kMarkStackModeThreadLocal) {
     // Thread-local mark stack mode.
     RevokeThreadLocalMarkStacks(false, nullptr);
@@ -2658,19 +2652,19 @@ void ConcurrentCopying::CaptureRssAtPeak() {
   if (Runtime::Current()->GetDumpGCPerformanceOnShutdown()) {
     std::list<range_t> gc_ranges;
     auto add_gc_range = [&gc_ranges](void* start, size_t size) {
-      void* end = static_cast<char*>(start) + RoundUp(size, kPageSize);
+      void* end = static_cast<char*>(start) + RoundUp(size, gPageSize);
       gc_ranges.emplace_back(range_t(start, end));
     };
 
     // region space
-    DCHECK(IsAligned<kPageSize>(region_space_->Limit()));
+    DCHECK(IsAlignedParam(region_space_->Limit(), gPageSize));
     gc_ranges.emplace_back(range_t(region_space_->Begin(), region_space_->Limit()));
     // mark bitmap
     add_gc_range(region_space_bitmap_->Begin(), region_space_bitmap_->Size());
 
     // non-moving space
     {
-      DCHECK(IsAligned<kPageSize>(heap_->non_moving_space_->Limit()));
+      DCHECK(IsAlignedParam(heap_->non_moving_space_->Limit(), gPageSize));
       gc_ranges.emplace_back(range_t(heap_->non_moving_space_->Begin(),
                                      heap_->non_moving_space_->Limit()));
       // mark bitmap
@@ -2690,7 +2684,7 @@ void ConcurrentCopying::CaptureRssAtPeak() {
     // large-object space
     if (heap_->GetLargeObjectsSpace()) {
       heap_->GetLargeObjectsSpace()->ForEachMemMap([&add_gc_range](const MemMap& map) {
-        DCHECK(IsAligned<kPageSize>(map.BaseSize()));
+        DCHECK(IsAlignedParam(map.BaseSize(), gPageSize));
         add_gc_range(map.BaseBegin(), map.BaseSize());
       });
       // mark bitmap
@@ -2732,13 +2726,15 @@ void ConcurrentCopying::ReclaimPhase() {
     // Double-check that the mark stack is empty.
     // Note: need to set this after VerifyNoFromSpaceRef().
     is_asserting_to_space_invariant_ = false;
-    QuasiAtomic::ThreadFenceForConstructor();
+    QuasiAtomic::ThreadFenceForConstructor();  // TODO: Remove?
     if (kVerboseMode) {
       LOG(INFO) << "Issue an empty check point. ";
     }
     IssueEmptyCheckpoint();
     // Disable the check.
-    is_mark_stack_push_disallowed_.store(0, std::memory_order_seq_cst);
+    if (kIsDebugBuild) {
+      is_mark_stack_push_disallowed_.store(0, std::memory_order_relaxed);
+    }
     if (kUseBakerReadBarrier) {
       updated_all_immune_objects_.store(false, std::memory_order_seq_cst);
     }
@@ -3684,7 +3680,7 @@ mirror::Object* ConcurrentCopying::MarkNonMoving(Thread* const self,
   accounting::LargeObjectBitmap* los_bitmap = nullptr;
   const bool is_los = !mark_bitmap->HasAddress(ref);
   if (is_los) {
-    if (!IsAligned<kPageSize>(ref)) {
+    if (!IsAligned<kLargeObjectAlignment>(ref)) {
       // Ref is a large object that is not aligned, it must be heap
       // corruption. Remove memory protection and dump data before
       // AtomicSetReadBarrierState since it will fault if the address is not

@@ -109,6 +109,7 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   // i.e. if the method was annotated with @CriticalNative
   const bool is_critical_native = (access_flags & kAccCriticalNative) != 0u;
 
+  bool emit_read_barrier = compiler_options.EmitReadBarrier();
   bool is_debuggable = compiler_options.GetDebuggable();
   bool needs_entry_exit_hooks = is_debuggable && compiler_options.IsJitCompiler();
   // We don't support JITing stubs for critical native methods in debuggable runtimes yet.
@@ -208,7 +209,7 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   //      Skip this for @CriticalNative because we're not passing a `jclass` to the native method.
   std::unique_ptr<JNIMacroLabel> jclass_read_barrier_slow_path;
   std::unique_ptr<JNIMacroLabel> jclass_read_barrier_return;
-  if (gUseReadBarrier && is_static && LIKELY(!is_critical_native)) {
+  if (emit_read_barrier && is_static && LIKELY(!is_critical_native)) {
     jclass_read_barrier_slow_path = __ CreateLabel();
     jclass_read_barrier_return = __ CreateLabel();
 
@@ -549,10 +550,10 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
       FrameOffset method_offset = mr_conv->MethodStackOffset();
       __ Load(temp, method_offset, kRawPointerSize);
       DCHECK_EQ(ArtMethod::DeclaringClassOffset().SizeValue(), 0u);
-      __ Load(to_lock, temp, MemberOffset(0u), kObjectReferenceSize);
+      __ LoadGcRootWithoutReadBarrier(to_lock, temp, MemberOffset(0u));
     } else {
       // Pass the `this` argument from its spill slot.
-      __ Load(to_lock, mr_conv->CurrentParamStackOffset(), kObjectReferenceSize);
+      __ LoadStackReference(to_lock, mr_conv->CurrentParamStackOffset());
     }
     __ CallFromThread(QUICK_ENTRYPOINT_OFFSET(kPointerSize, pJniUnlockObject));
   }
@@ -601,7 +602,7 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
 
   // 8.1. Read barrier slow path for the declaring class in the method for a static call.
   //      Skip this for @CriticalNative because we're not passing a `jclass` to the native method.
-  if (gUseReadBarrier && is_static && !is_critical_native) {
+  if (emit_read_barrier && is_static && !is_critical_native) {
     __ Bind(jclass_read_barrier_slow_path.get());
 
     // Construct slow path for read barrier:

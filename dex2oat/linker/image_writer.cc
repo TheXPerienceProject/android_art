@@ -76,6 +76,7 @@
 #include "mirror/object_array-inl.h"
 #include "mirror/string-inl.h"
 #include "mirror/var_handle.h"
+#include "nterp_helpers-inl.h"
 #include "nterp_helpers.h"
 #include "oat.h"
 #include "oat_file.h"
@@ -183,12 +184,13 @@ class ReferenceFieldVisitor {
  public:
   using VisitFunc = std::function<void(mirror::Object&, ArtField&)>;
 
-  explicit ReferenceFieldVisitor(VisitFunc visit_func) : visit_func_(visit_func) {}
+  explicit ReferenceFieldVisitor(VisitFunc visit_func) : visit_func_(std::move(visit_func)) {}
 
   void operator()(ObjPtr<mirror::Object> obj, MemberOffset offset, bool is_static) const
       REQUIRES_SHARED(Locks::mutator_lock_) {
     CHECK(!obj->IsObjectArray());
-    mirror::Object* field_obj = obj->GetFieldObject<mirror::Object>(offset);
+    mirror::Object* field_obj =
+        obj->GetFieldObject<mirror::Object, kVerifyNone, kWithoutReadBarrier>(offset);
     // Skip fields that contain null.
     if (field_obj == nullptr) {
       return;
@@ -205,7 +207,9 @@ class ReferenceFieldVisitor {
       CHECK(obj->IsClass());
       field = ArtField::FindStaticFieldWithOffset(obj->AsClass(), offset.Uint32Value());
     } else {
-      field = ArtField::FindInstanceFieldWithOffset(obj->GetClass(), offset.Uint32Value());
+      field = ArtField::
+          FindInstanceFieldWithOffset</*kExactOffset*/ true, kVerifyNone, kWithoutReadBarrier>(
+              obj->GetClass<kVerifyNone, kWithoutReadBarrier>(), offset.Uint32Value());
     }
     DCHECK(field != nullptr);
     visit_func_(*field_obj, *field);
@@ -283,9 +287,15 @@ HashMap<mirror::Object*, uint32_t> MatchDirtyObjectPaths(
       return nullptr;
     }
 
-    ObjPtr<mirror::Object> next_obj = array->GetWithoutChecks(idx);
+    ObjPtr<mirror::Object> next_obj =
+        array->GetWithoutChecks<kVerifyNone, kWithoutReadBarrier>(idx);
+    if (next_obj == nullptr) {
+      return nullptr;
+    }
+
     std::string temp;
-    if (next_obj == nullptr || next_obj->GetClass()->GetDescriptor(&temp) != ref_info.type) {
+    if (next_obj->GetClass<kVerifyNone, kWithoutReadBarrier>()->GetDescriptor(&temp) !=
+        ref_info.type) {
       return nullptr;
     }
     return next_obj.Ptr();
@@ -355,15 +365,13 @@ HashMap<mirror::Object*, uint32_t> MatchDirtyObjectPaths(
 static ObjPtr<mirror::ObjectArray<mirror::Object>> AllocateBootImageLiveObjects(
     Thread* self, Runtime* runtime) REQUIRES_SHARED(Locks::mutator_lock_) {
   ClassLinker* class_linker = runtime->GetClassLinker();
-  // The objects used for the Integer.valueOf() intrinsic must remain live even if references
+  // The objects used for intrinsics must remain live even if references
   // to them are removed using reflection. Image roots are not accessible through reflection,
   // so the array we construct here shall keep them alive.
   StackHandleScope<1> hs(self);
-  Handle<mirror::ObjectArray<mirror::Object>> integer_cache =
-      hs.NewHandle(IntrinsicObjects::LookupIntegerCache(self, class_linker));
   size_t live_objects_size =
       enum_cast<size_t>(ImageHeader::kIntrinsicObjectsStart) +
-      ((integer_cache != nullptr) ? (/* cache */ 1u + integer_cache->GetLength()) : 0u);
+      IntrinsicObjects::GetNumberOfIntrinsicObjects();
   ObjPtr<mirror::ObjectArray<mirror::Object>> live_objects =
       mirror::ObjectArray<mirror::Object>::Alloc(
           self, GetClassRoot<mirror::ObjectArray<mirror::Object>>(class_linker), live_objects_size);
@@ -387,21 +395,7 @@ static ObjPtr<mirror::ObjectArray<mirror::Object>> AllocateBootImageLiveObjects(
   set_entry(ImageHeader::kClearedJniWeakSentinel, runtime->GetSentinel().Read());
 
   DCHECK_EQ(index, enum_cast<int32_t>(ImageHeader::kIntrinsicObjectsStart));
-  if (integer_cache != nullptr) {
-    live_objects->Set(index++, integer_cache.Get());
-    for (int32_t i = 0, length = integer_cache->GetLength(); i != length; ++i) {
-      live_objects->Set(index++, integer_cache->Get(i));
-    }
-  }
-  CHECK_EQ(index, live_objects->GetLength());
-
-  if (kIsDebugBuild && integer_cache != nullptr) {
-    CHECK_EQ(integer_cache.Get(), IntrinsicObjects::GetIntegerValueOfCache(live_objects));
-    for (int32_t i = 0, len = integer_cache->GetLength(); i != len; ++i) {
-      CHECK_EQ(integer_cache->GetWithoutChecks(i),
-               IntrinsicObjects::GetIntegerValueOfObject(live_objects, i));
-    }
-  }
+  IntrinsicObjects::FillIntrinsicObjects(live_objects, index);
   return live_objects;
 }
 
@@ -887,7 +881,7 @@ void ImageWriter::UpdateImageBinSlotOffset(mirror::Object* object,
 
 bool ImageWriter::AllocMemory() {
   for (ImageInfo& image_info : image_infos_) {
-    const size_t length = RoundUp(image_info.CreateImageSections().first, kPageSize);
+    const size_t length = RoundUp(image_info.CreateImageSections().first, kElfSegmentAlignment);
 
     std::string error_msg;
     image_info.image_ = MemMap::MapAnonymous("image writer image",
@@ -901,9 +895,12 @@ bool ImageWriter::AllocMemory() {
     }
 
     // Create the image bitmap, only needs to cover mirror object section which is up to image_end_.
+    // The covered size is rounded up to kCardSize to match the bitmap size expected by Loader::Init
+    // at art::gc::space::ImageSpace.
     CHECK_LE(image_info.image_end_, length);
-    image_info.image_bitmap_ = gc::accounting::ContinuousSpaceBitmap::Create(
-        "image bitmap", image_info.image_.Begin(), RoundUp(image_info.image_end_, kPageSize));
+    image_info.image_bitmap_ = gc::accounting::ContinuousSpaceBitmap::Create("image bitmap",
+        image_info.image_.Begin(),
+        RoundUp(image_info.image_end_, gc::accounting::CardTable::kCardSize));
     if (!image_info.image_bitmap_.IsValid()) {
       LOG(ERROR) << "Failed to allocate memory for image bitmap";
       return false;
@@ -2590,7 +2587,7 @@ void ImageWriter::CalculateNewObjectOffsets() {
   for (ImageInfo& image_info : image_infos_) {
     image_info.image_begin_ = global_image_begin_ + image_offset;
     image_info.image_offset_ = image_offset;
-    image_info.image_size_ = RoundUp(image_info.CreateImageSections().first, kPageSize);
+    image_info.image_size_ = RoundUp(image_info.CreateImageSections().first, kElfSegmentAlignment);
     // There should be no gaps until the next image.
     image_offset += image_info.image_size_;
   }
@@ -2726,7 +2723,7 @@ void ImageWriter::CreateHeader(size_t oat_index, size_t component_count) {
   const uint8_t* oat_data_end = image_info.oat_data_begin_ + image_info.oat_size_;
 
   uint32_t image_reservation_size = image_info.image_size_;
-  DCHECK_ALIGNED(image_reservation_size, kPageSize);
+  DCHECK_ALIGNED(image_reservation_size, kElfSegmentAlignment);
   uint32_t current_component_count = 1u;
   if (compiler_options_.IsAppImage()) {
     DCHECK_EQ(oat_index, 0u);
@@ -2737,9 +2734,9 @@ void ImageWriter::CreateHeader(size_t oat_index, size_t component_count) {
     if (oat_index == 0u) {
       const ImageInfo& last_info = image_infos_.back();
       const uint8_t* end = last_info.oat_file_begin_ + last_info.oat_loaded_size_;
-      DCHECK_ALIGNED(image_info.image_begin_, kPageSize);
-      image_reservation_size =
-          dchecked_integral_cast<uint32_t>(RoundUp(end - image_info.image_begin_, kPageSize));
+      DCHECK_ALIGNED(image_info.image_begin_, kElfSegmentAlignment);
+      image_reservation_size = dchecked_integral_cast<uint32_t>(
+          RoundUp(end - image_info.image_begin_, kElfSegmentAlignment));
       current_component_count = component_count;
     } else {
       image_reservation_size = 0u;
@@ -2771,7 +2768,11 @@ void ImageWriter::CreateHeader(size_t oat_index, size_t component_count) {
   // Finally bitmap section.
   const size_t bitmap_bytes = image_info.image_bitmap_.Size();
   auto* bitmap_section = &sections[ImageHeader::kSectionImageBitmap];
-  *bitmap_section = ImageSection(RoundUp(image_end, kPageSize), RoundUp(bitmap_bytes, kPageSize));
+  // The offset of the bitmap section should be aligned to kElfSegmentAlignment to enable mapping
+  // the section from file to memory. However the section size doesn't have to be rounded up as it
+  // is located at the end of the file. When mapping file contents to memory, if the last page of
+  // the mapping is only partially filled with data, the rest will be zero-filled.
+  *bitmap_section = ImageSection(RoundUp(image_end, kElfSegmentAlignment), bitmap_bytes);
   if (VLOG_IS_ON(compiler)) {
     LOG(INFO) << "Creating header for " << oat_filenames_[oat_index];
     size_t idx = 0;
@@ -2820,17 +2821,19 @@ ArtMethod* ImageWriter::GetImageMethodAddress(ArtMethod* method) {
 const void* ImageWriter::GetIntrinsicReferenceAddress(uint32_t intrinsic_data) {
   DCHECK(compiler_options_.IsBootImage());
   switch (IntrinsicObjects::DecodePatchType(intrinsic_data)) {
-    case IntrinsicObjects::PatchType::kIntegerValueOfArray: {
+    case IntrinsicObjects::PatchType::kValueOfArray: {
+      uint32_t index = IntrinsicObjects::DecodePatchIndex(intrinsic_data);
       const uint8_t* base_address =
           reinterpret_cast<const uint8_t*>(GetImageAddress(boot_image_live_objects_));
       MemberOffset data_offset =
-          IntrinsicObjects::GetIntegerValueOfArrayDataOffset(boot_image_live_objects_);
+          IntrinsicObjects::GetValueOfArrayDataOffset(boot_image_live_objects_, index);
       return base_address + data_offset.Uint32Value();
     }
-    case IntrinsicObjects::PatchType::kIntegerValueOfObject: {
+    case IntrinsicObjects::PatchType::kValueOfObject: {
       uint32_t index = IntrinsicObjects::DecodePatchIndex(intrinsic_data);
-      ObjPtr<mirror::Object> value =
-          IntrinsicObjects::GetIntegerValueOfObject(boot_image_live_objects_, index);
+      ObjPtr<mirror::Object> value = IntrinsicObjects::GetValueOfObject(boot_image_live_objects_,
+                                                                        /* start_index= */ 0u,
+                                                                        index);
       return GetImageAddress(value.Ptr());
     }
   }
@@ -3466,6 +3469,7 @@ void ImageWriter::CopyAndFixupMethod(ArtMethod* orig,
 
   CopyAndFixupReference(copy->GetDeclaringClassAddressWithoutBarrier(),
                         orig->GetDeclaringClassUnchecked<kWithoutReadBarrier>());
+  ResetNterpFastPathFlags(copy, orig);
 
   // OatWriter replaces the code_ with an offset value. Here we re-adjust to a pointer relative to
   // oat_begin_
@@ -3757,6 +3761,33 @@ void ImageWriter::CopyAndFixupPointer(
 template <typename ValueType>
 void ImageWriter::CopyAndFixupPointer(void* object, MemberOffset offset, ValueType src_value) {
   return CopyAndFixupPointer(object, offset, src_value, target_ptr_size_);
+}
+
+void ImageWriter::ResetNterpFastPathFlags(ArtMethod* copy, ArtMethod* orig) {
+  DCHECK(copy != nullptr);
+  DCHECK(orig != nullptr);
+  if (orig->IsRuntimeMethod() || orig->IsProxyMethod()) {
+    return;  // !IsRuntimeMethod() and !IsProxyMethod() for GetShortyView()
+  }
+
+  // Clear old nterp fast path flags.
+  if (copy->HasNterpEntryPointFastPathFlag()) {
+    copy->ClearNterpEntryPointFastPathFlag();  // Flag has other uses, clear it conditionally.
+  }
+  copy->ClearNterpInvokeFastPathFlag();
+
+  // Check if nterp fast paths available on target ISA.
+  std::string_view shorty = orig->GetShortyView();  // Use orig, copy's class not yet ready.
+  uint32_t new_nterp_flags =
+      GetNterpFastPathFlags(shorty, copy->GetAccessFlags(), compiler_options_.GetInstructionSet());
+
+  // Set new nterp fast path flags, if approporiate.
+  if ((new_nterp_flags & kAccNterpEntryPointFastPathFlag) != 0) {
+    copy->SetNterpEntryPointFastPathFlag();
+  }
+  if ((new_nterp_flags & kAccNterpInvokeFastPathFlag) != 0) {
+    copy->SetNterpInvokeFastPathFlag();
+  }
 }
 
 }  // namespace linker

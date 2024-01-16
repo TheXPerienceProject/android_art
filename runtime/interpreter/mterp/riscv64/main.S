@@ -128,8 +128,7 @@ END \name
 //   - \code_item: holds instruction array on exit
 .macro FETCH_CODE_ITEM_INFO code_item, regs, outs, ins
     // Check LSB of \code_item. If 1, it's a compact dex file.
-    bexti \regs, \code_item, 0x0
-    beqz \regs, 1f  // Regular dex.
+    BRANCH_IF_BIT_CLEAR \regs, \code_item, 0, 1f  // Regular dex.
     unimp  // Compact dex: unimplemented.
 1:
     // Unpack values from regular dex format.
@@ -156,18 +155,6 @@ END \name
     beqz t0, \continue
     EXPORT_PC
     call art_quick_test_suspend
-.endm
-
-// Clobbers: t0, t1
-.macro WRITE_BARRIER_IF_OBJECT is_object, value, holder, uniq
-    .if \is_object
-    beqz \value, .Lskip_write_barrier_\uniq // No object, skip out.
-    ld t0, THREAD_CARD_TABLE_OFFSET(xSELF)
-    srli t1, \holder, CARD_TABLE_CARD_SHIFT
-    add t1, t0, t1
-    sb t0, (t1)
-.Lskip_write_barrier_\uniq:
-    .endif
 .endm
 
 // Fetch one or more half-word units from an offset past the current PC.
@@ -267,9 +254,7 @@ END \name
 // Clobbers: t0
 .macro CHECK_AND_UPDATE_SHARED_MEMORY_METHOD if_hot, if_not_hot
     lw t0, ART_METHOD_ACCESS_FLAGS_OFFSET(a0)
-    // Extract flag bit, branch if bit is unset.
-    bexti t0, t0, ART_METHOD_IS_MEMORY_SHARED_FLAG_BIT
-    beqz t0, \if_hot
+    BRANCH_IF_BIT_CLEAR t0, t0, ART_METHOD_IS_MEMORY_SHARED_FLAG_BIT, \if_hot
 
     lw t0, THREAD_SHARED_METHOD_HOTNESS_OFFSET(xSELF)
     beqz t0, \if_hot
@@ -309,6 +294,7 @@ END \name
 .endm
 
 // Typed read, defaults to 32-bit read
+// Note: Incorrect for an object ref; it requires LWU, or LW;ZEXT.W.
 // Clobbers: \reg
 // Safe if \reg == \vreg.
 .macro GET_VREG reg, vreg, is_wide=0
@@ -321,6 +307,7 @@ END \name
 .endm
 
 // Typed write, defaults to 32-bit write.
+// Note: Incorrect for an object ref; it requires 2nd SW into xREFS.
 // Clobbers: z0
 .macro SET_VREG reg, vreg, z0, is_wide=0
     .if \is_wide
@@ -437,8 +424,8 @@ OAT_ENTRY ExecuteNterpWithClinitImpl
 .Linitializing_check:
     lui t2, MIRROR_CLASS_STATUS_INITIALIZING << (MIRROR_CLASS_STATUS_SHIFT - 12)
     bltu t1, t2, .Lresolution_trampoline
-    ld t1, MIRROR_CLASS_CLINIT_THREAD_ID_OFFSET(t0)
-    ld t0, THREAD_TID_OFFSET(xSELF)
+    lwu t1, MIRROR_CLASS_CLINIT_THREAD_ID_OFFSET(t0)
+    lwu t0, THREAD_TID_OFFSET(xSELF)
     beq t0, t1, ExecuteNterpImpl
 .Lresolution_trampoline:
     tail art_quick_resolution_trampoline
@@ -470,8 +457,7 @@ OAT_ENTRY ExecuteNterpImpl
    // Fast path: all reference args.
    sh2add t0, s7, xFP       // t0 := &xFP[a1]
    sh2add t1, s7, xREFS     // t1 := &xREFS[a1]
-   bexti t2, s10, ART_METHOD_NTERP_ENTRY_POINT_FAST_PATH_FLAG_BIT
-   beqz t2, .Lentry_a1
+   BRANCH_IF_BIT_CLEAR t2, s10, ART_METHOD_NTERP_ENTRY_POINT_FAST_PATH_FLAG_BIT, .Lentry_a1
 %  setup_ref_args_and_go(fp="t0", refs="t1", refs_end="xFP", spills_sp="s9", z0="t2", z1="t3", done=".Lentry_go")
 
    // Fast path: instance with zero args.
@@ -496,7 +482,7 @@ OAT_ENTRY ExecuteNterpImpl
    sh2add t0, s7, xFP       // t0 := &xFP[a1]
    sh2add t1, s7, xREFS     // t1 := &xREFS[a1]
    addi t2, s11, 1          // t2 := shorty arg (skip return type)
-   binvi s10, s10, 0        // s10 := 0 if static, 1 if instance
+   xori s10, s10, 1         // s10 := 0 if static, 1 if instance
    slliw t3, s10, 2         // t3 := (static) 0, (instance) 4: fp/refs/outs byte offset
    // constant setup for gpr/fpr shorty comparisons
    li s0, 'D'               // s0 := double char (unused fp)
@@ -518,28 +504,29 @@ OAT_ENTRY ExecuteNterpImpl
    // We drained arg registers, so continue from caller stack's out array. Unlike the reference-only
    // fast-path, the continuation offset in the out array can vary, depending on the presence of
    // 64-bit values in the arg registers. \offset tracks this value as a byte offset.
-   addi t4, s9, (NTERP_SIZE_SAVE_CALLEE_SAVES + 8)
-                            // t4 := (caller) outs array base address, for here and fargs
-   add t0, t3, t0           // t0 := (callee) &FP[next]
+   addi t5, s9, (NTERP_SIZE_SAVE_CALLEE_SAVES + 8)
+                            // t5 := (caller) outs array base address
+   add t4, t3, t0           // t4 := (callee) &FP[next]
    add t1, t3, t1           // t1 := (callee) &REFS[next]
-   add t3, t3, t4           // t3 := (caller) &OUTS[next]
-%  store_outs_to_vregs(outs="t3", shorty="t2", fp="t0", refs="t1", z0="t5", z1="t6", D="s0", F="s4", J="s5", L="s8", next=".Lentry_fargs")
-
+   add t3, t3, t5           // t3 := (caller) &OUTS[next]
+%  store_outs_to_vregs(outs="t3", shorty="t2", fp="t4", refs="t1", z0="t5", z1="t6", D="s0", F="s4", J="s5", L="s8", next=".Lentry_fargs")
+                            // t0 = &xFP[a1], unclobbered
 .Lentry_fargs:
-   sh2add t0, s7, xFP       // t0 := &FP[a1]
    addi t1, s11, 1          // t1 := shorty arg (skip return type)
    slliw t2, s10, 2         // t2 := starting byte offset for fp/outs, static and instance
    // linear scan through shorty: extract float args
-%  store_fpr_to_vreg(fpr="fa0", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t5", D="s0", F="s4", J="s5", next=".Lentry_go")
-%  store_fpr_to_vreg(fpr="fa1", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t5", D="s0", F="s4", J="s5", next=".Lentry_go")
-%  store_fpr_to_vreg(fpr="fa2", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t5", D="s0", F="s4", J="s5", next=".Lentry_go")
-%  store_fpr_to_vreg(fpr="fa3", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t5", D="s0", F="s4", J="s5", next=".Lentry_go")
-%  store_fpr_to_vreg(fpr="fa4", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t5", D="s0", F="s4", J="s5", next=".Lentry_go")
-%  store_fpr_to_vreg(fpr="fa5", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t5", D="s0", F="s4", J="s5", next=".Lentry_go")
-%  store_fpr_to_vreg(fpr="fa6", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t5", D="s0", F="s4", J="s5", next=".Lentry_go")
-%  store_fpr_to_vreg(fpr="fa7", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t5", D="s0", F="s4", J="s5", next=".Lentry_go")
+%  store_fpr_to_vreg(fpr="fa0", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t4", D="s0", F="s4", J="s5", next=".Lentry_go")
+%  store_fpr_to_vreg(fpr="fa1", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t4", D="s0", F="s4", J="s5", next=".Lentry_go")
+%  store_fpr_to_vreg(fpr="fa2", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t4", D="s0", F="s4", J="s5", next=".Lentry_go")
+%  store_fpr_to_vreg(fpr="fa3", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t4", D="s0", F="s4", J="s5", next=".Lentry_go")
+%  store_fpr_to_vreg(fpr="fa4", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t4", D="s0", F="s4", J="s5", next=".Lentry_go")
+%  store_fpr_to_vreg(fpr="fa5", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t4", D="s0", F="s4", J="s5", next=".Lentry_go")
+%  store_fpr_to_vreg(fpr="fa6", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t4", D="s0", F="s4", J="s5", next=".Lentry_go")
+%  store_fpr_to_vreg(fpr="fa7", offset="t2", shorty="t1", fp="t0", z0="t3", z1="t4", D="s0", F="s4", J="s5", next=".Lentry_go")
+   addi t3, s9, (NTERP_SIZE_SAVE_CALLEE_SAVES + 8)
+                            // t3 := (caller) outs array base address
    add t0, t2, t0           // t0 := (callee) &FP[next]
-   add t2, t2, t4           // t2 := (caller) &OUTS[next]
+   add t2, t2, t3           // t2 := (caller) &OUTS[next]
 %  store_float_outs_to_vregs(outs="t2", shorty="t1", fp="t0", z0="t3", D="s0", F="s4", J="s5", next=".Lentry_go")
 
 .Lentry_go:
@@ -617,10 +604,10 @@ NterpToNterpStatic:
 %  nterp_to_nterp_static()
 NterpToNterpInstanceRange:
 %  nterp_to_nterp_instance_range()
-NterpToNterpStaticRange:
-%  nterp_to_nterp_static_range()
 NterpToNterpStringInitRange:
 %  nterp_to_nterp_string_init_range()
+NterpToNterpStaticRange:
+%  nterp_to_nterp_static_range()
 
 NAME_END nterp_helper
 
@@ -633,6 +620,8 @@ NAME_END nterp_helper
 EndExecuteNterpImpl:
 
 // Entrypoints into runtime.
+NTERP_TRAMPOLINE nterp_filled_new_array, NterpFilledNewArray
+NTERP_TRAMPOLINE nterp_filled_new_array_range, NterpFilledNewArrayRange
 NTERP_TRAMPOLINE nterp_get_class, NterpGetClass
 NTERP_TRAMPOLINE nterp_get_method, NterpGetMethod
 NTERP_TRAMPOLINE nterp_get_static_field, NterpGetStaticField

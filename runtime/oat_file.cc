@@ -17,6 +17,7 @@
 #include "oat_file.h"
 
 #include <dlfcn.h>
+
 #ifndef __APPLE__
 #include <link.h>  // for dl_iterate_phdr.
 #endif
@@ -621,7 +622,11 @@ bool OatFileBase::Setup(int zip_fd,
   }
 
   DCHECK_GE(static_cast<size_t>(pointer_size), alignof(GcRoot<mirror::Object>));
-  if (!IsAligned<kPageSize>(bss_begin_) ||
+  // In certain cases, ELF can be mapped at an address which is page aligned,
+  // however not aligned to kElfSegmentAlignment. While technically this isn't
+  // correct as per requirement in the ELF header, it has to be supported for
+  // now. See also the comment at ImageHeader::RelocateImageReferences.
+  if (!IsAlignedParam(bss_begin_, gPageSize) ||
       !IsAlignedParam(bss_methods_, static_cast<size_t>(pointer_size)) ||
       !IsAlignedParam(bss_roots_, static_cast<size_t>(pointer_size)) ||
       !IsAligned<alignof(GcRoot<mirror::Object>)>(bss_end_)) {
@@ -692,7 +697,7 @@ bool OatFileBase::Setup(int zip_fd,
     // Location encoded in the oat file. We will use this for multidex naming.
     std::string_view oat_dex_file_location(dex_file_location_data, dex_file_location_size);
     std::string dex_file_location(oat_dex_file_location);
-    bool is_multidex = DexFileLoader::IsMultiDexLocation(dex_file_location.c_str());
+    bool is_multidex = DexFileLoader::IsMultiDexLocation(dex_file_location);
     // Check that `is_multidex` does not clash with other indicators. The first dex location
     // must be primary location and, if we're opening external dex files, the location must
     // be multi-dex if and only if we already have a dex file opened for it.
@@ -1416,7 +1421,10 @@ bool DlOpenOatFile::Dlopen(const std::string& elf_filename,
       // Take ownership of the memory used by the shared object. dlopen() does not assume
       // full ownership of this memory and dlclose() shall just remap it as zero pages with
       // PROT_NONE. We need to unmap the memory when destroying this oat file.
-      dlopen_mmaps_.push_back(reservation->TakeReservedMemory(context.max_size));
+      // The reserved memory size is aligned up to kElfSegmentAlignment to ensure
+      // that the next reserved area will be aligned to the value.
+      dlopen_mmaps_.push_back(reservation->TakeReservedMemory(
+          CondRoundUp<kPageSizeAgnostic>(context.max_size, kElfSegmentAlignment)));
     }
 #else
     static_assert(!kIsTargetBuild || kIsTargetLinux || kIsTargetFuchsia,
@@ -1657,7 +1665,7 @@ bool ElfOatFile::InitializeFromElfFile(int zip_fd,
   SetBegin(elf_file->Begin() + offset);
   SetEnd(elf_file->Begin() + size + offset);
   // Ignore the optional .bss section when opening non-executable.
-  return Setup(zip_fd, dex_filenames, /*dex_fds=*/{}, error_msg);
+  return Setup(zip_fd, dex_filenames, /*dex_files=*/{}, error_msg);
 }
 
 bool ElfOatFile::Load(const std::string& elf_filename,
@@ -2211,7 +2219,7 @@ void OatDexFile::InitializeTypeLookupTable() {
   // Initialize TypeLookupTable.
   if (lookup_table_data_ != nullptr) {
     // Peek the number of classes from the DexFile.
-    const DexFile::Header* dex_header = reinterpret_cast<const DexFile::Header*>(dex_file_pointer_);
+    auto* dex_header = reinterpret_cast<const DexFile::Header*>(dex_file_pointer_);
     const uint32_t num_class_defs = dex_header->class_defs_size_;
     if (lookup_table_data_ + TypeLookupTable::RawDataLength(num_class_defs) >
             GetOatFile()->DexEnd()) {
@@ -2219,6 +2227,9 @@ void OatDexFile::InitializeTypeLookupTable() {
     } else {
       const uint8_t* dex_data = dex_file_pointer_;
       // TODO: Clean this up to create the type lookup table after the dex file has been created?
+      if (StandardDexFile::IsMagicValid(dex_header->magic_)) {
+        dex_data -= dex_header->HeaderOffset();
+      }
       if (CompactDexFile::IsMagicValid(dex_header->magic_)) {
         dex_data += dex_header->data_off_;
       }
@@ -2269,12 +2280,12 @@ std::unique_ptr<const DexFile> OatDexFile::OpenDexFile(std::string* error_msg) c
   static constexpr bool kVerify = false;
   static constexpr bool kVerifyChecksum = false;
   ArtDexFileLoader dex_file_loader(dex_file_container_, dex_file_location_);
-  return dex_file_loader.Open(dex_file_pointer_ - dex_file_container_->Begin(),
-                              dex_file_location_checksum_,
-                              this,
-                              kVerify,
-                              kVerifyChecksum,
-                              error_msg);
+  return dex_file_loader.OpenOne(dex_file_pointer_ - dex_file_container_->Begin(),
+                                 dex_file_location_checksum_,
+                                 this,
+                                 kVerify,
+                                 kVerifyChecksum,
+                                 error_msg);
 }
 
 uint32_t OatDexFile::GetOatClassOffset(uint16_t class_def_index) const {
@@ -2562,6 +2573,10 @@ void OatFile::InitializeRelocations() const {
 
 void OatDexFile::AssertAotCompiler() {
   CHECK(Runtime::Current()->IsAotCompiler());
+}
+
+uint32_t OatDexFile::GetDexVersion() const {
+  return atoi(reinterpret_cast<const char*>(&dex_file_magic_[4]));
 }
 
 bool OatFile::IsBackedByVdexOnly() const {

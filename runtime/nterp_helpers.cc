@@ -272,12 +272,37 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
         case Instruction::CONST_WIDE_32:
         case Instruction::CONST_WIDE:
         case Instruction::CONST_WIDE_HIGH16:
+        case Instruction::MONITOR_ENTER:
+        case Instruction::MONITOR_EXIT:
+        case Instruction::ARRAY_LENGTH:
+        case Instruction::FILLED_NEW_ARRAY:
+        case Instruction::FILLED_NEW_ARRAY_RANGE:
+        case Instruction::FILL_ARRAY_DATA:
+        case Instruction::THROW:
+        case Instruction::SGET:
+        case Instruction::SGET_WIDE:
+        case Instruction::SGET_OBJECT:
+        case Instruction::SGET_BOOLEAN:
+        case Instruction::SGET_BYTE:
+        case Instruction::SGET_CHAR:
+        case Instruction::SGET_SHORT:
         case Instruction::SPUT:
+        case Instruction::SPUT_WIDE:
         case Instruction::SPUT_OBJECT:
+        case Instruction::SPUT_BOOLEAN:
+        case Instruction::SPUT_BYTE:
+        case Instruction::SPUT_CHAR:
+        case Instruction::SPUT_SHORT:
         case Instruction::INVOKE_VIRTUAL:
         case Instruction::INVOKE_SUPER:
         case Instruction::INVOKE_DIRECT:
         case Instruction::INVOKE_STATIC:
+        case Instruction::INVOKE_INTERFACE:
+        case Instruction::INVOKE_VIRTUAL_RANGE:
+        case Instruction::INVOKE_SUPER_RANGE:
+        case Instruction::INVOKE_DIRECT_RANGE:
+        case Instruction::INVOKE_STATIC_RANGE:
+        case Instruction::INVOKE_INTERFACE_RANGE:
         case Instruction::NEG_INT:
         case Instruction::NOT_INT:
         case Instruction::NEG_LONG:
@@ -382,6 +407,10 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
         case Instruction::SHL_INT_LIT8:
         case Instruction::SHR_INT_LIT8:
         case Instruction::USHR_INT_LIT8:
+        case Instruction::INVOKE_POLYMORPHIC:
+        case Instruction::INVOKE_POLYMORPHIC_RANGE:
+        case Instruction::INVOKE_CUSTOM:
+        case Instruction::INVOKE_CUSTOM_RANGE:
           continue;
         default:
           return false;

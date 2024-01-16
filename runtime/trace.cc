@@ -115,7 +115,7 @@ uint64_t GetTimestamp() {
   return t;
 }
 
-#if defined(__i386__) || defined(__x86_64__)
+#if defined(__i386__) || defined(__x86_64__) || defined(__aarch64__)
 // Here we compute the scaling factor by sleeping for a millisecond. Alternatively, we could
 // generate raw timestamp counter and also time using clock_gettime at the start and the end of the
 // trace. We can compute the frequency of timestamp counter upadtes in the post processing step
@@ -132,7 +132,9 @@ double computeScalingFactor() {
   DCHECK(scaling_factor > 0.0) << scaling_factor;
   return scaling_factor;
 }
+#endif
 
+#if defined(__i386__) || defined(__x86_64__)
 double GetScalingFactorForX86() {
   uint32_t eax, ebx, ecx;
   asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx) : "a"(0x0), "c"(0));
@@ -187,7 +189,13 @@ void InitializeTimestampCounters() {
   uint64_t freq = 0;
   // See Arm Architecture Registers  Armv8 section System Registers
   asm volatile("mrs %0,  cntfrq_el0" : "=r"(freq));
-  tsc_to_microsec_scaling_factor = seconds_to_microseconds / static_cast<double>(freq);
+  if (freq == 0) {
+    // It is expected that cntfrq_el0 is correctly setup during system initialization but some
+    // devices don't do this. In such cases fall back to computing the frequency. See b/315139000.
+    tsc_to_microsec_scaling_factor = computeScalingFactor();
+  } else {
+    tsc_to_microsec_scaling_factor = seconds_to_microseconds / static_cast<double>(freq);
+  }
 #elif defined(__i386__) || defined(__x86_64__)
   tsc_to_microsec_scaling_factor = GetScalingFactorForX86();
 #else
@@ -1033,7 +1041,7 @@ void Trace::ReadClocks(Thread* thread, uint32_t* thread_clock_diff, uint64_t* ti
   }
 }
 
-std::string TraceWriter::GetMethodLine(std::string method_line, uint32_t method_index) {
+std::string TraceWriter::GetMethodLine(const std::string& method_line, uint32_t method_index) {
   return StringPrintf("%#x\t%s", (method_index << TraceActionBits), method_line.c_str());
 }
 
@@ -1104,7 +1112,7 @@ void TraceWriter::PreProcessTraceForMethodInfos(
   }
 }
 
-void TraceWriter::RecordMethodInfo(std::string method_info_line,
+void TraceWriter::RecordMethodInfo(const std::string& method_info_line,
                                    uint32_t method_id,
                                    size_t* current_index,
                                    uint8_t* buffer,

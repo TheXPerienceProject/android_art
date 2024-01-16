@@ -137,7 +137,6 @@ class Heap {
   static constexpr size_t kPartialTlabSize = 16 * KB;
   static constexpr bool kUsePartialTlabs = true;
 
-  static constexpr size_t kDefaultStartingSize = kPageSize;
   static constexpr size_t kDefaultInitialSize = 2 * MB;
   static constexpr size_t kDefaultMaximumSize = 256 * MB;
   static constexpr size_t kDefaultNonMovingSpaceCapacity = 64 * MB;
@@ -151,7 +150,9 @@ class Heap {
   static constexpr double kDefaultTargetUtilization = 0.6;
   static constexpr double kDefaultHeapGrowthMultiplier = 2.0;
   // Primitive arrays larger than this size are put in the large object space.
-  static constexpr size_t kMinLargeObjectThreshold = 3 * kPageSize;
+  // TODO: Preliminary experiments suggest this value might be not optimal.
+  //       This might benefit from further investigation.
+  static constexpr size_t kMinLargeObjectThreshold = 12 * KB;
   static constexpr size_t kDefaultLargeObjectThreshold = kMinLargeObjectThreshold;
   // Whether or not parallel GC is enabled. If not, then we never create the thread pool.
   static constexpr bool kDefaultEnableParallelGC = true;
@@ -185,6 +186,12 @@ class Heap {
 
   // How often we allow heap trimming to happen (nanoseconds).
   static constexpr uint64_t kHeapTrimWait = MsToNs(5000);
+
+  // Starting size of DlMalloc/RosAlloc spaces.
+  static size_t GetDefaultStartingSize() {
+    return gPageSize;
+  }
+
   // Whether the transition-GC heap threshold condition applies or not for non-low memory devices.
   // Stressing GC will bypass the heap threshold condition.
   DECLARE_RUNTIME_DEBUG_FLAG(kStressCollectorTransition);
@@ -273,7 +280,9 @@ class Heap {
                                                                   GetCurrentNonMovingAllocator(),
                                                                   pre_fence_visitor);
     // Java Heap Profiler check and sample allocation.
-    JHPCheckNonTlabSampleAllocation(self, obj, num_bytes);
+    if (GetHeapSampler().IsEnabled()) {
+      JHPCheckNonTlabSampleAllocation(self, obj, num_bytes);
+    }
     return obj;
   }
 
@@ -551,6 +560,11 @@ class Heap {
   // The result should be treated as an approximation, if it is being concurrently updated.
   size_t GetBytesAllocated() const {
     return num_bytes_allocated_.load(std::memory_order_relaxed);
+  }
+
+  // Returns bytes_allocated before adding 'bytes' to it.
+  size_t AddBytesAllocated(size_t bytes) {
+    return num_bytes_allocated_.fetch_add(bytes, std::memory_order_relaxed);
   }
 
   bool GetUseGenerationalCC() const {
@@ -903,7 +917,6 @@ class Heap {
   }
 
   void InitPerfettoJavaHeapProf();
-  int CheckPerfettoJHPEnabled();
   // In NonTlab case: Check whether we should report a sample allocation and if so report it.
   // Also update state (bytes_until_sample).
   // By calling JHPCheckNonTlabSampleAllocation from different functions for Large allocations and

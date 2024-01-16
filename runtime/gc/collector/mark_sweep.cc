@@ -105,7 +105,7 @@ MarkSweep::MarkSweep(Heap* heap, bool is_concurrent, const std::string& name_pre
   std::string error_msg;
   sweep_array_free_buffer_mem_map_ = MemMap::MapAnonymous(
       "mark sweep sweep array free buffer",
-      RoundUp(kSweepArrayChunkFreeSize * sizeof(mirror::Object*), kPageSize),
+      RoundUp(kSweepArrayChunkFreeSize * sizeof(mirror::Object*), gPageSize),
       PROT_READ | PROT_WRITE,
       /*low_4gb=*/ false,
       &error_msg);
@@ -440,7 +440,7 @@ class MarkSweep::MarkObjectSlowPath {
       ++mark_sweep_->large_object_mark_;
     }
     space::LargeObjectSpace* large_object_space = mark_sweep_->GetHeap()->GetLargeObjectsSpace();
-    if (UNLIKELY(obj == nullptr || !IsAligned<kPageSize>(obj) ||
+    if (UNLIKELY(obj == nullptr || !IsAligned<kLargeObjectAlignment>(obj) ||
                  (kIsDebugBuild && large_object_space != nullptr &&
                      !large_object_space->Contains(obj)))) {
       // Lowest priority logging first:

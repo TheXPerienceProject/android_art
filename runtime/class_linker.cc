@@ -39,7 +39,6 @@
 #include "barrier.h"
 #include "base/arena_allocator.h"
 #include "base/arena_bit_vector.h"
-#include "base/membarrier.h"
 #include "base/casts.h"
 #include "base/file_utils.h"
 #include "base/hash_map.h"
@@ -47,6 +46,7 @@
 #include "base/leb128.h"
 #include "base/logging.h"
 #include "base/mem_map_arena_pool.h"
+#include "base/membarrier.h"
 #include "base/metrics/metrics.h"
 #include "base/mutex-inl.h"
 #include "base/os.h"
@@ -118,7 +118,7 @@
 #include "mirror/method.h"
 #include "mirror/method_handle_impl.h"
 #include "mirror/method_handles_lookup.h"
-#include "mirror/method_type.h"
+#include "mirror/method_type-inl.h"
 #include "mirror/object-inl.h"
 #include "mirror/object-refvisitor-inl.h"
 #include "mirror/object.h"
@@ -135,6 +135,7 @@
 #include "mirror/var_handle.h"
 #include "native/dalvik_system_DexFile.h"
 #include "nativehelper/scoped_local_ref.h"
+#include "nterp_helpers-inl.h"
 #include "nterp_helpers.h"
 #include "oat.h"
 #include "oat_file-inl.h"
@@ -1191,8 +1192,9 @@ void ClassLinker::RunRootClinits(Thread* self) {
       WellKnownClasses::java_lang_reflect_InvocationTargetException_init,
       // Ensure `Parameter` class is initialized (avoid check at runtime).
       WellKnownClasses::java_lang_reflect_Parameter_init,
-      // Ensure `MethodHandles` class is initialized (avoid check at runtime).
+      // Ensure `MethodHandles` and `MethodType` classes are initialized (avoid check at runtime).
       WellKnownClasses::java_lang_invoke_MethodHandles_lookup,
+      WellKnownClasses::java_lang_invoke_MethodType_makeImpl,
       // Ensure `DirectByteBuffer` class is initialized (avoid check at runtime).
       WellKnownClasses::java_nio_DirectByteBuffer_init,
       // Ensure `FloatingDecimal` class is initialized (avoid check at runtime).
@@ -1217,6 +1219,12 @@ void ClassLinker::RunRootClinits(Thread* self) {
       // Initialize empty arrays needed by `StackOverflowError`.
       WellKnownClasses::java_util_Collections_EMPTY_LIST,
       WellKnownClasses::libcore_util_EmptyArray_STACK_TRACE_ELEMENT,
+      // Initialize boxing caches needed by the compiler.
+      WellKnownClasses::java_lang_Byte_ByteCache_cache,
+      WellKnownClasses::java_lang_Character_CharacterCache_cache,
+      WellKnownClasses::java_lang_Integer_IntegerCache_cache,
+      WellKnownClasses::java_lang_Long_LongCache_cache,
+      WellKnownClasses::java_lang_Short_ShortCache_cache,
   };
   for (ArtField* field : fields_of_classes_to_initialize) {
     EnsureRootInitialized(this, self, field->GetDeclaringClass());
@@ -1695,7 +1703,7 @@ void AppImageLoadingHelper::Update(
     // the Runtime::LoadAppImageStartupCache() option.
     VerifyInternedStringReferences(space);
   }
-
+  DCHECK(class_loader.Get() != nullptr);
   Thread* const self = Thread::Current();
   Runtime* const runtime = Runtime::Current();
   gc::Heap* const heap = runtime->GetHeap();
@@ -2236,11 +2244,14 @@ bool ClassLinker::AddImageSpace(gc::space::ImageSpace* space,
     // If we are profiling the boot classpath, we disable the shared memory
     // optimization to make sure boot classpath methods all get properly
     // profiled.
+    // For debuggable runtimes we don't use AOT code, so don't use shared memory
+    // optimization so the methods can be JITed better.
     //
     // We need to disable the flag before doing ResetCounter below, as counters
     // of shared memory method always hold the "hot" value.
     if (!runtime->IsZygote() ||
-        runtime->GetJITOptions()->GetProfileSaverOptions().GetProfileBootClassPath()) {
+        runtime->GetJITOptions()->GetProfileSaverOptions().GetProfileBootClassPath() ||
+        runtime->IsJavaDebuggable()) {
       header.VisitPackedArtMethods([&](ArtMethod& method) REQUIRES_SHARED(Locks::mutator_lock_) {
         method.ClearMemorySharedMethod();
       }, space->Begin(), image_pointer_size_);
@@ -2428,16 +2439,16 @@ void ClassLinker::VisitClassRoots(RootVisitor* visitor, VisitRootFlags flags) {
     if ((flags & kVisitRootFlagClassLoader) != 0 || tracing_enabled) {
       for (const ClassLoaderData& data : class_loaders_) {
         GcRoot<mirror::Object> root(GcRoot<mirror::Object>(self->DecodeJObject(data.weak_root)));
-        root.VisitRoot(visitor, RootInfo(kRootVMInternal));
+        root.VisitRootIfNonNull(visitor, RootInfo(kRootVMInternal));
       }
     }
   } else if (!gUseReadBarrier && (flags & kVisitRootFlagNewRoots) != 0) {
-    for (auto& root : new_class_roots_) {
-      ObjPtr<mirror::Class> old_ref = root.Read<kWithoutReadBarrier>();
+    for (auto& root : new_roots_) {
+      ObjPtr<mirror::Object> old_ref = root.Read<kWithoutReadBarrier>();
       root.VisitRoot(visitor, RootInfo(kRootStickyClass));
-      ObjPtr<mirror::Class> new_ref = root.Read<kWithoutReadBarrier>();
+      ObjPtr<mirror::Object> new_ref = root.Read<kWithoutReadBarrier>();
       // Concurrent moving GC marked new roots through the to-space invariant.
-      CHECK_EQ(new_ref, old_ref);
+      DCHECK_EQ(new_ref, old_ref);
     }
     for (const OatFile* oat_file : new_bss_roots_boot_oat_files_) {
       for (GcRoot<mirror::Object>& root : oat_file->GetBssGcRoots()) {
@@ -2447,13 +2458,13 @@ void ClassLinker::VisitClassRoots(RootVisitor* visitor, VisitRootFlags flags) {
           root.VisitRoot(visitor, RootInfo(kRootStickyClass));
           ObjPtr<mirror::Object> new_ref = root.Read<kWithoutReadBarrier>();
           // Concurrent moving GC marked new roots through the to-space invariant.
-          CHECK_EQ(new_ref, old_ref);
+          DCHECK_EQ(new_ref, old_ref);
         }
       }
     }
   }
   if (!gUseReadBarrier && (flags & kVisitRootFlagClearRootLog) != 0) {
-    new_class_roots_.clear();
+    new_roots_.clear();
     new_bss_roots_boot_oat_files_.clear();
   }
   if (!gUseReadBarrier && (flags & kVisitRootFlagStartLoggingNewRoots) != 0) {
@@ -3987,21 +3998,7 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
     }
   }
 
-  // Check for nterp invoke fast-path based on shorty.
-  bool all_parameters_are_reference = true;
-  bool all_parameters_are_reference_or_int = true;
-  for (size_t i = 1; i < shorty.length(); ++i) {
-    if (shorty[i] != 'L') {
-      all_parameters_are_reference = false;
-      if (shorty[i] == 'F' || shorty[i] == 'D' || shorty[i] == 'J') {
-        all_parameters_are_reference_or_int = false;
-        break;
-      }
-    }
-  }
-  if (all_parameters_are_reference_or_int && shorty[0] != 'F' && shorty[0] != 'D') {
-    access_flags |= kAccNterpInvokeFastPathFlag;
-  }
+  access_flags |= GetNterpFastPathFlags(shorty, access_flags, kRuntimeISA);
 
   if (UNLIKELY((access_flags & kAccNative) != 0u)) {
     // Check if the native method is annotated with @FastNative or @CriticalNative.
@@ -4024,10 +4021,6 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
     DCHECK_EQ(method.GetCodeItemOffset(), 0u);
     dst->SetDataPtrSize(nullptr, image_pointer_size_);  // Single implementation not set yet.
   } else {
-    // Check for nterp entry fast-path based on shorty.
-    if (all_parameters_are_reference) {
-      access_flags |= kAccNterpEntryPointFastPathFlag;
-    }
     const dex::ClassDef& class_def = dex_file.GetClassDef(klass->GetDexClassDefIndex());
     if (annotations::MethodIsNeverCompile(dex_file, class_def, dex_method_idx)) {
       access_flags |= kAccCompileDontBother;
@@ -4055,6 +4048,7 @@ void ClassLinker::AppendToBootClassPath(Thread* self, const DexFile* dex_file) {
       AllocAndInitializeDexCache(self, *dex_file, /* class_loader= */ nullptr);
   CHECK(dex_cache != nullptr) << "Failed to allocate dex cache for " << dex_file->GetLocation();
   AppendToBootClassPath(dex_file, dex_cache);
+  WriteBarrierOnClassLoader(self, /*class_loader=*/nullptr, dex_cache);
 }
 
 void ClassLinker::AppendToBootClassPath(const DexFile* dex_file,
@@ -4200,6 +4194,32 @@ static void ThrowDexFileAlreadyRegisteredError(Thread* self, const DexFile& dex_
                            dex_file.GetLocation().c_str());
 }
 
+void ClassLinker::WriteBarrierOnClassLoaderLocked(ObjPtr<mirror::ClassLoader> class_loader,
+                                                  ObjPtr<mirror::Object> root) {
+  if (class_loader != nullptr) {
+    // Since we added a strong root to the class table, do the write barrier as required for
+    // remembered sets and generational GCs.
+    WriteBarrier::ForEveryFieldWrite(class_loader);
+  } else if (log_new_roots_) {
+    new_roots_.push_back(GcRoot<mirror::Object>(root));
+  }
+}
+
+void ClassLinker::WriteBarrierOnClassLoader(Thread* self,
+                                            ObjPtr<mirror::ClassLoader> class_loader,
+                                            ObjPtr<mirror::Object> root) {
+  if (class_loader != nullptr) {
+    // Since we added a strong root to the class table, do the write barrier as required for
+    // remembered sets and generational GCs.
+    WriteBarrier::ForEveryFieldWrite(class_loader);
+  } else {
+    WriterMutexLock mu(self, *Locks::classlinker_classes_lock_);
+    if (log_new_roots_) {
+      new_roots_.push_back(GcRoot<mirror::Object>(root));
+    }
+  }
+}
+
 ObjPtr<mirror::DexCache> ClassLinker::RegisterDexFile(const DexFile& dex_file,
                                                       ObjPtr<mirror::ClassLoader> class_loader) {
   Thread* self = Thread::Current();
@@ -4275,11 +4295,10 @@ ObjPtr<mirror::DexCache> ClassLinker::RegisterDexFile(const DexFile& dex_file,
     self->AssertPendingOOMException();
     return nullptr;
   }
-  table->InsertStrongRoot(h_dex_cache.Get());
-  if (h_class_loader.Get() != nullptr) {
-    // Since we added a strong root to the class table, do the write barrier as required for
-    // remembered sets and generational GCs.
-    WriteBarrier::ForEveryFieldWrite(h_class_loader.Get());
+  if (table->InsertStrongRoot(h_dex_cache.Get())) {
+    WriteBarrierOnClassLoader(self, h_class_loader.Get(), h_dex_cache.Get());
+  } else {
+    // Write-barrier not required if strong-root isn't inserted.
   }
   VLOG(class_linker) << "Registered dex file " << dex_file.GetLocation();
   PaletteNotifyDexFileLoaded(dex_file.GetLocation().c_str());
@@ -4590,13 +4609,7 @@ ObjPtr<mirror::Class> ClassLinker::InsertClass(const char* descriptor,
     }
     VerifyObject(klass);
     class_table->InsertWithHash(klass, hash);
-    if (class_loader != nullptr) {
-      // This is necessary because we need to have the card dirtied for remembered sets.
-      WriteBarrier::ForEveryFieldWrite(class_loader);
-    }
-    if (log_new_roots_) {
-      new_class_roots_.push_back(GcRoot<mirror::Class>(klass));
-    }
+    WriteBarrierOnClassLoaderLocked(class_loader, klass);
   }
   if (kIsDebugBuild) {
     // Test that copied methods correctly can find their holder.
@@ -6265,15 +6278,8 @@ bool ClassLinker::LinkClass(Thread* self,
       ClassTable* const table = InsertClassTableForClassLoader(class_loader);
       const ObjPtr<mirror::Class> existing =
           table->UpdateClass(descriptor, h_new_class.Get(), ComputeModifiedUtf8Hash(descriptor));
-      if (class_loader != nullptr) {
-        // We updated the class in the class table, perform the write barrier so that the GC knows
-        // about the change.
-        WriteBarrier::ForEveryFieldWrite(class_loader);
-      }
       CHECK_EQ(existing, klass.Get());
-      if (log_new_roots_) {
-        new_class_roots_.push_back(GcRoot<mirror::Class>(h_new_class.Get()));
-      }
+      WriteBarrierOnClassLoaderLocked(class_loader, h_new_class.Get());
     }
 
     // Update CHA info based on whether we override methods.
@@ -10089,58 +10095,59 @@ ObjPtr<mirror::MethodType> ClassLinker::ResolveMethodType(
     return resolved;
   }
 
-  StackHandleScope<4> hs(self);
+  VariableSizedHandleScope raw_method_type_hs(self);
+  mirror::RawMethodType raw_method_type(&raw_method_type_hs);
+  if (!ResolveMethodType(self, proto_idx, dex_cache, class_loader, raw_method_type)) {
+    DCHECK(self->IsExceptionPending());
+    return nullptr;
+  }
+
+  // The handle scope was filled with return type and paratemer types.
+  DCHECK_EQ(raw_method_type_hs.Size(),
+            dex_cache->GetDexFile()->GetShortyView(proto_idx).length());
+  ObjPtr<mirror::MethodType> method_type = mirror::MethodType::Create(self, raw_method_type);
+  if (method_type != nullptr) {
+    // Ensure all stores for the newly created MethodType are visible, before we attempt to place
+    // it in the DexCache (b/224733324).
+    std::atomic_thread_fence(std::memory_order_release);
+    dex_cache->SetResolvedMethodType(proto_idx, method_type.Ptr());
+  }
+  return method_type;
+}
+
+bool ClassLinker::ResolveMethodType(Thread* self,
+                                    dex::ProtoIndex proto_idx,
+                                    Handle<mirror::DexCache> dex_cache,
+                                    Handle<mirror::ClassLoader> class_loader,
+                                    /*out*/ mirror::RawMethodType method_type) {
+  DCHECK(Runtime::Current()->IsMethodHandlesEnabled());
+  DCHECK(dex_cache != nullptr);
+  DCHECK(dex_cache->GetClassLoader() == class_loader.Get());
 
   // First resolve the return type.
   const DexFile& dex_file = *dex_cache->GetDexFile();
   const dex::ProtoId& proto_id = dex_file.GetProtoId(proto_idx);
-  Handle<mirror::Class> return_type(hs.NewHandle(
-      ResolveType(proto_id.return_type_idx_, dex_cache, class_loader)));
+  ObjPtr<mirror::Class> return_type =
+      ResolveType(proto_id.return_type_idx_, dex_cache, class_loader);
   if (return_type == nullptr) {
     DCHECK(self->IsExceptionPending());
-    return nullptr;
+    return false;
   }
+  method_type.SetRType(return_type);
 
   // Then resolve the argument types.
-  //
-  // TODO: Is there a better way to figure out the number of method arguments
-  // other than by looking at the shorty ?
-  const size_t num_method_args = strlen(dex_file.StringDataByIdx(proto_id.shorty_idx_)) - 1;
-
-  ObjPtr<mirror::Class> array_of_class = GetClassRoot<mirror::ObjectArray<mirror::Class>>(this);
-  Handle<mirror::ObjectArray<mirror::Class>> method_params(hs.NewHandle(
-      mirror::ObjectArray<mirror::Class>::Alloc(self, array_of_class, num_method_args)));
-  if (method_params == nullptr) {
-    DCHECK(self->IsExceptionPending());
-    return nullptr;
-  }
-
   DexFileParameterIterator it(dex_file, proto_id);
-  int32_t i = 0;
-  MutableHandle<mirror::Class> param_class = hs.NewHandle<mirror::Class>(nullptr);
   for (; it.HasNext(); it.Next()) {
     const dex::TypeIndex type_idx = it.GetTypeIdx();
-    param_class.Assign(ResolveType(type_idx, dex_cache, class_loader));
-    if (param_class == nullptr) {
+    ObjPtr<mirror::Class> param_type = ResolveType(type_idx, dex_cache, class_loader);
+    if (param_type == nullptr) {
       DCHECK(self->IsExceptionPending());
-      return nullptr;
+      return false;
     }
-
-    method_params->Set(i++, param_class.Get());
+    method_type.AddPType(param_type);
   }
 
-  DCHECK(!it.HasNext());
-
-  Handle<mirror::MethodType> type = hs.NewHandle(
-      mirror::MethodType::Create(self, return_type, method_params));
-  if (type != nullptr) {
-    // Ensure all stores for the newly created MethodType are visible, before we attempt to place
-    // it in the DexCache (b/224733324).
-    std::atomic_thread_fence(std::memory_order_release);
-    dex_cache->SetResolvedMethodType(proto_idx, type.Get());
-  }
-
-  return type.Get();
+  return true;
 }
 
 ObjPtr<mirror::MethodType> ClassLinker::ResolveMethodType(Thread* self,
@@ -10815,10 +10822,10 @@ void ClassLinker::InsertDexFileInToClassLoader(ObjPtr<mirror::Object> dex_file,
   WriterMutexLock mu(self, *Locks::classlinker_classes_lock_);
   ClassTable* const table = ClassTableForClassLoader(class_loader);
   DCHECK(table != nullptr);
-  if (table->InsertStrongRoot(dex_file) && class_loader != nullptr) {
-    // It was not already inserted, perform the write barrier to let the GC know the class loader's
-    // class table was modified.
-    WriteBarrier::ForEveryFieldWrite(class_loader);
+  if (table->InsertStrongRoot(dex_file)) {
+    WriteBarrierOnClassLoaderLocked(class_loader, dex_file);
+  } else {
+    // Write-barrier not required if strong-root isn't inserted.
   }
 }
 

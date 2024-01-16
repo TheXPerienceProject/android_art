@@ -160,6 +160,24 @@ filegroup {
     srcs: ["art-gtests-target-standalone-with-boot-image-template.xml"],
 }
 
+// When soong builds the tests in a sandbox, the targets of symlinks
+// must be declared as inputs to soong modules that use them, or else
+// it will be a dangling symlink in the sandbox.
+filegroup {
+    name: "test_build_symlink_targets",
+    srcs: [
+        "jvmti-common/*.java",
+        "1953-pop-frame/src/art/SuspendEvents.java",
+        "1953-pop-frame/src/art/Test1953.java",
+        "993-breakpoints/src/art/Test993.java",
+        "988-method-trace/src/art/Test988.java",
+        "988-method-trace/src/art/Test988Intrinsics.java",
+    ],
+    visibility: [
+        "//art/test:__subpackages__",
+    ],
+}
+
 art_cc_defaults {
     name: "art_standalone_test_defaults",
     defaults: [
@@ -477,6 +495,10 @@ java_defaults {
         "art-run-test-checker",
     ],
     min_sdk_version: "31",
+
+    compile_data: [
+        ":test_build_symlink_targets",
+    ],
 }
 
 art_cc_test_library {
@@ -903,6 +925,7 @@ cc_defaults {
         "2048-bad-native-registry/native_finalizer.cc",
         "2235-JdkUnsafeTest/unsafe_test.cc",
         "2262-miranda-methods/jni_invoke.cc",
+        "2270-mh-internal-hiddenapi-use/mh-internal-hidden-api.cc",
         "common/runtime_state.cc",
         "common/stack_inspect.cc",
     ],
@@ -1652,8 +1675,8 @@ genrule_defaults {
 // Assemble jar file from smali source.
 genrule_defaults {
     name: "art-gtest-jars-smali-defaults",
-    cmd: "$(location smali) assemble --output $(out) $(in)",
-    tools: ["smali"],
+    cmd: "$(location android-smali) assemble --output $(out) $(in)",
+    tools: ["android-smali"],
 }
 
 // A copy of Main with the classes.dex stripped for the oat file assistant tests.
@@ -1799,25 +1822,6 @@ genrule {
     defaults: ["art-gtest-jars-smali-defaults"],
     srcs: ["Dex2oatVdexPublicSdkDex/*.smali"],
     out: ["art-gtest-jars-Dex2oatVdexPublicSdkDex.dex"],
-}
-
-genrule_defaults {
-    name: "art-run-test-data-defaults",
-    defaults: [
-        // Enable only in source builds, where com.android.art.testing is
-        // available.
-        "art_module_source_build_genrule_defaults",
-    ],
-    tool_files: [
-        "run_test_build.py",
-        ":art-run-test-bootclasspath",
-    ],
-    tools: [
-        "d8",
-        "hiddenapi",
-        "jasmin",
-        "smali",
-    ],
 }
 
 build = [

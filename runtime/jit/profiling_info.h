@@ -99,7 +99,9 @@ class BranchCache {
 class ProfilingInfo {
  public:
   // Create a ProfilingInfo for 'method'.
-  static ProfilingInfo* Create(Thread* self, ArtMethod* method)
+  static ProfilingInfo* Create(Thread* self,
+                               ArtMethod* method,
+                               const std::vector<uint32_t>& inline_cache_entries)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Add information from an executed INVOKE instruction to the profile.
@@ -168,12 +170,12 @@ class ProfilingInfo {
     return baseline_hotness_count_;
   }
 
+  static uint16_t GetOptimizeThreshold();
+
  private:
   ProfilingInfo(ArtMethod* method,
                 const std::vector<uint32_t>& inline_cache_entries,
                 const std::vector<uint32_t>& branch_cache_entries);
-
-  static uint16_t GetOptimizeThreshold();
 
   // Hotness count for methods compiled with the JIT baseline compiler. Once
   // a threshold is hit (currentily the maximum value of uint16_t), we will

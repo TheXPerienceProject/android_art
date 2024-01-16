@@ -66,6 +66,9 @@ void JitCompiler::ParseCompilerOptions() {
   // JIT is never PIC, no matter what the runtime compiler options specify.
   compiler_options_->SetNonPic();
 
+  // Set the appropriate read barrier option.
+  compiler_options_->emit_read_barrier_ = gUseReadBarrier;
+
   // If the options don't provide whether we generate debuggable code, set
   // debuggability based on the runtime value.
   if (!compiler_options_->GetDebuggable()) {
@@ -188,6 +191,7 @@ bool JitCompiler::CompileMethod(
 
   // Do the compilation.
   bool success = false;
+  Jit* jit = runtime->GetJit();
   {
     TimingLogger::ScopedTiming t2(compilation_kind == CompilationKind::kOsr
                                       ? "Compiling OSR"
@@ -195,7 +199,7 @@ bool JitCompiler::CompileMethod(
                                           ? "Compiling optimized"
                                           : "Compiling baseline",
                                   &logger);
-    JitCodeCache* const code_cache = runtime->GetJit()->GetCodeCache();
+    JitCodeCache* const code_cache = jit->GetCodeCache();
     metrics::AutoTimer timer{runtime->GetMetrics()->JitMethodCompileTotalTime()};
     success = compiler_->JitCompile(
         self, code_cache, region, method, compilation_kind, jit_logger_.get());
@@ -207,14 +211,14 @@ bool JitCompiler::CompileMethod(
     runtime->GetMetrics()->JitMethodCompileCountDelta()->AddOne();
   }
 
-  // Trim maps to reduce memory usage.
-  // TODO: move this to an idle phase.
-  {
+  // If we don't have a new task following this compile,
+  // trim maps to reduce memory usage.
+  if (jit->GetThreadPool() == nullptr || jit->GetThreadPool()->GetTaskCount(self) == 0) {
     TimingLogger::ScopedTiming t2("TrimMaps", &logger);
     runtime->GetJitArenaPool()->TrimMaps();
   }
 
-  runtime->GetJit()->AddTimingLogger(logger);
+  jit->AddTimingLogger(logger);
   return success;
 }
 

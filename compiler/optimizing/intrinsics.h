@@ -95,19 +95,20 @@ class IntrinsicVisitor : public ValueObject {
     codegen->GetMoveResolver()->EmitNativeCode(&parallel_move);
   }
 
-  static void ComputeIntegerValueOfLocations(HInvoke* invoke,
-                                             CodeGenerator* codegen,
-                                             Location return_location,
-                                             Location first_argument_location);
+  static void ComputeValueOfLocations(HInvoke* invoke,
+                                      CodeGenerator* codegen,
+                                      int32_t low,
+                                      int32_t length,
+                                      Location return_location,
+                                      Location first_argument_location);
 
-  // Temporary data structure for holding Integer.valueOf data for generating code.
-  // We only use it if the boot image contains the IntegerCache objects.
-  struct IntegerValueOfInfo {
+  // Temporary data structure for holding BoxedType.valueOf data for generating code.
+  struct ValueOfInfo {
     static constexpr uint32_t kInvalidReference = static_cast<uint32_t>(-1);
 
-    IntegerValueOfInfo();
+    ValueOfInfo();
 
-    // Offset of the Integer.value field for initializing a newly allocated instance.
+    // Offset of the value field of the boxed object for initializing a newly allocated instance.
     uint32_t value_offset;
     // The low value in the cache.
     int32_t low;
@@ -130,13 +131,18 @@ class IntrinsicVisitor : public ValueObject {
     };
   };
 
-  static IntegerValueOfInfo ComputeIntegerValueOfInfo(
-      HInvoke* invoke, const CompilerOptions& compiler_options);
+  static ValueOfInfo ComputeValueOfInfo(
+      HInvoke* invoke,
+      const CompilerOptions& compiler_options,
+      ArtField* value_field,
+      int32_t low,
+      int32_t length,
+      size_t base);
 
   static MemberOffset GetReferenceDisableIntrinsicOffset();
   static MemberOffset GetReferenceSlowPathEnabledOffset();
   static void CreateReferenceGetReferentLocations(HInvoke* invoke, CodeGenerator* codegen);
-  static void CreateReferenceRefersToLocations(HInvoke* invoke);
+  static void CreateReferenceRefersToLocations(HInvoke* invoke, CodeGenerator* codegen);
 
  protected:
   IntrinsicVisitor() {}
@@ -216,6 +222,7 @@ class SystemArrayCopyOptimizations : public IntrinsicOptimizations {
   INTRINSIC_OPTIMIZATION(DestinationIsPrimitiveArray, 8);
   INTRINSIC_OPTIMIZATION(SourceIsNonPrimitiveArray, 9);
   INTRINSIC_OPTIMIZATION(SourceIsPrimitiveArray, 10);
+  INTRINSIC_OPTIMIZATION(SourcePositionIsDestinationPosition, 11);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SystemArrayCopyOptimizations);

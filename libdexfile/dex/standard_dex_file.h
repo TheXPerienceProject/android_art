@@ -91,7 +91,7 @@ class StandardDexFile : public DexFile {
   static void WriteVersionBeforeDefaultMethods(uint8_t* magic);
 
   static const uint8_t kDexMagic[kDexMagicSize];
-  static constexpr size_t kNumDexVersions = 5;
+  static constexpr size_t kNumDexVersions = 6;
   static const uint8_t kDexMagicVersions[kNumDexVersions][kDexVersionLen];
 
   // Returns true if the byte string points to the magic value.
@@ -130,6 +130,7 @@ class StandardDexFile : public DexFile {
 
   friend class DexFileLoader;
   friend class DexFileVerifierTest;
+  friend class FuzzerCorpusTest;  // for constructor
 
   ART_FRIEND_TEST(ClassLinkerTest, RegisterDexFileName);  // for constructor
   friend class OptimizingUnitTestHelper;  // for constructor

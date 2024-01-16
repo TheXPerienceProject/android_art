@@ -57,9 +57,9 @@ class CommonCompilerTestImpl::CodeAndMetadata {
         : sizeof(OatQuickMethodHeader) + vmap_table.size();
     OatQuickMethodHeader method_header(vmap_table_offset);
     const size_t code_alignment = GetInstructionSetCodeAlignment(instruction_set);
-    DCHECK_ALIGNED_PARAM(kPageSize, code_alignment);
+    DCHECK_ALIGNED_PARAM(static_cast<size_t>(gPageSize), code_alignment);
     const uint32_t code_offset = RoundUp(vmap_table.size() + sizeof(method_header), code_alignment);
-    const uint32_t capacity = RoundUp(code_offset + code_size, kPageSize);
+    const uint32_t capacity = RoundUp(code_offset + code_size, gPageSize);
 
     // Create a memfd handle with sufficient capacity.
     android::base::unique_fd mem_fd(art::memfd_create_compat("test code", /*flags=*/ 0));
@@ -187,6 +187,7 @@ class CommonCompilerTestImpl::OneCompiledMethodStorage final : public CompiledCo
 std::unique_ptr<CompilerOptions> CommonCompilerTestImpl::CreateCompilerOptions(
     InstructionSet instruction_set, const std::string& variant) {
   std::unique_ptr<CompilerOptions> compiler_options = std::make_unique<CompilerOptions>();
+  compiler_options->emit_read_barrier_ = gUseReadBarrier;
   compiler_options->instruction_set_ = instruction_set;
   std::string error_msg;
   compiler_options->instruction_set_features_ =
@@ -249,7 +250,7 @@ void CommonCompilerTestImpl::OverrideInstructionSetFeatures(InstructionSet instr
 }
 
 void CommonCompilerTestImpl::SetUpRuntimeOptionsImpl() {
-  compiler_options_.reset(new CompilerOptions);
+  compiler_options_ = CreateCompilerOptions(instruction_set_, "default");
   ApplyInstructionSet();
 }
 

@@ -340,7 +340,11 @@ void Dbg::DdmSetThreadNotification(bool enable) {
       Dbg::DdmSendThreadNotification(thread, CHUNK_TYPE("THCR"));
       finish_barrier.Pass(cls_self);
     });
-    size_t checkpoints = Runtime::Current()->GetThreadList()->RunCheckpoint(&fc);
+    // TODO(b/253671779): The above eventually results in calls to EventHandler::DispatchEvent,
+    // which does a ScopedThreadStateChange, which amounts to a thread state change inside the
+    // checkpoint run method. Hence the normal check would fail, and thus we specify Unchecked
+    // here.
+    size_t checkpoints = Runtime::Current()->GetThreadList()->RunCheckpointUnchecked(&fc);
     ScopedThreadSuspension sts(self, ThreadState::kWaitingForCheckPointsToRun);
     finish_barrier.Increment(self, checkpoints);
   }
@@ -568,7 +572,7 @@ class HeapChunkContext {
       // of the use of mmaps, so don't report. If not free memory then start a new segment.
       bool flush = true;
       if (start > startOfNextMemoryChunk_) {
-        const size_t kMaxFreeLen = 2 * kPageSize;
+        const size_t kMaxFreeLen = 2 * gPageSize;
         void* free_start = startOfNextMemoryChunk_;
         void* free_end = start;
         const size_t free_len =

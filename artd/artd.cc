@@ -472,9 +472,13 @@ Result<File> ExtractEmbeddedProfileToFd(const std::string& dex_path) {
   // Reopen the memfd with readonly to make SELinux happy when the fd is passed to a child process
   // who doesn't have write permission. (b/303909581)
   std::string path = ART_FORMAT("/proc/self/fd/{}", memfd.Fd());
-  std::unique_ptr<File> memfd_readonly = OR_RETURN(OpenFileForReading(path));
+  File memfd_readonly(
+      open(path.c_str(), O_RDONLY), memfd_name, /*check_usage=*/false, /*read_only_mode=*/true);
+  if (!memfd_readonly.IsOpened()) {
+    return ErrnoErrorf("Failed to open file '{}' ('{}')", path, memfd_name);
+  }
 
-  return std::move(*memfd_readonly);
+  return memfd_readonly;
 }
 
 class FdLogger {
@@ -829,10 +833,9 @@ ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profil
       OR_RETURN_NON_FATAL(NewFile::Create(output_profile_path, in_outputProfile->fsPermission));
 
   if (in_referenceProfile.has_value()) {
-    if (in_options.forceMerge || in_options.dumpOnly || in_options.dumpClassesAndMethods) {
+    if (in_options.dumpOnly || in_options.dumpClassesAndMethods) {
       return Fatal(
-          "Reference profile must not be set when 'forceMerge', 'dumpOnly', or "
-          "'dumpClassesAndMethods' is set");
+          "Reference profile must not be set when 'dumpOnly' or 'dumpClassesAndMethods' is set");
     }
     std::string reference_profile_path =
         OR_RETURN_FATAL(BuildProfileOrDmPath(*in_referenceProfile));
@@ -865,7 +868,7 @@ ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profil
                        props_->GetOrEmpty("dalvik.vm.bgdexopt.new-classes-percent"))
         .AddIfNonEmpty("--min-new-methods-percent-change=%s",
                        props_->GetOrEmpty("dalvik.vm.bgdexopt.new-methods-percent"))
-        .AddIf(in_options.forceMerge, "--force-merge")
+        .AddIf(in_options.forceMerge, "--force-merge-and-analyze")
         .AddIf(in_options.forBootImage, "--boot-image-merge");
   }
 
@@ -888,9 +891,8 @@ ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profil
   }
 
   ProfmanResult::ProcessingResult expected_result =
-      (in_options.forceMerge || in_options.dumpOnly || in_options.dumpClassesAndMethods) ?
-          ProfmanResult::kSuccess :
-          ProfmanResult::kCompile;
+      (in_options.dumpOnly || in_options.dumpClassesAndMethods) ? ProfmanResult::kSuccess :
+                                                                  ProfmanResult::kCompile;
   if (result.value() != expected_result) {
     return NonFatal(ART_FORMAT("profman returned an unexpected code: {}", result.value()));
   }

@@ -230,15 +230,6 @@ cc_defaults {
     },
 }
 
-// TODO(b/303042202): remove from vixl
-cc_defaults {
-    name: "dex2oat-pgo-defaults",
-    defaults_visibility: [
-        "//art:__subpackages__",
-        "//external/vixl",
-    ],
-}
-
 art_cc_binary {
     name: "dex2oat",
     defaults: [
@@ -559,5 +550,8 @@ art_cc_test {
         ":generate-boot-image",
     ],
     test_config: "art_standalone_dex2oat_cts_tests.xml",
-    test_suites: ["cts"],
+    test_suites: [
+        "cts",
+        "mcts-art",
+    ],
 }

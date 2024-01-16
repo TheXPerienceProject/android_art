@@ -48,43 +48,17 @@ static constexpr FRegister kRuntimeParameterFpuRegisters[] = {
 static constexpr size_t kRuntimeParameterFpuRegistersLength =
     arraysize(kRuntimeParameterFpuRegisters);
 
+// FCLASS returns a 10-bit classification mask with the two highest bits marking NaNs
+// (signaling and quiet). To detect a NaN, we can compare (either BGE or BGEU, the sign
+// bit is always clear) the result with the `kFClassNaNMinValue`.
+static_assert(kSignalingNaN == 0x100);
+static_assert(kQuietNaN == 0x200);
+static constexpr int32_t kFClassNaNMinValue = 0x100;
+
 #define UNIMPLEMENTED_INTRINSIC_LIST_RISCV64(V) \
-  V(IntegerReverse)                             \
-  V(IntegerDivideUnsigned)                      \
-  V(LongReverse)                                \
-  V(LongDivideUnsigned)                         \
-  V(MathFmaDouble)                              \
-  V(MathFmaFloat)                               \
-  V(MathCos)                                    \
-  V(MathSin)                                    \
-  V(MathAcos)                                   \
-  V(MathAsin)                                   \
-  V(MathAtan)                                   \
-  V(MathAtan2)                                  \
-  V(MathPow)                                    \
-  V(MathCbrt)                                   \
-  V(MathCosh)                                   \
-  V(MathExp)                                    \
-  V(MathExpm1)                                  \
-  V(MathHypot)                                  \
-  V(MathLog)                                    \
-  V(MathLog10)                                  \
-  V(MathNextAfter)                              \
-  V(MathSinh)                                   \
-  V(MathTan)                                    \
-  V(MathTanh)                                   \
-  V(MathSqrt)                                   \
-  V(MathCeil)                                   \
-  V(MathFloor)                                  \
-  V(MathRint)                                   \
-  V(MathRoundDouble)                            \
-  V(MathRoundFloat)                             \
-  V(MathMultiplyHigh)                           \
   V(SystemArrayCopyByte)                        \
   V(SystemArrayCopyChar)                        \
   V(SystemArrayCopyInt)                         \
-  V(SystemArrayCopy)                            \
-  V(ThreadCurrentThread)                        \
   V(FP16Ceil)                                   \
   V(FP16Compare)                                \
   V(FP16Floor)                                  \
@@ -120,105 +94,19 @@ static constexpr size_t kRuntimeParameterFpuRegistersLength =
   V(StringBuilderAppendDouble)                  \
   V(StringBuilderLength)                        \
   V(StringBuilderToString)                      \
-  V(UnsafeCASInt)                               \
-  V(UnsafeCASLong)                              \
-  V(UnsafeCASObject)                            \
-  V(UnsafeGet)                                  \
-  V(UnsafeGetVolatile)                          \
-  V(UnsafeGetObject)                            \
-  V(UnsafeGetObjectVolatile)                    \
-  V(UnsafeGetLong)                              \
-  V(UnsafeGetLongVolatile)                      \
-  V(UnsafePut)                                  \
-  V(UnsafePutOrdered)                           \
-  V(UnsafePutVolatile)                          \
-  V(UnsafePutObject)                            \
-  V(UnsafePutObjectOrdered)                     \
-  V(UnsafePutObjectVolatile)                    \
-  V(UnsafePutLong)                              \
-  V(UnsafePutLongOrdered)                       \
-  V(UnsafePutLongVolatile)                      \
-  V(UnsafeGetAndAddInt)                         \
-  V(UnsafeGetAndAddLong)                        \
-  V(UnsafeGetAndSetInt)                         \
-  V(UnsafeGetAndSetLong)                        \
-  V(UnsafeGetAndSetObject)                      \
-  V(JdkUnsafeCASInt)                            \
-  V(JdkUnsafeCASLong)                           \
-  V(JdkUnsafeCASObject)                         \
-  V(JdkUnsafeCompareAndSetInt)                  \
-  V(JdkUnsafeCompareAndSetLong)                 \
-  V(JdkUnsafeCompareAndSetObject)               \
-  V(JdkUnsafeGet)                               \
-  V(JdkUnsafeGetVolatile)                       \
-  V(JdkUnsafeGetAcquire)                        \
-  V(JdkUnsafeGetObject)                         \
-  V(JdkUnsafeGetObjectVolatile)                 \
-  V(JdkUnsafeGetObjectAcquire)                  \
-  V(JdkUnsafeGetLong)                           \
-  V(JdkUnsafeGetLongVolatile)                   \
-  V(JdkUnsafeGetLongAcquire)                    \
-  V(JdkUnsafePut)                               \
-  V(JdkUnsafePutOrdered)                        \
-  V(JdkUnsafePutRelease)                        \
-  V(JdkUnsafePutVolatile)                       \
-  V(JdkUnsafePutObject)                         \
-  V(JdkUnsafePutObjectOrdered)                  \
-  V(JdkUnsafePutObjectVolatile)                 \
-  V(JdkUnsafePutObjectRelease)                  \
-  V(JdkUnsafePutLong)                           \
-  V(JdkUnsafePutLongOrdered)                    \
-  V(JdkUnsafePutLongVolatile)                   \
-  V(JdkUnsafePutLongRelease)                    \
-  V(JdkUnsafeGetAndAddInt)                      \
-  V(JdkUnsafeGetAndAddLong)                     \
-  V(JdkUnsafeGetAndSetInt)                      \
-  V(JdkUnsafeGetAndSetLong)                     \
-  V(JdkUnsafeGetAndSetObject)                   \
-  V(ReferenceGetReferent)                       \
-  V(ReferenceRefersTo)                          \
-  V(IntegerValueOf)                             \
   V(ThreadInterrupted)                          \
-  V(ReachabilityFence)                          \
   V(CRC32Update)                                \
   V(CRC32UpdateBytes)                           \
   V(CRC32UpdateByteBuffer)                      \
   V(MethodHandleInvokeExact)                    \
-  V(MethodHandleInvoke)                         \
-  V(VarHandleCompareAndExchange)                \
-  V(VarHandleCompareAndExchangeAcquire)         \
-  V(VarHandleCompareAndExchangeRelease)         \
-  V(VarHandleCompareAndSet)                     \
-  V(VarHandleGet)                               \
-  V(VarHandleGetAcquire)                        \
-  V(VarHandleGetAndAdd)                         \
-  V(VarHandleGetAndAddAcquire)                  \
-  V(VarHandleGetAndAddRelease)                  \
-  V(VarHandleGetAndBitwiseAnd)                  \
-  V(VarHandleGetAndBitwiseAndAcquire)           \
-  V(VarHandleGetAndBitwiseAndRelease)           \
-  V(VarHandleGetAndBitwiseOr)                   \
-  V(VarHandleGetAndBitwiseOrAcquire)            \
-  V(VarHandleGetAndBitwiseOrRelease)            \
-  V(VarHandleGetAndBitwiseXor)                  \
-  V(VarHandleGetAndBitwiseXorAcquire)           \
-  V(VarHandleGetAndBitwiseXorRelease)           \
-  V(VarHandleGetAndSet)                         \
-  V(VarHandleGetAndSetAcquire)                  \
-  V(VarHandleGetAndSetRelease)                  \
-  V(VarHandleGetOpaque)                         \
-  V(VarHandleGetVolatile)                       \
-  V(VarHandleSet)                               \
-  V(VarHandleSetOpaque)                         \
-  V(VarHandleSetRelease)                        \
-  V(VarHandleSetVolatile)                       \
-  V(VarHandleWeakCompareAndSet)                 \
-  V(VarHandleWeakCompareAndSetAcquire)          \
-  V(VarHandleWeakCompareAndSetPlain)            \
-  V(VarHandleWeakCompareAndSetRelease)
+  V(MethodHandleInvoke)
 
 // Method register on invoke.
 static const XRegister kArtMethodRegister = A0;
+
+// Helper functions used by codegen as well as intrinsics.
+XRegister InputXRegisterOrZero(Location location);
+int32_t ReadBarrierMarkEntrypointOffset(Location ref);
 
 class CodeGeneratorRISCV64;
 
@@ -404,6 +292,21 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
 
   void GenerateMemoryBarrier(MemBarrierKind kind);
 
+  void FAdd(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
+  void FClass(XRegister rd, FRegister rs1, DataType::Type type);
+
+  void Load(Location out, XRegister rs1, int32_t offset, DataType::Type type);
+  void Store(Location value, XRegister rs1, int32_t offset, DataType::Type type);
+
+  // Sequentially consistent store. Used for volatile fields and intrinsics.
+  // The `instruction` argument is for recording an implicit null check stack map with the
+  // store instruction which may not be the last instruction emitted by `StoreSeqCst()`.
+  void StoreSeqCst(Location value,
+                   XRegister rs1,
+                   int32_t offset,
+                   DataType::Type type,
+                   HInstruction* instruction = nullptr);
+
   void ShNAdd(XRegister rd, XRegister rs1, XRegister rs2, DataType::Type type);
 
  protected:
@@ -449,18 +352,6 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
                                          uint32_t offset,
                                          Location maybe_temp,
                                          ReadBarrierOption read_barrier_option);
-
-  // Generate a GC root reference load:
-  //
-  //   root <- *(obj + offset)
-  //
-  // while honoring read barriers (if any).
-  void GenerateGcRootFieldLoad(HInstruction* instruction,
-                               Location root,
-                               XRegister obj,
-                               uint32_t offset,
-                               ReadBarrierOption read_barrier_option,
-                               Riscv64Label* label_low = nullptr);
 
   void GenerateTestAndBranch(HInstruction* instruction,
                              size_t condition_input_index,
@@ -508,7 +399,6 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
             void (Riscv64Assembler::*opS)(Reg, FRegister, FRegister),
             void (Riscv64Assembler::*opD)(Reg, FRegister, FRegister)>
   void FpBinOp(Reg rd, FRegister rs1, FRegister rs2, DataType::Type type);
-  void FAdd(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FSub(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FDiv(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
   void FMul(FRegister rd, FRegister rs1, FRegister rs2, DataType::Type type);
@@ -526,10 +416,6 @@ class InstructionCodeGeneratorRISCV64 : public InstructionCodeGenerator {
   void FNeg(FRegister rd, FRegister rs1, DataType::Type type);
   void FMv(FRegister rd, FRegister rs1, DataType::Type type);
   void FMvX(XRegister rd, FRegister rs1, DataType::Type type);
-  void FClass(XRegister rd, FRegister rs1, DataType::Type type);
-
-  void Load(Location out, XRegister rs1, int32_t offset, DataType::Type type);
-  void Store(Location value, XRegister rs1, int32_t offset, DataType::Type type);
 
   Riscv64Assembler* const assembler_;
   CodeGeneratorRISCV64* const codegen_;
@@ -597,7 +483,10 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   const Riscv64Assembler& GetAssembler() const override { return assembler_; }
 
   HGraphVisitor* GetLocationBuilder() override { return &location_builder_; }
-  HGraphVisitor* GetInstructionVisitor() override { return &instruction_visitor_; }
+
+  InstructionCodeGeneratorRISCV64* GetInstructionVisitor() override {
+    return &instruction_visitor_;
+  }
 
   void MaybeGenerateInlineCacheCheck(HInstruction* instruction, XRegister klass);
 
@@ -736,6 +625,12 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
                                       Handle<mirror::Class> handle);
   void EmitJitRootPatches(uint8_t* code, const uint8_t* roots_data) override;
 
+  void LoadTypeForBootImageIntrinsic(XRegister dest, TypeReference target_type);
+  void LoadBootImageRelRoEntry(XRegister dest, uint32_t boot_image_offset);
+  void LoadBootImageAddress(XRegister dest, uint32_t boot_image_reference);
+  void LoadIntrinsicDeclaringClass(XRegister dest, HInvoke* invoke);
+  void LoadClassRootForIntrinsic(XRegister dest, ClassRoot class_root);
+
   void LoadMethod(MethodLoadKind load_kind, Location temp, HInvoke* invoke);
   void GenerateStaticOrDirectCall(HInvokeStaticOrDirect* invoke,
                                   Location temp,
@@ -751,6 +646,26 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
 
   bool CanUseImplicitSuspendCheck() const;
 
+
+  // Create slow path for a Baker read barrier for a GC root load within `instruction`.
+  SlowPathCodeRISCV64* AddGcRootBakerBarrierBarrierSlowPath(
+      HInstruction* instruction, Location root, Location temp);
+
+  // Emit marking check for a Baker read barrier for a GC root load within `instruction`.
+  void EmitBakerReadBarierMarkingCheck(
+      SlowPathCodeRISCV64* slow_path, Location root, Location temp);
+
+  // Generate a GC root reference load:
+  //
+  //   root <- *(obj + offset)
+  //
+  // while honoring read barriers (if any).
+  void GenerateGcRootFieldLoad(HInstruction* instruction,
+                               Location root,
+                               XRegister obj,
+                               uint32_t offset,
+                               ReadBarrierOption read_barrier_option,
+                               Riscv64Label* label_low = nullptr);
 
   // Fast path implementation of ReadBarrier::Barrier for a heap
   // reference field load when Baker's read barriers are used.
@@ -769,8 +684,8 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
                                              Location index,
                                              Location temp,
                                              bool needs_null_check);
-  // Factored implementation, used by GenerateFieldLoadWithBakerReadBarrier
-  // and GenerateArrayLoadWithBakerReadBarrier.
+  // Factored implementation, used by GenerateFieldLoadWithBakerReadBarrier,
+  // GenerateArrayLoadWithBakerReadBarrier and intrinsics.
   void GenerateReferenceLoadWithBakerReadBarrier(HInstruction* instruction,
                                                  Location ref,
                                                  XRegister obj,
@@ -778,6 +693,18 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
                                                  Location index,
                                                  Location temp,
                                                  bool needs_null_check);
+
+  // Create slow path for a read barrier for a heap reference within `instruction`.
+  //
+  // This is a helper function for GenerateReadBarrierSlow() that has the same
+  // arguments. The creation and adding of the slow path is exposed for intrinsics
+  // that cannot use GenerateReadBarrierSlow() from their own slow paths.
+  SlowPathCodeRISCV64* AddReadBarrierSlowPath(HInstruction* instruction,
+                                              Location out,
+                                              Location ref,
+                                              Location obj,
+                                              uint32_t offset,
+                                              Location index);
 
   // Generate a read barrier for a heap reference within `instruction`
   // using a slow path.

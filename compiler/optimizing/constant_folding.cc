@@ -18,7 +18,11 @@
 
 #include <algorithm>
 
+#include "base/bit_utils.h"
+#include "base/casts.h"
+#include "base/logging.h"
 #include "dex/dex_file-inl.h"
+#include "intrinsics_enum.h"
 #include "optimizing/data_type.h"
 #include "optimizing/nodes.h"
 
@@ -47,9 +51,20 @@ class HConstantFoldingVisitor final : public HGraphDelegateVisitor {
   void VisitArrayLength(HArrayLength* inst) override;
   void VisitDivZeroCheck(HDivZeroCheck* inst) override;
   void VisitIf(HIf* inst) override;
+  void VisitInvoke(HInvoke* inst) override;
   void VisitTypeConversion(HTypeConversion* inst) override;
 
   void PropagateValue(HBasicBlock* starting_block, HInstruction* variable, HConstant* constant);
+
+  // Intrinsics foldings
+  void FoldReverseIntrinsic(HInvoke* invoke);
+  void FoldReverseBytesIntrinsic(HInvoke* invoke);
+  void FoldBitCountIntrinsic(HInvoke* invoke);
+  void FoldDivideUnsignedIntrinsic(HInvoke* invoke);
+  void FoldHighestOneBitIntrinsic(HInvoke* invoke);
+  void FoldLowestOneBitIntrinsic(HInvoke* invoke);
+  void FoldNumberOfLeadingZerosIntrinsic(HInvoke* invoke);
+  void FoldNumberOfTrailingZerosIntrinsic(HInvoke* invoke);
 
   // Use all optimizations without restrictions.
   bool use_all_optimizations_;
@@ -348,6 +363,245 @@ void HConstantFoldingVisitor::VisitIf(HIf* inst) {
     DCHECK_NE(other_constant, constant);
     PropagateValue(other_starting_block, variable, other_constant);
   }
+}
+
+void HConstantFoldingVisitor::VisitInvoke(HInvoke* inst) {
+  switch (inst->GetIntrinsic()) {
+    case Intrinsics::kIntegerReverse:
+    case Intrinsics::kLongReverse:
+      FoldReverseIntrinsic(inst);
+      break;
+    case Intrinsics::kIntegerReverseBytes:
+    case Intrinsics::kLongReverseBytes:
+    case Intrinsics::kShortReverseBytes:
+      FoldReverseBytesIntrinsic(inst);
+      break;
+    case Intrinsics::kIntegerBitCount:
+    case Intrinsics::kLongBitCount:
+      FoldBitCountIntrinsic(inst);
+      break;
+    case Intrinsics::kIntegerDivideUnsigned:
+    case Intrinsics::kLongDivideUnsigned:
+      FoldDivideUnsignedIntrinsic(inst);
+      break;
+    case Intrinsics::kIntegerHighestOneBit:
+    case Intrinsics::kLongHighestOneBit:
+      FoldHighestOneBitIntrinsic(inst);
+      break;
+    case Intrinsics::kIntegerLowestOneBit:
+    case Intrinsics::kLongLowestOneBit:
+      FoldLowestOneBitIntrinsic(inst);
+      break;
+    case Intrinsics::kIntegerNumberOfLeadingZeros:
+    case Intrinsics::kLongNumberOfLeadingZeros:
+      FoldNumberOfLeadingZerosIntrinsic(inst);
+      break;
+    case Intrinsics::kIntegerNumberOfTrailingZeros:
+    case Intrinsics::kLongNumberOfTrailingZeros:
+      FoldNumberOfTrailingZerosIntrinsic(inst);
+      break;
+    default:
+      break;
+  }
+}
+
+void HConstantFoldingVisitor::FoldReverseIntrinsic(HInvoke* inst) {
+  DCHECK(inst->GetIntrinsic() == Intrinsics::kIntegerReverse ||
+         inst->GetIntrinsic() == Intrinsics::kLongReverse);
+
+  HInstruction* input = inst->InputAt(0);
+  if (!input->IsConstant()) {
+    return;
+  }
+
+  // Integer and Long intrinsics have different return types.
+  if (inst->GetIntrinsic() == Intrinsics::kIntegerReverse) {
+    DCHECK(input->IsIntConstant());
+    inst->ReplaceWith(
+        GetGraph()->GetIntConstant(ReverseBits32(input->AsIntConstant()->GetValue())));
+  } else {
+    DCHECK(input->IsLongConstant());
+    inst->ReplaceWith(
+        GetGraph()->GetLongConstant(ReverseBits64(input->AsLongConstant()->GetValue())));
+  }
+  inst->GetBlock()->RemoveInstruction(inst);
+}
+
+void HConstantFoldingVisitor::FoldReverseBytesIntrinsic(HInvoke* inst) {
+  DCHECK(inst->GetIntrinsic() == Intrinsics::kIntegerReverseBytes ||
+         inst->GetIntrinsic() == Intrinsics::kLongReverseBytes ||
+         inst->GetIntrinsic() == Intrinsics::kShortReverseBytes);
+
+  HInstruction* input = inst->InputAt(0);
+  if (!input->IsConstant()) {
+    return;
+  }
+
+  // Integer, Long, and Short intrinsics have different return types.
+  if (inst->GetIntrinsic() == Intrinsics::kIntegerReverseBytes) {
+    DCHECK(input->IsIntConstant());
+    inst->ReplaceWith(GetGraph()->GetIntConstant(BSWAP(input->AsIntConstant()->GetValue())));
+  } else if (inst->GetIntrinsic() == Intrinsics::kLongReverseBytes) {
+    DCHECK(input->IsLongConstant());
+    inst->ReplaceWith(GetGraph()->GetLongConstant(BSWAP(input->AsLongConstant()->GetValue())));
+  } else {
+    DCHECK(input->IsIntConstant());
+    inst->ReplaceWith(GetGraph()->GetIntConstant(
+        BSWAP(dchecked_integral_cast<int16_t>(input->AsIntConstant()->GetValue()))));
+  }
+  inst->GetBlock()->RemoveInstruction(inst);
+}
+
+void HConstantFoldingVisitor::FoldBitCountIntrinsic(HInvoke* inst) {
+  DCHECK(inst->GetIntrinsic() == Intrinsics::kIntegerBitCount ||
+         inst->GetIntrinsic() == Intrinsics::kLongBitCount);
+
+  HInstruction* input = inst->InputAt(0);
+  if (!input->IsConstant()) {
+    return;
+  }
+
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kIntegerBitCount, input->IsIntConstant());
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kLongBitCount, input->IsLongConstant());
+
+  // Note that both the Integer and Long intrinsics return an int as a result.
+  int result = inst->GetIntrinsic() == Intrinsics::kIntegerBitCount ?
+                   POPCOUNT(input->AsIntConstant()->GetValue()) :
+                   POPCOUNT(input->AsLongConstant()->GetValue());
+  inst->ReplaceWith(GetGraph()->GetIntConstant(result));
+  inst->GetBlock()->RemoveInstruction(inst);
+}
+
+void HConstantFoldingVisitor::FoldDivideUnsignedIntrinsic(HInvoke* inst) {
+  DCHECK(inst->GetIntrinsic() == Intrinsics::kIntegerDivideUnsigned ||
+         inst->GetIntrinsic() == Intrinsics::kLongDivideUnsigned);
+
+  HInstruction* divisor = inst->InputAt(1);
+  if (!divisor->IsConstant()) {
+    return;
+  }
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kIntegerDivideUnsigned,
+                 divisor->IsIntConstant());
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kLongDivideUnsigned,
+                 divisor->IsLongConstant());
+  const bool is_int_intrinsic = inst->GetIntrinsic() == Intrinsics::kIntegerDivideUnsigned;
+  if ((is_int_intrinsic && divisor->AsIntConstant()->IsArithmeticZero()) ||
+      (!is_int_intrinsic && divisor->AsLongConstant()->IsArithmeticZero())) {
+    // We will be throwing, don't constant fold.
+    inst->SetAlwaysThrows(true);
+    GetGraph()->SetHasAlwaysThrowingInvokes(true);
+    return;
+  }
+
+  HInstruction* dividend = inst->InputAt(0);
+  if (!dividend->IsConstant()) {
+    return;
+  }
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kIntegerDivideUnsigned,
+                 dividend->IsIntConstant());
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kLongDivideUnsigned,
+                 dividend->IsLongConstant());
+
+  if (is_int_intrinsic) {
+    uint32_t dividend_val =
+        dchecked_integral_cast<uint32_t>(dividend->AsIntConstant()->GetValueAsUint64());
+    uint32_t divisor_val =
+        dchecked_integral_cast<uint32_t>(divisor->AsIntConstant()->GetValueAsUint64());
+    inst->ReplaceWith(GetGraph()->GetIntConstant(static_cast<int32_t>(dividend_val / divisor_val)));
+  } else {
+    uint64_t dividend_val = dividend->AsLongConstant()->GetValueAsUint64();
+    uint64_t divisor_val = divisor->AsLongConstant()->GetValueAsUint64();
+    inst->ReplaceWith(
+        GetGraph()->GetLongConstant(static_cast<int64_t>(dividend_val / divisor_val)));
+  }
+
+  inst->GetBlock()->RemoveInstruction(inst);
+}
+
+void HConstantFoldingVisitor::FoldHighestOneBitIntrinsic(HInvoke* inst) {
+  DCHECK(inst->GetIntrinsic() == Intrinsics::kIntegerHighestOneBit ||
+         inst->GetIntrinsic() == Intrinsics::kLongHighestOneBit);
+
+  HInstruction* input = inst->InputAt(0);
+  if (!input->IsConstant()) {
+    return;
+  }
+
+  // Integer and Long intrinsics have different return types.
+  if (inst->GetIntrinsic() == Intrinsics::kIntegerHighestOneBit) {
+    DCHECK(input->IsIntConstant());
+    inst->ReplaceWith(
+        GetGraph()->GetIntConstant(HighestOneBitValue(input->AsIntConstant()->GetValue())));
+  } else {
+    DCHECK(input->IsLongConstant());
+    inst->ReplaceWith(
+        GetGraph()->GetLongConstant(HighestOneBitValue(input->AsLongConstant()->GetValue())));
+  }
+  inst->GetBlock()->RemoveInstruction(inst);
+}
+
+void HConstantFoldingVisitor::FoldLowestOneBitIntrinsic(HInvoke* inst) {
+  DCHECK(inst->GetIntrinsic() == Intrinsics::kIntegerLowestOneBit ||
+         inst->GetIntrinsic() == Intrinsics::kLongLowestOneBit);
+
+  HInstruction* input = inst->InputAt(0);
+  if (!input->IsConstant()) {
+    return;
+  }
+
+  // Integer and Long intrinsics have different return types.
+  if (inst->GetIntrinsic() == Intrinsics::kIntegerLowestOneBit) {
+    DCHECK(input->IsIntConstant());
+    inst->ReplaceWith(
+        GetGraph()->GetIntConstant(LowestOneBitValue(input->AsIntConstant()->GetValue())));
+  } else {
+    DCHECK(input->IsLongConstant());
+    inst->ReplaceWith(
+        GetGraph()->GetLongConstant(LowestOneBitValue(input->AsLongConstant()->GetValue())));
+  }
+  inst->GetBlock()->RemoveInstruction(inst);
+}
+
+void HConstantFoldingVisitor::FoldNumberOfLeadingZerosIntrinsic(HInvoke* inst) {
+  DCHECK(inst->GetIntrinsic() == Intrinsics::kIntegerNumberOfLeadingZeros ||
+         inst->GetIntrinsic() == Intrinsics::kLongNumberOfLeadingZeros);
+
+  HInstruction* input = inst->InputAt(0);
+  if (!input->IsConstant()) {
+    return;
+  }
+
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kIntegerNumberOfLeadingZeros,
+                 input->IsIntConstant());
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kLongNumberOfLeadingZeros,
+                 input->IsLongConstant());
+
+  // Note that both the Integer and Long intrinsics return an int as a result.
+  int result = input->IsIntConstant() ? JAVASTYLE_CLZ(input->AsIntConstant()->GetValue()) :
+                                        JAVASTYLE_CLZ(input->AsLongConstant()->GetValue());
+  inst->ReplaceWith(GetGraph()->GetIntConstant(result));
+  inst->GetBlock()->RemoveInstruction(inst);
+}
+
+void HConstantFoldingVisitor::FoldNumberOfTrailingZerosIntrinsic(HInvoke* inst) {
+  DCHECK(inst->GetIntrinsic() == Intrinsics::kIntegerNumberOfTrailingZeros ||
+         inst->GetIntrinsic() == Intrinsics::kLongNumberOfTrailingZeros);
+
+  HInstruction* input = inst->InputAt(0);
+  if (!input->IsConstant()) {
+    return;
+  }
+
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kIntegerNumberOfTrailingZeros,
+                 input->IsIntConstant());
+  DCHECK_IMPLIES(inst->GetIntrinsic() == Intrinsics::kLongNumberOfTrailingZeros,
+                 input->IsLongConstant());
+
+  // Note that both the Integer and Long intrinsics return an int as a result.
+  int result = input->IsIntConstant() ? JAVASTYLE_CTZ(input->AsIntConstant()->GetValue()) :
+                                        JAVASTYLE_CTZ(input->AsLongConstant()->GetValue());
+  inst->ReplaceWith(GetGraph()->GetIntConstant(result));
+  inst->GetBlock()->RemoveInstruction(inst);
 }
 
 void HConstantFoldingVisitor::VisitArrayLength(HArrayLength* inst) {
