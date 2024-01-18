@@ -62,7 +62,7 @@ public class DumpHelperTest {
 
     @Rule
     public StaticMockitoRule mockitoRule =
-            new StaticMockitoRule(SystemProperties.class, Constants.class);
+            new StaticMockitoRule(SystemProperties.class, Constants.class, ArtJni.class);
 
     @Mock private DumpHelper.Injector mInjector;
     @Mock private ArtManagerLocal mArtManagerLocal;
@@ -82,6 +82,8 @@ public class DumpHelperTest {
         lenient()
                 .when(SystemProperties.get(argThat(arg -> arg.startsWith("ro.dalvik.vm.isa."))))
                 .thenReturn("");
+
+        lenient().when(ArtJni.getGarbageCollector()).thenReturn("CollectorTypeCMC");
 
         lenient().when(mInjector.getArtManagerLocal()).thenReturn(mArtManagerLocal);
         lenient().when(mInjector.getDexUseManager()).thenReturn(mDexUseManagerLocal);
@@ -132,7 +134,9 @@ public class DumpHelperTest {
                 + "    arm: [status=verify] [reason=install] [primary-abi]\n"
                 + "      [location is /data/app/bar/oat/arm/base.odex]\n"
                 + "    arm64: [status=verify] [reason=install]\n"
-                + "      [location is /data/app/bar/oat/arm64/base.odex]\n";
+                + "      [location is /data/app/bar/oat/arm64/base.odex]\n"
+                + "\n"
+                + "Current GC: CollectorTypeCMC\n";
 
         var stringWriter = new StringWriter();
         mDumpHelper.dump(new PrintWriter(stringWriter), mSnapshot);
