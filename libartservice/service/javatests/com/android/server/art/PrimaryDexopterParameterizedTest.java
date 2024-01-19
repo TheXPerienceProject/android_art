@@ -201,6 +201,21 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
         params.mExpectedDeletesRuntimeArtifacts = false;
         list.add(params);
 
+        params = new Params();
+        params.mIsSystemUi = true;
+        params.mForceCompilerFilter = true;
+        params.mRequestedCompilerFilter = "verify";
+        params.mExpectedCompilerFilter = "verify";
+        list.add(params);
+
+        params = new Params();
+        params.mForceCompilerFilter = true;
+        params.mRequestedCompilerFilter = "verify";
+        params.mExpectedCallbackInputCompilerFilter = "verify";
+        params.mCallbackReturnedCompilerFilter = "speed";
+        params.mExpectedCompilerFilter = "verify";
+        list.add(params);
+
         return list;
     }
 
@@ -254,6 +269,9 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
                                 ArtFlags.FLAG_SKIP_IF_STORAGE_LOW)
                         .setFlags(mParams.mIgnoreProfile ? ArtFlags.FLAG_IGNORE_PROFILE : 0,
                                 ArtFlags.FLAG_IGNORE_PROFILE)
+                        .setFlags(mParams.mForceCompilerFilter ? ArtFlags.FLAG_FORCE_COMPILER_FILTER
+                                                               : 0,
+                                ArtFlags.FLAG_FORCE_COMPILER_FILTER)
                         .build();
 
         mPrimaryDexopter =
@@ -398,6 +416,7 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
         public boolean mSkipIfStorageLow = false;
         public boolean mIgnoreProfile = false;
         public boolean mIsPreReboot = false;
+        public boolean mForceCompilerFilter = false;
 
         // System properties.
         public boolean mAlwaysDebuggable = false;
@@ -427,6 +446,7 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
                             + "skipIfStorageLow=%b,"
                             + "ignoreProfile=%b,"
                             + "isPreReboot=%b,"
+                            + "forceCompilerFilter=%b,"
                             + "alwaysDebuggable=%b"
                             + " => "
                             + "expectedCallbackInputCompilerFilter=%s,"
@@ -439,7 +459,7 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
                     mIsInDalvikCache, mHiddenApiEnforcementPolicy, mIsVmSafeMode, mIsDebuggable,
                     mIsSystemUi, mIsLauncher, mIsUseEmbeddedDex, mRequestedCompilerFilter,
                     mCallbackReturnedCompilerFilter, mForce, mShouldDowngrade, mSkipIfStorageLow,
-                    mIgnoreProfile, mIsPreReboot, mAlwaysDebuggable,
+                    mIgnoreProfile, mIsPreReboot, mForceCompilerFilter, mAlwaysDebuggable,
                     mExpectedCallbackInputCompilerFilter, mExpectedCompilerFilter,
                     mExpectedDexoptTrigger, mExpectedIsDebuggable,
                     mExpectedIsHiddenApiPolicyEnabled, mExpectedOutputIsPreReboot,
