@@ -127,7 +127,7 @@
 extern "C" __attribute__((weak)) void* __hwasan_tag_pointer(const volatile void* p,
                                                             unsigned char tag);
 
-namespace art {
+namespace art HIDDEN {
 
 using android::base::StringAppendV;
 using android::base::StringPrintf;
@@ -1724,8 +1724,10 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
       }
     }
     if (!is_suspended) {
-      bool success =
-          Runtime::Current()->GetThreadList()->WaitForSuspendBarrier(&wrapped_barrier.barrier_);
+      bool success = !Runtime::Current()
+                          ->GetThreadList()
+                          ->WaitForSuspendBarrier(&wrapped_barrier.barrier_)
+                          .has_value();
       CHECK(success);
     }
 

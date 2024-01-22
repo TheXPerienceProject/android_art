@@ -21,7 +21,9 @@
 
 #include "base/macros.h"
 
-namespace art HIDDEN {
+// TODO(260881207): should be HIDDEN, but some apps fail to launch
+// (e.g. b/319255249)
+namespace art {
 
 void register_dalvik_system_VMRuntime(JNIEnv* env);
 

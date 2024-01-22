@@ -54,7 +54,7 @@ namespace unwindstack {
 class AndroidLocalUnwinder;
 }  // namespace unwindstack
 
-namespace art {
+namespace art HIDDEN {
 
 namespace gc {
 namespace accounting {
@@ -255,7 +255,7 @@ static constexpr size_t kSharedMethodHotnessThreshold = 0x1fff;
 // if the thread makes a call out to a native function (through JNI), that native function
 // might only have 4K of memory (if the SP is adjacent to stack_end).
 
-class Thread {
+class EXPORT Thread {
  public:
   static const size_t kStackOverflowImplicitCheckSize;
   static constexpr bool kVerifyStack = kIsDebugBuild;
@@ -2324,6 +2324,15 @@ class Thread {
   // Debug disable read barrier count, only is checked for debug builds and only in the runtime.
   uint8_t debug_disallow_read_barrier_ = 0;
 
+  // Counters used only for debugging and error reporting.  Likely to wrap.  Small to avoid
+  // increasing Thread size.
+  // We currently maintain these unconditionally, since it doesn't cost much, and we seem to have
+  // persistent issues with suspension timeouts, which these should help to diagnose.
+  // TODO: Reconsider this.
+  std::atomic<uint8_t> suspended_count_ = 0;   // Number of times we entered a suspended state after
+                                               // running checkpoints.
+  std::atomic<uint8_t> checkpoint_count_ = 0;  // Number of checkpoints we started running.
+
   // Note that it is not in the packed struct, may not be accessed for cross compilation.
   uintptr_t poison_object_cookie_ = 0;
 
@@ -2461,9 +2470,9 @@ class ThreadLifecycleCallback {
 // Store an exception from the thread and suppress it for the duration of this object.
 class ScopedExceptionStorage {
  public:
-  explicit ScopedExceptionStorage(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT explicit ScopedExceptionStorage(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
   void SuppressOldException(const char* message = "") REQUIRES_SHARED(Locks::mutator_lock_);
-  ~ScopedExceptionStorage() REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT ~ScopedExceptionStorage() REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
   Thread* self_;
@@ -2471,7 +2480,7 @@ class ScopedExceptionStorage {
   MutableHandle<mirror::Throwable> excp_;
 };
 
-std::ostream& operator<<(std::ostream& os, const Thread& thread);
+EXPORT std::ostream& operator<<(std::ostream& os, const Thread& thread);
 std::ostream& operator<<(std::ostream& os, StackedShadowFrameType thread);
 
 }  // namespace art
