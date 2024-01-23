@@ -21,6 +21,8 @@
 
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "indirect_reference_table.h"
+#include "jni/jni_env_ext.h"
+#include "jni/local_reference_table.h"
 #include "lock_word.h"
 #include "thread.h"
 
@@ -1106,6 +1108,44 @@ void ArmVIXLJNIMacroAssembler::Load(ArmManagedRegister dest,
     CHECK(dest.IsDRegister()) << dest;
     ___ Vldr(AsVIXLDRegister(dest), MemOperand(base, offset));
   }
+}
+
+void ArmVIXLJNIMacroAssembler::PushLocalReferenceFrame(ManagedRegister jni_env_reg,
+                                                       ManagedRegister saved_cookie_reg,
+                                                       ManagedRegister temp_reg) {
+  constexpr size_t kLRTSegmentStateSize = sizeof(jni::LRTSegmentState);
+  DCHECK_EQ(kLRTSegmentStateSize, kRegSizeInBytes);
+  const MemberOffset jni_env_cookie_offset = JNIEnvExt::LocalRefCookieOffset(kArmPointerSize);
+  const MemberOffset jni_env_segment_state_offset = JNIEnvExt::SegmentStateOffset(kArmPointerSize);
+  DCHECK_EQ(jni_env_cookie_offset.SizeValue() + kLRTSegmentStateSize,
+            jni_env_segment_state_offset.SizeValue());
+
+  // Load the old cookie that we shall need to restore together with the current segment state.
+  ___ Ldrd(AsVIXLRegister(saved_cookie_reg.AsArm()),
+           AsVIXLRegister(temp_reg.AsArm()),
+           MemOperand(AsVIXLRegister(jni_env_reg.AsArm()), jni_env_cookie_offset.Int32Value()));
+
+  // Set the cookie in JNI environment to the current segment state.
+  Store(jni_env_reg, jni_env_cookie_offset, temp_reg, kLRTSegmentStateSize);
+}
+
+void ArmVIXLJNIMacroAssembler::PopLocalReferenceFrame(ManagedRegister jni_env_reg,
+                                                      ManagedRegister saved_cookie_reg,
+                                                      ManagedRegister temp_reg) {
+  constexpr size_t kLRTSegmentStateSize = sizeof(jni::LRTSegmentState);
+  DCHECK_EQ(kLRTSegmentStateSize, kRegSizeInBytes);
+  const MemberOffset jni_env_cookie_offset = JNIEnvExt::LocalRefCookieOffset(kArmPointerSize);
+  const MemberOffset jni_env_segment_state_offset = JNIEnvExt::SegmentStateOffset(kArmPointerSize);
+  DCHECK_EQ(jni_env_cookie_offset.SizeValue() + kLRTSegmentStateSize,
+            jni_env_segment_state_offset.SizeValue());
+
+  // Load the current cookie.
+  Load(temp_reg, jni_env_reg, jni_env_cookie_offset, kLRTSegmentStateSize);
+
+  // Set the current segment state together with restoring the cookie.
+  ___ Strd(AsVIXLRegister(saved_cookie_reg.AsArm()),
+           AsVIXLRegister(temp_reg.AsArm()),
+           MemOperand(AsVIXLRegister(jni_env_reg.AsArm()), jni_env_cookie_offset.Int32Value()));
 }
 
 }  // namespace arm
