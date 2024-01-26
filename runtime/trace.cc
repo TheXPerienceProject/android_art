@@ -239,7 +239,7 @@ uint16_t TraceWriter::GetThreadEncoding(pid_t thread_id) {
   return idx;
 }
 
-class TraceWriterTask final : public Task {
+class TraceWriterTask final : public SelfDeletingTask {
  public:
   TraceWriterTask(TraceWriter* trace_writer, uintptr_t* buffer, size_t cur_offset, size_t thread_id)
       : trace_writer_(trace_writer),
@@ -745,6 +745,9 @@ static constexpr size_t kMinBufSize = 18U;  // Trace header is up to 18B.
 // should be greater than kMinBufSize.
 static constexpr size_t kPerThreadBufSize = 512 * 1024;
 static_assert(kPerThreadBufSize > kMinBufSize);
+// On average we need 12 bytes for encoding an entry. We typically use two
+// entries in per-thread buffer, the scaling factor is 6.
+static constexpr size_t kScalingFactorEncodedEntries = 6;
 
 namespace {
 
@@ -832,7 +835,9 @@ Trace::Trace(File* trace_file,
   // In streaming mode, we only need a buffer big enough to store data per each
   // thread buffer. In non-streaming mode this is specified by the user and we
   // stop tracing when the buffer is full.
-  size_t buf_size = (output_mode == TraceOutputMode::kStreaming) ? kPerThreadBufSize : buffer_size;
+  size_t buf_size = (output_mode == TraceOutputMode::kStreaming) ?
+                        kPerThreadBufSize * kScalingFactorEncodedEntries :
+                        buffer_size;
   trace_writer_.reset(new TraceWriter(
       trace_file, output_mode, clock_source_, buf_size, GetClockOverheadNanoSeconds()));
 }
@@ -1242,6 +1247,10 @@ void TraceWriter::FlushBuffer(uintptr_t* method_trace_entries,
   }
   uint16_t thread_id = GetThreadEncoding(tid);
 
+  bool has_thread_cpu_clock = UseThreadCpuClock(clock_source_);
+  bool has_wall_clock = UseWallClock(clock_source_);
+  const size_t record_size = GetRecordSize(clock_source_);
+  DCHECK_LT(record_size, kPerThreadBufSize);
   size_t num_entries = GetNumEntries(clock_source_);
   DCHECK_EQ((kPerThreadBufSize - current_offset) % num_entries, 0u);
   for (size_t entry_index = kPerThreadBufSize; entry_index != current_offset;) {
@@ -1253,10 +1262,10 @@ void TraceWriter::FlushBuffer(uintptr_t* method_trace_entries,
     TraceAction action = DecodeTraceAction(method_and_action);
     uint32_t thread_time = 0;
     uint32_t wall_time = 0;
-    if (UseThreadCpuClock(clock_source_)) {
+    if (has_thread_cpu_clock) {
       thread_time = method_trace_entries[record_index++];
     }
-    if (UseWallClock(clock_source_)) {
+    if (has_wall_clock) {
       uint64_t timestamp = method_trace_entries[record_index++];
       if (art::kRuntimePointerSize == PointerSize::k32) {
         // On 32-bit architectures timestamp is stored as two 32-bit values.
@@ -1272,16 +1281,19 @@ void TraceWriter::FlushBuffer(uintptr_t* method_trace_entries,
           method_infos.find(method)->second, method_id, &current_index, buffer_ptr, buffer_size);
     }
 
-    const size_t record_size = GetRecordSize(clock_source_);
-    DCHECK_LT(record_size, kPerThreadBufSize);
-    if (trace_output_mode_ != TraceOutputMode::kStreaming &&
-        current_index + record_size >= buffer_size) {
-      cur_offset_ = current_index;
-      overflow_ = true;
-      return;
+    if (current_index + record_size >= buffer_size) {
+      if (trace_output_mode_ != TraceOutputMode::kStreaming) {
+        cur_offset_ = current_index;
+        overflow_ = true;
+        return;
+      }
+
+      if (!trace_file_->WriteFully(buffer_ptr, current_index)) {
+        PLOG(WARNING) << "Failed streaming a tracing event.";
+      }
+      current_index = 0;
     }
 
-    EnsureSpace(buffer_ptr, &current_index, buffer_size, record_size);
     EncodeEventEntry(
         buffer_ptr + current_index, thread_id, method_id, action, thread_time, wall_time);
     current_index += record_size;
