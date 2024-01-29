@@ -85,6 +85,7 @@ constexpr const char* kProductLibPath = "/product/" LIB ":/system/product/" LIB;
 
 const std::regex kVendorPathRegex("(/system)?/vendor/.*");
 const std::regex kProductPathRegex("(/system)?/product/.*");
+const std::regex kSystemPathRegex("/system(_ext)?/.*");  // MUST be tested last.
 
 jobject GetParentClassLoader(JNIEnv* env, jobject class_loader) {
   jclass class_loader_class = env->FindClass("java/lang/ClassLoader");
@@ -102,6 +103,9 @@ ApiDomain GetApiDomainFromPath(const std::string_view path) {
   }
   if (is_product_treblelized() && std::regex_match(path.begin(), path.end(), kProductPathRegex)) {
     return API_DOMAIN_PRODUCT;
+  }
+  if (std::regex_match(path.begin(), path.end(), kSystemPathRegex)) {
+    return API_DOMAIN_SYSTEM;
   }
   return API_DOMAIN_DEFAULT;
 }

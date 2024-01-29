@@ -55,6 +55,12 @@ public final class TestUtils {
         return !SdkLevel.isAtLeastU() && SystemProperties.get("ro.product.vndk.version").isEmpty();
     }
 
+    // True if apps and shared java libs in system/product/vendor partitions are
+    // able to load private native libs in the same partition.
+    public static boolean canLoadPrivateLibsFromSamePartition() {
+        return SdkLevel.isAtLeastV();
+    }
+
     // Test that private libs are present, as a safeguard so that the dlopen
     // failures we expect in other tests aren't due to them not being there.
     public static void testPrivateLibsExist(String libDir, String libStem) {

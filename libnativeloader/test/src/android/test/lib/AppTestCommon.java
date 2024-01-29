@@ -41,7 +41,6 @@ public abstract class AppTestCommon {
     private boolean systemPrivateLibsAccessibleFromAppNamespace() {
         // Currently it only works from system apps. It also works from product
         // apps on old versions where they were treated like system apps.
-        // TODO(b/237577392): Fix this to work from system shared libs.
         return getAppLocation() == AppLocation.SYSTEM
                 || (getAppLocation() == AppLocation.PRODUCT && TestUtils.productAppsAreShared());
     }
@@ -52,7 +51,6 @@ public abstract class AppTestCommon {
         // In old versions where product apps were treated like system apps, the
         // product private libs were included in the system namespace, so
         // they're accessible both from system and product apps.
-        // TODO(b/237577392): Fix this to work from product shared libs.
         return (getAppLocation() == AppLocation.SYSTEM || getAppLocation() == AppLocation.PRODUCT)
                 && TestUtils.productAppsAreShared();
     }
@@ -60,7 +58,9 @@ public abstract class AppTestCommon {
     // Detect exception where we don't switch from a shared system namespace to
     // a product or vendor "unbundled" namespace when calling into
     // ProductSharedLib and VendorSharedLib. That means they still can load
-    // private system libs but not private libs in their own partition.
+    // private system libs but not private libs in their own partition (however
+    // the latter works anyway when canLoadPrivateLibsFromSamePartition() is
+    // true).
     // TODO(mast): Stop propagating the shared property (isBundledApp in
     // LoadedApk.java) down to public and vendor shared java libs?
     private boolean noSwitchToVendorOrProductNamespace() {
@@ -72,7 +72,8 @@ public abstract class AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesViaSystemSharedLibWithAbsolutePaths() {
-        if (systemPrivateLibsAccessibleFromAppNamespace()) {
+        if (TestUtils.canLoadPrivateLibsFromSamePartition()
+                || systemPrivateLibsAccessibleFromAppNamespace()) {
             SystemSharedLib.load(TestUtils.libPath("/system", "system_private7"));
             SystemSharedLib.load(TestUtils.libPath("/system_ext", "systemext_private7"));
         } else {
@@ -98,7 +99,8 @@ public abstract class AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesViaSystemExtSharedLibWithAbsolutePaths() {
-        if (systemPrivateLibsAccessibleFromAppNamespace()) {
+        if (TestUtils.canLoadPrivateLibsFromSamePartition()
+                || systemPrivateLibsAccessibleFromAppNamespace()) {
             SystemExtSharedLib.load(TestUtils.libPath("/system", "system_private8"));
             SystemExtSharedLib.load(TestUtils.libPath("/system_ext", "systemext_private8"));
         } else {
@@ -145,7 +147,8 @@ public abstract class AppTestCommon {
             loadPrivateProductLib = getAppLocation() == AppLocation.SYSTEM
                     || getAppLocation() == AppLocation.PRODUCT;
         } else {
-            loadPrivateProductLib = !noSwitchToVendorOrProductNamespace();
+            loadPrivateProductLib = TestUtils.canLoadPrivateLibsFromSamePartition()
+                    || !noSwitchToVendorOrProductNamespace();
         }
         if (loadPrivateProductLib) {
             ProductSharedLib.load(TestUtils.libPath("/product", "product_private9"));
@@ -181,7 +184,8 @@ public abstract class AppTestCommon {
             });
         }
 
-        if (!noSwitchToVendorOrProductNamespace()) {
+        if (TestUtils.canLoadPrivateLibsFromSamePartition()
+                || !noSwitchToVendorOrProductNamespace()) {
             VendorSharedLib.load(TestUtils.libPath("/vendor", "vendor_private10"));
         } else {
             TestUtils.assertLibraryInaccessible(() -> {
