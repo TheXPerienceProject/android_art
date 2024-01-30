@@ -40,7 +40,7 @@ namespace unix_file {
 class FdFile;
 }  // namespace unix_file
 
-namespace art {
+namespace art HIDDEN {
 
 class ArtField;
 class ArtMethod;
