@@ -37,6 +37,7 @@
 #include "intrinsics_arm64.h"
 #include "intrinsics_list.h"
 #include "intrinsics_utils.h"
+#include "jit/profiling_info.h"
 #include "linker/linker_patch.h"
 #include "lock_word.h"
 #include "mirror/array-inl.h"
