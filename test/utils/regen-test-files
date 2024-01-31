@@ -244,6 +244,7 @@ art_gtest_user_module_names = [
     "art_standalone_dex2oat_tests",
     "art_standalone_dexdump_tests",
     "art_standalone_dexlist_tests",
+    "art_standalone_dexopt_chroot_setup_tests",
     "art_standalone_libartbase_tests",
     "art_standalone_libartpalette_tests",
     "art_standalone_libartservice_tests",
