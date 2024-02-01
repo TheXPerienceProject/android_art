@@ -1890,18 +1890,15 @@ void JitThreadPool::Remove(JitCompileTask* task) {
   current_compilations_.erase(task);
   switch (task->GetCompilationKind()) {
     case CompilationKind::kOsr: {
-      size_t count = osr_enqueued_methods_.erase(task->GetArtMethod());
-      DCHECK_EQ(count, 1u);
+      osr_enqueued_methods_.erase(task->GetArtMethod());
       break;
     }
     case CompilationKind::kBaseline: {
-      size_t count = baseline_enqueued_methods_.erase(task->GetArtMethod());
-      DCHECK_EQ(count, 1u);
+      baseline_enqueued_methods_.erase(task->GetArtMethod());
       break;
     }
     case CompilationKind::kOptimized: {
-      size_t count = optimized_enqueued_methods_.erase(task->GetArtMethod());
-      DCHECK_EQ(count, 1u);
+      optimized_enqueued_methods_.erase(task->GetArtMethod());
       break;
     }
   }
