@@ -58,6 +58,54 @@
    call art_quick_deliver_exception  // args a0, a1
    unimp
 
+// goto +AA
+// Format 10t: AA|28
+// Unconditionally jump to the indicated instruction.
+// Note: The branch offset must not be 0.
+%def op_goto():
+   srliw t0, xINST, 8  // t0 := AA (zext)
+   sext.b t0, t0       // t0 := +AA (sext)
+   BRANCH units=t0
+
+// goto/16 +AAAA
+// Format 20t: 00|29 AAAA
+// Unconditionally jump to the indicated instruction.
+// Note: The branch offset must not be 0.
+%def op_goto_16():
+   FETCH t0, 1, signed=1  // t0 := +AAAA (sext)
+   BRANCH units=t0
+
+// goto/32 +AAAAAAAA
+// Format 30t: 00|2a AAAA(lo) AAAA(hi)
+// Unconditionally jump to the indicated instruction.
+%def op_goto_32():
+   FETCH t0, 1, signed=1, width=32  // t0 := +AAAAAAAA (sext)
+   BRANCH units=t0
+
+// packed-switch vAA, +BBBBBBBB
+// Format 31t: AA|2b BBBB(lo) BBBB(hi)
+// Jump to a new instruction based on the value in the given register, using a table of offsets
+// corresponding to each value in a particular integral range, or fall through to the next
+// instruction if there is no match.
+%def op_packed_switch(is_packed=True):
+   srliw t0, xINST, 8          // t0 := AA
+   FETCH t1, count=1, signed=1, width=32  // t1 := +BBBBBBBB (sext)
+%  get_vreg("a1", "t0")        #  a1 := vAA
+   sh1add a0, t1, xPC          // a0 := +BBBBBBBB * 2 + xPC
+%  if is_packed:
+     call NterpDoPackedSwitch  // args a0 (switchData), a1 (value)
+%  else:
+     call NterpDoSparseSwitch  // args a0 (switchData), a1 (value)
+%#:
+   BRANCH units=a0
+
+// sparse-switch vAA, +BBBBBBBB
+// Format 31t: AA|2c BBBB(lo) BBBB(hi)
+// Jump to a new instruction based on the value in the given register, using an ordered table of
+// value-offset pairs, or fall through to the next instruction if there is no match.
+%def op_sparse_switch():
+%  op_packed_switch(is_packed=False)
+
 // cmp-long vAA, vBB, vCC
 // Format 23x: AA|31 CC|BB
 %def op_cmp_long():
@@ -76,59 +124,120 @@
    GET_INST_OPCODE t0
    GOTO_OPCODE t0
 
-%def bincmp(condition=""):
-    unimp
+// Common helper for if-test.
+// Format 22t: B|A|op CCCC
+%def bincmp(op):
+   srliw t0, xINST, 8   // t0 := B|A
+   srliw t1, xINST, 12  // t1 := B
+   andi t0, t0, 0xF     // t0 := A
+%  get_vreg("t0", "t0")  # t0 := vA
+%  get_vreg("t1", "t1")  # t1 := vB
+   b${op} t0, t1, .L${opcode}_branch
 
-%def zcmp(condition=""):
-    unimp
+   FETCH_ADVANCE_INST 2
+   GET_INST_OPCODE t2
+   GOTO_OPCODE t2
 
-%def op_goto():
-    unimp
+.L${opcode}_branch:
+   FETCH t2, count=1, signed=1  // t2 := +CCCC (sext)
+   BRANCH units=t2
 
-%def op_goto_16():
-    unimp
-
-%def op_goto_32():
-    unimp
-
+// if-eq vA, vB, +CCCC
+// Format 22t: B|A|32 CCCC
+// Branch to the given destination if the given two registers' values compare as specified.
+// Note: The branch offset must not be 0.
 %def op_if_eq():
-%  bincmp(condition="eq")
+%  bincmp(op="eq")
 
-%def op_if_eqz():
-%  zcmp(condition="eq")
-
-%def op_if_ge():
-%  bincmp(condition="ge")
-
-%def op_if_gez():
-%  zcmp(condition="ge")
-
-%def op_if_gt():
-%  bincmp(condition="gt")
-
-%def op_if_gtz():
-%  zcmp(condition="gt")
-
-%def op_if_le():
-%  bincmp(condition="le")
-
-%def op_if_lez():
-%  zcmp(condition="le")
-
-%def op_if_lt():
-%  bincmp(condition="lt")
-
-%def op_if_ltz():
-%  zcmp(condition="lt")
-
+// if-ne vA, vB, +CCCC
+// Format 22t: B|A|33 CCCC
+// Branch to the given destination if the given two registers' values compare as specified.
+// Note: The branch offset must not be 0.
 %def op_if_ne():
-%  bincmp(condition="ne")
+%  bincmp(op="ne")
 
+// if-lt vA, vB, +CCCC
+// Format 22t: B|A|34 CCCC
+// Branch to the given destination if the given two registers' values compare as specified.
+// Note: The branch offset must not be 0.
+%def op_if_lt():
+%  bincmp(op="lt")
+
+// if-ge vA, vB, +CCCC
+// Format 22t: B|A|35 CCCC
+// Branch to the given destination if the given two registers' values compare as specified.
+// Note: The branch offset must not be 0.
+%def op_if_ge():
+%  bincmp(op="ge")
+
+// if-gt vA, vB, +CCCC
+// Format 22t: B|A|36 CCCC
+// Branch to the given destination if the given two registers' values compare as specified.
+// Note: The branch offset must not be 0.
+%def op_if_gt():
+%  bincmp(op="gt")
+
+// if-le vA, vB, +CCCC
+// Format 22t: B|A|37 CCCC
+// Branch to the given destination if the given two registers' values compare as specified.
+// Note: The branch offset must not be 0.
+%def op_if_le():
+%  bincmp(op="le")
+
+// Common helper for if-testz.
+// Format 21t: AA|op BBBB
+%def zcmp(op):
+   srliw t0, xINST, 8   // t0 := AA
+%  get_vreg("t0", "t0")  # t0 := vAA
+   b${op} t0, .L${opcode}_branch
+
+   FETCH_ADVANCE_INST 2
+   GET_INST_OPCODE t1
+   GOTO_OPCODE t1
+
+.L${opcode}_branch:
+   FETCH t1, count=1, signed=1  // t1 := +BBBB (sext)
+   BRANCH units=t1
+
+// if-eqz vAA, +BBBB
+// Format 21t: AA|38 BBBB
+// Branch to the given destination if the given register's value compares with 0 as specified.
+// Note: The branch offset must not be 0.
+%def op_if_eqz():
+%  zcmp(op="eqz")
+
+// if-nez vAA, +BBBB
+// Format 21t: AA|39 BBBB
+// Branch to the given destination if the given register's value compares with 0 as specified.
+// Note: The branch offset must not be 0.
 %def op_if_nez():
-%  zcmp(condition="ne")
+%  zcmp(op="nez")
 
-%def op_packed_switch(func="NterpDoPackedSwitch"):
-    unimp
+// if-ltz vAA, +BBBB
+// Format 21t: AA|3a BBBB
+// Branch to the given destination if the given register's value compares with 0 as specified.
+// Note: The branch offset must not be 0.
+%def op_if_ltz():
+%  zcmp(op="ltz")
 
-%def op_sparse_switch():
-%  op_packed_switch(func="NterpDoSparseSwitch")
+// if-gez vAA, +BBBB
+// Format 21t: AA|3b BBBB
+// Branch to the given destination if the given register's value compares with 0 as specified.
+// Note: The branch offset must not be 0.
+%def op_if_gez():
+%  zcmp(op="gez")
+
+// if-gtz vAA, +BBBB
+// Format 21t: AA|3c BBBB
+// Branch to the given destination if the given register's value compares with 0 as specified.
+// Note: The branch offset must not be 0.
+%def op_if_gtz():
+%  zcmp(op="gtz")
+
+// if-lez vAA, +BBBB
+// Format 21t: AA|3d BBBB
+// Branch to the given destination if the given register's value compares with 0 as specified.
+// Note: The branch offset must not be 0.
+%def op_if_lez():
+%  zcmp(op="lez")
+
