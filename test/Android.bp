@@ -236,6 +236,7 @@ art_cc_defaults {
             shared_libs: [
                 // Dependencies of `libart(d)`, that are not included in *static_defaults.
                 "libdl_android",
+                "libstatspull",
                 "libstatssocket",
                 "heapprofd_client_api",
             ],
