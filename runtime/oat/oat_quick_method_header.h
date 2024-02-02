@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_RUNTIME_OAT_QUICK_METHOD_HEADER_H_
-#define ART_RUNTIME_OAT_QUICK_METHOD_HEADER_H_
+#ifndef ART_RUNTIME_OAT_OAT_QUICK_METHOD_HEADER_H_
+#define ART_RUNTIME_OAT_OAT_QUICK_METHOD_HEADER_H_
 
 #include <optional>
 
@@ -26,7 +26,7 @@
 #include "quick/quick_method_frame_info.h"
 #include "stack_map.h"
 
-namespace art {
+namespace art HIDDEN {
 
 class ArtMethod;
 
@@ -43,10 +43,10 @@ class PACKED(4) OatQuickMethodHeader {
   }
 
   static OatQuickMethodHeader* NterpMethodHeader;
-  static ArrayRef<const uint8_t> NterpWithClinitImpl;
-  static ArrayRef<const uint8_t> NterpImpl;
+  EXPORT static ArrayRef<const uint8_t> NterpWithClinitImpl;
+  EXPORT static ArrayRef<const uint8_t> NterpImpl;
 
-  bool IsNterpMethodHeader() const;
+  EXPORT bool IsNterpMethodHeader() const;
 
   static bool IsNterpPc(uintptr_t pc) {
     return OatQuickMethodHeader::NterpMethodHeader != nullptr &&
@@ -176,9 +176,9 @@ class PACKED(4) OatQuickMethodHeader {
   }
 
   // For non-catch handlers. Only used in test code.
-  uintptr_t ToNativeQuickPc(ArtMethod* method,
-                            const uint32_t dex_pc,
-                            bool abort_on_failure = true) const;
+  EXPORT uintptr_t ToNativeQuickPc(ArtMethod* method,
+                                   const uint32_t dex_pc,
+                                   bool abort_on_failure = true) const;
 
   // For catch handlers.
   uintptr_t ToNativeQuickPcForCatchHandlers(ArtMethod* method,
@@ -202,4 +202,4 @@ class PACKED(4) OatQuickMethodHeader {
 
 }  // namespace art
 
-#endif  // ART_RUNTIME_OAT_QUICK_METHOD_HEADER_H_
+#endif  // ART_RUNTIME_OAT_OAT_QUICK_METHOD_HEADER_H_

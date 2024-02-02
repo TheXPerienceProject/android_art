@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_RUNTIME_IMAGE_INL_H_
-#define ART_RUNTIME_IMAGE_INL_H_
+#ifndef ART_RUNTIME_OAT_IMAGE_INL_H_
+#define ART_RUNTIME_OAT_IMAGE_INL_H_
 
 #include "image.h"
 
@@ -26,7 +26,7 @@
 #include "obj_ptr-inl.h"
 #include "read_barrier-inl.h"
 
-namespace art {
+namespace art HIDDEN {
 
 template <ReadBarrierOption kReadBarrierOption>
 inline ObjPtr<mirror::Object> ImageHeader::GetImageRoot(ImageRoot image_root) const {
@@ -117,4 +117,4 @@ inline void ImageHeader::VisitPackedImtConflictTables(const Visitor& visitor,
 
 }  // namespace art
 
-#endif  // ART_RUNTIME_IMAGE_INL_H_
+#endif  // ART_RUNTIME_OAT_IMAGE_INL_H_

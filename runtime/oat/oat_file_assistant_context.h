@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_RUNTIME_OAT_FILE_ASSISTANT_CONTEXT_H_
-#define ART_RUNTIME_OAT_FILE_ASSISTANT_CONTEXT_H_
+#ifndef ART_RUNTIME_OAT_OAT_FILE_ASSISTANT_CONTEXT_H_
+#define ART_RUNTIME_OAT_OAT_FILE_ASSISTANT_CONTEXT_H_
 
 #include <optional>
 #include <string>
@@ -23,9 +23,10 @@
 #include <vector>
 
 #include "arch/instruction_set.h"
+#include "base/macros.h"
 #include "runtime.h"
 
-namespace art {
+namespace art HIDDEN {
 
 // A helper class for OatFileAssistant that fetches and caches information including boot image
 // checksums, bootclasspath checksums, and APEX versions. The same instance can be reused across
@@ -59,7 +60,7 @@ class OatFileAssistantContext {
 
   // Constructs OatFileAssistantContext from runtime options. Does not fetch information on
   // construction. Information will be fetched from disk when needed.
-  explicit OatFileAssistantContext(std::unique_ptr<RuntimeOptions> runtime_options);
+  EXPORT explicit OatFileAssistantContext(std::unique_ptr<RuntimeOptions> runtime_options);
   // Constructs OatFileAssistantContext from a runtime instance. Fetches as much information as
   // possible from the runtime. The rest information will be fetched from disk when needed.
   explicit OatFileAssistantContext(Runtime* runtime);
@@ -67,9 +68,9 @@ class OatFileAssistantContext {
   const RuntimeOptions& GetRuntimeOptions() const;
   // Fetches all information that hasn't been fetched from disk and caches it. All operations will
   // be read-only after a successful call to this function.
-  bool FetchAll(std::string* error_msg);
+  EXPORT bool FetchAll(std::string* error_msg);
   // Returns information about the boot image of the given instruction set.
-  const std::vector<BootImageInfo>& GetBootImageInfoList(InstructionSet isa);
+  EXPORT const std::vector<BootImageInfo>& GetBootImageInfoList(InstructionSet isa);
   // Returns the checksums of the dex files in the BCP jar at the given index, or nullptr on error.
   // The format of each checksum is "/<checksum_in_8_digit_hex>".
   const std::vector<std::string>* GetBcpChecksums(size_t bcp_index, std::string* error_msg);
@@ -86,4 +87,4 @@ class OatFileAssistantContext {
 
 }  // namespace art
 
-#endif  // ART_RUNTIME_OAT_FILE_ASSISTANT_CONTEXT_H_
+#endif  // ART_RUNTIME_OAT_OAT_FILE_ASSISTANT_CONTEXT_H_

@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_RUNTIME_OAT_FILE_MANAGER_H_
-#define ART_RUNTIME_OAT_FILE_MANAGER_H_
+#ifndef ART_RUNTIME_OAT_OAT_FILE_MANAGER_H_
+#define ART_RUNTIME_OAT_OAT_FILE_MANAGER_H_
 
 #include <memory>
 #include <set>
@@ -28,7 +28,7 @@
 #include "base/macros.h"
 #include "jni.h"
 
-namespace art {
+namespace art HIDDEN {
 
 namespace gc {
 namespace space {
@@ -55,14 +55,15 @@ class OatFileManager {
   // with the same base address. Returns the oat file pointer from oat_file.
   // The `in_memory` parameter is whether the oat file is not present on disk,
   // but only in memory (for example files created with memfd).
-  const OatFile* RegisterOatFile(std::unique_ptr<const OatFile> oat_file, bool in_memory = false)
+  EXPORT const OatFile* RegisterOatFile(std::unique_ptr<const OatFile> oat_file,
+                                        bool in_memory = false)
       REQUIRES(!Locks::oat_file_manager_lock_);
 
   void UnRegisterAndDeleteOatFile(const OatFile* oat_file)
       REQUIRES(!Locks::oat_file_manager_lock_);
 
   // Find the first opened oat file with the same location, returns null if there are none.
-  const OatFile* FindOpenedOatFileFromOatLocation(const std::string& oat_location) const
+  EXPORT const OatFile* FindOpenedOatFileFromOatLocation(const std::string& oat_location) const
       REQUIRES(!Locks::oat_file_manager_lock_);
 
   // Find the oat file which contains a dex files with the given dex base location,
@@ -71,7 +72,7 @@ class OatFileManager {
       REQUIRES(!Locks::oat_file_manager_lock_);
 
   // Returns the boot image oat files.
-  std::vector<const OatFile*> GetBootOatFiles() const;
+  EXPORT std::vector<const OatFile*> GetBootOatFiles() const;
 
   // Returns the oat files for the images, registers the oat files.
   // Takes ownership of the imagespace's underlying oat files.
@@ -135,10 +136,10 @@ class OatFileManager {
   void DeleteThreadPool();
 
   // Wait for any ongoing background verification tasks to finish.
-  void WaitForBackgroundVerificationTasksToFinish();
+  EXPORT void WaitForBackgroundVerificationTasksToFinish();
 
   // Wait for all background verification tasks to finish. This is only used by tests.
-  void WaitForBackgroundVerificationTasks();
+  EXPORT void WaitForBackgroundVerificationTasks();
 
   // Maximum number of anonymous vdex files kept in the process' data folder.
   static constexpr size_t kAnonymousVdexCacheSize = 8u;
@@ -174,4 +175,4 @@ class OatFileManager {
 
 }  // namespace art
 
-#endif  // ART_RUNTIME_OAT_FILE_MANAGER_H_
+#endif  // ART_RUNTIME_OAT_OAT_FILE_MANAGER_H_

@@ -47,9 +47,9 @@
 #include "mirror/object-inl.h"
 #include "mirror/object_array-inl.h"
 #include "mirror/var_handle.h"
-#include "oat.h"
-#include "oat_file.h"
-#include "oat_quick_method_header.h"
+#include "oat/oat.h"
+#include "oat/oat_file.h"
+#include "oat/oat_quick_method_header.h"
 #include "quick_exception_handler.h"
 #include "runtime.h"
 #include "scoped_thread_state_change-inl.h"
@@ -2045,13 +2045,12 @@ extern "C" const void* artQuickGenericJniTrampoline(Thread* self,
         << "@FastNative/@CriticalNative and synchronize is not supported";
   }
 
-  // Skip pushing IRT frame for @CriticalNative.
+  // Skip pushing LRT frame for @CriticalNative.
   if (LIKELY(!critical_native)) {
     // Push local reference frame.
     JNIEnvExt* env = self->GetJniEnv();
     DCHECK(env != nullptr);
-    uint32_t cookie = bit_cast<uint32_t>(env->GetLocalRefCookie());
-    env->SetLocalRefCookie(env->GetLocalsSegmentState());
+    uint32_t cookie = bit_cast<uint32_t>(env->PushLocalReferenceFrame());
 
     // Save the cookie on the stack.
     uint32_t* sp32 = reinterpret_cast<uint32_t*>(managed_sp);

@@ -20,10 +20,10 @@
 #include "entrypoints/quick/callee_save_frame.h"
 #include "interpreter/mterp/nterp.h"
 #include "nterp_helpers.h"
-#include "oat_quick_method_header.h"
+#include "oat/oat_quick_method_header.h"
 #include "quick/quick_method_frame_info.h"
 
-namespace art {
+namespace art HIDDEN {
 
 /**
  * An nterp frame follows the optimizing compiler's ABI conventions, with
@@ -277,7 +277,11 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
         case Instruction::CONST_CLASS:
         case Instruction::MONITOR_ENTER:
         case Instruction::MONITOR_EXIT:
+        case Instruction::CHECK_CAST:
+        case Instruction::INSTANCE_OF:
         case Instruction::ARRAY_LENGTH:
+        case Instruction::NEW_INSTANCE:
+        case Instruction::NEW_ARRAY:
         case Instruction::FILLED_NEW_ARRAY:
         case Instruction::FILLED_NEW_ARRAY_RANGE:
         case Instruction::FILL_ARRAY_DATA:

@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-#ifndef ART_RUNTIME_INDEX_BSS_MAPPING_H_
-#define ART_RUNTIME_INDEX_BSS_MAPPING_H_
+#ifndef ART_RUNTIME_OAT_INDEX_BSS_MAPPING_H_
+#define ART_RUNTIME_OAT_INDEX_BSS_MAPPING_H_
 
 #include <android-base/logging.h>
 
 #include "base/bit_utils.h"
+#include "base/macros.h"
 
-namespace art {
+namespace art HIDDEN {
 
 template<typename T> class LengthPrefixedArray;
 
@@ -79,4 +80,4 @@ class IndexBssMappingLookup {
 
 }  // namespace art
 
-#endif  // ART_RUNTIME_INDEX_BSS_MAPPING_H_
+#endif  // ART_RUNTIME_OAT_INDEX_BSS_MAPPING_H_
