@@ -100,7 +100,7 @@ package com.android.server.art.model {
     field public static final int SCHEDULE_SUCCESS = 0; // 0x0
   }
 
-  public abstract class ArtManagedFileStats {
+  public class ArtManagedFileStats {
     method public long getTotalSizeBytesByType(int);
     field public static final int TYPE_CUR_PROFILE = 2; // 0x2
     field public static final int TYPE_DEXOPT_ARTIFACT = 0; // 0x0

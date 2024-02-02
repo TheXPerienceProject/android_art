@@ -1239,12 +1239,6 @@ class LSEVisitor final : private HGraphDelegateVisitor {
   // in the end. These are indexed by the load's id.
   ScopedArenaVector<HInstruction*> substitute_instructions_for_loads_;
 
-  // Value at the start of the given instruction for instructions which directly
-  // read from a heap-location (i.e. FieldGet). The mapping to heap-location is
-  // implicit through the fact that each instruction can only directly refer to
-  // a single heap-location.
-  ScopedArenaHashMap<HInstruction*, Value> intermediate_values_;
-
   // Record stores to keep in a bit vector indexed by instruction ID.
   ArenaBitVector kept_stores_;
   // When we need to keep all stores that feed a Phi placeholder, we just record the
@@ -1435,7 +1429,6 @@ LSEVisitor::LSEVisitor(HGraph* graph,
       substitute_instructions_for_loads_(graph->GetCurrentInstructionId(),
                                          nullptr,
                                          allocator_.Adapter(kArenaAllocLSE)),
-      intermediate_values_(allocator_.Adapter(kArenaAllocLSE)),
       kept_stores_(&allocator_,
                    /*start_bits=*/graph->GetCurrentInstructionId(),
                    /*expandable=*/false,
@@ -1721,7 +1714,6 @@ void LSEVisitor::VisitGetLocation(HInstruction* instruction, size_t idx) {
     RecordFieldInfo(&instruction->GetFieldInfo(), idx);
   }
   DCHECK(record.value.IsUnknown() || record.value.Equals(ReplacementOrValue(record.value)));
-  intermediate_values_.insert({instruction, record.value});
   loads_and_stores_.push_back({ instruction, idx });
   if ((record.value.IsDefault() || record.value.NeedsNonLoopPhi()) &&
       !IsDefaultOrPhiAllowedForLoad(instruction)) {
@@ -2517,7 +2509,11 @@ void LSEVisitor::ProcessLoopPhiWithUnknownInput(PhiPlaceholder loop_phi_with_unk
               local_heap_values[idx] = Replacement(local_heap_values[idx]);
             }
             record.value = local_heap_values[idx];
-            HInstruction* heap_value = local_heap_values[idx].GetInstruction();
+            DCHECK(local_heap_values[idx].IsDefault() || local_heap_values[idx].IsInstruction())
+                << "The replacement heap value can be an HIR instruction or the default value.";
+            HInstruction* heap_value = local_heap_values[idx].IsDefault() ?
+                                           GetDefaultValue(load_or_store->GetType()) :
+                                           local_heap_values[idx].GetInstruction();
             AddRemovedLoad(load_or_store, heap_value);
           }
         }

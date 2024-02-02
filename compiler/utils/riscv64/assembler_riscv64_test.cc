@@ -4915,6 +4915,26 @@ TEST_F(AssemblerRISCV64Test, VL8re64) {
       "VL8re64");
 }
 
+TEST_F(AssemblerRISCV64Test, VL1r) {
+  DriverStr(RepeatVRAligned(&Riscv64Assembler::VL1r, /*alignment=*/ 1, "vl1r.v {reg1}, ({reg2})"),
+            "VL1r");
+}
+
+TEST_F(AssemblerRISCV64Test, VL2r) {
+  DriverStr(RepeatVRAligned(&Riscv64Assembler::VL2r, /*alignment=*/ 2, "vl2r.v {reg1}, ({reg2})"),
+            "VL2r");
+}
+
+TEST_F(AssemblerRISCV64Test, VL4r) {
+  DriverStr(RepeatVRAligned(&Riscv64Assembler::VL4r, /*alignment=*/ 4, "vl4r.v {reg1}, ({reg2})"),
+            "VL4r");
+}
+
+TEST_F(AssemblerRISCV64Test, VL8r) {
+  DriverStr(RepeatVRAligned(&Riscv64Assembler::VL8r, /*alignment=*/ 8, "vl8r.v {reg1}, ({reg2})"),
+            "VL8r");
+}
+
 TEST_F(AssemblerRISCV64Test, VS1r) {
   DriverStr(RepeatVRAligned(&Riscv64Assembler::VS1r, /*alignment=*/ 1, "vs1r.v {reg1}, ({reg2})"),
             "VS1r");
@@ -6822,7 +6842,7 @@ TEST_F(AssemblerRISCV64Test, VFwadd_wv) {
 TEST_F(AssemblerRISCV64Test, VFwadd_wf) {
   DriverStr(RepeatVVFVmFiltered(&Riscv64Assembler::VFwadd_wf,
                                 "vfwadd.wf {reg1}, {reg2}, {reg3}{vm}",
-                                VXVVmSkipV0VmAndNoR1R2Overlap<FRegister>()),
+                                SkipV0Vm<VRegister, FRegister>()),
             "VFwadd_wf");
 }
 
@@ -6836,7 +6856,7 @@ TEST_F(AssemblerRISCV64Test, VFwsub_wv) {
 TEST_F(AssemblerRISCV64Test, VFwsub_wf) {
   DriverStr(RepeatVVFVmFiltered(&Riscv64Assembler::VFwsub_wf,
                                 "vfwsub.wf {reg1}, {reg2}, {reg3}{vm}",
-                                VXVVmSkipV0VmAndNoR1R2Overlap<FRegister>()),
+                                SkipV0Vm<VRegister, FRegister>()),
             "VFwsub_wf");
 }
 

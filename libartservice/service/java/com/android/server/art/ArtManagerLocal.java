@@ -928,10 +928,10 @@ public final class ArtManagerLocal {
                 curProfilesSize += artd.getProfileSize(profile);
             }
 
-            return ArtManagedFileStats.create(artifactsSize, refProfilesSize, curProfilesSize);
+            return new ArtManagedFileStats(artifactsSize, refProfilesSize, curProfilesSize);
         } catch (RemoteException e) {
             Utils.logArtdException(e);
-            return ArtManagedFileStats.create(
+            return new ArtManagedFileStats(
                     0 /* artifactsSize */, 0 /* refProfilesSize */, 0 /* curProfilesSize */);
         }
     }
