@@ -251,6 +251,10 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
 
   uint32_t GetFrameSize() const { return frame_size_; }
   void SetFrameSize(uint32_t size) { frame_size_ = size; }
+  uint32_t GetMaximumFrameSize() const {
+    return GetStackOverflowReservedBytes(GetInstructionSet());
+  }
+
   uint32_t GetCoreSpillMask() const { return core_spill_mask_; }
   uint32_t GetFpuSpillMask() const { return fpu_spill_mask_; }
 
