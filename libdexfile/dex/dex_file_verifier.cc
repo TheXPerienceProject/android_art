@@ -1704,13 +1704,16 @@ bool DexFileVerifier::CheckIntraStringDataItem() {
   DECODE_UNSIGNED_CHECKED_FROM(ptr_, size);
   const uint8_t* file_end = EndOfFile();
 
+  size_t available_bytes = static_cast<size_t>(file_end - ptr_);
+  if (available_bytes < size) {
+    ErrorStringPrintf("String data would go beyond end-of-file");
+    return false;
+  }
+  // Eagerly subtract one byte per character.
+  available_bytes -= size;
+
   for (uint32_t i = 0; i < size; i++) {
     CHECK_LT(i, size);  // b/15014252 Prevents hitting the impossible case below
-    if (UNLIKELY(ptr_ >= file_end)) {
-      ErrorStringPrintf("String data would go beyond end-of-file");
-      return false;
-    }
-
     uint8_t byte = *(ptr_++);
 
     // Switch on the high 4 bits.
@@ -1744,6 +1747,12 @@ bool DexFileVerifier::CheckIntraStringDataItem() {
       case 0x0c:
       case 0x0d: {
         // Bit pattern 110x has an additional byte.
+        if (available_bytes < 1u) {
+          ErrorStringPrintf("String data would go beyond end-of-file");
+          return false;
+        }
+        available_bytes -= 1u;
+
         uint8_t byte2 = *(ptr_++);
         if (UNLIKELY((byte2 & 0xc0) != 0x80)) {
           ErrorStringPrintf("Illegal continuation byte %x in string data", byte2);
@@ -1758,6 +1767,12 @@ bool DexFileVerifier::CheckIntraStringDataItem() {
       }
       case 0x0e: {
         // Bit pattern 1110 has 2 additional bytes.
+        if (available_bytes < 2u) {
+          ErrorStringPrintf("String data would go beyond end-of-file");
+          return false;
+        }
+        available_bytes -= 2u;
+
         uint8_t byte2 = *(ptr_++);
         if (UNLIKELY((byte2 & 0xc0) != 0x80)) {
           ErrorStringPrintf("Illegal continuation byte %x in string data", byte2);
@@ -1778,11 +1793,18 @@ bool DexFileVerifier::CheckIntraStringDataItem() {
     }
   }
 
+  if (available_bytes < 1u) {
+    ErrorStringPrintf("String data would go beyond end-of-file");
+    return false;
+  }
+  available_bytes -= 1u;
+
   if (UNLIKELY(*(ptr_++) != '\0')) {
     ErrorStringPrintf("String longer than indicated size %x", size);
     return false;
   }
 
+  DCHECK_EQ(available_bytes, static_cast<size_t>(file_end - ptr_));
   return true;
 }
 
