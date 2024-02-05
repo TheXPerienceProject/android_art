@@ -2389,6 +2389,9 @@ void CodeGeneratorARMVIXL::GenerateFrameEntry() {
     return;
   }
 
+  // Make sure the frame size isn't unreasonably large.
+  DCHECK_LE(GetFrameSize(), GetMaximumFrameSize());
+
   if (!skip_overflow_check) {
     // Using r4 instead of IP saves 2 bytes.
     UseScratchRegisterScope temps(GetVIXLAssembler());
