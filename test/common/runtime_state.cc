@@ -275,6 +275,9 @@ static void ForceJitCompiled(Thread* self,
   code_cache->SetGarbageCollectCode(false);
   if (kind == CompilationKind::kBaseline || jit->GetJitCompiler()->IsBaselineCompiler()) {
     ScopedObjectAccess soa(self);
+    if (jit->TryPatternMatch(method, CompilationKind::kBaseline)) {
+      return;
+    }
     jit->MaybeEnqueueCompilation(method, self);
   } else {
     jit->EnqueueOptimizedCompilation(method, self);
