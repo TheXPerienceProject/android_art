@@ -48,13 +48,13 @@
 #include "mirror/object_array-inl.h"
 #include "nterp_helpers.h"
 #include "nth_caller_visitor.h"
-#include "oat_file_manager.h"
-#include "oat_quick_method_header.h"
+#include "oat/oat_file_manager.h"
+#include "oat/oat_quick_method_header.h"
 #include "runtime-inl.h"
 #include "thread.h"
 #include "thread_list.h"
 
-namespace art {
+namespace art HIDDEN {
 extern "C" NO_RETURN void artDeoptimize(Thread* self, bool skip_method_exit_callbacks);
 extern "C" NO_RETURN void artDeliverPendingExceptionFromCode(Thread* self);
 

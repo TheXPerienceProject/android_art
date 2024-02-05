@@ -16,20 +16,18 @@
 
 #include "heap.h"
 
+#include <sys/types.h>
+#include <unistd.h>
+
 #include <limits>
-#include "android-base/thread_annotations.h"
-#if defined(__BIONIC__) || defined(__GLIBC__) || defined(ANDROID_HOST_MUSL)
-#include <malloc.h>  // For mallinfo()
-#endif
 #include <memory>
 #include <random>
-#include <unistd.h>
-#include <sys/types.h>
+#include <sstream>
 #include <vector>
 
-#include "android-base/stringprintf.h"
-
 #include "allocation_listener.h"
+#include "android-base/stringprintf.h"
+#include "android-base/thread_annotations.h"
 #include "art_field-inl.h"
 #include "backtrace_helper.h"
 #include "base/allocator.h"
@@ -80,7 +78,6 @@
 #include "handle_scope-inl.h"
 #include "heap-inl.h"
 #include "heap-visit-objects-inl.h"
-#include "image.h"
 #include "intern_table.h"
 #include "jit/jit.h"
 #include "jit/jit_code_cache.h"
@@ -95,6 +92,7 @@
 #include "mirror/reference-inl.h"
 #include "mirror/var_handle.h"
 #include "nativehelper/scoped_local_ref.h"
+#include "oat/image.h"
 #include "obj_ptr-inl.h"
 #ifdef ART_TARGET_ANDROID
 #include "perfetto/heap_profile.h"
@@ -107,6 +105,10 @@
 #include "thread_list.h"
 #include "verify_object-inl.h"
 #include "well_known_classes.h"
+
+#if defined(__BIONIC__) || defined(__GLIBC__) || defined(ANDROID_HOST_MUSL)
+#include <malloc.h>  // For mallinfo()
+#endif
 
 namespace art HIDDEN {
 
@@ -4760,6 +4762,12 @@ bool Heap::AddHeapTask(gc::HeapTask* task) {
   }
   GetTaskProcessor()->AddTask(self, task);
   return true;
+}
+
+std::string Heap::GetForegroundCollectorName() {
+  std::ostringstream oss;
+  oss << foreground_collector_type_;
+  return oss.str();
 }
 
 }  // namespace gc

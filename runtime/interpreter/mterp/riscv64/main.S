@@ -346,7 +346,7 @@ END \name
 // Put "%def" definitions after ".macro" definitions for proper expansion. %def is greedy.
 
 // Typed read, defaults to 32-bit read
-// Note: Incorrect for an object ref; it requires LWU, or LW;ZEXT.W.
+// Note: An object ref requires LWU, or LW;ZEXT.W.
 // Clobbers: \reg
 // Safe if \reg == \vreg.
 %def get_vreg(reg, vreg, width=32, is_wide=False, is_unsigned=False):
@@ -626,6 +626,7 @@ NAME_END nterp_helper
 EndExecuteNterpImpl:
 
 // Entrypoints into runtime.
+NTERP_TRAMPOLINE nterp_allocate_object, NterpAllocateObject
 NTERP_TRAMPOLINE nterp_filled_new_array, NterpFilledNewArray
 NTERP_TRAMPOLINE nterp_filled_new_array_range, NterpFilledNewArrayRange
 NTERP_TRAMPOLINE nterp_get_class, NterpGetClass
