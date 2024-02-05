@@ -5876,10 +5876,7 @@ void CodeGeneratorRISCV64::GenerateFrameEntry() {
 
   if (!HasEmptyFrame()) {
     // Make sure the frame size isn't unreasonably large.
-    if (GetFrameSize() > GetStackOverflowReservedBytes(InstructionSet::kRiscv64)) {
-      LOG(FATAL) << "Stack frame larger than "
-                 << GetStackOverflowReservedBytes(InstructionSet::kRiscv64) << " bytes";
-    }
+    DCHECK_LE(GetFrameSize(), GetMaximumFrameSize());
 
     // Spill callee-saved registers.
 

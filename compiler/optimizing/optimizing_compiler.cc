@@ -937,6 +937,14 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
                     regalloc_strategy,
                     compilation_stats_.get());
 
+  if (UNLIKELY(codegen->GetFrameSize() > codegen->GetMaximumFrameSize())) {
+    LOG(WARNING) << "Stack frame size is " << codegen->GetFrameSize()
+                 << " which is larger than the maximum of " << codegen->GetMaximumFrameSize()
+                 << " bytes. Method: " << graph->PrettyMethod();
+    MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kNotCompiledFrameTooBig);
+    return nullptr;
+  }
+
   codegen->Compile();
   pass_observer.DumpDisassembly();
 
@@ -1035,6 +1043,7 @@ CodeGenerator* OptimizingCompiler::TryCompileIntrinsic(
     return nullptr;
   }
 
+  CHECK_LE(codegen->GetFrameSize(), codegen->GetMaximumFrameSize());
   codegen->Compile();
   pass_observer.DumpDisassembly();
 
