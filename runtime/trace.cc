@@ -1178,11 +1178,7 @@ void TraceWriter::PreProcessTraceForMethodInfos(
   }
 }
 
-void TraceWriter::RecordMethodInfo(const std::string& method_info_line,
-                                   uint32_t method_id,
-                                   size_t* current_index,
-                                   uint8_t* buffer,
-                                   size_t buffer_size) {
+void TraceWriter::RecordMethodInfo(const std::string& method_info_line, uint32_t method_id) {
   std::string method_line(GetMethodLine(method_info_line, method_id));
   // Write a special block with the name.
   static constexpr size_t kMethodNameHeaderSize = 5;
@@ -1195,22 +1191,10 @@ void TraceWriter::RecordMethodInfo(const std::string& method_info_line,
   DCHECK(method_line.length() < (1 << 16));
   Append2LE(method_header + 3, method_line_length);
 
-  EnsureSpace(buffer, current_index, buffer_size, kMethodNameHeaderSize);
-  memcpy(buffer + *current_index, method_header, kMethodNameHeaderSize);
-  *current_index += kMethodNameHeaderSize;
-
-  EnsureSpace(buffer, current_index, buffer_size, method_line_length);
   const uint8_t* ptr = reinterpret_cast<const uint8_t*>(method_line.c_str());
-  if (method_line_length < buffer_size) {
-    memcpy(buffer + *current_index, ptr, method_line_length);
-    *current_index += method_line_length;
-  } else {
-    // The data is larger than buffer, so write directly to the file. EnsureSpace should have
-    // flushed any data in the buffer.
-    DCHECK_EQ(*current_index, 0U);
-    if (!trace_file_->WriteFully(ptr, method_line_length)) {
-      PLOG(WARNING) << "Failed streaming a tracing event.";
-    }
+  if (!trace_file_->WriteFully(method_header, kMethodNameHeaderSize) ||
+      !trace_file_->WriteFully(ptr, method_line_length)) {
+    PLOG(WARNING) << "Failed streaming a tracing event.";
   }
 }
 
@@ -1354,7 +1338,17 @@ void TraceWriter::FlushBuffer(uintptr_t* method_trace_entries,
   const size_t record_size = GetRecordSize(clock_source_);
   DCHECK_LT(record_size, kPerThreadBufSize);
   size_t num_entries = GetNumEntries(clock_source_);
+  size_t num_records = (kPerThreadBufSize - current_offset) / num_entries;
   DCHECK_EQ((kPerThreadBufSize - current_offset) % num_entries, 0u);
+
+  // Check if there is sufficient place in the buffer for non-streaming case. If not return early.
+  if (cur_offset_ + record_size * num_records >= buffer_size &&
+      trace_output_mode_ != TraceOutputMode::kStreaming) {
+    overflow_ = true;
+    return;
+  }
+
+  DCHECK_GT(buffer_size_, record_size * num_entries);
   for (size_t entry_index = kPerThreadBufSize; entry_index != current_offset;) {
     entry_index -= num_entries;
     size_t record_index = entry_index;
@@ -1379,23 +1373,10 @@ void TraceWriter::FlushBuffer(uintptr_t* method_trace_entries,
 
     auto [method_id, is_new_method] = GetMethodEncoding(method);
     if (is_new_method && trace_output_mode_ == TraceOutputMode::kStreaming) {
-      RecordMethodInfo(
-          method_infos.find(method)->second, method_id, &current_index, buffer_ptr, buffer_size);
+      RecordMethodInfo(method_infos.find(method)->second, method_id);
     }
 
-    if (current_index + record_size >= buffer_size) {
-      if (trace_output_mode_ != TraceOutputMode::kStreaming) {
-        cur_offset_ = current_index;
-        overflow_ = true;
-        return;
-      }
-
-      if (!trace_file_->WriteFully(buffer_ptr, current_index)) {
-        PLOG(WARNING) << "Failed streaming a tracing event.";
-      }
-      current_index = 0;
-    }
-
+    DCHECK_LT(current_index + record_size,  buffer_size);
     EncodeEventEntry(
         buffer_ptr + current_index, thread_id, method_id, action, thread_time, wall_time);
     current_index += record_size;
