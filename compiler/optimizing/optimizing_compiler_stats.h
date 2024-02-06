@@ -68,6 +68,7 @@ enum class MethodCompilationStat {
   kNotCompiledInliningIrreducibleLoop,
   kNotCompiledIrreducibleLoopAndStringInit,
   kNotCompiledPhiEquivalentInOsr,
+  kNotCompiledFrameTooBig,
   kInlinedMonomorphicCall,
   kInlinedPolymorphicCall,
   kMonomorphicCall,
