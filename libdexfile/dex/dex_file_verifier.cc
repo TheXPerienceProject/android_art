@@ -1959,13 +1959,14 @@ bool DexFileVerifier::CheckIntraAnnotationItem() {
   }
 
   // Check visibility
-  switch (*(ptr_++)) {
+  uint8_t visibility = *(ptr_++);
+  switch (visibility) {
     case DexFile::kDexVisibilityBuild:
     case DexFile::kDexVisibilityRuntime:
     case DexFile::kDexVisibilitySystem:
       break;
     default:
-      ErrorStringPrintf("Bad annotation visibility: %x", *ptr_);
+      ErrorStringPrintf("Bad annotation visibility: %x", visibility);
       return false;
   }
 
