@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "arch/instruction_set.h"
+#include "base/macros.h"
 #include "base/variant_map.h"
 #include "cmdline_types.h"  // TODO: don't need to include this file here
 #include "gc/collector_type.h"
@@ -33,7 +34,7 @@
 #include "jit/profile_saver_options.h"
 #include "verifier/verifier_enums.h"
 
-namespace art {
+namespace art HIDDEN {
 
 class CompilerCallbacks;
 class DexFile;
@@ -61,7 +62,7 @@ struct RuntimeArgumentMapKey : VariantMapKey<TValue> {
 //    map.Set(RuntimeArgumentMap::HeapTargetUtilization, 5.0);
 //    double *target_utilization = map.Get(RuntimeArgumentMap);
 //
-struct RuntimeArgumentMap : VariantMap<RuntimeArgumentMap, RuntimeArgumentMapKey> {
+struct EXPORT RuntimeArgumentMap : VariantMap<RuntimeArgumentMap, RuntimeArgumentMapKey> {
   // This 'using' line is necessary to inherit the variadic constructor.
   using VariantMap<RuntimeArgumentMap, RuntimeArgumentMapKey>::VariantMap;
 
