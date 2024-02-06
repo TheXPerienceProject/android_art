@@ -120,8 +120,8 @@ GraphAnalysisResult HGraphBuilder::BuildGraph() {
     return kAnalysisInvalidBytecode;
   }
 
-  // 2) Decide whether to skip this method based on its code size and number
-  //    of branches.
+  // 2) Decide whether to skip compiling this method based on e.g. the compiler filter and method's
+  // code size.
   if (SkipCompilation()) {
     return kAnalysisSkipped;
   }
