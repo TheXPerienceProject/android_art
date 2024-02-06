@@ -320,7 +320,8 @@ class ArtdTest : public CommonArtTest {
     EXPECT_CALL(*mock_props_, GetProperty).Times(AnyNumber()).WillRepeatedly(Return(""));
     auto mock_exec_utils = std::make_unique<MockExecUtils>();
     mock_exec_utils_ = mock_exec_utils.get();
-    artd_ = ndk::SharedRefBase::make<Artd>(std::move(mock_props),
+    artd_ = ndk::SharedRefBase::make<Artd>(Options(),
+                                           std::move(mock_props),
                                            std::move(mock_exec_utils),
                                            mock_kill_.AsStdFunction(),
                                            mock_fstat_.AsStdFunction());
