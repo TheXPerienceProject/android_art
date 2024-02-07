@@ -23,7 +23,7 @@
 #include "thread-current-inl.h"
 #include "thread-inl.h"
 
-namespace art {
+namespace art HIDDEN {
 
 class ThreadTest : public CommonRuntimeTest {};
 
