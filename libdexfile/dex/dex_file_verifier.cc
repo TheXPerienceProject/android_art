@@ -20,11 +20,11 @@
 #include <bitset>
 #include <limits>
 #include <memory>
+#include <stack>
 
 #include "android-base/logging.h"
 #include "android-base/macros.h"
 #include "android-base/stringprintf.h"
-
 #include "base/hash_map.h"
 #include "base/leb128.h"
 #include "base/safe_map.h"
@@ -291,9 +291,21 @@ class DexFileVerifier {
   bool CheckStaticFieldTypes(const dex::ClassDef& class_def);
 
   bool CheckPadding(uint32_t aligned_offset, DexFile::MapItemType type);
+
+  // The encoded values, arrays and annotations are allowed to be very deeply nested,
+  // so use heap todo-list instead of stack recursion (the work is done in LIFO order).
+  struct ToDoItem {
+    uint32_t array_size = 0;          // CheckArrayElement.
+    uint32_t annotation_size = 0;     // CheckAnnotationElement.
+    uint32_t last_idx = kDexNoIndex;  // CheckAnnotationElement.
+  };
+  using ToDoList = std::stack<ToDoItem>;
   bool CheckEncodedValue();
   bool CheckEncodedArray();
+  bool CheckArrayElement();
   bool CheckEncodedAnnotation();
+  bool CheckAnnotationElement(/*inout*/ uint32_t* last_idx);
+  bool FlushToDoList();
 
   bool CheckIntraTypeIdItem();
   bool CheckIntraProtoIdItem();
@@ -454,6 +466,9 @@ class DexFileVerifier {
 
   // Class definition indexes, valid only if corresponding `defined_classes_[.]` is true.
   std::vector<uint16_t> defined_class_indexes_;
+
+  // Used by CheckEncodedValue to avoid recursion. Field so we can reuse allocated memory.
+  ToDoList todo_;
 };
 
 template <typename ExtraCheckFn>
@@ -1184,12 +1199,15 @@ bool DexFileVerifier::CheckEncodedValue() {
 
 bool DexFileVerifier::CheckEncodedArray() {
   DECODE_UNSIGNED_CHECKED_FROM(ptr_, size);
+  todo_.emplace(ToDoItem{.array_size = size});
+  return true;
+}
 
-  for (; size != 0u; --size) {
-    if (!CheckEncodedValue()) {
-      failure_reason_ = StringPrintf("Bad encoded_array value: %s", failure_reason_.c_str());
-      return false;
-    }
+// Always called directly from FlushToDoList, which avoids recursion.
+bool DexFileVerifier::CheckArrayElement() {
+  if (!CheckEncodedValue()) {
+    failure_reason_ = StringPrintf("Bad encoded_array value: %s", failure_reason_.c_str());
+    return false;
   }
   return true;
 }
@@ -1201,25 +1219,44 @@ bool DexFileVerifier::CheckEncodedAnnotation() {
   }
 
   DECODE_UNSIGNED_CHECKED_FROM(ptr_, size);
-  uint32_t last_idx = 0;
+  todo_.emplace(ToDoItem{.annotation_size = size, .last_idx = kDexNoIndex});
+  return true;
+}
 
-  for (uint32_t i = 0; i < size; i++) {
-    DECODE_UNSIGNED_CHECKED_FROM(ptr_, idx);
-    if (!CheckIndex(idx, header_->string_ids_size_, "annotation_element name_idx")) {
-      return false;
+// Always called directly from FlushToDoList, which avoids recursion.
+bool DexFileVerifier::CheckAnnotationElement(/*inout*/ uint32_t* last_idx) {
+  DECODE_UNSIGNED_CHECKED_FROM(ptr_, idx);
+  if (!CheckIndex(idx, header_->string_ids_size_, "annotation_element name_idx")) {
+    return false;
+  }
+
+  if (UNLIKELY(*last_idx >= idx && *last_idx != kDexNoIndex)) {
+    ErrorStringPrintf("Out-of-order annotation_element name_idx: %x then %x", *last_idx, idx);
+    return false;
+  }
+  *last_idx = idx;
+
+  return CheckEncodedValue();
+}
+
+// Keep processing the rest of the to-do list until we are finished or encounter an error.
+bool DexFileVerifier::FlushToDoList() {
+  while (!todo_.empty()) {
+    ToDoItem& item = todo_.top();
+    DCHECK(item.array_size == 0u || item.annotation_size == 0u);
+    if (item.array_size > 0) {
+      item.array_size--;
+      if (!CheckArrayElement()) {
+        return false;
+      }
+    } else if (item.annotation_size > 0) {
+      item.annotation_size--;
+      if (!CheckAnnotationElement(&item.last_idx)) {
+        return false;
+      }
+    } else {
+      todo_.pop();
     }
-
-    if (UNLIKELY(last_idx >= idx && i != 0)) {
-      ErrorStringPrintf("Out-of-order annotation_element name_idx: %x then %x",
-                        last_idx, idx);
-      return false;
-    }
-
-    if (!CheckEncodedValue()) {
-      return false;
-    }
-
-    last_idx = idx;
   }
   return true;
 }
@@ -1970,7 +2007,8 @@ bool DexFileVerifier::CheckIntraAnnotationItem() {
       return false;
   }
 
-  if (!CheckEncodedAnnotation()) {
+  CHECK(todo_.empty());
+  if (!CheckEncodedAnnotation() || !FlushToDoList()) {
     return false;
   }
 
@@ -2222,7 +2260,8 @@ bool DexFileVerifier::CheckIntraSectionIterate(uint32_t section_count) {
         break;
       }
       case DexFile::kDexTypeEncodedArrayItem: {
-        if (!CheckEncodedArray()) {
+        CHECK(todo_.empty());
+        if (!CheckEncodedArray() || !FlushToDoList()) {
           return false;
         }
         break;
@@ -3465,6 +3504,7 @@ bool DexFileVerifier::Verify() {
     return false;
   }
 
+  CHECK(todo_.empty());  // No unprocessed work left over.
   return true;
 }
 
