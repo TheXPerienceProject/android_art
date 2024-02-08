@@ -8,10 +8,6 @@ directory) of platform releases, to ensure it is always available.
 The recommended way to build the ART Module is to use the `master-art` manifest,
 which only has the sources and dependencies required for the module.
 
-Currently it is also possible to build ART directly from sources in a platform
-build, i.e. as has been the traditional way up until Android S. However that
-method is being phased out.
-
 The ART Module is available as a debug variant, `com.android.art.debug.apex`,
 which has extra internal consistency checks enabled, and some debug tools. A
 device cannot have both the non-debug and debug variants installed at once - it
