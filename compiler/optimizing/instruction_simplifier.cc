@@ -450,15 +450,22 @@ static bool TryReplaceShiftsByConstantWithTypeConversion(HBinaryOperation *instr
   bool is_signed = instruction->IsShr();
   DataType::Type conv_type =
       is_signed ? source_integral_type : DataType::ToUnsigned(source_integral_type);
-  HInstruction* shl_value = shl->GetLeft();
-  HBasicBlock *block = instruction->GetBlock();
-
-  HTypeConversion* new_conversion =
-      new (block->GetGraph()->GetAllocator()) HTypeConversion(conv_type, shl_value);
 
   DCHECK(DataType::IsTypeConversionImplicit(conv_type, instruction->GetResultType()));
 
-  block->ReplaceAndRemoveInstructionWith(instruction, new_conversion);
+  HInstruction* shl_value = shl->GetLeft();
+  HBasicBlock *block = instruction->GetBlock();
+
+  // We shouldn't introduce new implicit type conversions during simplification.
+  if (DataType::IsTypeConversionImplicit(shl_value->GetType(), conv_type)) {
+    instruction->ReplaceWith(shl_value);
+    instruction->GetBlock()->RemoveInstruction(instruction);
+  } else {
+    HTypeConversion* new_conversion =
+        new (block->GetGraph()->GetAllocator()) HTypeConversion(conv_type, shl_value);
+    block->ReplaceAndRemoveInstructionWith(instruction, new_conversion);
+  }
+
   shl->GetBlock()->RemoveInstruction(shl);
 
   return true;
