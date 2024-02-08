@@ -42,9 +42,9 @@ class JNIEnvExt : public JNIEnv {
   // Creates a new JNIEnvExt. Returns null on error, in which case error_msg
   // will contain a description of the error.
   static JNIEnvExt* Create(Thread* self, JavaVMExt* vm, std::string* error_msg);
-  static MemberOffset SegmentStateOffset(size_t pointer_size);
-  static MemberOffset LocalRefCookieOffset(size_t pointer_size);
-  static MemberOffset SelfOffset(size_t pointer_size);
+  static MemberOffset SegmentStateOffset(PointerSize pointer_size);
+  static MemberOffset LocalRefCookieOffset(PointerSize pointer_size);
+  static MemberOffset SelfOffset(PointerSize pointer_size);
   static jint GetEnvHandler(JavaVMExt* vm, /*out*/void** out, jint version);
 
   ~JNIEnvExt();
@@ -147,7 +147,7 @@ class JNIEnvExt : public JNIEnv {
       REQUIRES(!Locks::thread_list_lock_, !Locks::jni_function_table_lock_);
 
  private:
-  static MemberOffset LocalReferenceTableOffset(size_t pointer_size);
+  static MemberOffset LocalReferenceTableOffset(PointerSize pointer_size);
 
   // Override of function tables. This applies to both default as well as instrumented (CheckJNI)
   // function tables.
