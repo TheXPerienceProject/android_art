@@ -1834,8 +1834,8 @@ void LSEVisitor::VisitBasicBlock(HBasicBlock* block) {
   } else {
     MergePredecessorRecords(block);
   }
-  // Visit instructions.
-  HGraphVisitor::VisitBasicBlock(block);
+  // Visit non-Phi instructions.
+  VisitNonPhiInstructions(block);
 }
 
 bool LSEVisitor::MayAliasOnBackEdge(HBasicBlock* loop_header, size_t idx1, size_t idx2) const {

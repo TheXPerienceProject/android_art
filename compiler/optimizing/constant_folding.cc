@@ -117,12 +117,9 @@ bool HConstantFolding::Run() {
 
 
 void HConstantFoldingVisitor::VisitBasicBlock(HBasicBlock* block) {
-  // Traverse this block's instructions (phis don't need to be
-  // processed) in (forward) order and replace the ones that can be
-  // statically evaluated by a compile-time counterpart.
-  for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
-    it.Current()->Accept(this);
-  }
+  // Traverse this block's instructions (phis don't need to be processed) in (forward) order
+  // and replace the ones that can be statically evaluated by a compile-time counterpart.
+  VisitNonPhiInstructions(block);
 }
 
 void HConstantFoldingVisitor::VisitUnaryOperation(HUnaryOperation* inst) {
