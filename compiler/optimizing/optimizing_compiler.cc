@@ -905,7 +905,6 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
   }
 
   if (compilation_kind == CompilationKind::kBaseline && compiler_options.ProfileBranches()) {
-    graph->SetUsefulOptimizing();
     // Branch profiling currently doesn't support running optimizations.
     RunRequiredPasses(graph, codegen.get(), dex_compilation_unit, &pass_observer);
   } else {
@@ -918,7 +917,6 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
   // this method already, do it now.
   if (jit != nullptr &&
       compilation_kind == CompilationKind::kBaseline &&
-      graph->IsUsefulOptimizing() &&
       graph->GetProfilingInfo() == nullptr) {
     ProfilingInfoBuilder(
         graph, codegen->GetCompilerOptions(), codegen.get(), compilation_stats_.get()).Run();
@@ -1448,11 +1446,6 @@ bool OptimizingCompiler::JitCompile(Thread* self,
     info.code_info = stack_map.size() == 0 ? nullptr : stack_map.data();
     info.cfi = ArrayRef<const uint8_t>(*codegen->GetAssembler()->cfi().data());
     debug_info = GenerateJitDebugInfo(info);
-  }
-
-  if (compilation_kind == CompilationKind::kBaseline &&
-      !codegen->GetGraph()->IsUsefulOptimizing()) {
-    compilation_kind = CompilationKind::kOptimized;
   }
 
   if (!code_cache->Commit(self,
