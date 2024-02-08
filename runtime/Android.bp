@@ -577,6 +577,9 @@ cc_defaults {
     whole_static_libs: [
         "libcpu_features",
     ],
+    cflags: [
+        "-DBUILDING_LIBART",
+    ],
 }
 
 cc_defaults {
