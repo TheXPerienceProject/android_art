@@ -170,7 +170,7 @@ bool InstructionSimplifierVisitor::Run() {
     // post order visit, we sometimes need to revisit an instruction index.
     do {
       simplification_occurred_ = false;
-      VisitBasicBlock(block);
+      VisitNonPhiInstructions(block);
       if (simplification_occurred_) {
         didSimplify = true;
       }
