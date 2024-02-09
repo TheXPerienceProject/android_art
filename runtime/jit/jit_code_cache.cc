@@ -1429,18 +1429,20 @@ void JitCodeCache::GetProfiledMethods(const std::set<std::string>& dex_base_loca
   ScopedTrace trace(__FUNCTION__);
   Thread* self = Thread::Current();
   WaitUntilInlineCacheAccessible(self);
-  std::vector<ProfilingInfo*> copies;
+  SafeMap<ArtMethod*, ProfilingInfo*> profiling_infos;
+  std::vector<ArtMethod*> copies;
   // TODO: Avoid read barriers for potentially dead methods.
   // ScopedDebugDisallowReadBarriers sddrb(self);
   {
     MutexLock mu(self, *Locks::jit_lock_);
-    copies.reserve(profiling_infos_.size());
-    for (const auto& entry : profiling_infos_) {
+    profiling_infos = profiling_infos_;
+    for (const auto& entry : method_code_map_) {
       copies.push_back(entry.second);
     }
   }
-  for (ProfilingInfo* info : copies) {
-    ArtMethod* method = info->GetMethod();
+  for (ArtMethod* method : copies) {
+    auto it = profiling_infos.find(method);
+    ProfilingInfo* info = (it == profiling_infos.end()) ? nullptr : it->second;
     const DexFile* dex_file = method->GetDexFile();
     const std::string base_location = DexFileLoader::GetBaseLocation(dex_file->GetLocation());
     if (!ContainsElement(dex_base_locations, base_location)) {
@@ -1449,73 +1451,75 @@ void JitCodeCache::GetProfiledMethods(const std::set<std::string>& dex_base_loca
     }
     std::vector<ProfileMethodInfo::ProfileInlineCache> inline_caches;
 
-    // If the method is still baseline compiled and doesn't meet the inline cache threshold, don't
-    // save the inline caches because they might be incomplete.
-    // Although we don't deoptimize for incomplete inline caches in AOT-compiled code, inlining
-    // leads to larger generated code.
-    // If the inline cache is empty the compiler will generate a regular invoke virtual/interface.
-    const void* entry_point = method->GetEntryPointFromQuickCompiledCode();
-    if (ContainsPc(entry_point) &&
-        CodeInfo::IsBaseline(
-            OatQuickMethodHeader::FromEntryPoint(entry_point)->GetOptimizedCodeInfoPtr()) &&
-        (ProfilingInfo::GetOptimizeThreshold() - info->GetBaselineHotnessCount()) <
-            inline_cache_threshold) {
-      methods.emplace_back(/*ProfileMethodInfo*/
-          MethodReference(dex_file, method->GetDexMethodIndex()), inline_caches);
-      continue;
-    }
-
-    for (size_t i = 0; i < info->number_of_inline_caches_; ++i) {
-      std::vector<TypeReference> profile_classes;
-      const InlineCache& cache = info->GetInlineCaches()[i];
-      ArtMethod* caller = info->GetMethod();
-      bool is_missing_types = false;
-      for (size_t k = 0; k < InlineCache::kIndividualCacheSize; k++) {
-        mirror::Class* cls = cache.classes_[k].Read();
-        if (cls == nullptr) {
-          break;
-        }
-
-        // Check if the receiver is in the boot class path or if it's in the
-        // same class loader as the caller. If not, skip it, as there is not
-        // much we can do during AOT.
-        if (!cls->IsBootStrapClassLoaded() &&
-            caller->GetClassLoader() != cls->GetClassLoader()) {
-          is_missing_types = true;
-          continue;
-        }
-
-        const DexFile* class_dex_file = nullptr;
-        dex::TypeIndex type_index;
-
-        if (cls->GetDexCache() == nullptr) {
-          DCHECK(cls->IsArrayClass()) << cls->PrettyClass();
-          // Make a best effort to find the type index in the method's dex file.
-          // We could search all open dex files but that might turn expensive
-          // and probably not worth it.
-          class_dex_file = dex_file;
-          type_index = cls->FindTypeIndexInOtherDexFile(*dex_file);
-        } else {
-          class_dex_file = &(cls->GetDexFile());
-          type_index = cls->GetDexTypeIndex();
-        }
-        if (!type_index.IsValid()) {
-          // Could be a proxy class or an array for which we couldn't find the type index.
-          is_missing_types = true;
-          continue;
-        }
-        if (ContainsElement(dex_base_locations,
-                            DexFileLoader::GetBaseLocation(class_dex_file->GetLocation()))) {
-          // Only consider classes from the same apk (including multidex).
-          profile_classes.emplace_back(/*ProfileMethodInfo::ProfileClassReference*/
-              class_dex_file, type_index);
-        } else {
-          is_missing_types = true;
-        }
+    if (info != nullptr) {
+      // If the method is still baseline compiled and doesn't meet the inline cache threshold, don't
+      // save the inline caches because they might be incomplete.
+      // Although we don't deoptimize for incomplete inline caches in AOT-compiled code, inlining
+      // leads to larger generated code.
+      // If the inline cache is empty the compiler will generate a regular invoke virtual/interface.
+      const void* entry_point = method->GetEntryPointFromQuickCompiledCode();
+      if (ContainsPc(entry_point) &&
+          CodeInfo::IsBaseline(
+              OatQuickMethodHeader::FromEntryPoint(entry_point)->GetOptimizedCodeInfoPtr()) &&
+          (ProfilingInfo::GetOptimizeThreshold() - info->GetBaselineHotnessCount()) <
+              inline_cache_threshold) {
+        methods.emplace_back(/*ProfileMethodInfo*/
+            MethodReference(dex_file, method->GetDexMethodIndex()), inline_caches);
+        continue;
       }
-      if (!profile_classes.empty()) {
-        inline_caches.emplace_back(/*ProfileMethodInfo::ProfileInlineCache*/
-            cache.dex_pc_, is_missing_types, profile_classes);
+
+      for (size_t i = 0; i < info->number_of_inline_caches_; ++i) {
+        std::vector<TypeReference> profile_classes;
+        const InlineCache& cache = info->GetInlineCaches()[i];
+        ArtMethod* caller = info->GetMethod();
+        bool is_missing_types = false;
+        for (size_t k = 0; k < InlineCache::kIndividualCacheSize; k++) {
+          mirror::Class* cls = cache.classes_[k].Read();
+          if (cls == nullptr) {
+            break;
+          }
+
+          // Check if the receiver is in the boot class path or if it's in the
+          // same class loader as the caller. If not, skip it, as there is not
+          // much we can do during AOT.
+          if (!cls->IsBootStrapClassLoaded() &&
+              caller->GetClassLoader() != cls->GetClassLoader()) {
+            is_missing_types = true;
+            continue;
+          }
+
+          const DexFile* class_dex_file = nullptr;
+          dex::TypeIndex type_index;
+
+          if (cls->GetDexCache() == nullptr) {
+            DCHECK(cls->IsArrayClass()) << cls->PrettyClass();
+            // Make a best effort to find the type index in the method's dex file.
+            // We could search all open dex files but that might turn expensive
+            // and probably not worth it.
+            class_dex_file = dex_file;
+            type_index = cls->FindTypeIndexInOtherDexFile(*dex_file);
+          } else {
+            class_dex_file = &(cls->GetDexFile());
+            type_index = cls->GetDexTypeIndex();
+          }
+          if (!type_index.IsValid()) {
+            // Could be a proxy class or an array for which we couldn't find the type index.
+            is_missing_types = true;
+            continue;
+          }
+          if (ContainsElement(dex_base_locations,
+                              DexFileLoader::GetBaseLocation(class_dex_file->GetLocation()))) {
+            // Only consider classes from the same apk (including multidex).
+            profile_classes.emplace_back(/*ProfileMethodInfo::ProfileClassReference*/
+                class_dex_file, type_index);
+          } else {
+            is_missing_types = true;
+          }
+        }
+        if (!profile_classes.empty()) {
+          inline_caches.emplace_back(/*ProfileMethodInfo::ProfileInlineCache*/
+              cache.dex_pc_, is_missing_types, profile_classes);
+        }
       }
     }
     methods.emplace_back(/*ProfileMethodInfo*/
@@ -1535,17 +1539,13 @@ bool JitCodeCache::NotifyCompilationOf(ArtMethod* method,
                                        CompilationKind compilation_kind,
                                        bool prejit) {
   const void* existing_entry_point = method->GetEntryPointFromQuickCompiledCode();
-  if (compilation_kind != CompilationKind::kOsr && ContainsPc(existing_entry_point)) {
-    OatQuickMethodHeader* method_header =
-        OatQuickMethodHeader::FromEntryPoint(existing_entry_point);
-    bool is_baseline = (compilation_kind == CompilationKind::kBaseline);
-    if (CodeInfo::IsBaseline(method_header->GetOptimizedCodeInfoPtr()) == is_baseline) {
-      VLOG(jit) << "Not compiling "
-                << method->PrettyMethod()
-                << " because it has already been compiled"
-                << " kind=" << compilation_kind;
-      return false;
-    }
+  if (compilation_kind == CompilationKind::kBaseline && ContainsPc(existing_entry_point)) {
+    // The existing entry point is either already baseline, or optimized. No
+    // need to compile.
+    VLOG(jit) << "Not compiling "
+              << method->PrettyMethod()
+              << " baseline, because it has already been compiled";
+    return false;
   }
 
   if (method->NeedsClinitCheckBeforeCall() && !prejit) {
