@@ -1024,6 +1024,17 @@ public final class ArtManagerLocal {
         return mInjector.getBackgroundDexoptJob();
     }
 
+    /**
+     * Should be used by {@link BackgroundDexoptJobService} ONLY.
+     *
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @NonNull
+    PreRebootDexoptJob getPreRebootDexoptJob() {
+        return mInjector.getPreRebootDexoptJob();
+    }
+
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @Nullable
     private DexoptResult maybeDowngradePackages(
@@ -1354,6 +1365,7 @@ public final class ArtManagerLocal {
         @Nullable private final PackageManagerLocal mPackageManagerLocal;
         @Nullable private final Config mConfig;
         @Nullable private BackgroundDexoptJob mBgDexoptJob = null;
+        @Nullable private PreRebootDexoptJob mPrDexoptJob = null;
 
         /** For compatibility with S and T. New code should not use this. */
         @Deprecated
@@ -1439,6 +1451,15 @@ public final class ArtManagerLocal {
                 mBgDexoptJob = new BackgroundDexoptJob(mContext, mArtManagerLocal, mConfig);
             }
             return mBgDexoptJob;
+        }
+
+        @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        @NonNull
+        public synchronized PreRebootDexoptJob getPreRebootDexoptJob() {
+            if (mPrDexoptJob == null) {
+                mPrDexoptJob = new PreRebootDexoptJob(mContext);
+            }
+            return mPrDexoptJob;
         }
 
         @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
