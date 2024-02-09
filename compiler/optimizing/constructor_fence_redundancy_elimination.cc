@@ -37,8 +37,8 @@ class CFREVisitor final : public HGraphVisitor {
         stats_(stats) {}
 
   void VisitBasicBlock(HBasicBlock* block) override {
-    // Visit all instructions in block.
-    HGraphVisitor::VisitBasicBlock(block);
+    // Visit all non-Phi instructions in the block.
+    VisitNonPhiInstructions(block);
 
     // If there were any unmerged fences left, merge them together,
     // the objects are considered 'published' at the end of the block.

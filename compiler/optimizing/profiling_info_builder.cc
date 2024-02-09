@@ -33,10 +33,7 @@ void ProfilingInfoBuilder::Run() {
   // Order does not matter.
   for (HBasicBlock* block : GetGraph()->GetReversePostOrder()) {
     // No need to visit the phis.
-    for (HInstructionIteratorHandleChanges inst_it(block->GetInstructions()); !inst_it.Done();
-         inst_it.Advance()) {
-      inst_it.Current()->Accept(this);
-    }
+    VisitNonPhiInstructions(block);
   }
 
   ScopedObjectAccess soa(Thread::Current());
