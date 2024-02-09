@@ -425,7 +425,6 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
         cached_current_method_(nullptr),
         art_method_(nullptr),
         compilation_kind_(compilation_kind),
-        useful_optimizing_(false),
         cha_single_implementation_list_(allocator->Adapter(kArenaAllocCHA)) {
     blocks_.reserve(kDefaultNumberOfBlocks);
   }
@@ -743,9 +742,6 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   void SetNumberOfCHAGuards(uint32_t num) { number_of_cha_guards_ = num; }
   void IncrementNumberOfCHAGuards() { number_of_cha_guards_++; }
 
-  void SetUsefulOptimizing() { useful_optimizing_ = true; }
-  bool IsUsefulOptimizing() const { return useful_optimizing_; }
-
  private:
   void RemoveDeadBlocksInstructionsAsUsersAndDisconnect(const ArenaBitVector& visited) const;
   void RemoveDeadBlocks(const ArenaBitVector& visited);
@@ -900,10 +896,6 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   // stack maps to mark compiled code entries which the interpreter can
   // directly jump to.
   const CompilationKind compilation_kind_;
-
-  // Whether after compiling baseline it is still useful re-optimizing this
-  // method.
-  bool useful_optimizing_;
 
   // List of methods that are assumed to have single implementation.
   ArenaSet<ArtMethod*> cha_single_implementation_list_;
