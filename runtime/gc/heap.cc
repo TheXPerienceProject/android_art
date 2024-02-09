@@ -108,7 +108,7 @@
 #include "verify_object-inl.h"
 #include "well_known_classes.h"
 
-namespace art {
+namespace art HIDDEN {
 
 #ifdef ART_TARGET_ANDROID
 namespace {
@@ -1127,7 +1127,7 @@ void Heap::CreateThreadPool(size_t num_threads) {
     num_threads = std::max(parallel_gc_threads_, conc_gc_threads_);
   }
   if (num_threads != 0) {
-    thread_pool_.reset(new ThreadPool("Heap thread pool", num_threads));
+    thread_pool_.reset(ThreadPool::Create("Heap thread pool", num_threads));
   }
 }
 

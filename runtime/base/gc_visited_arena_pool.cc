@@ -25,7 +25,7 @@
 #include "base/utils.h"
 #include "gc/collector/mark_compact-inl.h"
 
-namespace art {
+namespace art HIDDEN {
 
 TrackedArena::TrackedArena(uint8_t* start, size_t size, bool pre_zygote_fork, bool single_obj_arena)
     : Arena(),
@@ -105,8 +105,8 @@ uint8_t* GcVisitedArenaPool::AddMap(size_t min_size) {
     size = std::max(min_size, kLow4GBLinearAllocPoolSize);
   }
 #endif
-  size_t alignment = BestPageTableAlignment(size);
-  DCHECK_GE(size, gPMDSize);
+  size_t alignment = gc::Heap::BestPageTableAlignment(size);
+  DCHECK_GE(size, gc::Heap::GetPMDSize());
   std::string err_msg;
   maps_.emplace_back(MemMap::MapAnonymousAligned(
       name_, size, PROT_READ | PROT_WRITE, low_4gb_, alignment, &err_msg));

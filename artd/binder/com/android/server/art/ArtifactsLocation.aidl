@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,17 @@
  * limitations under the License.
  */
 
-public class Main {
-    public static void main(String args[]) {
-    }
+package com.android.server.art;
+
+/** @hide */
+@Backing(type="int")
+enum ArtifactsLocation {
+    /** No usable artifacts. */
+    NONE_OR_ERROR = 0,
+    /** In the global "dalvik-cache" folder. */
+    DALVIK_CACHE = 1,
+    /** In the "oat" folder next to the dex file. */
+    NEXT_TO_DEX = 2,
+    /** In the dex metadata file. This means the only usable artifact is the VDEX file. */
+    DM = 3,
 }

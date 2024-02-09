@@ -810,12 +810,12 @@ NO_ARG_RUNTIME_EXCEPTION_SAVE_EVERYTHING art_quick_throw_div_zero, artThrowDivZe
 
 
 // Called by managed code to create and deliver an ArrayIndexOutOfBoundsException.
-// Arg1 holds index, arg2 holds limit.
+// Arg0 holds index, arg1 holds limit.
 TWO_ARG_RUNTIME_EXCEPTION_SAVE_EVERYTHING art_quick_throw_array_bounds, artThrowArrayBoundsFromCode
 
 
 // Called by managed code to create and deliver a StringIndexOutOfBoundsException
-// as if thrown from a call to String.charAt(). Arg1 holds index, arg2 holds limit.
+// as if thrown from a call to String.charAt(). Arg0 holds index, arg1 holds limit.
 TWO_ARG_RUNTIME_EXCEPTION_SAVE_EVERYTHING \
         art_quick_throw_string_bounds, artThrowStringBoundsFromCode
 
@@ -1795,7 +1795,7 @@ GENERATE_ALLOC_OBJECT_RESOLVED_TLAB \
     mv    a0, \temp0
     add   \temp0, \temp0, \temp1
     sd    \temp0, THREAD_LOCAL_POS_OFFSET(xSELF)            // Store new thread_local_pos.
-    POISON_HEAP_REF class
+    POISON_HEAP_REF \class
     sw    \class, MIRROR_OBJECT_CLASS_OFFSET(a0)            // Store the class pointer.
     sw    \count, MIRROR_ARRAY_LENGTH_OFFSET(a0)            // Store the array length.
 // new-array is special. The class is loaded and immediately goes to the Initialized state

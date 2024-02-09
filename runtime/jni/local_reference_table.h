@@ -39,7 +39,7 @@
 #include "obj_ptr.h"
 #include "offsets.h"
 
-namespace art {
+namespace art HIDDEN {
 
 class RootInfo;
 
@@ -227,7 +227,14 @@ class SmallLrtAllocator {
   void Deallocate(LrtEntry* unneeded, size_t size) REQUIRES(!lock_);
 
  private:
-  static size_t GetIndex(size_t size);
+  // Number of free lists in the allocator.
+#ifdef ART_PAGE_SIZE_AGNOSTIC
+  const size_t num_lrt_slots_ = (WhichPowerOf2(gPageSize / kInitialLrtBytes));
+#else
+  static constexpr size_t num_lrt_slots_ = (WhichPowerOf2(gPageSize / kInitialLrtBytes));
+#endif
+
+  size_t GetIndex(size_t size);
 
   // Free lists of small chunks linked through the first word.
   dchecked_vector<void*> free_lists_;
@@ -267,8 +274,7 @@ class LocalReferenceTable {
   // will return null if an error happened (with an appropriate error message set).
   IndirectRef Add(LRTSegmentState previous_state,
                   ObjPtr<mirror::Object> obj,
-                  std::string* error_msg)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+                  std::string* error_msg) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Given an `IndirectRef` in the table, return the `Object` it refers to.
   //
@@ -323,7 +329,7 @@ class LocalReferenceTable {
   // without recovering holes. Thus this is a conservative estimate.
   size_t FreeCapacity() const;
 
-  void VisitRoots(RootVisitor* visitor, const RootInfo& root_info)
+  EXPORT void VisitRoots(RootVisitor* visitor, const RootInfo& root_info)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   LRTSegmentState GetSegmentState() const {

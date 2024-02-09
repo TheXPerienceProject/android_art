@@ -127,7 +127,7 @@
 extern "C" __attribute__((weak)) void* __hwasan_tag_pointer(const volatile void* p,
                                                             unsigned char tag);
 
-namespace art {
+namespace art HIDDEN {
 
 using android::base::StringAppendV;
 using android::base::StringPrintf;
@@ -146,13 +146,6 @@ thread_local Thread* Thread::self_tls_ = nullptr;
 #endif
 
 static constexpr bool kVerifyImageObjectsMarked = kIsDebugBuild;
-
-// For implicit overflow checks we reserve an extra piece of memory at the bottom
-// of the stack (lowest memory).  The higher portion of the memory
-// is protected against reads and the lower is available for use while
-// throwing the StackOverflow exception.
-ART_PAGE_SIZE_AGNOSTIC_DECLARE_AND_DEFINE(size_t, gStackOverflowProtectedSize,
-                                          kMemoryToolStackGuardSizeScale * gPageSize);
 
 static const char* kThreadNameDuringStartup = "<native thread without managed peer>";
 
@@ -749,14 +742,14 @@ static uint8_t* FindStackTop() {
 // overflow is detected.  It is located right below the stack_begin_.
 ATTRIBUTE_NO_SANITIZE_ADDRESS
 void Thread::InstallImplicitProtection() {
-  uint8_t* pregion = tlsPtr_.stack_begin - gStackOverflowProtectedSize;
+  uint8_t* pregion = tlsPtr_.stack_begin - GetStackOverflowProtectedSize();
   // Page containing current top of stack.
   uint8_t* stack_top = FindStackTop();
 
   // Try to directly protect the stack.
   VLOG(threads) << "installing stack protected region at " << std::hex <<
         static_cast<void*>(pregion) << " to " <<
-        static_cast<void*>(pregion + gStackOverflowProtectedSize - 1);
+        static_cast<void*>(pregion + GetStackOverflowProtectedSize() - 1);
   if (ProtectStack(/* fatal_on_error= */ false)) {
     // Tell the kernel that we won't be needing these pages any more.
     // NB. madvise will probably write zeroes into the memory (on linux it does).
@@ -827,7 +820,7 @@ void Thread::InstallImplicitProtection() {
 
   VLOG(threads) << "(again) installing stack protected region at " << std::hex <<
       static_cast<void*>(pregion) << " to " <<
-      static_cast<void*>(pregion + gStackOverflowProtectedSize - 1);
+      static_cast<void*>(pregion + GetStackOverflowProtectedSize() - 1);
 
   // Protect the bottom of the stack to prevent read/write to it.
   ProtectStack(/* fatal_on_error= */ true);
@@ -1362,9 +1355,9 @@ bool Thread::InitStackHwm() {
   //
   // On systems with 4K page size, typically the minimum stack size will be 4+8+4 = 16K.
   // The thread won't be able to do much with this stack: even the GC takes between 8K and 12K.
-  DCHECK_ALIGNED_PARAM(static_cast<size_t>(gStackOverflowProtectedSize),
+  DCHECK_ALIGNED_PARAM(static_cast<size_t>(GetStackOverflowProtectedSize()),
                        static_cast<int32_t>(gPageSize));
-  size_t min_stack = gStackOverflowProtectedSize +
+  size_t min_stack = GetStackOverflowProtectedSize() +
       RoundUp(GetStackOverflowReservedBytes(kRuntimeISA) + 4 * KB, gPageSize);
   if (read_stack_size <= min_stack) {
     // Note, as we know the stack is small, avoid operations that could use a lot of stack.
@@ -1395,9 +1388,9 @@ bool Thread::InitStackHwm() {
     // to install our own region so we need to move the limits
     // of the stack to make room for it.
 
-    tlsPtr_.stack_begin += read_guard_size + gStackOverflowProtectedSize;
-    tlsPtr_.stack_end += read_guard_size + gStackOverflowProtectedSize;
-    tlsPtr_.stack_size -= read_guard_size + gStackOverflowProtectedSize;
+    tlsPtr_.stack_begin += read_guard_size + GetStackOverflowProtectedSize();
+    tlsPtr_.stack_end += read_guard_size + GetStackOverflowProtectedSize();
+    tlsPtr_.stack_size -= read_guard_size + GetStackOverflowProtectedSize();
 
     InstallImplicitProtection();
   }
@@ -1503,11 +1496,11 @@ bool Thread::PassActiveSuspendBarriers() {
   {
     MutexLock mu(this, *Locks::thread_suspend_count_lock_);
     if (!ReadFlag(ThreadFlag::kActiveSuspendBarrier)) {
-      // quick exit test: the barriers have already been claimed - this is possible as there may
-      // be a race to claim and it doesn't matter who wins.
-      // All of the callers of this function (except the SuspendAllInternal) will first test the
-      // kActiveSuspendBarrier flag without lock. Here double-check whether the barrier has been
-      // passed with the suspend_count lock.
+      // Quick exit test: The barriers have already been claimed - this is possible as there may
+      // be a race to claim and it doesn't matter who wins.  All of the callers of this function
+      // (except SuspendAllInternal) will first test the kActiveSuspendBarrier flag without the
+      // lock. Here we double-check whether the barrier has been passed with the
+      // suspend_count_lock_.
       return false;
     }
     if (tlsPtr_.active_suspendall_barrier != nullptr) {
@@ -1716,7 +1709,9 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
       IncrementSuspendCount(self, nullptr, &wrapped_barrier, SuspendReason::kInternal);
       VerifyState();
       DCHECK_GT(GetSuspendCount(), 0);
-      DCHECK_EQ(self->GetSuspendCount(), 0);
+      if (wait_state != ThreadState::kRunnable) {
+        DCHECK_EQ(self->GetSuspendCount(), 0);
+      }
       // Since we've incremented the suspend count, "this" thread can no longer disappear.
       Locks::thread_list_lock_->ExclusiveUnlock(self);
       if (IsSuspended()) {
@@ -1729,8 +1724,10 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
       }
     }
     if (!is_suspended) {
-      bool success =
-          Runtime::Current()->GetThreadList()->WaitForSuspendBarrier(&wrapped_barrier.barrier_);
+      bool success = !Runtime::Current()
+                          ->GetThreadList()
+                          ->WaitForSuspendBarrier(&wrapped_barrier.barrier_)
+                          .has_value();
       CHECK(success);
     }
 
@@ -1890,7 +1887,6 @@ void Thread::WaitForFlipFunction(Thread* self) const {
   MutexLock mu(self, *Locks::thread_suspend_count_lock_);
   while (true) {
     StateAndFlags old_state_and_flags = GetStateAndFlags(std::memory_order_acquire);
-    DCHECK(!old_state_and_flags.IsFlagSet(ThreadFlag::kPendingFlipFunction));
     if (!old_state_and_flags.IsFlagSet(ThreadFlag::kRunningFlipFunction)) {
       return;
     }
@@ -1912,7 +1908,6 @@ void Thread::WaitForFlipFunctionTestingExited(Thread* self, ThreadExitFlag* tef)
   MutexLock mu(self, *Locks::thread_suspend_count_lock_);
   while (true) {
     StateAndFlags old_state_and_flags = GetStateAndFlags(std::memory_order_acquire);
-    DCHECK(!old_state_and_flags.IsFlagSet(ThreadFlag::kPendingFlipFunction));
     Locks::thread_list_lock_->Unlock(self);  // So we can wait or return.
     if (!old_state_and_flags.IsFlagSet(ThreadFlag::kRunningFlipFunction)) {
       return;
@@ -2494,6 +2489,7 @@ Thread::Thread(bool daemon)
   tlsPtr_.mutator_lock = Locks::mutator_lock_;
   DCHECK(tlsPtr_.mutator_lock != nullptr);
   tlsPtr_.name.store(kThreadNameDuringStartup, std::memory_order_relaxed);
+  CHECK_NE(GetStackOverflowProtectedSize(), 0u);
 
   static_assert((sizeof(Thread) % 4) == 0U,
                 "art::Thread has a size which is not a multiple of 4.");
@@ -4650,14 +4646,14 @@ std::ostream& operator<<(std::ostream& os, const Thread& thread) {
 }
 
 bool Thread::ProtectStack(bool fatal_on_error) {
-  void* pregion = tlsPtr_.stack_begin - gStackOverflowProtectedSize;
+  void* pregion = tlsPtr_.stack_begin - GetStackOverflowProtectedSize();
   VLOG(threads) << "Protecting stack at " << pregion;
-  if (mprotect(pregion, gStackOverflowProtectedSize, PROT_NONE) == -1) {
+  if (mprotect(pregion, GetStackOverflowProtectedSize(), PROT_NONE) == -1) {
     if (fatal_on_error) {
       // b/249586057, LOG(FATAL) times out
       LOG(ERROR) << "Unable to create protected region in stack for implicit overflow check. "
           "Reason: "
-          << strerror(errno) << " size:  " << gStackOverflowProtectedSize;
+          << strerror(errno) << " size:  " << GetStackOverflowProtectedSize();
       exit(1);
     }
     return false;
@@ -4666,9 +4662,9 @@ bool Thread::ProtectStack(bool fatal_on_error) {
 }
 
 bool Thread::UnprotectStack() {
-  void* pregion = tlsPtr_.stack_begin - gStackOverflowProtectedSize;
+  void* pregion = tlsPtr_.stack_begin - GetStackOverflowProtectedSize();
   VLOG(threads) << "Unprotecting stack at " << pregion;
-  return mprotect(pregion, gStackOverflowProtectedSize, PROT_READ|PROT_WRITE) == 0;
+  return mprotect(pregion, GetStackOverflowProtectedSize(), PROT_READ|PROT_WRITE) == 0;
 }
 
 size_t Thread::NumberOfHeldMutexes() const {

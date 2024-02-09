@@ -232,8 +232,9 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat(
     std::string compilation_filter;
     std::string compilation_reason;
     std::string odex_status;
+    OatFileAssistant::Location ignored_location;
     oat_file_assistant->GetOptimizationStatus(
-        &odex_location, &compilation_filter, &compilation_reason, &odex_status);
+        &odex_location, &compilation_filter, &compilation_reason, &odex_status, &ignored_location);
 
     ScopedTrace odex_loading(StringPrintf(
         "location=%s status=%s filter=%s reason=%s",
@@ -852,7 +853,7 @@ void OatFileManager::RunBackgroundVerification(const std::vector<const DexFile*>
     WriterMutexLock mu(self, *Locks::oat_file_manager_lock_);
     if (verification_thread_pool_ == nullptr) {
       verification_thread_pool_.reset(
-          new ThreadPool("Verification thread pool", /* num_threads= */ 1));
+          ThreadPool::Create("Verification thread pool", /* num_threads= */ 1));
       verification_thread_pool_->StartWorkers(self);
     }
   }

@@ -676,7 +676,10 @@ void Trace::StopTracing(bool flush_entries) {
       MutexLock tl_lock(Thread::Current(), *Locks::thread_list_lock_);
       for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
         if (thread->GetMethodTraceBuffer() != nullptr) {
-          the_trace->trace_writer_->FlushBuffer(thread, /* is_sync= */ true);
+          // We may have pending requests to flush the data. So just enqueue a
+          // request to flush the current buffer so all the requests are
+          // processed in order.
+          the_trace->trace_writer_->FlushBuffer(thread, /* is_sync= */ false);
           thread->ResetMethodTraceBuffer();
         }
       }
@@ -809,7 +812,7 @@ TraceWriter::TraceWriter(File* trace_file,
   // to stop and start this thread pool. Method tracing on zygote isn't a frequent use case and
   // it is okay to flush on the main thread in such cases.
   if (!Runtime::Current()->IsZygote()) {
-    thread_pool_.reset(new ThreadPool("Trace writer pool", 1));
+    thread_pool_.reset(ThreadPool::Create("Trace writer pool", 1));
     thread_pool_->StartWorkers(Thread::Current());
   }
 }
@@ -826,8 +829,12 @@ Trace::Trace(File* trace_file,
       stop_tracing_(false) {
   CHECK_IMPLIES(trace_file == nullptr, output_mode == TraceOutputMode::kDDMS);
 
+  // In streaming mode, we only need a buffer big enough to store data per each
+  // thread buffer. In non-streaming mode this is specified by the user and we
+  // stop tracing when the buffer is full.
+  size_t buf_size = (output_mode == TraceOutputMode::kStreaming) ? kPerThreadBufSize : buffer_size;
   trace_writer_.reset(new TraceWriter(
-      trace_file, output_mode, clock_source_, buffer_size, GetClockOverheadNanoSeconds()));
+      trace_file, output_mode, clock_source_, buf_size, GetClockOverheadNanoSeconds()));
 }
 
 void TraceWriter::FinishTracing(int flags, bool flush_entries) {
@@ -839,8 +846,9 @@ void TraceWriter::FinishTracing(int flags, bool flush_entries) {
       // down.
       thread_pool_->WaitForWorkersToBeCreated();
       // Wait for any outstanding writer tasks to finish.
-      thread_pool_->StopWorkers(self);
       thread_pool_->Wait(self, /* do_work= */ true, /* may_hold_locks= */ true);
+      DCHECK_EQ(thread_pool_->GetTaskCount(self), 0u);
+      thread_pool_->StopWorkers(self);
     }
 
     size_t final_offset = 0;
@@ -1221,17 +1229,15 @@ void TraceWriter::FlushBuffer(uintptr_t* method_trace_entries,
   // seen method. tracing_lock_ is required to serialize these.
   MutexLock mu(Thread::Current(), tracing_lock_);
   size_t current_index;
-  uint8_t* buffer_ptr = nullptr;
-  size_t buffer_size;
-  std::unique_ptr<uint8_t[]> buffer;
+  uint8_t* buffer_ptr = buf_.get();
+  size_t buffer_size = buffer_size_;
   if (trace_output_mode_ == TraceOutputMode::kStreaming) {
-    buffer_size = std::max(kMinBufSize, kPerThreadBufSize);
-    buffer.reset(new uint8_t[buffer_size]);
-    buffer_ptr = buffer.get();
+    // In streaming mode, we flush the data to file each time we flush the per-thread buffer.
+    // Just reuse the entire buffer.
     current_index = 0;
   } else {
-    buffer_size = buffer_size_;
-    buffer_ptr = buf_.get();
+    // In non-streaming mode we only flush at the end, so retain the earlier data. If the buffer
+    // is full we don't process any more entries.
     current_index = cur_offset_;
   }
   uint16_t thread_id = GetThreadEncoding(tid);
