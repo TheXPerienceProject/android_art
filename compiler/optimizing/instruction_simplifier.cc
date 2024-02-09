@@ -363,6 +363,107 @@ bool InstructionSimplifierVisitor::TryCombineVecMultiplyAccumulate(HVecMul* mul)
   return true;
 }
 
+// Replace code looking like (x << N >>> N or x << N >> N):
+//    SHL tmp, x, N
+//    USHR/SHR dst, tmp, N
+// with the corresponding type conversion:
+//    TypeConversion<Unsigned<T>/Signed<T>> dst, x
+// if
+//    SHL has only one non environment use
+//    TypeOf(tmp) is not 64-bit type (they are not supported yet)
+//    N % kBitsPerByte = 0
+// where
+//    T = SignedIntegralTypeFromSize(source_integral_size)
+//    source_integral_size = ByteSize(tmp) - N / kBitsPerByte
+//
+//    We calculate source_integral_size from shift amount instead of
+//    assuming that it is equal to ByteSize(x) to be able to optimize
+//    cases like this:
+//        int x = ...
+//        int y = x << 24 >>> 24
+//    that is equavalent to
+//        int y = (unsigned byte) x
+//    in this case:
+//        N = 24
+//        tmp = x << 24
+//        source_integral_size is 1 (= 4 - 24 / 8) that corresponds to unsigned byte.
+static bool TryReplaceShiftsByConstantWithTypeConversion(HBinaryOperation *instruction) {
+  if (!instruction->IsUShr() && !instruction->IsShr()) {
+    return false;
+  }
+
+  if (DataType::Is64BitType(instruction->GetResultType())) {
+    return false;
+  }
+
+  HInstruction* shr_amount = instruction->GetRight();
+  if (!shr_amount->IsIntConstant()) {
+    return false;
+  }
+
+  int32_t shr_amount_cst = shr_amount->AsIntConstant()->GetValue();
+
+  // We assume that shift amount simplification was applied first so it doesn't
+  // exceed maximum distance that is kMaxIntShiftDistance as 64-bit shifts aren't
+  // supported.
+  DCHECK_LE(shr_amount_cst, kMaxIntShiftDistance);
+
+  if ((shr_amount_cst % kBitsPerByte) != 0) {
+    return false;
+  }
+
+  // Calculate size of the significant part of the input, e.g. a part that is not
+  // discarded due to left shift.
+  // Shift amount here should be less than size of right shift type.
+  DCHECK_GT(DataType::Size(instruction->GetType()), shr_amount_cst / kBitsPerByte);
+  size_t source_significant_part_size =
+      DataType::Size(instruction->GetType()) - shr_amount_cst / kBitsPerByte;
+
+  // Look for the smallest signed integer type that is suitable to store the
+  // significant part of the input.
+  DataType::Type source_integral_type =
+      DataType::SignedIntegralTypeFromSize(source_significant_part_size);
+
+  // If the size of the significant part of the input isn't equal to the size of the
+  // found type, shifts cannot be replaced by type conversion.
+  if (DataType::Size(source_integral_type) != source_significant_part_size) {
+    return false;
+  }
+
+  HInstruction* shr_value = instruction->GetLeft();
+  if (!shr_value->IsShl()) {
+    return false;
+  }
+
+  HShl *shl = shr_value->AsShl();
+  if (!shl->HasOnlyOneNonEnvironmentUse()) {
+    return false;
+  }
+
+  // Constants are unique so we just compare pointer here.
+  if (shl->GetRight() != shr_amount) {
+    return false;
+  }
+
+  // Type of shift's value is always int so sign/zero extension only
+  // depends on the type of the shift (shr/ushr).
+  bool is_signed = instruction->IsShr();
+  DataType::Type conv_type =
+      is_signed ? source_integral_type : DataType::ToUnsigned(source_integral_type);
+  HInstruction* shl_value = shl->GetLeft();
+  HBasicBlock *block = instruction->GetBlock();
+
+  HTypeConversion* new_conversion =
+      new (block->GetGraph()->GetAllocator()) HTypeConversion(conv_type, shl_value);
+
+  DCHECK(DataType::IsTypeConversionImplicit(conv_type, instruction->GetResultType()));
+
+  block->ReplaceAndRemoveInstructionWith(instruction, new_conversion);
+  shl->GetBlock()->RemoveInstruction(shl);
+
+  return true;
+}
+
 void InstructionSimplifierVisitor::VisitShift(HBinaryOperation* instruction) {
   DCHECK(instruction->IsShl() || instruction->IsShr() || instruction->IsUShr());
   HInstruction* shift_amount = instruction->GetRight();
@@ -393,6 +494,11 @@ void InstructionSimplifierVisitor::VisitShift(HBinaryOperation* instruction) {
       // optimizations do not need to special case for such situations.
       DCHECK_EQ(shift_amount->GetType(), DataType::Type::kInt32);
       instruction->ReplaceInput(GetGraph()->GetIntConstant(masked_cst), /* index= */ 1);
+      RecordSimplification();
+      return;
+    }
+
+    if (TryReplaceShiftsByConstantWithTypeConversion(instruction)) {
       RecordSimplification();
       return;
     }

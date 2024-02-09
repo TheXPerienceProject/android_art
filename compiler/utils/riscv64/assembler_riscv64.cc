@@ -4318,7 +4318,6 @@ void Riscv64Assembler::VFwadd_wv(VRegister vd, VRegister vs2, VRegister vs1, VM 
 
 void Riscv64Assembler::VFwadd_wf(VRegister vd, VRegister vs2, FRegister fs1, VM vm) {
   DCHECK_IMPLIES(vm == VM::kV0_t, vd != V0);
-  DCHECK(vd != vs2);
   const uint32_t funct7 = EncodeRVVF7(0b110100, vm);
   EmitR(funct7, vs2, fs1, enum_cast<uint32_t>(VAIEncoding::kOPFVF), vd, 0x57);
 }
@@ -4332,7 +4331,6 @@ void Riscv64Assembler::VFwsub_wv(VRegister vd, VRegister vs2, VRegister vs1, VM 
 
 void Riscv64Assembler::VFwsub_wf(VRegister vd, VRegister vs2, FRegister fs1, VM vm) {
   DCHECK_IMPLIES(vm == VM::kV0_t, vd != V0);
-  DCHECK(vd != vs2);
   const uint32_t funct7 = EncodeRVVF7(0b110110, vm);
   EmitR(funct7, vs2, fs1, enum_cast<uint32_t>(VAIEncoding::kOPFVF), vd, 0x57);
 }

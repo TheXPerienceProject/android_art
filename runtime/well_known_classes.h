@@ -18,11 +18,12 @@
 #define ART_RUNTIME_WELL_KNOWN_CLASSES_H_
 
 #include "base/locks.h"
+#include "base/macros.h"
 #include "jni.h"
 #include "obj_ptr.h"
 #include "read_barrier_option.h"
 
-namespace art {
+namespace art HIDDEN {
 
 class ArtField;
 class ArtMethod;
@@ -61,7 +62,7 @@ bool operator!=(ObjPtr<mirror::Class> lhs, const ClassFromMember<MemberType, kMe
 
 // Various classes used in JNI. We cache them so we don't have to keep looking them up.
 
-struct WellKnownClasses {
+struct EXPORT WellKnownClasses {
  public:
   // Run before native methods are registered.
   static void Init(JNIEnv* env);
