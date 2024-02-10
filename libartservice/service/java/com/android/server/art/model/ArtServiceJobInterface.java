@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,17 @@
  * limitations under the License.
  */
 
-#ifndef ART_RUNTIME_NATIVE_DALVIK_SYSTEM_VMRUNTIME_H_
-#define ART_RUNTIME_NATIVE_DALVIK_SYSTEM_VMRUNTIME_H_
+package com.android.server.art.model;
 
-#include <jni.h>
+import android.annotation.NonNull;
+import android.app.job.JobParameters;
 
-#include "base/macros.h"
+import com.android.server.art.BackgroundDexoptJobService;
 
-namespace art HIDDEN {
+/** @hide */
+public interface ArtServiceJobInterface {
+    boolean onStartJob(
+            @NonNull BackgroundDexoptJobService jobService, @NonNull JobParameters params);
 
-// TODO(260881207): should be HIDDEN, but some apps fail to launch
-// (e.g. b/319255249)
-EXPORT void register_dalvik_system_VMRuntime(JNIEnv* env);
-
-}  // namespace art
-
-#endif  // ART_RUNTIME_NATIVE_DALVIK_SYSTEM_VMRUNTIME_H_
+    boolean onStopJob(@NonNull JobParameters params);
+}

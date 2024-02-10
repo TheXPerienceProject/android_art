@@ -3969,7 +3969,7 @@ template<typename OP>
 void GenerateFP16Round(HInvoke* invoke,
                        CodeGeneratorARM64* const codegen_,
                        MacroAssembler* masm,
-                       const OP roundOp) {
+                       OP&& roundOp) {
   DCHECK(codegen_->GetInstructionSetFeatures().HasFP16());
   LocationSummary* locations = invoke->GetLocations();
   UseScratchRegisterScope scratch_scope(masm);
