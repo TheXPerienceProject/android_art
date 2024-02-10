@@ -35,7 +35,7 @@ static int32_t FillIntrinsicsObjects(
     ObjPtr<mirror::ObjectArray<mirror::Object>> live_objects,
     int32_t expected_low,
     int32_t expected_high,
-    T type_check,
+    T&& type_check,
     int32_t index)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ObjPtr<mirror::ObjectArray<mirror::Object>> cache =

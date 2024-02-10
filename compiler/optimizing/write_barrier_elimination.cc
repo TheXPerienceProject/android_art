@@ -38,7 +38,7 @@ class WBEVisitor final : public HGraphVisitor {
     // We clear the map to perform this optimization only in the same block. Doing it across blocks
     // would entail non-trivial merging of states.
     current_write_barriers_.clear();
-    HGraphVisitor::VisitBasicBlock(block);
+    VisitNonPhiInstructions(block);
   }
 
   void VisitInstanceFieldSet(HInstanceFieldSet* instruction) override {

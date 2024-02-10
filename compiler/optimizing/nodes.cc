@@ -1693,10 +1693,20 @@ void HGraphVisitor::VisitReversePostOrder() {
 }
 
 void HGraphVisitor::VisitBasicBlock(HBasicBlock* block) {
+  VisitPhis(block);
+  VisitNonPhiInstructions(block);
+}
+
+void HGraphVisitor::VisitPhis(HBasicBlock* block) {
   for (HInstructionIterator it(block->GetPhis()); !it.Done(); it.Advance()) {
-    it.Current()->Accept(this);
+    DCHECK(it.Current()->IsPhi());
+    VisitPhi(it.Current()->AsPhi());
   }
+}
+
+void HGraphVisitor::VisitNonPhiInstructions(HBasicBlock* block) {
   for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
+    DCHECK(!it.Current()->IsPhi());
     it.Current()->Accept(this);
   }
 }
