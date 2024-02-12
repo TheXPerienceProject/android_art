@@ -23,8 +23,6 @@ import android.annotation.SystemApi;
 
 import com.android.internal.annotations.Immutable;
 
-import com.google.auto.value.AutoValue;
-
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Collections;
@@ -38,9 +36,7 @@ import java.util.Map;
 @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
 @SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
 @Immutable
-@AutoValue
-@SuppressWarnings("AutoValueImmutableFields") // Can't use ImmutableMap because it's in Guava.
-public abstract class ArtManagedFileStats {
+public class ArtManagedFileStats {
     /**
      * Dexopt artifacts and runtime artifacts, excluding stale ones.
      *
@@ -79,19 +75,13 @@ public abstract class ArtManagedFileStats {
     @Retention(RetentionPolicy.SOURCE)
     public @interface FileTypes {}
 
-    /** @hide */
-    protected ArtManagedFileStats() {}
+    private @NonNull Map<Integer, Long> mTotalSizesBytes;
 
     /** @hide */
-    public static @NonNull ArtManagedFileStats create(
-            long artifactsSize, long refProfilesSize, long curProfilesSize) {
-        return new AutoValue_ArtManagedFileStats(Map.of(TYPE_DEXOPT_ARTIFACT, artifactsSize,
-                TYPE_REF_PROFILE, refProfilesSize, TYPE_CUR_PROFILE, curProfilesSize));
+    public ArtManagedFileStats(long artifactsSize, long refProfilesSize, long curProfilesSize) {
+        mTotalSizesBytes = Map.of(TYPE_DEXOPT_ARTIFACT, artifactsSize, TYPE_REF_PROFILE,
+                refProfilesSize, TYPE_CUR_PROFILE, curProfilesSize);
     }
-
-    /** @hide */
-    public abstract @NonNull Map<Integer, Long> getTotalSizesBytes();
-
     /**
      * Returns the total size, in bytes, of the files of the given type.
      *
@@ -100,7 +90,7 @@ public abstract class ArtManagedFileStats {
      */
     @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
     public long getTotalSizeBytesByType(@FileTypes int fileType) {
-        Long value = getTotalSizesBytes().get(fileType);
+        Long value = mTotalSizesBytes.get(fileType);
         if (value == null) {
             throw new IllegalArgumentException("Unknown file type " + fileType);
         }

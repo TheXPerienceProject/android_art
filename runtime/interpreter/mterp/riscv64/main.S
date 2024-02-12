@@ -150,7 +150,7 @@ END \name
 .endm
 
 .macro DO_SUSPEND_CHECK continue
-    lw t0, THREAD_FLAGS_OFFSET(xSELF)
+    lwu t0, THREAD_FLAGS_OFFSET(xSELF)
     andi t0, t0, THREAD_SUSPEND_OR_CHECKPOINT_REQUEST
     beqz t0, \continue
     EXPORT_PC
@@ -253,15 +253,39 @@ END \name
 //   - xSELF
 // Clobbers: t0
 .macro CHECK_AND_UPDATE_SHARED_MEMORY_METHOD if_hot, if_not_hot
-    lw t0, ART_METHOD_ACCESS_FLAGS_OFFSET(a0)
+    lwu t0, ART_METHOD_ACCESS_FLAGS_OFFSET(a0)
     BRANCH_IF_BIT_CLEAR t0, t0, ART_METHOD_IS_MEMORY_SHARED_FLAG_BIT, \if_hot
 
-    lw t0, THREAD_SHARED_METHOD_HOTNESS_OFFSET(xSELF)
+    lwu t0, THREAD_SHARED_METHOD_HOTNESS_OFFSET(xSELF)  // t0 := hotness
     beqz t0, \if_hot
 
-    addi t0, t0, -1  // Reduce hotness
+    addi t0, t0, -1  // increase hotness
     sw t0,  THREAD_SHARED_METHOD_HOTNESS_OFFSET(xSELF)
     j \if_not_hot
+.endm
+
+// Update xPC by \units code units. On back edges, perform hotness and suspend.
+.macro BRANCH units
+    sh1add xPC, \units, xPC
+    blez \units, 2f  // If branch is <= 0, increase hotness and do a suspend check.
+1:
+    FETCH_INST
+    GET_INST_OPCODE t0
+    GOTO_OPCODE t0
+2:
+    ld a0, (sp)
+    lhu t0, ART_METHOD_HOTNESS_COUNT_OFFSET(a0)  // t0 := hotness
+#if (NTERP_HOTNESS_VALUE != 0)
+#error Expected 0 for hotness value
+#endif
+    // If the counter is at zero (hot), handle it in the runtime.
+    beqz t0, 3f
+    addi t0, t0, -1  // increase hotness
+    sh t0, ART_METHOD_HOTNESS_COUNT_OFFSET(a0)
+    DO_SUSPEND_CHECK continue=1b
+    j 1b
+3:
+    tail NterpHandleHotnessOverflow  // arg a0 (ArtMethod*)
 .endm
 
 // Increase method hotness before starting the method.
@@ -270,13 +294,13 @@ END \name
 // Clobbers: t0
 .macro START_EXECUTING_INSTRUCTIONS
     ld a0, (sp)
-    lhu t0, ART_METHOD_HOTNESS_COUNT_OFFSET(a0)
+    lhu t0, ART_METHOD_HOTNESS_COUNT_OFFSET(a0)  // t0 := hotness
 #if (NTERP_HOTNESS_VALUE != 0)
 #error Expected 0 for hotness value
 #endif
     // If the counter is at zero (hot), handle it in the runtime.
     beqz t0, 3f
-    addi t0, t0, -1
+    addi t0, t0, -1  // increase hotness
     sh t0, ART_METHOD_HOTNESS_COUNT_OFFSET(a0)
 1:
     DO_SUSPEND_CHECK continue=2f
@@ -599,6 +623,48 @@ NterpInvokePolymorphicRange:
 NterpInvokeCustomRange:
 %  nterp_invoke_custom_range()
 
+// Arg a0: ArtMethod*
+NterpHandleHotnessOverflow:
+   CHECK_AND_UPDATE_SHARED_MEMORY_METHOD if_hot=.Lhotspill_hot, if_not_hot=.Lhotspill_suspend
+.Lhotspill_hot:
+   mv a1, xPC
+   mv a2, xFP
+   call nterp_hot_method  // args a0, a1, a2
+   bnez a0, .Lhotspill_osr
+.Lhotspill_advance:
+   FETCH_INST
+   GET_INST_OPCODE t0
+   GOTO_OPCODE t0
+.Lhotspill_osr:
+   // a0 = OsrData*
+   // Drop most of the current nterp frame, but keep the callee-saves.
+   // The nterp callee-saves (count and layout) match the OSR frame's callee-saves.
+   ld sp, -8(xREFS)  // caller's interpreted frame pointer
+   .cfi_def_cfa sp, NTERP_SIZE_SAVE_CALLEE_SAVES
+   lwu t0, OSR_DATA_FRAME_SIZE(a0)
+   addi t0, t0, -NTERP_SIZE_SAVE_CALLEE_SAVES  // t0 := osr frame - callee saves, in bytes
+   mv s7, sp         // Remember CFA in a callee-save register.
+   .cfi_def_cfa_register s7
+   sub sp, sp, t0    // OSR size guaranteed to be stack aligned (16 bytes).
+
+   addi t1, a0, OSR_DATA_MEMORY  // t1 := read start
+   add t1, t1, t0                // t1 := read end (exclusive)
+   mv t2, s7                     // t2 := write end (exclusive)
+   // t0 >= 8 (OSR places ArtMethod* at bottom of frame), so loop will terminate.
+.Lhotspill_osr_copy_loop:
+   addi t1, t1, -8
+   ld t3, (t1)
+   addi t2, t2, -8
+   sd t3, (t2)
+   bne t2, sp, .Lhotspill_osr_copy_loop
+
+   ld s8, OSR_DATA_NATIVE_PC(a0)  // s8 := native PC; jump after free
+   call free  // arg a0; release OsrData*
+   jr s8      // Jump to the compiled code.
+.Lhotspill_suspend:
+   DO_SUSPEND_CHECK continue=.Lhotspill_advance
+   j .Lhotspill_advance
+
 // This is the logical end of ExecuteNterpImpl, where the frame info applies.
 .cfi_endproc
 
@@ -654,7 +720,11 @@ artNterpAsmInstructionStart = .L_op_nop
     .hidden artNterpAsmInstructionEnd
     .global artNterpAsmInstructionEnd
 artNterpAsmInstructionEnd:
-    unimp
+    // artNterpAsmInstructionEnd is used as landing pad for exception handling.
+    // xPC (S3) for the exception handler was set just prior to the long jump coming here.
+    FETCH_INST
+    GET_INST_OPCODE t0
+    GOTO_OPCODE t0
 
 %def opcode_pre():
 %   pass
