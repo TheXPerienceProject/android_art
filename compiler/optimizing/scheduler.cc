@@ -548,20 +548,10 @@ void HScheduler::Schedule(HGraph* graph) {
 void HScheduler::Schedule(HBasicBlock* block,
                           const HeapLocationCollector* heap_location_collector) {
   ScopedArenaAllocator allocator(block->GetGraph()->GetArenaStack());
-  ScopedArenaVector<SchedulingNode*> scheduling_nodes(allocator.Adapter(kArenaAllocScheduler));
 
   // Build the scheduling graph.
-  SchedulingGraph scheduling_graph(&allocator, heap_location_collector);
-  for (HBackwardInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
-    HInstruction* instruction = it.Current();
-    CHECK_EQ(instruction->GetBlock(), block)
-        << instruction->DebugName()
-        << " is in block " << instruction->GetBlock()->GetBlockId()
-        << ", and expected in block " << block->GetBlockId();
-    SchedulingNode* node = scheduling_graph.AddNode(instruction, IsSchedulingBarrier(instruction));
-    CalculateLatency(node);
-    scheduling_nodes.push_back(node);
-  }
+  auto [scheduling_graph, scheduling_nodes] =
+      BuildSchedulingGraph(block, &allocator, heap_location_collector);
 
   if (scheduling_graph.Size() <= 1) {
     return;
@@ -803,8 +793,7 @@ bool HInstructionScheduling::Run(bool only_optimize_loop_blocks,
 #if defined(ART_ENABLE_CODEGEN_arm)
     case InstructionSet::kThumb2:
     case InstructionSet::kArm: {
-      arm::SchedulingLatencyVisitorARM arm_latency_visitor(codegen_);
-      arm::HSchedulerARM scheduler(selector, &arm_latency_visitor);
+      arm::HSchedulerARM scheduler(selector, codegen_);
       scheduler.SetOnlyOptimizeLoopBlocks(only_optimize_loop_blocks);
       scheduler.Schedule(graph_);
       break;
