@@ -152,12 +152,12 @@ inline MemberOffset JNIEnvExt::LocalReferenceTableOffset(PointerSize pointer_siz
                       2 * static_cast<size_t>(pointer_size));  // Thread* self + JavaVMExt* vm
 }
 
-MemberOffset JNIEnvExt::SegmentStateOffset(PointerSize pointer_size) {
+MemberOffset JNIEnvExt::LrtSegmentStateOffset(PointerSize pointer_size) {
   return MemberOffset(LocalReferenceTableOffset(pointer_size).SizeValue() +
                       jni::LocalReferenceTable::SegmentStateOffset().SizeValue());
 }
 
-MemberOffset JNIEnvExt::LocalRefCookieOffset(PointerSize pointer_size) {
+MemberOffset JNIEnvExt::LrtPreviousStateOffset(PointerSize pointer_size) {
   return MemberOffset(LocalReferenceTableOffset(pointer_size).SizeValue() +
                       jni::LocalReferenceTable::PreviousStateOffset().SizeValue());
 }

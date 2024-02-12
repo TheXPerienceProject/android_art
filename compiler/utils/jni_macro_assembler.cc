@@ -132,53 +132,51 @@ void JNIMacroAssembler<PointerSize::k64>::LoadStackReference(ManagedRegister des
                                                              FrameOffset offs);
 
 template <PointerSize kPointerSize>
-void JNIMacroAssembler<kPointerSize>::PushLocalReferenceFrame(ManagedRegister jni_env_reg,
-                                                              ManagedRegister saved_cookie_reg,
-                                                              ManagedRegister temp_reg) {
+void JNIMacroAssembler<kPointerSize>::LoadLocalReferenceTableStates(
+    ManagedRegister jni_env_reg,
+    ManagedRegister previous_state_reg,
+    ManagedRegister current_state_reg) {
   constexpr size_t kLRTSegmentStateSize = sizeof(jni::LRTSegmentState);
-  const MemberOffset jni_env_cookie_offset = JNIEnvExt::LocalRefCookieOffset(kPointerSize);
-  const MemberOffset jni_env_segment_state_offset = JNIEnvExt::SegmentStateOffset(kPointerSize);
+  const MemberOffset previous_state_offset = JNIEnvExt::LrtPreviousStateOffset(kPointerSize);
+  const MemberOffset current_state_offset = JNIEnvExt::LrtSegmentStateOffset(kPointerSize);
 
-  // Load the old cookie that we shall need to restore.
-  Load(saved_cookie_reg, jni_env_reg, jni_env_cookie_offset, kLRTSegmentStateSize);
-
-  // Set the cookie to the current segment state.
-  Load(temp_reg, jni_env_reg, jni_env_segment_state_offset, kLRTSegmentStateSize);
-  Store(jni_env_reg, jni_env_cookie_offset, temp_reg, kLRTSegmentStateSize);
+  Load(previous_state_reg, jni_env_reg, previous_state_offset, kLRTSegmentStateSize);
+  Load(current_state_reg, jni_env_reg, current_state_offset, kLRTSegmentStateSize);
 }
 
 template
-void JNIMacroAssembler<PointerSize::k32>::PushLocalReferenceFrame(ManagedRegister jni_env_reg,
-                                                                  ManagedRegister saved_cookie_reg,
-                                                                  ManagedRegister temp_reg);
+void JNIMacroAssembler<PointerSize::k32>::LoadLocalReferenceTableStates(
+    ManagedRegister jni_env_reg,
+    ManagedRegister previous_state_reg,
+    ManagedRegister current_state_reg);
 template
-void JNIMacroAssembler<PointerSize::k64>::PushLocalReferenceFrame(ManagedRegister jni_env_reg,
-                                                                  ManagedRegister saved_cookie_reg,
-                                                                  ManagedRegister temp_reg);
+void JNIMacroAssembler<PointerSize::k64>::LoadLocalReferenceTableStates(
+    ManagedRegister jni_env_reg,
+    ManagedRegister previous_state_reg,
+    ManagedRegister current_state_reg);
 
 template <PointerSize kPointerSize>
-void JNIMacroAssembler<kPointerSize>::PopLocalReferenceFrame(ManagedRegister jni_env_reg,
-                                                             ManagedRegister saved_cookie_reg,
-                                                             ManagedRegister temp_reg) {
+void JNIMacroAssembler<kPointerSize>::StoreLocalReferenceTableStates(
+    ManagedRegister jni_env_reg,
+    ManagedRegister previous_state_reg,
+    ManagedRegister current_state_reg) {
   constexpr size_t kLRTSegmentStateSize = sizeof(jni::LRTSegmentState);
-  const MemberOffset jni_env_cookie_offset = JNIEnvExt::LocalRefCookieOffset(kPointerSize);
-  const MemberOffset jni_env_segment_state_offset = JNIEnvExt::SegmentStateOffset(kPointerSize);
+  const MemberOffset previous_state_offset = JNIEnvExt::LrtPreviousStateOffset(kPointerSize);
+  const MemberOffset segment_state_offset = JNIEnvExt::LrtSegmentStateOffset(kPointerSize);
 
-  // Set the current segment state to the current cookie.
-  Load(temp_reg, jni_env_reg, jni_env_cookie_offset, kLRTSegmentStateSize);
-  Store(jni_env_reg, jni_env_segment_state_offset, temp_reg, kLRTSegmentStateSize);
-
-  // Restore the cookie to the saved value.
-  Store(jni_env_reg, jni_env_cookie_offset, saved_cookie_reg, kLRTSegmentStateSize);
+  Store(jni_env_reg, previous_state_offset, previous_state_reg, kLRTSegmentStateSize);
+  Store(jni_env_reg, segment_state_offset, current_state_reg, kLRTSegmentStateSize);
 }
 
 template
-void JNIMacroAssembler<PointerSize::k32>::PopLocalReferenceFrame(ManagedRegister jni_env_reg,
-                                                                 ManagedRegister saved_cookie_reg,
-                                                                 ManagedRegister temp_reg);
+void JNIMacroAssembler<PointerSize::k32>::StoreLocalReferenceTableStates(
+    ManagedRegister jni_env_reg,
+    ManagedRegister previous_state_reg,
+    ManagedRegister current_state_reg);
 template
-void JNIMacroAssembler<PointerSize::k64>::PopLocalReferenceFrame(ManagedRegister jni_env_reg,
-                                                                 ManagedRegister saved_cookie_reg,
-                                                                 ManagedRegister temp_reg);
+void JNIMacroAssembler<PointerSize::k64>::StoreLocalReferenceTableStates(
+    ManagedRegister jni_env_reg,
+    ManagedRegister previous_state_reg,
+    ManagedRegister current_state_reg);
 
 }  // namespace art
