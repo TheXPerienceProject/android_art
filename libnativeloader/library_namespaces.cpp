@@ -22,10 +22,13 @@
 
 #include <dirent.h>
 #include <dlfcn.h>
+#include <stdio.h>
 
+#include <algorithm>
 #include <optional>
 #include <regex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "android-base/file.h"
@@ -42,6 +45,8 @@
 namespace android::nativeloader {
 
 namespace {
+
+using ::android::base::Error;
 
 constexpr const char* kApexPath = "/apex/";
 
@@ -78,8 +83,8 @@ constexpr const char* kVendorLibPath = "/vendor/" LIB;
 // a symlink to the other.
 constexpr const char* kProductLibPath = "/product/" LIB ":/system/product/" LIB;
 
-const std::regex kVendorPathRegex("(^|:)(/system)?/vendor/");
-const std::regex kProductPathRegex("(^|:)(/system)?/product/");
+const std::regex kVendorPathRegex("(/system)?/vendor/.*");
+const std::regex kProductPathRegex("(/system)?/product/.*");
 
 jobject GetParentClassLoader(JNIEnv* env, jobject class_loader) {
   jclass class_loader_class = env->FindClass("java/lang/ClassLoader");
@@ -91,18 +96,41 @@ jobject GetParentClassLoader(JNIEnv* env, jobject class_loader) {
 
 }  // namespace
 
-ApiDomain GetApiDomainFromPath(const std::string& path) {
-  ApiDomain api_domain = API_DOMAIN_DEFAULT;
-  if (std::regex_search(path, kVendorPathRegex)) {
-    api_domain = API_DOMAIN_VENDOR;
+ApiDomain GetApiDomainFromPath(const std::string_view path) {
+  if (std::regex_match(path.begin(), path.end(), kVendorPathRegex)) {
+    return API_DOMAIN_VENDOR;
   }
-  if (is_product_treblelized() && std::regex_search(path, kProductPathRegex)) {
-    LOG_ALWAYS_FATAL_IF(api_domain == API_DOMAIN_VENDOR,
-                        "Path matches both vendor and product partitions: %s",
-                        path.c_str());
-    api_domain = API_DOMAIN_PRODUCT;
+  if (is_product_treblelized() && std::regex_match(path.begin(), path.end(), kProductPathRegex)) {
+    return API_DOMAIN_PRODUCT;
   }
-  return api_domain;
+  return API_DOMAIN_DEFAULT;
+}
+
+// Returns the API domain for a ':'-separated list of paths, or an error if they
+// match more than one.
+Result<ApiDomain> GetApiDomainFromPathList(const std::string& path_list) {
+  ApiDomain result = API_DOMAIN_DEFAULT;
+  size_t start_pos = 0;
+  while (true) {
+    size_t end_pos = path_list.find(':', start_pos);
+    ApiDomain api_domain =
+        GetApiDomainFromPath(std::string_view(path_list).substr(start_pos, end_pos));
+    // Allow mixing API_DOMAIN_DEFAULT with any other domain. That's a bit lax,
+    // since the default e.g. includes /data, which strictly speaking is a
+    // separate domain. However, we keep it this way to not risk compat issues
+    // until we actually need all domains.
+    if (api_domain != API_DOMAIN_DEFAULT) {
+      if (result != API_DOMAIN_DEFAULT && result != api_domain) {
+        return Error() << "Path list crosses partition boundaries: " << path_list;
+      }
+      result = api_domain;
+    }
+    if (end_pos == std::string::npos) {
+      break;
+    }
+    start_pos = end_pos + 1;
+  }
+  return result;
 }
 
 void LibraryNamespaces::Initialize() {

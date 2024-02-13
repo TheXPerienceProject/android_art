@@ -199,6 +199,8 @@ void ResetNativeLoader() {
 #endif
 }
 
+// dex_path_j may be a ':'-separated list of paths, e.g. when creating a shared
+// library loader - cf. mCodePaths in android.content.pm.SharedLibraryInfo.
 jstring CreateClassLoaderNamespace(JNIEnv* env,
                                    int32_t target_sdk_version,
                                    jobject class_loader,
@@ -213,13 +215,17 @@ jstring CreateClassLoaderNamespace(JNIEnv* env,
     ScopedUtfChars dex_path_chars(env, dex_path_j);
     dex_path = dex_path_chars.c_str();
   }
-  nativeloader::ApiDomain api_domain = nativeloader::GetApiDomainFromPath(dex_path);
+
+  Result<nativeloader::ApiDomain> api_domain = nativeloader::GetApiDomainFromPathList(dex_path);
+  if (!api_domain.ok()) {
+    return env->NewStringUTF(api_domain.error().message().c_str());
+  }
 
   std::lock_guard<std::mutex> guard(g_namespaces_mutex);
   Result<NativeLoaderNamespace*> ns = CreateClassLoaderNamespaceLocked(env,
                                                                        target_sdk_version,
                                                                        class_loader,
-                                                                       api_domain,
+                                                                       api_domain.value(),
                                                                        is_shared,
                                                                        dex_path,
                                                                        library_path_j,
