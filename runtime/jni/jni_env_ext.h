@@ -42,8 +42,8 @@ class JNIEnvExt : public JNIEnv {
   // Creates a new JNIEnvExt. Returns null on error, in which case error_msg
   // will contain a description of the error.
   static JNIEnvExt* Create(Thread* self, JavaVMExt* vm, std::string* error_msg);
-  static MemberOffset SegmentStateOffset(PointerSize pointer_size);
-  static MemberOffset LocalRefCookieOffset(PointerSize pointer_size);
+  static MemberOffset LrtSegmentStateOffset(PointerSize pointer_size);
+  static MemberOffset LrtPreviousStateOffset(PointerSize pointer_size);
   static MemberOffset SelfOffset(PointerSize pointer_size);
   static jint GetEnvHandler(JavaVMExt* vm, /*out*/void** out, jint version);
 

@@ -2643,13 +2643,13 @@ TEST_F(JniInternalTest, JNIEnvExtOffsets) {
       OFFSETOF_MEMBER(JNIEnvExt, locals_) +
       jni::LocalReferenceTable::PreviousStateOffset().Uint32Value();
   uint32_t previous_state_computed =
-      JNIEnvExt::LocalRefCookieOffset(kRuntimePointerSize).Uint32Value();
+      JNIEnvExt::LrtPreviousStateOffset(kRuntimePointerSize).Uint32Value();
   EXPECT_EQ(previous_state_now, previous_state_computed);
   uint32_t segment_state_now =
       OFFSETOF_MEMBER(JNIEnvExt, locals_) +
       jni::LocalReferenceTable::SegmentStateOffset().Uint32Value();
   uint32_t segment_state_computed =
-      JNIEnvExt::SegmentStateOffset(kRuntimePointerSize).Uint32Value();
+      JNIEnvExt::LrtSegmentStateOffset(kRuntimePointerSize).Uint32Value();
   EXPECT_EQ(segment_state_now, segment_state_computed);
 }
 
