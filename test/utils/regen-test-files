@@ -216,8 +216,6 @@ known_failing_tests = frozenset([
   "2243-single-step-default",
   "2262-miranda-methods",
   "2262-default-conflict-methods",
-  # 2247-checker-write-barrier-elimination: Disabled while we investigate failures
-  "2247-checker-write-barrier-elimination"
 ])
 
 # These tests are new and have not had enough post-submit runs to meet
@@ -229,6 +227,7 @@ postsubmit_only_tests = frozenset([
   "2266-checker-remove-empty-ifs",
   "2268-checker-remove-dead-phis",
   "2269-checker-constant-folding-instrinsics",
+  "2247-checker-write-barrier-elimination",
 ])
 
 known_failing_on_hwasan_tests = frozenset([
