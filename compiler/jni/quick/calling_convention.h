@@ -356,10 +356,6 @@ class JniCallingConvention : public CallingConvention {
 
   virtual ~JniCallingConvention() {}
 
-  static constexpr size_t SavedLocalReferenceCookieSize() {
-    return 4u;
-  }
-
   bool IsFastNative() const {
     return is_fast_native_;
   }

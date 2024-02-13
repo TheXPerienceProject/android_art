@@ -1357,9 +1357,9 @@ void CodeGeneratorX86::MaybeIncrementHotness(HSuspendCheck* suspend_check, bool 
     }
   }
 
-  if (GetGraph()->IsCompilingBaseline() && !Runtime::Current()->IsAotCompiler()) {
-    // Note the slow path doesn't save SIMD registers, so if we were to
-    // call it on loop back edge, we would need to fix this.
+  if (GetGraph()->IsCompilingBaseline() &&
+      GetGraph()->IsUsefulOptimizing() &&
+      !Runtime::Current()->IsAotCompiler()) {
     ProfilingInfo* info = GetGraph()->GetProfilingInfo();
     DCHECK(info != nullptr);
     uint32_t address = reinterpret_cast32<uint32_t>(info) +
@@ -1429,6 +1429,9 @@ void CodeGeneratorX86::GenerateFrameEntry() {
   }
 
   if (!HasEmptyFrame()) {
+    // Make sure the frame size isn't unreasonably large.
+    DCHECK_LE(GetFrameSize(), GetMaximumFrameSize());
+
     for (int i = arraysize(kCoreCalleeSaves) - 1; i >= 0; --i) {
       Register reg = kCoreCalleeSaves[i];
       if (allocated_registers_.ContainsCoreRegister(reg)) {

@@ -37,7 +37,7 @@
 #include "driver/compiler_options.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "instrumentation.h"
-#include "jni/jni_env_ext.h"
+#include "jni/local_reference_table.h"
 #include "runtime.h"
 #include "thread.h"
 #include "utils/arm/managed_register_arm.h"
@@ -50,19 +50,6 @@
 #define __ jni_asm->
 
 namespace art HIDDEN {
-
-constexpr size_t kIRTCookieSize = JniCallingConvention::SavedLocalReferenceCookieSize();
-
-template <PointerSize kPointerSize>
-static void PushLocalReferenceFrame(JNIMacroAssembler<kPointerSize>* jni_asm,
-                                    ManagedRegister jni_env_reg,
-                                    ManagedRegister saved_cookie_reg,
-                                    ManagedRegister temp_reg);
-template <PointerSize kPointerSize>
-static void PopLocalReferenceFrame(JNIMacroAssembler<kPointerSize>* jni_asm,
-                                   ManagedRegister jni_env_reg,
-                                   ManagedRegister saved_cookie_reg,
-                                   ManagedRegister temp_reg);
 
 template <PointerSize kPointerSize>
 static void SetNativeParameter(JNIMacroAssembler<kPointerSize>* jni_asm,
@@ -313,15 +300,15 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
     // as well as the cookie, so we preserve them across calls in callee-save registers.
     CHECK_GE(callee_save_scratch_regs.size(), 3u);  // At least 3 for each supported architecture.
     jni_env_reg = callee_save_scratch_regs[0];
-    saved_cookie_reg = __ CoreRegisterWithSize(callee_save_scratch_regs[1], kIRTCookieSize);
-    callee_save_temp = __ CoreRegisterWithSize(callee_save_scratch_regs[2], kIRTCookieSize);
+    constexpr size_t kLRTSegmentStateSize = sizeof(jni::LRTSegmentState);
+    saved_cookie_reg = __ CoreRegisterWithSize(callee_save_scratch_regs[1], kLRTSegmentStateSize);
+    callee_save_temp = __ CoreRegisterWithSize(callee_save_scratch_regs[2], kLRTSegmentStateSize);
 
     // Load the JNI environment pointer.
     __ LoadRawPtrFromThread(jni_env_reg, Thread::JniEnvOffset<kPointerSize>());
 
     // Push the local reference frame.
-    PushLocalReferenceFrame<kPointerSize>(
-        jni_asm.get(), jni_env_reg, saved_cookie_reg, callee_save_temp);
+    __ PushLocalReferenceFrame(jni_env_reg, saved_cookie_reg, callee_save_temp);
   }
 
   // 4. Make the main native call.
@@ -525,8 +512,7 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
 
   // 6. Pop local reference frame.
   if (LIKELY(!is_critical_native)) {
-    PopLocalReferenceFrame<kPointerSize>(
-        jni_asm.get(), jni_env_reg, saved_cookie_reg, callee_save_temp);
+    __ PopLocalReferenceFrame(jni_env_reg, saved_cookie_reg, callee_save_temp);
   }
 
   // 7. Return from the JNI stub.
@@ -658,8 +644,7 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
         jni_asm->cfi().AdjustCFAOffset(main_out_arg_size);
         __ DecreaseFrameSize(main_out_arg_size);
       }
-      PopLocalReferenceFrame<kPointerSize>(
-          jni_asm.get(), jni_env_reg, saved_cookie_reg, callee_save_temp);
+      __ PopLocalReferenceFrame(jni_env_reg, saved_cookie_reg, callee_save_temp);
     }
     DCHECK_EQ(jni_asm->cfi().GetCurrentCFAOffset(), static_cast<int>(current_frame_size));
     __ DeliverPendingException();
@@ -733,40 +718,6 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
                            main_jni_conv->CoreSpillMask(),
                            main_jni_conv->FpSpillMask(),
                            ArrayRef<const uint8_t>(*jni_asm->cfi().data()));
-}
-
-template <PointerSize kPointerSize>
-static void PushLocalReferenceFrame(JNIMacroAssembler<kPointerSize>* jni_asm,
-                                    ManagedRegister jni_env_reg,
-                                    ManagedRegister saved_cookie_reg,
-                                    ManagedRegister temp_reg) {
-  const size_t kRawPointerSize = static_cast<size_t>(kPointerSize);
-  const MemberOffset jni_env_cookie_offset = JNIEnvExt::LocalRefCookieOffset(kRawPointerSize);
-  const MemberOffset jni_env_segment_state_offset = JNIEnvExt::SegmentStateOffset(kRawPointerSize);
-
-  // Load the old cookie that we shall need to restore.
-  __ Load(saved_cookie_reg, jni_env_reg, jni_env_cookie_offset, kIRTCookieSize);
-
-  // Set the cookie in JNI environment to the current segment state.
-  __ Load(temp_reg, jni_env_reg, jni_env_segment_state_offset, kIRTCookieSize);
-  __ Store(jni_env_reg, jni_env_cookie_offset, temp_reg, kIRTCookieSize);
-}
-
-template <PointerSize kPointerSize>
-static void PopLocalReferenceFrame(JNIMacroAssembler<kPointerSize>* jni_asm,
-                                   ManagedRegister jni_env_reg,
-                                   ManagedRegister saved_cookie_reg,
-                                   ManagedRegister temp_reg) {
-  const size_t kRawPointerSize = static_cast<size_t>(kPointerSize);
-  const MemberOffset jni_env_cookie_offset = JNIEnvExt::LocalRefCookieOffset(kRawPointerSize);
-  const MemberOffset jni_env_segment_state_offset = JNIEnvExt::SegmentStateOffset(kRawPointerSize);
-
-  // Set the current segment state to the current cookie in JNI environment.
-  __ Load(temp_reg, jni_env_reg, jni_env_cookie_offset, kIRTCookieSize);
-  __ Store(jni_env_reg, jni_env_segment_state_offset, temp_reg, kIRTCookieSize);
-
-  // Restore the cookie in JNI environment to the saved value.
-  __ Store(jni_env_reg, jni_env_cookie_offset, saved_cookie_reg, kIRTCookieSize);
 }
 
 template <PointerSize kPointerSize>

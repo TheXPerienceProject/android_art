@@ -106,3 +106,30 @@ art_cc_test {
     ],
     test_config_template: "art_standalone_artd_tests.xml",
 }
+
+cc_fuzz {
+    name: "artd_fuzzer",
+    defaults: [
+        "service_fuzzer_defaults",
+        "art_module_source_build_defaults",
+        "artd_defaults",
+        // Fuzzer is on a special variant, different from the APEX variant. When
+        // linking against "libdexfile" as a shared library, the build system
+        // incorrectly picks the platform variant, which only exposes system
+        // APIs. As a workaround, we link against "libdexfile" as a static
+        // library.
+        "libdexfile_static_defaults",
+    ],
+    host_supported: true,
+    srcs: ["artd_fuzzer.cc"],
+    shared_libs: [
+        "libart",
+        "libartbase",
+        "liblog",
+    ],
+    fuzz_config: {
+        cc: [
+            "art-module-team@google.com",
+        ],
+    },
+}

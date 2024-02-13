@@ -2634,19 +2634,22 @@ TEST_F(JniInternalTest, IndirectReferenceTableOffsets) {
 
 // Test the offset computation of JNIEnvExt offsets. b/26071368.
 TEST_F(JniInternalTest, JNIEnvExtOffsets) {
-  EXPECT_EQ(OFFSETOF_MEMBER(JNIEnvExt, self_), JNIEnvExt::SelfOffset(sizeof(void*)).Uint32Value());
+  EXPECT_EQ(OFFSETOF_MEMBER(JNIEnvExt, self_),
+            JNIEnvExt::SelfOffset(kRuntimePointerSize).Uint32Value());
 
   // `previous_state_` amd `segment_state_` are private in the IndirectReferenceTable.
   // So this test isn't as good as we'd hope it to be.
   uint32_t previous_state_now =
       OFFSETOF_MEMBER(JNIEnvExt, locals_) +
       jni::LocalReferenceTable::PreviousStateOffset().Uint32Value();
-  uint32_t previous_state_computed = JNIEnvExt::LocalRefCookieOffset(sizeof(void*)).Uint32Value();
+  uint32_t previous_state_computed =
+      JNIEnvExt::LocalRefCookieOffset(kRuntimePointerSize).Uint32Value();
   EXPECT_EQ(previous_state_now, previous_state_computed);
   uint32_t segment_state_now =
       OFFSETOF_MEMBER(JNIEnvExt, locals_) +
       jni::LocalReferenceTable::SegmentStateOffset().Uint32Value();
-  uint32_t segment_state_computed = JNIEnvExt::SegmentStateOffset(sizeof(void*)).Uint32Value();
+  uint32_t segment_state_computed =
+      JNIEnvExt::SegmentStateOffset(kRuntimePointerSize).Uint32Value();
   EXPECT_EQ(segment_state_now, segment_state_computed);
 }
 

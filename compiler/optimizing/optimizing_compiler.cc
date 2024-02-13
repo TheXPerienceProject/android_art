@@ -905,6 +905,7 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
   }
 
   if (compilation_kind == CompilationKind::kBaseline && compiler_options.ProfileBranches()) {
+    graph->SetUsefulOptimizing();
     // Branch profiling currently doesn't support running optimizations.
     RunRequiredPasses(graph, codegen.get(), dex_compilation_unit, &pass_observer);
   } else {
@@ -917,6 +918,7 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
   // this method already, do it now.
   if (jit != nullptr &&
       compilation_kind == CompilationKind::kBaseline &&
+      graph->IsUsefulOptimizing() &&
       graph->GetProfilingInfo() == nullptr) {
     ProfilingInfoBuilder(
         graph, codegen->GetCompilerOptions(), codegen.get(), compilation_stats_.get()).Run();
@@ -936,6 +938,14 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
                     &pass_observer,
                     regalloc_strategy,
                     compilation_stats_.get());
+
+  if (UNLIKELY(codegen->GetFrameSize() > codegen->GetMaximumFrameSize())) {
+    LOG(WARNING) << "Stack frame size is " << codegen->GetFrameSize()
+                 << " which is larger than the maximum of " << codegen->GetMaximumFrameSize()
+                 << " bytes. Method: " << graph->PrettyMethod();
+    MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kNotCompiledFrameTooBig);
+    return nullptr;
+  }
 
   codegen->Compile();
   pass_observer.DumpDisassembly();
@@ -1035,6 +1045,7 @@ CodeGenerator* OptimizingCompiler::TryCompileIntrinsic(
     return nullptr;
   }
 
+  CHECK_LE(codegen->GetFrameSize(), codegen->GetMaximumFrameSize());
   codegen->Compile();
   pass_observer.DumpDisassembly();
 
@@ -1437,6 +1448,11 @@ bool OptimizingCompiler::JitCompile(Thread* self,
     info.code_info = stack_map.size() == 0 ? nullptr : stack_map.data();
     info.cfi = ArrayRef<const uint8_t>(*codegen->GetAssembler()->cfi().data());
     debug_info = GenerateJitDebugInfo(info);
+  }
+
+  if (compilation_kind == CompilationKind::kBaseline &&
+      !codegen->GetGraph()->IsUsefulOptimizing()) {
+    compilation_kind = CompilationKind::kOptimized;
   }
 
   if (!code_cache->Commit(self,

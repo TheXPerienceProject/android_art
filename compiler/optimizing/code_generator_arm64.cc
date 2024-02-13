@@ -1306,7 +1306,9 @@ void CodeGeneratorARM64::MaybeIncrementHotness(HSuspendCheck* suspend_check, boo
     __ Bind(&done);
   }
 
-  if (GetGraph()->IsCompilingBaseline() && !Runtime::Current()->IsAotCompiler()) {
+  if (GetGraph()->IsCompilingBaseline() &&
+      GetGraph()->IsUsefulOptimizing() &&
+      !Runtime::Current()->IsAotCompiler()) {
     ProfilingInfo* info = GetGraph()->GetProfilingInfo();
     DCHECK(info != nullptr);
     DCHECK(!HasEmptyFrame());
@@ -1395,6 +1397,9 @@ void CodeGeneratorARM64::GenerateFrameEntry() {
   }
 
   if (!HasEmptyFrame()) {
+    // Make sure the frame size isn't unreasonably large.
+    DCHECK_LE(GetFrameSize(), GetMaximumFrameSize());
+
     // Stack layout:
     //      sp[frame_size - 8]        : lr.
     //      ...                       : other preserved core registers.

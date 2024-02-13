@@ -514,9 +514,12 @@ class Jit {
   // class path methods.
   void NotifyZygoteCompilationDone();
 
-  void EnqueueOptimizedCompilation(ArtMethod* method, Thread* self);
+  EXPORT void EnqueueOptimizedCompilation(ArtMethod* method, Thread* self);
 
-  void MaybeEnqueueCompilation(ArtMethod* method, Thread* self)
+  EXPORT void MaybeEnqueueCompilation(ArtMethod* method, Thread* self)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  EXPORT static bool TryPatternMatch(ArtMethod* method, CompilationKind compilation_kind)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:

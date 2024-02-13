@@ -2302,7 +2302,9 @@ void CodeGeneratorARMVIXL::MaybeIncrementHotness(HSuspendCheck* suspend_check,
     }
   }
 
-  if (GetGraph()->IsCompilingBaseline() && !Runtime::Current()->IsAotCompiler()) {
+  if (GetGraph()->IsCompilingBaseline() &&
+      GetGraph()->IsUsefulOptimizing() &&
+      !Runtime::Current()->IsAotCompiler()) {
     ProfilingInfo* info = GetGraph()->GetProfilingInfo();
     DCHECK(info != nullptr);
     DCHECK(!HasEmptyFrame());
@@ -2388,6 +2390,9 @@ void CodeGeneratorARMVIXL::GenerateFrameEntry() {
     MaybeIncrementHotness(/* suspend_check= */ nullptr, /* is_frame_entry= */ true);
     return;
   }
+
+  // Make sure the frame size isn't unreasonably large.
+  DCHECK_LE(GetFrameSize(), GetMaximumFrameSize());
 
   if (!skip_overflow_check) {
     // Using r4 instead of IP saves 2 bytes.

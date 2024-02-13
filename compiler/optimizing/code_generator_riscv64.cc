@@ -5763,7 +5763,9 @@ void CodeGeneratorRISCV64::MaybeIncrementHotness(HSuspendCheck* suspend_check,
     __ Bind(&done);
   }
 
-  if (GetGraph()->IsCompilingBaseline() && !Runtime::Current()->IsAotCompiler()) {
+  if (GetGraph()->IsCompilingBaseline() &&
+      GetGraph()->IsUsefulOptimizing() &&
+      !Runtime::Current()->IsAotCompiler()) {
     ProfilingInfo* info = GetGraph()->GetProfilingInfo();
     DCHECK(info != nullptr);
     DCHECK(!HasEmptyFrame());
@@ -5876,10 +5878,7 @@ void CodeGeneratorRISCV64::GenerateFrameEntry() {
 
   if (!HasEmptyFrame()) {
     // Make sure the frame size isn't unreasonably large.
-    if (GetFrameSize() > GetStackOverflowReservedBytes(InstructionSet::kRiscv64)) {
-      LOG(FATAL) << "Stack frame larger than "
-                 << GetStackOverflowReservedBytes(InstructionSet::kRiscv64) << " bytes";
-    }
+    DCHECK_LE(GetFrameSize(), GetMaximumFrameSize());
 
     // Spill callee-saved registers.
 
