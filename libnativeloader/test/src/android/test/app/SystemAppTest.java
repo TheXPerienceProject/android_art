@@ -16,20 +16,25 @@
 
 package android.test.app;
 
+import android.test.lib.AppTestCommon;
 import android.test.lib.TestUtils;
 import android.test.productsharedlib.ProductSharedLib;
 import android.test.systemextsharedlib.SystemExtSharedLib;
 import android.test.systemsharedlib.SystemSharedLib;
 import android.test.vendorsharedlib.VendorSharedLib;
+
 import androidx.test.filters.MediumTest;
-import androidx.test.runner.AndroidJUnit4;
+
 import org.junit.Test;
-import org.junit.runner.RunWith;
 
 // These tests are run from /system/app, /system/priv-app, and /system_ext/app.
 @MediumTest
-@RunWith(AndroidJUnit4.class)
-public class SystemAppTest {
+public class SystemAppTest extends AppTestCommon {
+    @Override
+    public AppLocation getAppLocation() {
+        return AppLocation.SYSTEM;
+    }
+
     @Test
     public void testPrivateLibsExist() {
         TestUtils.testPrivateLibsExist("/system", "system_private");
@@ -72,10 +77,12 @@ public class SystemAppTest {
     public void testLoadPrivateLibrariesViaSystemSharedLib() {
         SystemSharedLib.loadLibrary("system_private2");
         SystemSharedLib.loadLibrary("systemext_private2");
+
         if (!TestUtils.skipPublicProductLibTests()) {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemSharedLib.loadLibrary("product_private2"));
         }
+
         TestUtils.assertLibraryInaccessible(() -> SystemSharedLib.loadLibrary("vendor_private2"));
     }
 
@@ -83,33 +90,43 @@ public class SystemAppTest {
     public void testLoadPrivateLibrariesViaSystemExtSharedLib() {
         SystemExtSharedLib.loadLibrary("system_private3");
         SystemExtSharedLib.loadLibrary("systemext_private3");
+
         if (!TestUtils.skipPublicProductLibTests()) {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemExtSharedLib.loadLibrary("product_private3"));
         }
+
         TestUtils.assertLibraryInaccessible(
                 () -> SystemExtSharedLib.loadLibrary("vendor_private3"));
     }
 
     @Test
     public void testLoadPrivateLibrariesViaProductSharedLib() {
+        // See AppTestCommon.isSharedSystemApp() for an explanation of these
+        // behaviours.
         ProductSharedLib.loadLibrary("system_private4");
         ProductSharedLib.loadLibrary("systemext_private4");
+
         if (!TestUtils.skipPublicProductLibTests()) {
             TestUtils.assertLibraryInaccessible(
                     () -> ProductSharedLib.loadLibrary("product_private4"));
         }
+
         TestUtils.assertLibraryInaccessible(() -> ProductSharedLib.loadLibrary("vendor_private4"));
     }
 
     @Test
     public void testLoadPrivateLibrariesViaVendorSharedLib() {
+        // See AppTestCommon.isSharedSystemApp() for an explanation of these
+        // behaviours.
         VendorSharedLib.loadLibrary("system_private5");
         VendorSharedLib.loadLibrary("systemext_private5");
+
         if (!TestUtils.skipPublicProductLibTests()) {
             TestUtils.assertLibraryInaccessible(
                     () -> VendorSharedLib.loadLibrary("product_private5"));
         }
+
         TestUtils.assertLibraryInaccessible(() -> VendorSharedLib.loadLibrary("vendor_private5"));
     }
 

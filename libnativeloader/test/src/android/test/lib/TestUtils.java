@@ -52,7 +52,7 @@ public final class TestUtils {
     public static void testPrivateLibsExist(String libDir, String libStem) {
         // Remember to update pushPrivateLibs in LibnativeloaderTest.java when
         // the number of libraries changes.
-        for (int i = 1; i <= 6; ++i) {
+        for (int i = 1; i <= 10; ++i) {
             String libPath = libPath(libDir, libStem + i);
             assertWithMessage(libPath + " does not exist")
                     .that(new File(libPath).exists())
