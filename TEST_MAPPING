@@ -4265,6 +4265,9 @@
       "name": "art-run-test-2269-checker-constant-folding-instrinsics"
     },
     {
+      "name": "art-run-test-2273-checker-unreachable-intrinsics"
+    },
+    {
       "name": "art-run-test-851-null-instanceof"
     },
     {
