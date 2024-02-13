@@ -106,35 +106,15 @@ static bool IsArrayAccess(const HInstruction* instruction) {
 }
 
 static bool IsInstanceFieldAccess(const HInstruction* instruction) {
-  return instruction->IsInstanceFieldGet() ||
-         instruction->IsInstanceFieldSet() ||
-         instruction->IsUnresolvedInstanceFieldGet() ||
-         instruction->IsUnresolvedInstanceFieldSet();
+  return instruction->IsInstanceFieldGet() || instruction->IsInstanceFieldSet();
 }
 
 static bool IsStaticFieldAccess(const HInstruction* instruction) {
-  return instruction->IsStaticFieldGet() ||
-         instruction->IsStaticFieldSet() ||
-         instruction->IsUnresolvedStaticFieldGet() ||
-         instruction->IsUnresolvedStaticFieldSet();
-}
-
-static bool IsResolvedFieldAccess(const HInstruction* instruction) {
-  return instruction->IsInstanceFieldGet() ||
-         instruction->IsInstanceFieldSet() ||
-         instruction->IsStaticFieldGet() ||
-         instruction->IsStaticFieldSet();
-}
-
-static bool IsUnresolvedFieldAccess(const HInstruction* instruction) {
-  return instruction->IsUnresolvedInstanceFieldGet() ||
-         instruction->IsUnresolvedInstanceFieldSet() ||
-         instruction->IsUnresolvedStaticFieldGet() ||
-         instruction->IsUnresolvedStaticFieldSet();
+  return instruction->IsStaticFieldGet() || instruction->IsStaticFieldSet();
 }
 
 static bool IsFieldAccess(const HInstruction* instruction) {
-  return IsResolvedFieldAccess(instruction) || IsUnresolvedFieldAccess(instruction);
+  return IsInstanceFieldAccess(instruction) || IsStaticFieldAccess(instruction);
 }
 
 static const FieldInfo* GetFieldInfo(const HInstruction* instruction) {
@@ -163,12 +143,6 @@ bool SideEffectDependencyAnalysis::MemoryDependencyAnalysis::FieldAccessMayAlias
   if ((IsInstanceFieldAccess(instr1) && IsStaticFieldAccess(instr2)) ||
       (IsStaticFieldAccess(instr1) && IsInstanceFieldAccess(instr2))) {
     return false;
-  }
-
-  // If either of the field accesses is unresolved.
-  if (IsUnresolvedFieldAccess(instr1) || IsUnresolvedFieldAccess(instr2)) {
-    // Conservatively treat these two accesses may alias.
-    return true;
   }
 
   // If both fields accesses are resolved.
@@ -200,6 +174,14 @@ bool SideEffectDependencyAnalysis::MemoryDependencyAnalysis::HasMemoryDependency
     // Just simply say that those two instructions have memory dependency.
     return true;
   }
+
+  // Note: Unresolved field access instructions are currently marked as not schedulable.
+  // If we change that, we should still keep in mind that these instructions can throw and
+  // read or write volatile fields and, if static, cause class initialization and write to
+  // arbitrary heap locations, and therefore cannot be reordered with any other field or
+  // array access to preserve the observable behavior. The only exception is access to
+  // singleton members that could actually be reodered across these instructions but we
+  // currently do not analyze singletons here anyway.
 
   if (IsArrayAccess(instr1) && IsArrayAccess(instr2)) {
     return ArrayAccessMayAlias(instr1, instr2);
@@ -717,7 +699,8 @@ bool HScheduler::IsSchedulable(const HInstruction* instruction) const {
   //    HNop
   //    HThrow
   //    HTryBoundary
-  //    All volatile field access e.g. HInstanceFieldGet
+  //    All unresolved field access instructions
+  //    All volatile field access instructions, e.g. HInstanceFieldGet
   // TODO: Some of the instructions above may be safe to schedule (maybe as
   // scheduling barriers).
   return instruction->IsArrayGet() ||
