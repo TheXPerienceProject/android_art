@@ -310,6 +310,7 @@ cc_defaults {
         "jit/jit.cc",
         "jit/jit_code_cache.cc",
         "jit/jit_memory_region.cc",
+        "jit/jit_options.cc",
         "jit/profile_saver.cc",
         "jit/profiling_info.cc",
         "jit/small_pattern_matcher.cc",

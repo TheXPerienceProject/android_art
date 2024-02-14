@@ -23,6 +23,7 @@
 #include "android-base/stringprintf.h"
 #include "android-base/strings.h"
 #include "arch/instruction_set.h"
+#include "arch/instruction_set_features.h"
 #include "base/arena_allocator.h"
 #include "base/arena_containers.h"
 #include "base/bit_utils.h"

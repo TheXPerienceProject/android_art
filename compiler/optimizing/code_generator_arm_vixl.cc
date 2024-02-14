@@ -36,6 +36,7 @@
 #include "intrinsics_arm_vixl.h"
 #include "intrinsics_list.h"
 #include "intrinsics_utils.h"
+#include "jit/profiling_info.h"
 #include "linker/linker_patch.h"
 #include "mirror/array-inl.h"
 #include "mirror/class-inl.h"
