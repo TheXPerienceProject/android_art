@@ -604,8 +604,11 @@ class RuntimeImageHelper {
     }
 
     for (Handle<mirror::Class> cls : classes_to_write) {
-      ScopedAssertNoThreadSuspension sants("Writing class");
-      CopyClass(cls.Get());
+      {
+        ScopedAssertNoThreadSuspension sants("Writing class");
+        CopyClass(cls.Get());
+      }
+      self->AllowThreadSuspension();
     }
 
     // Relocate the type array entries. We do this now before creating image
