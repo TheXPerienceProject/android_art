@@ -94,7 +94,7 @@ Result<std::vector<std::string>> ReadConfig(
     const std::function<Result<bool>(const ConfigEntry& /* entry */)>& filter_fn) {
   std::string file_content;
   if (!base::ReadFileToString(configFile, &file_content)) {
-    return ErrnoError();
+    return ErrnoError() << "Failed to read " << configFile;
   }
   Result<std::vector<std::string>> result = ParseConfig(file_content, filter_fn);
   if (!result.ok()) {
