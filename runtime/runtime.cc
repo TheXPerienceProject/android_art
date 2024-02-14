@@ -195,7 +195,7 @@ namespace apex = com::android::apex;
 #include "asm_defines.def"
 #undef ASM_DEFINE
 
-namespace art {
+namespace art HIDDEN {
 
 // If a signal isn't handled properly, enable a handler that attempts to dump the Java stack.
 static constexpr bool kEnableJavaStackTraceHandler = false;
@@ -234,7 +234,7 @@ inline char** GetEnviron() {
 #else
 // Some POSIX platforms expect you to declare environ. extern "C" makes
 // it reside in the global namespace.
-extern "C" char** environ;
+EXPORT extern "C" char** environ;
 inline char** GetEnviron() { return environ; }
 #endif
 
@@ -1317,7 +1317,7 @@ void Runtime::InitNonZygoteOrPostFork(
     if (!odrefresh::UploadStatsIfAvailable(&err)) {
       LOG(WARNING) << "Failed to upload odrefresh metrics: " << err;
     }
-    metrics::SetupCallbackForDeviceStatus();
+    metrics::ReportDeviceMetrics();
   }
 
   if (LIKELY(automatically_set_jni_ids_indirection_) && CanSetJniIdType()) {

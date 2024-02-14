@@ -227,11 +227,7 @@ class TraceWriter {
   // Helper function to record method information when processing the events. These are used by
   // streaming output mode. Non-streaming modes dump the methods and threads list at the end of
   // tracing.
-  void RecordMethodInfo(const std::string& method_line,
-                        uint32_t method_id,
-                        size_t* index,
-                        uint8_t* buf,
-                        size_t size) REQUIRES(tracing_lock_);
+  void RecordMethodInfo(const std::string& method_line, uint32_t method_id) REQUIRES(tracing_lock_);
 
   // Encodes the trace event. This assumes that there is enough space reserved to encode the entry.
   void EncodeEventEntry(uint8_t* ptr,

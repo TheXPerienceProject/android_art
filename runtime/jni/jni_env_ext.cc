@@ -142,27 +142,27 @@ void JNIEnvExt::PopFrame() {
 //       are tests in jni_internal_test to match the results against the actual values.
 
 // This is encoding the knowledge of the structure and layout of JNIEnv fields.
-static size_t JNIEnvSize(size_t pointer_size) {
+static size_t JNIEnvSize(PointerSize pointer_size) {
   // A single pointer.
-  return pointer_size;
+  return static_cast<size_t>(pointer_size);
 }
 
-inline MemberOffset JNIEnvExt::LocalReferenceTableOffset(size_t pointer_size) {
+inline MemberOffset JNIEnvExt::LocalReferenceTableOffset(PointerSize pointer_size) {
   return MemberOffset(JNIEnvSize(pointer_size) +
-                      2 * pointer_size);          // Thread* self + JavaVMExt* vm
+                      2 * static_cast<size_t>(pointer_size));  // Thread* self + JavaVMExt* vm
 }
 
-MemberOffset JNIEnvExt::SegmentStateOffset(size_t pointer_size) {
+MemberOffset JNIEnvExt::SegmentStateOffset(PointerSize pointer_size) {
   return MemberOffset(LocalReferenceTableOffset(pointer_size).SizeValue() +
                       jni::LocalReferenceTable::SegmentStateOffset().SizeValue());
 }
 
-MemberOffset JNIEnvExt::LocalRefCookieOffset(size_t pointer_size) {
+MemberOffset JNIEnvExt::LocalRefCookieOffset(PointerSize pointer_size) {
   return MemberOffset(LocalReferenceTableOffset(pointer_size).SizeValue() +
                       jni::LocalReferenceTable::PreviousStateOffset().SizeValue());
 }
 
-MemberOffset JNIEnvExt::SelfOffset(size_t pointer_size) {
+MemberOffset JNIEnvExt::SelfOffset(PointerSize pointer_size) {
   return MemberOffset(JNIEnvSize(pointer_size));
 }
 

@@ -3692,6 +3692,206 @@ public class Main {
     return arg << 25 >> 26;
   }
 
+  // Check that we don't introduce new implicit type conversions so the following pattern
+  // does not occur in the graph:
+  //
+  // <<ImplicitConv>> TypeConversion
+  // <<ExplicitConv>> TypeConversonn [<<ImplicitConv>>]
+  //
+  // That will lead to a crash because InstructionSimplifier removes implicit type conversions
+  // and during visiting TypeConversion instruction expects that its inputs have been already
+  // simplified.
+  //
+  // The structure of the following tests is
+  //
+  //   (T) ((x << N) >> N) or (T) ((x << N) >>> N)
+  //
+  // where
+  //   * K is a type of x
+  //   * Shifts correspond to implicit type conversion K -> M
+  //   * M -> T conversion is explicit
+  //
+  // T itself doesn't matter, the only important thing is that M -> T is explicit.
+  //
+  // We check cases when shifts correspond to the following implicit type conversions:
+  //   byte -> byte
+  //   byte -> short
+  //   unsigned byte -> unsigned byte
+  //   unsigned byte -> short
+  //   unsigned byte -> char
+  //   short -> short
+  //   char -> char
+  //
+  // To produce unsigned byte bitwise AND with 0xFF is used.
+
+  /// CHECK-START: int Main.$noinline$testByteToByteToChar(byte) instruction_simplifier (before)
+  /// CHECK:     <<Param:b\d+>>   ParameterValue
+  /// CHECK:     <<Const24:i\d+>> IntConstant 24
+  /// CHECK:     <<Shl:i\d+>>     Shl [<<Param>>,<<Const24>>]
+  /// CHECK:     <<Shr:i\d+>>     Shr [<<Shl>>,<<Const24>>]
+  /// CHECK:     <<Conv:c\d+>>    TypeConversion [<<Shr>>]
+  /// CHECK:     <<Return:v\d+>>  Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testByteToByteToChar(byte) instruction_simplifier (after)
+  /// CHECK:     <<Param:b\d+>>   ParameterValue
+  /// CHECK:     <<Conv:c\d+>>    TypeConversion [<<Param>>]
+  /// CHECK:     <<Return:v\d+>>  Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testByteToByteToChar(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shl
+
+  /// CHECK-START: int Main.$noinline$testByteToByteToChar(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shr
+  private static int $noinline$testByteToByteToChar(byte arg) {
+    return (char) ((arg << 24) >> 24);
+  }
+
+  /// CHECK-START: int Main.$noinline$testByteToShortToByte(byte) instruction_simplifier (before)
+  /// CHECK:     <<Param:b\d+>>   ParameterValue
+  /// CHECK:     <<Const16:i\d+>> IntConstant 16
+  /// CHECK:     <<Shl:i\d+>>     Shl [<<Param>>,<<Const16>>]
+  /// CHECK:     <<Shr:i\d+>>     Shr [<<Shl>>,<<Const16>>]
+  /// CHECK:     <<Conv:b\d+>>    TypeConversion [<<Shr>>]
+  /// CHECK:     <<Return:v\d+>>  Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testByteToShortToByte(byte) instruction_simplifier (after)
+  /// CHECK:     <<Param:b\d+>>   ParameterValue
+  /// CHECK:     <<Return:v\d+>>  Return [<<Param>>]
+
+  /// CHECK-START: int Main.$noinline$testByteToShortToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shl
+
+  /// CHECK-START: int Main.$noinline$testByteToShortToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shr
+
+  /// CHECK-START: int Main.$noinline$testByteToShortToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  TypeConversion
+  private static int $noinline$testByteToShortToByte(byte arg) {
+    return (byte) ((arg << 16) >> 16);
+  }
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToUnsignedByteToByte(byte) instruction_simplifier (before)
+  /// CHECK:     <<Param:b\d+>>    ParameterValue
+  /// CHECK:     <<Const255:i\d+>> IntConstant 255
+  /// CHECK:     <<Const24:i\d+>>  IntConstant 24
+  /// CHECK:     <<And:i\d+>>      And [<<Param>>,<<Const255>>]
+  /// CHECK:     <<Shl:i\d+>>      Shl [<<And>>,<<Const24>>]
+  /// CHECK:     <<UShr:i\d+>>     UShr [<<Shl>>,<<Const24>>]
+  /// CHECK:     <<Conv:b\d+>>     TypeConversion [<<UShr>>]
+  /// CHECK:     <<Return:v\d+>>   Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToUnsignedByteToByte(byte) instruction_simplifier (after)
+  /// CHECK:     <<Param:b\d+>>   ParameterValue
+  /// CHECK:     <<Return:v\d+>>  Return [<<Param>>]
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToUnsignedByteToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shl
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToUnsignedByteToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shr
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToUnsignedByteToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  TypeConversion
+  private static int $noinline$testUnsignedByteToUnsignedByteToByte(byte arg) {
+    return (byte) (((arg & 0xFF) << 24) >>> 24);
+  }
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToShortToByte(byte) instruction_simplifier (before)
+  /// CHECK:     <<Param:b\d+>>    ParameterValue
+  /// CHECK:     <<Const255:i\d+>> IntConstant 255
+  /// CHECK:     <<Const16:i\d+>>  IntConstant 16
+  /// CHECK:     <<And:i\d+>>      And [<<Param>>,<<Const255>>]
+  /// CHECK:     <<Shl:i\d+>>      Shl [<<And>>,<<Const16>>]
+  /// CHECK:     <<Shr:i\d+>>      Shr [<<Shl>>,<<Const16>>]
+  /// CHECK:     <<Conv:b\d+>>     TypeConversion [<<Shr>>]
+  /// CHECK:     <<Return:v\d+>>   Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToShortToByte(byte) instruction_simplifier (after)
+  /// CHECK:     <<Param:b\d+>>   ParameterValue
+  /// CHECK:     <<Return:v\d+>>  Return [<<Param>>]
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToShortToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shl
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToShortToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shr
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToShortToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  TypeConversion
+  private static int $noinline$testUnsignedByteToShortToByte(byte arg) {
+    return (byte) (((arg & 0xFF) << 16) >> 16);
+  }
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToCharToByte(byte) instruction_simplifier (before)
+  /// CHECK:     <<Param:b\d+>>    ParameterValue
+  /// CHECK:     <<Const255:i\d+>> IntConstant 255
+  /// CHECK:     <<Const16:i\d+>>  IntConstant 16
+  /// CHECK:     <<And:i\d+>>      And [<<Param>>,<<Const255>>]
+  /// CHECK:     <<Shl:i\d+>>      Shl [<<And>>,<<Const16>>]
+  /// CHECK:     <<UShr:i\d+>>     UShr [<<Shl>>,<<Const16>>]
+  /// CHECK:     <<Conv:b\d+>>     TypeConversion [<<UShr>>]
+  /// CHECK:     <<Return:v\d+>>   Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToCharToByte(byte) instruction_simplifier (after)
+  /// CHECK:     <<Param:b\d+>>   ParameterValue
+  /// CHECK:     <<Return:v\d+>>  Return [<<Param>>]
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToCharToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shl
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToCharToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shr
+
+  /// CHECK-START: int Main.$noinline$testUnsignedByteToCharToByte(byte) instruction_simplifier (after)
+  /// CHECK-NOT:                  TypeConversion
+  private static int $noinline$testUnsignedByteToCharToByte(byte arg) {
+    return (byte) (((arg & 0xFF) << 16) >>> 16);
+  }
+
+  /// CHECK-START: int Main.$noinline$testShortToShortToByte(short) instruction_simplifier (before)
+  /// CHECK:     <<Param:s\d+>>   ParameterValue
+  /// CHECK:     <<Const16:i\d+>> IntConstant 16
+  /// CHECK:     <<Shl:i\d+>>     Shl [<<Param>>,<<Const16>>]
+  /// CHECK:     <<Shr:i\d+>>     Shr [<<Shl>>,<<Const16>>]
+  /// CHECK:     <<Conv:b\d+>>    TypeConversion [<<Shr>>]
+  /// CHECK:     <<Return:v\d+>>  Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testShortToShortToByte(short) instruction_simplifier (after)
+  /// CHECK:     <<Param:s\d+>>   ParameterValue
+  /// CHECK:     <<Conv:b\d+>>    TypeConversion [<<Param>>]
+  /// CHECK:     <<Return:v\d+>>  Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testShortToShortToByte(short) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shl
+
+  /// CHECK-START: int Main.$noinline$testShortToShortToByte(short) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shr
+  private static int $noinline$testShortToShortToByte(short arg) {
+    return (byte) ((arg << 16) >> 16);
+  }
+
+  /// CHECK-START: int Main.$noinline$testCharToCharToByte(char) instruction_simplifier (before)
+  /// CHECK:     <<Param:c\d+>>   ParameterValue
+  /// CHECK:     <<Const16:i\d+>> IntConstant 16
+  /// CHECK:     <<Shl:i\d+>>     Shl [<<Param>>,<<Const16>>]
+  /// CHECK:     <<UShr:i\d+>>    UShr [<<Shl>>,<<Const16>>]
+  /// CHECK:     <<Conv:b\d+>>    TypeConversion [<<UShr>>]
+  /// CHECK:     <<Return:v\d+>>  Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testCharToCharToByte(char) instruction_simplifier (after)
+  /// CHECK:     <<Param:c\d+>>   ParameterValue
+  /// CHECK:     <<Conv:b\d+>>    TypeConversion [<<Param>>]
+  /// CHECK:     <<Return:v\d+>>  Return [<<Conv>>]
+
+  /// CHECK-START: int Main.$noinline$testCharToCharToByte(char) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shl
+
+  /// CHECK-START: int Main.$noinline$testCharToCharToByte(char) instruction_simplifier (after)
+  /// CHECK-NOT:                  Shr
+  private static int $noinline$testCharToCharToByte(char arg) {
+    return (byte) ((arg << 16) >>> 16);
+  }
+
   public static void main(String[] args) throws Exception {
     Class smaliTests2 = Class.forName("SmaliTests2");
     Method $noinline$XorAllOnes = smaliTests2.getMethod("$noinline$XorAllOnes", int.class);
@@ -4107,6 +4307,27 @@ public class Main {
         $noinline$testUnsignedPromotionPatternWithDifferentShiftAmountConstants(0xaabbccdd));
     assertIntEquals(0xffffffee,
         $noinline$testSignedPromotionPatternWithDifferentShiftAmountConstants(0xaabbccdd));
+
+    assertIntEquals(0xffaa, $noinline$testByteToByteToChar((byte) 0xaa));
+    assertIntEquals(0x0a, $noinline$testByteToByteToChar((byte) 0x0a));
+
+    assertIntEquals(0x0a, $noinline$testByteToShortToByte((byte) 0x0a));
+    assertIntEquals(0xffffffaa, $noinline$testByteToShortToByte((byte) 0xaa));
+
+    assertIntEquals(0x0a, $noinline$testUnsignedByteToUnsignedByteToByte((byte) 0x0a));
+    assertIntEquals(0xffffffaa, $noinline$testUnsignedByteToUnsignedByteToByte((byte) 0xaa));
+
+    assertIntEquals(0x0a, $noinline$testUnsignedByteToShortToByte((byte) 0x0a));
+    assertIntEquals(0xffffffaa, $noinline$testUnsignedByteToShortToByte((byte) 0xaa));
+
+    assertIntEquals(0x0a, $noinline$testUnsignedByteToCharToByte((byte) 0x0a));
+    assertIntEquals(0xffffffaa, $noinline$testUnsignedByteToCharToByte((byte) 0xaa));
+
+    assertIntEquals(0x0b, $noinline$testShortToShortToByte((short) 0xaa0b));
+    assertIntEquals(0xffffffbb, $noinline$testShortToShortToByte((short) 0xaabb));
+
+    assertIntEquals(0x0b, $noinline$testCharToCharToByte((char) 0xaa0b));
+    assertIntEquals(0xffffffbb, $noinline$testCharToCharToByte((char) 0xaabb));
   }
 
   private static boolean $inline$true() { return true; }

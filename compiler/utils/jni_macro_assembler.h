@@ -167,6 +167,17 @@ class JNIMacroAssembler : public DeletableArenaObject<kArenaAllocAssembler> {
   virtual void GetCurrentThread(ManagedRegister dest) = 0;
   virtual void GetCurrentThread(FrameOffset dest_offset) = 0;
 
+  // Manipulating local reference frames.
+  //
+  // These have a default implementation but they can be overridden to use register pair
+  // load/store instructions on architectures that support them (arm, arm64).
+  virtual void PushLocalReferenceFrame(ManagedRegister jni_env_reg,
+                                       ManagedRegister saved_cookie_reg,
+                                       ManagedRegister temp_reg);
+  virtual void PopLocalReferenceFrame(ManagedRegister jni_env_reg,
+                                      ManagedRegister saved_cookie_reg,
+                                      ManagedRegister temp_reg);
+
   // Decode JNI transition or local `jobject`. For (weak) global `jobject`, jump to slow path.
   virtual void DecodeJNITransitionOrLocalJObject(ManagedRegister reg,
                                                  JNIMacroLabel* slow_path,

@@ -39,7 +39,6 @@ import static org.mockito.Mockito.when;
 
 import android.apphibernation.AppHibernationManager;
 import android.os.CancellationSignal;
-import android.os.PowerManager;
 
 import androidx.test.filters.SmallTest;
 import androidx.test.runner.AndroidJUnit4;
@@ -96,8 +95,6 @@ public class DexoptHelperTest {
     @Mock private PrimaryDexopter mPrimaryDexopter;
     @Mock private SecondaryDexopter mSecondaryDexopter;
     @Mock private AppHibernationManager mAhm;
-    @Mock private PowerManager mPowerManager;
-    @Mock private PowerManager.WakeLock mWakeLock;
     @Mock private PackageManagerLocal.FilteredSnapshot mSnapshot;
     private PackageState mPkgStateFoo;
     private PackageState mPkgStateBar;
@@ -122,10 +119,6 @@ public class DexoptHelperTest {
 
     @Before
     public void setUp() throws Exception {
-        lenient()
-                .when(mPowerManager.newWakeLock(eq(PowerManager.PARTIAL_WAKE_LOCK), any()))
-                .thenReturn(mWakeLock);
-
         lenient().when(mAhm.isHibernatingGlobally(any())).thenReturn(false);
         lenient().when(mAhm.isOatArtifactDeletionEnabled()).thenReturn(true);
 
@@ -161,7 +154,6 @@ public class DexoptHelperTest {
                           .build();
 
         lenient().when(mInjector.getAppHibernationManager()).thenReturn(mAhm);
-        lenient().when(mInjector.getPowerManager()).thenReturn(mPowerManager);
         lenient().when(mInjector.getConfig()).thenReturn(mConfig);
 
         mDexoptHelper = new DexoptHelper(mInjector);
@@ -205,13 +197,10 @@ public class DexoptHelperTest {
         checkPackageResult(result, 5 /* index */, PKG_NAME_LIB4, DexoptResult.DEXOPT_PERFORMED,
                 List.of(mPrimaryResults, mSecondaryResults));
 
-        // The order matters. It should acquire the wake lock only once, at the beginning, and
-        // release the wake lock at the end. When running in a single thread, it should dexopt
-        // primary dex files and the secondary dex files together for each package, and it should
-        // dexopt requested packages, in the given order, and then dexopt dependencies.
-        InOrder inOrder = inOrder(mInjector, mWakeLock);
-        inOrder.verify(mWakeLock).setWorkSource(any());
-        inOrder.verify(mWakeLock).acquire(anyLong());
+        // The order matters. When running in a single thread, it should dexopt primary dex files
+        // and the secondary dex files together for each package, and it should dexopt requested
+        // packages, in the given order, and then dexopt dependencies.
+        InOrder inOrder = inOrder(mInjector);
         inOrder.verify(mInjector).getPrimaryDexopter(
                 same(mPkgStateFoo), same(mPkgFoo), same(mParams), any());
         inOrder.verify(mInjector).getSecondaryDexopter(
@@ -236,11 +225,8 @@ public class DexoptHelperTest {
                 same(mPkgStateLib4), same(mPkgLib4), same(mParams), any());
         inOrder.verify(mInjector).getSecondaryDexopter(
                 same(mPkgStateLib4), same(mPkgLib4), same(mParams), any());
-        inOrder.verify(mWakeLock).release();
 
         verifyNoMoreDexopt(6 /* expectedPrimaryTimes */, 6 /* expectedSecondaryTimes */);
-
-        verifyNoMoreInteractions(mWakeLock);
     }
 
     @Test
@@ -517,19 +503,6 @@ public class DexoptHelperTest {
                 List.of(mPrimaryResults, mSecondaryResults));
         checkPackageResult(result, 5 /* index */, PKG_NAME_LIB4, DexoptResult.DEXOPT_PERFORMED,
                 List.of(mPrimaryResults, mSecondaryResults));
-    }
-
-    @Test
-    public void testDexoptAlwaysReleasesWakeLock() throws Exception {
-        when(mPrimaryDexopter.dexopt()).thenThrow(IllegalStateException.class);
-
-        try {
-            mDexoptHelper.dexopt(
-                    mSnapshot, mRequestedPackages, mParams, mCancellationSignal, mExecutor);
-        } catch (Exception ignored) {
-        }
-
-        verify(mWakeLock).release();
     }
 
     @Test(expected = IllegalArgumentException.class)

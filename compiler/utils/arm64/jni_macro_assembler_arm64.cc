@@ -18,6 +18,8 @@
 
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "indirect_reference_table.h"
+#include "jni/jni_env_ext.h"
+#include "jni/local_reference_table.h"
 #include "lock_word.h"
 #include "managed_register_arm64.h"
 #include "offsets.h"
@@ -977,6 +979,48 @@ void Arm64JNIMacroAssembler::RemoveFrame(size_t frame_size,
   // The CFI should be restored for any code that follows the exit block.
   cfi().RestoreState();
   cfi().DefCFAOffset(frame_size);
+}
+
+void Arm64JNIMacroAssembler::PushLocalReferenceFrame(ManagedRegister jni_env_reg,
+                                                     ManagedRegister saved_cookie_reg,
+                                                     ManagedRegister temp_reg) {
+  constexpr size_t kLRTSegmentStateSize = sizeof(jni::LRTSegmentState);
+  DCHECK_EQ(kLRTSegmentStateSize, kWRegSizeInBytes);
+  const MemberOffset jni_env_cookie_offset = JNIEnvExt::LocalRefCookieOffset(kArm64PointerSize);
+  const MemberOffset jni_env_segment_state_offset =
+      JNIEnvExt::SegmentStateOffset(kArm64PointerSize);
+  DCHECK_EQ(jni_env_cookie_offset.SizeValue() + kLRTSegmentStateSize,
+            jni_env_segment_state_offset.SizeValue());
+
+  // Load the old cookie that we shall need to restore together with the current segment state.
+  ___ Ldp(
+      reg_w(saved_cookie_reg.AsArm64().AsWRegister()),
+      reg_w(temp_reg.AsArm64().AsWRegister()),
+      MemOperand(reg_x(jni_env_reg.AsArm64().AsXRegister()), jni_env_cookie_offset.Int32Value()));
+
+  // Set the cookie in JNI environment to the current segment state.
+  Store(jni_env_reg, jni_env_cookie_offset, temp_reg, kLRTSegmentStateSize);
+}
+
+void Arm64JNIMacroAssembler::PopLocalReferenceFrame(ManagedRegister jni_env_reg,
+                                                    ManagedRegister saved_cookie_reg,
+                                                    ManagedRegister temp_reg) {
+  constexpr size_t kLRTSegmentStateSize = sizeof(jni::LRTSegmentState);
+  DCHECK_EQ(kLRTSegmentStateSize, kWRegSizeInBytes);
+  const MemberOffset jni_env_cookie_offset = JNIEnvExt::LocalRefCookieOffset(kArm64PointerSize);
+  const MemberOffset jni_env_segment_state_offset =
+      JNIEnvExt::SegmentStateOffset(kArm64PointerSize);
+  DCHECK_EQ(jni_env_cookie_offset.SizeValue() + kLRTSegmentStateSize,
+            jni_env_segment_state_offset.SizeValue());
+
+  // Load the current cookie.
+  Load(temp_reg, jni_env_reg, jni_env_cookie_offset, kLRTSegmentStateSize);
+
+  // Set the current segment state together with restoring the cookie.
+  ___ Stp(
+      reg_w(saved_cookie_reg.AsArm64().AsWRegister()),
+      reg_w(temp_reg.AsArm64().AsWRegister()),
+      MemOperand(reg_x(jni_env_reg.AsArm64().AsXRegister()), jni_env_cookie_offset.Int32Value()));
 }
 
 #undef ___
