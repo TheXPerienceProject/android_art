@@ -22,6 +22,7 @@
 #endif
 
 #include <list>
+#include <optional>
 #include <string>
 
 #include "android-base/result.h"
@@ -93,7 +94,7 @@ class LibraryNamespaces {
   std::list<std::pair<jweak, NativeLoaderNamespace>> namespaces_;
 };
 
-Result<std::string> FindApexNamespaceName(const std::string& location);
+std::optional<std::string> FindApexNamespaceName(const std::string& location);
 
 }  // namespace android::nativeloader
 
