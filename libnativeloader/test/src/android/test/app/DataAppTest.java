@@ -16,19 +16,24 @@
 
 package android.test.app;
 
+import android.test.lib.AppTestCommon;
 import android.test.lib.TestUtils;
 import android.test.productsharedlib.ProductSharedLib;
 import android.test.systemextsharedlib.SystemExtSharedLib;
 import android.test.systemsharedlib.SystemSharedLib;
 import android.test.vendorsharedlib.VendorSharedLib;
+
 import androidx.test.filters.MediumTest;
-import androidx.test.runner.AndroidJUnit4;
+
 import org.junit.Test;
-import org.junit.runner.RunWith;
 
 @MediumTest
-@RunWith(AndroidJUnit4.class)
-public class DataAppTest {
+public class DataAppTest extends AppTestCommon {
+    @Override
+    public AppLocation getAppLocation() {
+        return AppLocation.DATA;
+    }
+
     @Test
     public void testLoadExtendedPublicLibraries() {
         System.loadLibrary("system_extpub.oem1");
@@ -64,12 +69,15 @@ public class DataAppTest {
     public void testLoadPrivateLibrariesViaSystemSharedLib() {
         // TODO(b/237577392): Loading a private native system library via a shared system library
         // ought to work.
-        // SystemSharedLib.loadLibrary("system_private2");
-        // SystemSharedLib.loadLibrary("systemext_private2");
+        TestUtils.assertLibraryInaccessible(() -> SystemSharedLib.loadLibrary("system_private2"));
+        TestUtils.assertLibraryInaccessible(
+                () -> SystemSharedLib.loadLibrary("systemext_private2"));
+
         if (!TestUtils.skipPublicProductLibTests()) {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemSharedLib.loadLibrary("product_private2"));
         }
+
         TestUtils.assertLibraryInaccessible(() -> SystemSharedLib.loadLibrary("vendor_private2"));
     }
 
@@ -77,12 +85,16 @@ public class DataAppTest {
     public void testLoadPrivateLibrariesViaSystemExtSharedLib() {
         // TODO(b/237577392): Loading a private native system library via a shared system library
         // ought to work.
-        // SystemExtSharedLib.loadLibrary("system_private3");
-        // SystemExtSharedLib.loadLibrary("systemext_private3");
+        TestUtils.assertLibraryInaccessible(
+                () -> SystemExtSharedLib.loadLibrary("system_private3"));
+        TestUtils.assertLibraryInaccessible(
+                () -> SystemExtSharedLib.loadLibrary("systemext_private3"));
+
         if (!TestUtils.skipPublicProductLibTests()) {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemExtSharedLib.loadLibrary("product_private3"));
         }
+
         TestUtils.assertLibraryInaccessible(
                 () -> SystemExtSharedLib.loadLibrary("vendor_private3"));
     }
@@ -92,9 +104,11 @@ public class DataAppTest {
         TestUtils.assertLibraryInaccessible(() -> ProductSharedLib.loadLibrary("system_private4"));
         TestUtils.assertLibraryInaccessible(
                 () -> ProductSharedLib.loadLibrary("systemext_private4"));
+
         if (!TestUtils.skipPublicProductLibTests()) {
             ProductSharedLib.loadLibrary("product_private4");
         }
+
         TestUtils.assertLibraryInaccessible(() -> ProductSharedLib.loadLibrary("vendor_private4"));
     }
 
@@ -103,10 +117,12 @@ public class DataAppTest {
         TestUtils.assertLibraryInaccessible(() -> VendorSharedLib.loadLibrary("system_private5"));
         TestUtils.assertLibraryInaccessible(
                 () -> VendorSharedLib.loadLibrary("systemext_private5"));
+
         if (!TestUtils.skipPublicProductLibTests()) {
             TestUtils.assertLibraryInaccessible(
                     () -> VendorSharedLib.loadLibrary("product_private5"));
         }
+
         VendorSharedLib.loadLibrary("vendor_private5");
     }
 

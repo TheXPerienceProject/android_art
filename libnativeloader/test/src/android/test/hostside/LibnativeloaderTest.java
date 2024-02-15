@@ -281,7 +281,7 @@ public class LibnativeloaderTest extends BaseHostJUnit4Test {
             //
             // Remember to update testPrivateLibsExist in TestUtils.java when
             // the number of libraries changes.
-            for (int i = 1; i <= 6; ++i) {
+            for (int i = 1; i <= 10; ++i) {
                 pushNativeTestLib(libApk, "libsystem_testlib.so",
                         "/system/${LIB}/libsystem_private" + i + ".so");
                 pushNativeTestLib(libApk, "libsystem_testlib.so",
