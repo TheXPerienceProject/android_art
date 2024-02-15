@@ -218,9 +218,10 @@ known_failing_tests = frozenset([
   "2262-default-conflict-methods",
 ])
 
-# These tests are new and have not had enough post-submit runs to meet
-# pre-submit SLOs. Monitor their post-submit runs before removing them
-# from this set (in order to promote them to presubmits).
+# These ART run-tests are new and have not had enough post-submit runs
+# to meet pre-submit SLOs. Monitor their post-submit runs before
+# removing them from this set (in order to promote them to
+# presubmits).
 postsubmit_only_tests = frozenset([
   "851-null-instanceof",
   "853-checker-inlining",
@@ -268,11 +269,33 @@ art_gtest_eng_only_module_names = [
 # All supported ART gtests.
 art_gtest_module_names = sorted(art_gtest_user_module_names + art_gtest_eng_only_module_names)
 
+# These ART gtests are new and have not had enough post-submit runs
+# to meet pre-submit SLOs. Monitor their post-submit runs before
+# removing them from this set (in order to promote them to
+# presubmits).
+art_gtest_postsubmit_only_module_names = [
+  "art_standalone_dexopt_chroot_setup_tests",
+]
+
 # ART gtests supported in MTS that do not need root access to the device.
 art_gtest_mts_user_module_names = copy.copy(art_gtest_user_module_names)
 
+# ART gtests supported in presubmits.
+art_gtest_presubmit_module_names = [t for t in art_gtest_module_names
+                                    if t not in art_gtest_postsubmit_only_module_names]
+
 # ART gtests supported in Mainline presubmits.
-art_gtests_mainline_presubmit_module_names = copy.copy(art_gtest_module_names)
+art_gtest_mainline_presubmit_module_names = copy.copy(art_gtest_presubmit_module_names)
+
+# ART gtests supported in postsubmits.
+unknown_art_gtest_postsubmit_only_module_names = [t for t in art_gtest_postsubmit_only_module_names
+                                                  if t not in art_gtest_module_names]
+if unknown_art_gtest_postsubmit_only_module_names:
+  logging.error(textwrap.dedent("""\
+  The following `art_gtest_postsubmit_only_module_names` elements are not part of
+  `art_gtest_module_names`: """) + str(unknown_art_gtest_postsubmit_only_module_names))
+  sys.exit(1)
+art_gtest_postsubmit_module_names = copy.copy(art_gtest_postsubmit_only_module_names)
 
 # Tests exhibiting a flaky behavior, currently exluded from MTS for
 # the stake of stability / confidence (b/209958457).
@@ -637,7 +660,7 @@ class Generator:
     mainline_presubmit_apex_suffix = "[com.google.android.art.apex]"
     mainline_other_presubmit_tests = []
     mainline_presubmit_tests = (mainline_other_presubmit_tests + presubmit_run_test_module_names +
-                                art_gtests_mainline_presubmit_module_names)
+                                art_gtest_mainline_presubmit_module_names)
     mainline_presubmit_tests_dict = [
         ({"name": t + mainline_presubmit_apex_suffix,
           "options": [
@@ -662,13 +685,13 @@ class Generator:
         "art_standalone_dexpreopt_tests",
     ]
     presubmit_tests = (other_presubmit_tests + presubmit_run_test_module_names +
-                       art_gtest_module_names)
+                       art_gtest_presubmit_module_names)
     presubmit_tests_dict = [{"name": t} for t in presubmit_tests]
     hwasan_presubmit_tests_dict = [{"name": t} for t in presubmit_tests
                                    if t not in known_failing_on_hwasan_tests]
 
     # Postsubmits.
-    postsubmit_tests = postsubmit_run_test_module_names
+    postsubmit_tests = postsubmit_run_test_module_names + art_gtest_postsubmit_module_names
     postsubmit_tests_dict = [{"name": t} for t in postsubmit_tests]
 
     # Use an `OrderedDict` container to preserve the order in which items are inserted.
@@ -985,19 +1008,28 @@ class Generator:
     expected_succeeding_tests_percentage = int(
         num_expected_succeeding_tests * 100 / len(run_tests))
 
-    mainline_presubmit_gtests_percentage = int(
-        len(art_gtests_mainline_presubmit_module_names) * 100 / len(art_gtest_module_names))
+    num_gtests = len(art_gtest_module_names)
+
+    num_presubmit_gtests = len(art_gtest_presubmit_module_names)
+    presubmit_gtests_percentage = int(num_presubmit_gtests * 100 / num_gtests)
+
+    num_mainline_presubmit_gtests = len(art_gtest_mainline_presubmit_module_names)
+    mainline_presubmit_gtests_percentage = int(num_mainline_presubmit_gtests * 100 / num_gtests)
+
+    num_postsubmit_gtests = len(art_gtest_postsubmit_module_names)
+    postsubmit_gtests_percentage = int(num_postsubmit_gtests * 100 / num_gtests)
 
     print(f"Generated TEST_MAPPING entries for {num_expected_succeeding_tests} ART run-tests out"
           f" of {len(run_tests)} ({expected_succeeding_tests_percentage}%):")
     for (num_tests, test_kind, tests_percentage, test_group_name) in [
         (num_mainline_presubmit_run_tests, "ART run-tests", mainline_presubmit_run_tests_percentage,
          "mainline-presubmit"),
-        (len(art_gtests_mainline_presubmit_module_names), "ART gtests",
-         mainline_presubmit_gtests_percentage, "mainline-presubmit"),
         (num_presubmit_run_tests, "ART run-tests", presubmit_run_tests_percentage, "presubmit"),
         (num_postsubmit_run_tests, "ART run-tests", postsubmit_run_tests_percentage, "postsubmit"),
-        (len(art_gtest_module_names), "ART gtests", 100, "presubmit"),
+        (num_mainline_presubmit_gtests, "ART gtests", mainline_presubmit_gtests_percentage,
+         "mainline-presubmit"),
+        (num_presubmit_gtests, "ART gtests", presubmit_gtests_percentage, "presubmit"),
+        (num_postsubmit_gtests, "ART gtests", postsubmit_gtests_percentage, "presubmit"),
     ]:
       print(
           f"  {num_tests:3d} {test_kind} ({tests_percentage}%) in `{test_group_name}` test group.")

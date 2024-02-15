@@ -4269,6 +4269,9 @@
     },
     {
       "name": "art-run-test-853-checker-inlining"
+    },
+    {
+      "name": "art_standalone_dexopt_chroot_setup_tests"
     }
   ]
 }
