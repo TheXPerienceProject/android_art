@@ -23,6 +23,7 @@
 #include <dirent.h>
 #include <dlfcn.h>
 
+#include <optional>
 #include <regex>
 #include <string>
 #include <vector>
@@ -356,12 +357,12 @@ Result<NativeLoaderNamespace*> LibraryNamespaces::Create(JNIEnv* env,
   }
 
   for (const std::string& each_jar_path : android::base::Split(dex_path, ":")) {
-    Result<std::string> apex_ns_name = FindApexNamespaceName(each_jar_path);
-    if (apex_ns_name.ok()) {
-      const std::string& jni_libs = apex_jni_libraries(*apex_ns_name);
+    std::optional<std::string> apex_ns_name = FindApexNamespaceName(each_jar_path);
+    if (apex_ns_name.has_value()) {
+      const std::string& jni_libs = apex_jni_libraries(apex_ns_name.value());
       if (jni_libs != "") {
         Result<NativeLoaderNamespace> apex_ns =
-            NativeLoaderNamespace::GetExportedNamespace(*apex_ns_name, is_bridged);
+            NativeLoaderNamespace::GetExportedNamespace(apex_ns_name.value(), is_bridged);
         if (apex_ns.ok()) {
           linked = app_ns->Link(&apex_ns.value(), jni_libs);
           if (!linked.ok()) {
@@ -444,7 +445,7 @@ NativeLoaderNamespace* LibraryNamespaces::FindParentNamespaceByClassLoader(JNIEn
   return nullptr;
 }
 
-base::Result<std::string> FindApexNamespaceName(const std::string& location) {
+std::optional<std::string> FindApexNamespaceName(const std::string& location) {
   // Lots of implicit assumptions here: we expect `location` to be of the form:
   // /apex/modulename/...
   //
@@ -458,7 +459,7 @@ base::Result<std::string> FindApexNamespaceName(const std::string& location) {
     std::replace(name.begin(), name.end(), '.', '_');
     return name;
   }
-  return base::Error();
+  return std::nullopt;
 }
 
 }  // namespace android::nativeloader
