@@ -2381,7 +2381,7 @@ void Runtime::RegisterRuntimeNativeMethods(JNIEnv* env) {
   register_dalvik_system_DexFile(env);
   register_dalvik_system_BaseDexClassLoader(env);
   register_dalvik_system_VMDebug(env);
-  register_dalvik_system_VMRuntime(env);
+  real_register_dalvik_system_VMRuntime(env);
   register_dalvik_system_VMStack(env);
   register_dalvik_system_ZygoteHooks(env);
   register_java_lang_Class(env);
