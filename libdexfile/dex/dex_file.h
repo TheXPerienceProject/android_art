@@ -935,7 +935,17 @@ class DexFile {
   // This is different to the "data section" in the standard dex header.
   ArrayRef<const uint8_t> const data_;
 
-  // Typically the dex file name when available, alternatively some identifying string.
+  // The full absolute path to the dex file, if it was loaded from disk.
+  //
+  // Can also be a path to a multidex container (typically apk), followed by
+  // DexFileLoader.kMultiDexSeparator (i.e. '!') and the file inside the
+  // container.
+  //
+  // On host this may not be an absolute path.
+  //
+  // On device libnativeloader uses this to determine the location of the java
+  // package or shared library, which decides where to load native libraries
+  // from.
   //
   // The ClassLinker will use this to match DexFiles the boot class
   // path to DexCache::GetLocation when loading from an image.
