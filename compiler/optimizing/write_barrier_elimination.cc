@@ -45,7 +45,7 @@ class WBEVisitor final : public HGraphVisitor {
     DCHECK(!instruction->GetSideEffects().Includes(SideEffects::CanTriggerGC()));
 
     if (instruction->GetFieldType() != DataType::Type::kReference ||
-        instruction->GetValue()->IsNullConstant()) {
+        HuntForOriginalReference(instruction->GetValue())->IsNullConstant()) {
       instruction->SetWriteBarrierKind(WriteBarrierKind::kDontEmit);
       return;
     }
@@ -72,7 +72,7 @@ class WBEVisitor final : public HGraphVisitor {
     DCHECK(!instruction->GetSideEffects().Includes(SideEffects::CanTriggerGC()));
 
     if (instruction->GetFieldType() != DataType::Type::kReference ||
-        instruction->GetValue()->IsNullConstant()) {
+        HuntForOriginalReference(instruction->GetValue())->IsNullConstant()) {
       instruction->SetWriteBarrierKind(WriteBarrierKind::kDontEmit);
       return;
     }
@@ -100,7 +100,7 @@ class WBEVisitor final : public HGraphVisitor {
     }
 
     if (instruction->GetComponentType() != DataType::Type::kReference ||
-        instruction->GetValue()->IsNullConstant()) {
+        HuntForOriginalReference(instruction->GetValue())->IsNullConstant()) {
       instruction->SetWriteBarrierKind(WriteBarrierKind::kDontEmit);
       return;
     }
