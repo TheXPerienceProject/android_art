@@ -78,9 +78,6 @@ class IfTable;
 class Method;
 template <typename T> struct PACKED(8) DexCachePair;
 
-using StringDexCachePair = DexCachePair<String>;
-using StringDexCacheType = std::atomic<StringDexCachePair>;
-
 // C++ mirror of java.lang.Class
 class EXPORT MANAGED Class final : public Object {
  public:
