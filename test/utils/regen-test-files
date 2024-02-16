@@ -327,9 +327,23 @@ flaky_tests_excluded_from_mts = {
     ]
 }
 
+# Tests excluded from all test mapping test groups.
+#
+# Example of admissible values in this dictionary:
+#
+#   "art_standalone_cmdline_tests": ["CmdlineParserTest#TestCompilerOption"],
+#   "art_standalone_dexopt_chroot_setup_tests": ["DexoptChrootSetupTest#HelloWorld"],
+#
+failing_tests_excluded_from_test_mapping = {
+  # Empty.
+}
+
 # Tests failing because of linking issues, currently exluded from MTS
 # and Mainline Presubmits to minimize noise in continuous runs while
 # we investigate.
+#
+# Example of admissible values in this dictionary: same as for
+# `failing_tests_excluded_from_test_mapping` (see above).
 #
 # TODO(b/247108425): Address the linking issues and re-enable these
 # tests.
@@ -337,6 +351,11 @@ failing_tests_excluded_from_mts_and_mainline_presubmits = {
     "art_standalone_compiler_tests": ["JniCompilerTest*"],
     "art_standalone_libartpalette_tests": ["PaletteClientJniTest*"],
 }
+
+failing_tests_excluded_from_mainline_presubmits = (
+  failing_tests_excluded_from_test_mapping |
+  failing_tests_excluded_from_mts_and_mainline_presubmits
+)
 
 # Is `run_test` a Checker test (i.e. a test containing Checker
 # assertions)?
@@ -652,25 +671,34 @@ class Generator:
                                         for t in art_run_tests
                                         if t in postsubmit_only_tests]
 
+    def gen_tests_dict(tests, excluded_test_cases = {}, excluded_test_modules = [], suffix = ""):
+      return [
+          ({"name": t + suffix,
+            "options": [
+                {"exclude-filter": e}
+                for e in excluded_test_cases[t]
+            ]}
+           if t in excluded_test_cases
+           else {"name": t + suffix})
+          for t in tests
+          if t not in excluded_test_modules
+      ]
+
     # Mainline presubmits.
     mainline_presubmit_apex_suffix = "[com.google.android.art.apex]"
     mainline_other_presubmit_tests = []
     mainline_presubmit_tests = (mainline_other_presubmit_tests + presubmit_run_test_module_names +
                                 art_gtest_mainline_presubmit_module_names)
-    mainline_presubmit_tests_dict = [
-        ({"name": t + mainline_presubmit_apex_suffix,
-          "options": [
-              {"exclude-filter": e}
-              for e in failing_tests_excluded_from_mts_and_mainline_presubmits[t]
-          ]}
-         if t in failing_tests_excluded_from_mts_and_mainline_presubmits
-         else {"name": t + mainline_presubmit_apex_suffix})
-        for t in mainline_presubmit_tests
-    ]
+    mainline_presubmit_tests_dict = \
+      gen_tests_dict(mainline_presubmit_tests,
+                     failing_tests_excluded_from_mainline_presubmits,
+                     [],
+                     mainline_presubmit_apex_suffix)
 
     # Android Virtualization Framework presubmits
     avf_presubmit_tests = ["ComposHostTestCases"]
-    avf_presubmit_tests_dict = [{"name": t} for t in avf_presubmit_tests]
+    avf_presubmit_tests_dict = gen_tests_dict(avf_presubmit_tests,
+                                              failing_tests_excluded_from_test_mapping)
 
     # Presubmits.
     other_presubmit_tests = [
@@ -682,13 +710,17 @@ class Generator:
     ]
     presubmit_tests = (other_presubmit_tests + presubmit_run_test_module_names +
                        art_gtest_presubmit_module_names)
-    presubmit_tests_dict = [{"name": t} for t in presubmit_tests]
-    hwasan_presubmit_tests_dict = [{"name": t} for t in presubmit_tests
-                                   if t not in known_failing_on_hwasan_tests]
+    presubmit_tests_dict = gen_tests_dict(presubmit_tests,
+                                          failing_tests_excluded_from_test_mapping)
+    hwasan_presubmit_tests_dict = gen_tests_dict(presubmit_tests,
+                                                 failing_tests_excluded_from_test_mapping,
+                                                 known_failing_on_hwasan_tests)
 
     # Postsubmits.
     postsubmit_tests = postsubmit_run_test_module_names + art_gtest_postsubmit_module_names
     postsubmit_tests_dict = [{"name": t} for t in postsubmit_tests]
+    postsubmit_tests_dict = gen_tests_dict(postsubmit_tests,
+                                           failing_tests_excluded_from_test_mapping)
 
     # Use an `OrderedDict` container to preserve the order in which items are inserted.
     # Do not produce an entry for a test group if it is empty.
