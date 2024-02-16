@@ -500,7 +500,7 @@ class Riscv64Assembler final : public Assembler {
   void Sh3AddUw(XRegister rd, XRegister rs1, XRegister rs2);
   void SlliUw(XRegister rd, XRegister rs1, int32_t shamt);
 
-  // "Zbb" Standard Extension, opcode = 0x13, 0x1b or 0x33, funct3 and funct7 varies.
+  // "Zbb" Standard Extension, opcode = 0x13, 0x1b, 0x33 or 0x3b, funct3 and funct7 varies.
   // Note: 32-bit sext.b, sext.h and zext.h from the Zbb extension are explicitly
   // prefixed with "Zbb" to differentiate them from the utility macros.
   void Andn(XRegister rd, XRegister rs1, XRegister rs2);
