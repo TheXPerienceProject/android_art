@@ -916,6 +916,18 @@ void Riscv64Assembler::Rev8(XRegister rd, XRegister rs1) {
   EmitR(0x35, 0x18, rs1, 0x5, rd, 0x13);
 }
 
+void Riscv64Assembler::ZbbSextB(XRegister rd, XRegister rs1) {
+  EmitR(0x30, 0x4, rs1, 0x1, rd, 0x13);
+}
+
+void Riscv64Assembler::ZbbSextH(XRegister rd, XRegister rs1) {
+  EmitR(0x30, 0x5, rs1, 0x1, rd, 0x13);
+}
+
+void Riscv64Assembler::ZbbZextH(XRegister rd, XRegister rs1) {
+  EmitR(0x4, 0x0, rs1, 0x4, rd, 0x3b);
+}
+
 /////////////////////////////// RV64 "Zbb" Instructions  END //////////////////////////////
 
 /////////////////////////////// RVV "VSet" Instructions  START ////////////////////////////
