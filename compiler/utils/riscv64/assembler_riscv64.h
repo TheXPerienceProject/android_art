@@ -500,9 +500,9 @@ class Riscv64Assembler final : public Assembler {
   void Sh3AddUw(XRegister rd, XRegister rs1, XRegister rs2);
   void SlliUw(XRegister rd, XRegister rs1, int32_t shamt);
 
-  // "Zbb" Standard Extension, opcode = 0x13, 0x1b or 0x33, funct3 and funct7 varies.
-  // Note: We do not support 32-bit sext.b, sext.h and zext.h from the Zbb extension.
-  // (Neither does the clang-r498229's assembler which we currently test against.)
+  // "Zbb" Standard Extension, opcode = 0x13, 0x1b, 0x33 or 0x3b, funct3 and funct7 varies.
+  // Note: 32-bit sext.b, sext.h and zext.h from the Zbb extension are explicitly
+  // prefixed with "Zbb" to differentiate them from the utility macros.
   void Andn(XRegister rd, XRegister rs1, XRegister rs2);
   void Orn(XRegister rd, XRegister rs1, XRegister rs2);
   void Xnor(XRegister rd, XRegister rs1, XRegister rs2);
@@ -524,6 +524,9 @@ class Riscv64Assembler final : public Assembler {
   void Roriw(XRegister rd, XRegister rs1, int32_t shamt);
   void OrcB(XRegister rd, XRegister rs1);
   void Rev8(XRegister rd, XRegister rs1);
+  void ZbbSextB(XRegister rd, XRegister rs1);
+  void ZbbSextH(XRegister rd, XRegister rs1);
+  void ZbbZextH(XRegister rd, XRegister rs1);
 
   ////////////////////////////// RISC-V Vector Instructions  START ///////////////////////////////
   enum class LengthMultiplier : uint32_t {
