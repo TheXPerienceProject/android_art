@@ -2991,6 +2991,18 @@ TEST_F(AssemblerRISCV64Test, Rev8) {
   DriverStr(RepeatRR(&Riscv64Assembler::Rev8, "rev8 {reg1}, {reg2}"), "Rev8");
 }
 
+TEST_F(AssemblerRISCV64Test, ZbbSextB) {
+  DriverStr(RepeatRR(&Riscv64Assembler::ZbbSextB, "sext.b {reg1}, {reg2}"), "ZbbSextB");
+}
+
+TEST_F(AssemblerRISCV64Test, ZbbSextH) {
+  DriverStr(RepeatRR(&Riscv64Assembler::ZbbSextH, "sext.h {reg1}, {reg2}"), "ZbbSextH");
+}
+
+TEST_F(AssemblerRISCV64Test, ZbbZextH) {
+  DriverStr(RepeatRR(&Riscv64Assembler::ZbbZextH, "zext.h {reg1}, {reg2}"), "ZbbZextH");
+}
+
 // Vector Instructions
 
 TEST_F(AssemblerRISCV64Test, VSetvl) {
