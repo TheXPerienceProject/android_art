@@ -2356,14 +2356,12 @@ void InstructionCodeGeneratorARM64::HandleFieldSet(HInstruction* instruction,
       codegen_->StoreNeedsWriteBarrier(field_type, instruction->InputAt(1), write_barrier_kind);
 
   if (needs_write_barrier) {
-    // TODO(solanes): If we do a `HuntForOriginalReference` call to the value in WBE, we will be
-    // able to DCHECK that the write_barrier_kind is kBeingReliedOn when Register(value).IsZero(),
-    // and we could remove the `!Register(value).IsZero()` from below.
-    codegen_->MaybeMarkGCCard(obj,
-                              Register(value),
-                              value_can_be_null &&
-                                  write_barrier_kind == WriteBarrierKind::kEmitNotBeingReliedOn &&
-                                  !Register(value).IsZero());
+    DCHECK_IMPLIES(Register(value).IsZero(),
+                   write_barrier_kind == WriteBarrierKind::kEmitBeingReliedOn);
+    codegen_->MaybeMarkGCCard(
+        obj,
+        Register(value),
+        value_can_be_null && write_barrier_kind == WriteBarrierKind::kEmitNotBeingReliedOn);
   } else if (codegen_->ShouldCheckGCCard(field_type, instruction->InputAt(1), write_barrier_kind)) {
     codegen_->CheckGCCardIsValid(obj);
   }
@@ -3052,9 +3050,8 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
     // write barrier when its value is null (without an extra cbz since we already checked if the
     // value is null for the type check). This will be done as a follow-up since it is a runtime
     // optimization that needs extra care.
-    // TODO(solanes): We can also skip it for known zero values which are not relied on i.e. when
-    // we have the Zero register as the value. If we do `HuntForOriginalReference` on the value
-    // we'll resolve this.
+    DCHECK_IMPLIES(Register(value).IsZero(),
+                   write_barrier_kind == WriteBarrierKind::kEmitBeingReliedOn);
     codegen_->MarkGCCard(array);
 
     UseScratchRegisterScope temps(masm);
