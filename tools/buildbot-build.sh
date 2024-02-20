@@ -175,6 +175,8 @@ if [[ $build_target == "yes" ]]; then
   make_command+=" deapexer"
   # Needed to generate the primary boot image for testing.
   make_command+=" generate-boot-image"
+  # Data file needed by the `ArtExecTest.SetTaskProfiles` test.
+  make_command+=" task_profiles.json"
   # Build/install the required APEXes.
   make_command+=" ${apexes[*]}"
   make_command+=" ${specific_targets}"
