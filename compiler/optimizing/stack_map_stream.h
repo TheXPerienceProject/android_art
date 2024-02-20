@@ -110,7 +110,7 @@ class StackMapStream : public DeletableArenaObject<kArenaAllocStackMapStream> {
 
   // Invokes the callback with pointer of each BitTableBuilder field.
   template<typename Callback>
-  void ForEachBitTable(Callback callback) {
+  void ForEachBitTable(Callback&& callback) {
     size_t index = 0;
     callback(index++, &stack_maps_);
     callback(index++, &register_masks_);

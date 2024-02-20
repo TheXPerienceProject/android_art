@@ -4253,6 +4253,9 @@
   ],
   "postsubmit": [
     {
+      "name": "art-run-test-2247-checker-write-barrier-elimination"
+    },
+    {
       "name": "art-run-test-2266-checker-remove-empty-ifs"
     },
     {

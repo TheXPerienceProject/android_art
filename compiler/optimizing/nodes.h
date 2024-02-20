@@ -2448,18 +2448,26 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
   bool IsRemovable() const {
     return
         !DoesAnyWrite() &&
-        !CanThrow() &&
+        // TODO(solanes): Merge calls from IsSuspendCheck to IsControlFlow into one that doesn't
+        // do virtual dispatching.
         !IsSuspendCheck() &&
-        !IsControlFlow() &&
         !IsNop() &&
         !IsParameterValue() &&
         // If we added an explicit barrier then we should keep it.
         !IsMemoryBarrier() &&
-        !IsConstructorFence();
+        !IsConstructorFence() &&
+        !IsControlFlow() &&
+        !CanThrow();
   }
 
   bool IsDeadAndRemovable() const {
-    return IsRemovable() && !HasUses();
+    return !HasUses() && IsRemovable();
+  }
+
+  bool IsPhiDeadAndRemovable() const {
+    DCHECK(IsPhi());
+    DCHECK(IsRemovable()) << " phis are always removable";
+    return !HasUses();
   }
 
   // Does this instruction dominate `other_instruction`?
@@ -8564,6 +8572,9 @@ class HGraphVisitor : public ValueObject {
 #undef DECLARE_VISIT_INSTRUCTION
 
  protected:
+  void VisitPhis(HBasicBlock* block);
+  void VisitNonPhiInstructions(HBasicBlock* block);
+
   OptimizingCompilerStats* stats_;
 
  private:

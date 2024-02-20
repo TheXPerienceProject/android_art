@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include "profiling_info.h"
+
 #include <gtest/gtest.h>
 #include <stdio.h>
 

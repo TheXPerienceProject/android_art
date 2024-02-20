@@ -1834,8 +1834,8 @@ void LSEVisitor::VisitBasicBlock(HBasicBlock* block) {
   } else {
     MergePredecessorRecords(block);
   }
-  // Visit instructions.
-  HGraphVisitor::VisitBasicBlock(block);
+  // Visit non-Phi instructions.
+  VisitNonPhiInstructions(block);
 }
 
 bool LSEVisitor::MayAliasOnBackEdge(HBasicBlock* loop_header, size_t idx1, size_t idx2) const {
@@ -2727,7 +2727,7 @@ struct ScopedRestoreHeapValues {
   }
 
   template<typename Func>
-  void ForEachRecord(Func func) {
+  void ForEachRecord(Func&& func) {
     for (size_t blk_id : Range(to_restore_.size())) {
       for (size_t heap_loc : Range(to_restore_[blk_id].size())) {
         LSEVisitor::ValueRecord* vr = &to_restore_[blk_id][heap_loc];
