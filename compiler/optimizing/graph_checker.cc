@@ -1291,7 +1291,7 @@ bool IsRemovedWriteBarrier(DataType::Type type,
                            HInstruction* value) {
   return write_barrier_kind == WriteBarrierKind::kDontEmit &&
          type == DataType::Type::kReference &&
-         !value->IsNullConstant();
+         !HuntForOriginalReference(value)->IsNullConstant();
 }
 
 void GraphChecker::VisitArraySet(HArraySet* instruction) {

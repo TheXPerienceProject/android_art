@@ -2518,8 +2518,7 @@ void InstructionCodeGeneratorRISCV64::HandleFieldSet(HInstruction* instruction,
       codegen_->StoreNeedsWriteBarrier(type, instruction->InputAt(1), write_barrier_kind);
   if (needs_write_barrier) {
     if (value.IsConstant()) {
-      // TODO(solanes): If we do a `HuntForOriginalReference` call to the value in WBE, we will be
-      // able to DCHECK that the write_barrier_kind is kBeingReliedOn.
+      DCHECK_EQ(write_barrier_kind, WriteBarrierKind::kEmitBeingReliedOn);
       codegen_->MarkGCCard(obj);
     } else {
       codegen_->MaybeMarkGCCard(
@@ -2947,9 +2946,8 @@ void InstructionCodeGeneratorRISCV64::VisitArraySet(HArraySet* instruction) {
 
   if (needs_write_barrier) {
     DCHECK_EQ(value_type, DataType::Type::kReference);
+    DCHECK_IMPLIES(value.IsConstant(), value.GetConstant()->IsArithmeticZero());
     const bool storing_constant_zero = value.IsConstant();
-    // TODO(solanes): If we do a `HuntForOriginalReference` call to the value in WBE, we will be
-    // able to DCHECK that the write_barrier_kind is kBeingReliedOn when we have a constant.
     if (!storing_constant_zero) {
       Riscv64Label do_store;
 
@@ -3010,11 +3008,13 @@ void InstructionCodeGeneratorRISCV64::VisitArraySet(HArraySet* instruction) {
       }
     }
 
-    DCHECK_NE(instruction->GetWriteBarrierKind(), WriteBarrierKind::kDontEmit);
+    DCHECK_NE(write_barrier_kind, WriteBarrierKind::kDontEmit);
     // TODO(solanes): The WriteBarrierKind::kEmitNotBeingReliedOn case should be able to skip
     // this write barrier when its value is null (without an extra Beqz since we already checked
     // if the value is null for the type check). This will be done as a follow-up since it is a
     // runtime optimization that needs extra care.
+    DCHECK_IMPLIES(storing_constant_zero,
+                   write_barrier_kind == WriteBarrierKind::kEmitBeingReliedOn);
     codegen_->MarkGCCard(array);
   } else if (codegen_->ShouldCheckGCCard(value_type, instruction->GetValue(), write_barrier_kind)) {
     codegen_->CheckGCCardIsValid(array);
