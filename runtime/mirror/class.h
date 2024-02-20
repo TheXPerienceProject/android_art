@@ -76,7 +76,7 @@ class DexCache;
 class Field;
 class IfTable;
 class Method;
-template <typename T> struct PACKED(8) DexCachePair;
+template <typename T> struct alignas(8) DexCachePair;
 
 // C++ mirror of java.lang.Class
 class EXPORT MANAGED Class final : public Object {
