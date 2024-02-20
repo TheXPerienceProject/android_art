@@ -33,6 +33,7 @@
 #include "intrinsics.h"
 #include "intrinsics_utils.h"
 #include "jit/jit.h"
+#include "jit/profiling_info.h"
 #include "mirror/dex_cache.h"
 #include "oat/oat_file.h"
 #include "optimizing_compiler_stats.h"

@@ -19,6 +19,7 @@ package com.android.server.art {
     method @NonNull public com.android.server.art.model.DexoptStatus getDexoptStatus(@NonNull com.android.server.pm.PackageManagerLocal.FilteredSnapshot, @NonNull String);
     method @NonNull public com.android.server.art.model.DexoptStatus getDexoptStatus(@NonNull com.android.server.pm.PackageManagerLocal.FilteredSnapshot, @NonNull String, int);
     method public int handleShellCommand(@NonNull android.os.Binder, @NonNull android.os.ParcelFileDescriptor, @NonNull android.os.ParcelFileDescriptor, @NonNull android.os.ParcelFileDescriptor, @NonNull String[]);
+    method public void onApexStaged(@NonNull String[]);
     method public void onBoot(@NonNull String, @Nullable java.util.concurrent.Executor, @Nullable java.util.function.Consumer<com.android.server.art.model.OperationProgress>);
     method public void printShellCommandHelp(@NonNull java.io.PrintWriter);
     method public void removeDexoptDoneCallback(@NonNull com.android.server.art.ArtManagerLocal.DexoptDoneCallback);

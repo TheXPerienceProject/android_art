@@ -853,6 +853,25 @@ public final class ArtManagerLocal {
     }
 
     /**
+     * Notifies ART Service that there are apexes staged for installation on next reboot (see
+     * <a href="https://source.android.com/docs/core/ota/apex#apex-manager">the update sequence of
+     * an APEX</a>). ART Service may use this to schedule a pre-reboot dexopt job. This might change
+     * in the future.
+     *
+     * This immediately returns after scheduling the job and doesn't wait for the job to run.
+     *
+     * @param stagedApexModuleNames The <b>module names</b> of the staged apexes, corresponding to
+     *         the directory beneath /apex, e.g., {@code com.android.art} (not the <b>package
+     *         names</b>, e.g., {@code com.google.android.art}).
+     */
+    @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void onApexStaged(@NonNull String[] stagedApexModuleNames) {
+        // TODO(b/311377497): Check system requirements.
+        mInjector.getPreRebootDexoptJob().schedule();
+    }
+
+    /**
      * Dumps the dexopt state of all packages in text format for debugging purposes.
      *
      * There are no stability guarantees for the output format.
@@ -1022,6 +1041,17 @@ public final class ArtManagerLocal {
     @NonNull
     BackgroundDexoptJob getBackgroundDexoptJob() {
         return mInjector.getBackgroundDexoptJob();
+    }
+
+    /**
+     * Should be used by {@link BackgroundDexoptJobService} ONLY.
+     *
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @NonNull
+    PreRebootDexoptJob getPreRebootDexoptJob() {
+        return mInjector.getPreRebootDexoptJob();
     }
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -1354,6 +1384,7 @@ public final class ArtManagerLocal {
         @Nullable private final PackageManagerLocal mPackageManagerLocal;
         @Nullable private final Config mConfig;
         @Nullable private BackgroundDexoptJob mBgDexoptJob = null;
+        @Nullable private PreRebootDexoptJob mPrDexoptJob = null;
 
         /** For compatibility with S and T. New code should not use this. */
         @Deprecated
@@ -1439,6 +1470,15 @@ public final class ArtManagerLocal {
                 mBgDexoptJob = new BackgroundDexoptJob(mContext, mArtManagerLocal, mConfig);
             }
             return mBgDexoptJob;
+        }
+
+        @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        @NonNull
+        public synchronized PreRebootDexoptJob getPreRebootDexoptJob() {
+            if (mPrDexoptJob == null) {
+                mPrDexoptJob = new PreRebootDexoptJob(mContext);
+            }
+            return mPrDexoptJob;
         }
 
         @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)

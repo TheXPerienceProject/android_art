@@ -29,8 +29,8 @@
 #include "gc/collector_type.h"
 #include "gc/space/large_object_space.h"
 #include "hidden_api.h"
-#include "jit/jit.h"
 #include "jit/jit_code_cache.h"
+#include "jit/jit_options.h"
 #include "jit/profile_saver_options.h"
 #include "verifier/verifier_enums.h"
 

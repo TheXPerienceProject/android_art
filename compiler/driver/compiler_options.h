@@ -69,7 +69,7 @@ class CompilerOptions final {
   static constexpr size_t kUnsetInlineMaxCodeUnits = -1;
   // We set a lower inlining threshold for baseline to reduce code size and compilation time. This
   // cannot be changed via flags.
-  static constexpr size_t kBaselineInlineMaxCodeUnits = 8;
+  static constexpr size_t kBaselineInlineMaxCodeUnits = 14;
 
   enum class CompilerType : uint8_t {
     kAotCompiler,             // AOT compiler.

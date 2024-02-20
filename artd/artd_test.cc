@@ -2200,7 +2200,7 @@ TEST_F(ArtdTest, cleanup) {
               },
               {
                   RuntimeArtifactsPath{
-                      .packageName = "com.android.foo", .isa = "arm64", .dexPath = "/a/b/base.apk"},
+                      .packageName = "com.android.foo", .dexPath = "/a/b/base.apk", .isa = "arm64"},
               },
               &aidl_return)
           .isOk());

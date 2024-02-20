@@ -1571,7 +1571,7 @@
     },
     {
       "tests": ["2271-profile-inline-cache"],
-      "variant": "jit-on-first-use",
+      "variant": "jit-on-first-use | debuggable | trace |  stream",
       "description": ["Test relies on profiling done by baseline compiled code. Meanwhile, it",
                       "can't use --baseline because it has a test case checking the behavior when",
                       "a method is optimized compiled."]
