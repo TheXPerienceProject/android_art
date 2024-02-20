@@ -53,7 +53,7 @@ class DexCache;
 class MethodType;
 class String;
 
-template <typename T> struct PACKED(8) DexCachePair {
+template <typename T> struct alignas(8) DexCachePair {
   GcRoot<T> object;
   uint32_t index;
   // The array is initially [ {0,0}, {0,0}, {0,0} ... ]
@@ -90,7 +90,7 @@ template <typename T> struct PACKED(8) DexCachePair {
   T* GetObjectForIndex(uint32_t idx) REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
-template <typename T> struct PACKED(2 * __SIZEOF_POINTER__) NativeDexCachePair {
+template <typename T> struct alignas(2 * __SIZEOF_POINTER__) NativeDexCachePair {
   T* object;
   size_t index;
   // This is similar to DexCachePair except that we're storing a native pointer
