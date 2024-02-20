@@ -283,6 +283,11 @@ class CheckJniAbortCatcher {
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR ARM64"; \
   }
 
+#define TEST_DISABLED_FOR_RISCV64()                       \
+  if (kRuntimeISA == InstructionSet::kRiscv64) {          \
+    GTEST_SKIP() << "WARNING: TEST DISABLED FOR RISCV64"; \
+  }
+
 #define TEST_DISABLED_FOR_X86()                       \
   if (kRuntimeISA == InstructionSet::kX86) {          \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR X86"; \
