@@ -200,7 +200,7 @@ enum class WeakRefAccessState : int32_t {
 // See Thread.tlsPtr_.active_suspend1_barriers below for explanation.
 struct WrappedSuspend1Barrier {
   WrappedSuspend1Barrier() : barrier_(1), next_(nullptr) {}
-  AtomicInteger barrier_;
+  AtomicInteger barrier_;  // Only updated while holding thread_suspend_count_lock_ .
   struct WrappedSuspend1Barrier* next_ GUARDED_BY(Locks::thread_suspend_count_lock_);
 };
 
@@ -300,8 +300,7 @@ class EXPORT Thread {
   void CheckEmptyCheckpointFromWeakRefAccess(BaseMutex* cond_var_mutex);
   void CheckEmptyCheckpointFromMutex();
 
-  static Thread* FromManagedThread(const ScopedObjectAccessAlreadyRunnable& ts,
-                                   ObjPtr<mirror::Object> thread_peer)
+  static Thread* FromManagedThread(Thread* self, ObjPtr<mirror::Object> thread_peer)
       REQUIRES(Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
   static Thread* FromManagedThread(const ScopedObjectAccessAlreadyRunnable& ts, jobject thread)
@@ -1762,7 +1761,14 @@ class EXPORT Thread {
 
   // Remove last-added entry from active_suspend1_barriers.
   // Only makes sense if we're still holding thread_suspend_count_lock_ since insertion.
-  ALWAYS_INLINE void RemoveFirstSuspend1Barrier() REQUIRES(Locks::thread_suspend_count_lock_);
+  // We redundantly pass in the barrier to be removed in order to enable a DCHECK.
+  ALWAYS_INLINE void RemoveFirstSuspend1Barrier(WrappedSuspend1Barrier* suspend1_barrier)
+      REQUIRES(Locks::thread_suspend_count_lock_);
+
+  // Remove the "barrier" from the list no matter where it appears. Called only under exceptional
+  // circumstances. The barrier must be in the list.
+  ALWAYS_INLINE void RemoveSuspend1Barrier(WrappedSuspend1Barrier* suspend1_barrier)
+      REQUIRES(Locks::thread_suspend_count_lock_);
 
   ALWAYS_INLINE bool HasActiveSuspendBarrier() REQUIRES(Locks::thread_suspend_count_lock_);
 
