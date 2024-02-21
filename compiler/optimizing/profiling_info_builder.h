@@ -28,7 +28,7 @@ class HInliner;
 class InlineCache;
 class ProfilingInfo;
 
-class ProfilingInfoBuilder : public HGraphDelegateVisitor {
+class ProfilingInfoBuilder final : public HGraphDelegateVisitor {
  public:
   ProfilingInfoBuilder(HGraph* graph,
                        const CompilerOptions& compiler_options,

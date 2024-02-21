@@ -195,7 +195,7 @@ class HGraphVisualizerDisassembler {
 /**
  * HGraph visitor to generate a file suitable for the c1visualizer tool and IRHydra.
  */
-class HGraphVisualizerPrinter : public HGraphDelegateVisitor {
+class HGraphVisualizerPrinter final : public HGraphDelegateVisitor {
  public:
   HGraphVisualizerPrinter(HGraph* graph,
                           std::ostream& output,
