@@ -111,6 +111,7 @@ elif [[ $action = boot ]]; then
             -nographic \
             -bios fw_jump.elf \
             -kernel uboot.elf \
+            -cpu rv64,v=true,vlen=256,vext_spec=v1.0 \
             -drive file="$ART_TEST_VM_IMG",if=virtio \
             -drive file=user-data.img,format=raw,if=virtio \
             -device virtio-net-device,netdev=usernet \
