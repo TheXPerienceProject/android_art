@@ -531,8 +531,9 @@ static void Unsafe_unpark(JNIEnv* env, jobject, jobject jthread) {
     ThrowIllegalArgumentException("Argument to unpark() was not a Thread");
     return;
   }
-  art::MutexLock mu(soa.Self(), *art::Locks::thread_list_lock_);
-  art::Thread* thread = art::Thread::FromManagedThread(soa, mirror_thread);
+  Thread* self = soa.Self();
+  art::MutexLock mu(self, *art::Locks::thread_list_lock_);
+  art::Thread* thread = art::Thread::FromManagedThread(self, mirror_thread);
   if (thread != nullptr) {
     thread->Unpark();
   } else {
