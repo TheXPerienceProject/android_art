@@ -82,6 +82,8 @@ static bool IsMethodInterpreted(Thread* self,
   StackVisitor::WalkStack(
       [&](const art::StackVisitor* stack_visitor) REQUIRES_SHARED(Locks::mutator_lock_) {
         if (goal == stack_visitor->GetMethod()) {
+          // We don't deoptimize beyond a runtime frame. So if we need the method to be
+          // deoptimizeable we cannot allow the previous frame to be a runtime frame.
           *method_is_interpreted =
               (require_deoptable && prev_was_runtime) || stack_visitor->IsShadowFrame();
           method_found = true;
