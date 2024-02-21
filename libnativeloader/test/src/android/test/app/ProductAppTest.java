@@ -16,8 +16,6 @@
 
 package android.test.app;
 
-import android.os.Build;
-import android.os.SystemProperties;
 import android.test.lib.AppTestCommon;
 import android.test.lib.TestUtils;
 import android.test.productsharedlib.ProductSharedLib;
@@ -36,13 +34,6 @@ public class ProductAppTest extends AppTestCommon {
         return AppLocation.PRODUCT;
     }
 
-    // True if apps in product partitions get shared library namespaces, so we
-    // cannot test that libs in system and system_ext get blocked.
-    private static boolean productAppsAreShared() {
-        return Build.VERSION.SDK_INT <= 34 && // UPSIDE_DOWN_CAKE
-                SystemProperties.get("ro.product.vndk.version").isEmpty();
-    }
-
     @Test
     public void testPrivateLibsExist() {
         TestUtils.testPrivateLibsExist("/product", "product_private");
@@ -53,7 +44,7 @@ public class ProductAppTest extends AppTestCommon {
         System.loadLibrary("system_extpub.oem1");
         System.loadLibrary("system_extpub.oem2");
         System.loadLibrary("system_extpub1.oem1");
-        if (!productAppsAreShared()) {
+        if (!TestUtils.productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible( // Missing <uses-native-library>.
                     () -> System.loadLibrary("system_extpub_nouses.oem2"));
         }
@@ -63,7 +54,7 @@ public class ProductAppTest extends AppTestCommon {
 
     @Test
     public void testLoadPrivateLibraries() {
-        if (!productAppsAreShared()) {
+        if (!TestUtils.productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible(() -> System.loadLibrary("system_private1"));
             TestUtils.assertLibraryInaccessible(() -> System.loadLibrary("systemext_private1"));
         }
@@ -81,13 +72,14 @@ public class ProductAppTest extends AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesViaSystemSharedLib() {
-        // TODO(b/237577392): Loading a private native system library via a shared system library
-        // ought to work.
-        TestUtils.assertLibraryInaccessible(() -> SystemSharedLib.loadLibrary("system_private2"));
-        TestUtils.assertLibraryInaccessible(
-                () -> SystemSharedLib.loadLibrary("systemext_private2"));
+        if (!TestUtils.productAppsAreShared()) {
+            // TODO(b/237577392): Loading a private native system library via a shared system
+            // library ought to work.
+            TestUtils.assertLibraryInaccessible(
+                    () -> SystemSharedLib.loadLibrary("system_private2"));
+            TestUtils.assertLibraryInaccessible(
+                    () -> SystemSharedLib.loadLibrary("systemext_private2"));
 
-        if (!productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemSharedLib.loadLibrary("product_private2"));
         }
@@ -97,14 +89,14 @@ public class ProductAppTest extends AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesViaSystemExtSharedLib() {
-        // TODO(b/237577392): Loading a private native system library via a shared system library
-        // ought to work.
-        TestUtils.assertLibraryInaccessible(
-                () -> SystemExtSharedLib.loadLibrary("system_private3"));
-        TestUtils.assertLibraryInaccessible(
-                () -> SystemExtSharedLib.loadLibrary("systemext_private3"));
+        if (!TestUtils.productAppsAreShared()) {
+            // TODO(b/237577392): Loading a private native system library via a shared system
+            // library ought to work.
+            TestUtils.assertLibraryInaccessible(
+                    () -> SystemExtSharedLib.loadLibrary("system_private3"));
+            TestUtils.assertLibraryInaccessible(
+                    () -> SystemExtSharedLib.loadLibrary("systemext_private3"));
 
-        if (!productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemExtSharedLib.loadLibrary("product_private3"));
         }
@@ -115,7 +107,7 @@ public class ProductAppTest extends AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesViaProductSharedLib() {
-        if (!productAppsAreShared()) {
+        if (!TestUtils.productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible(
                     () -> ProductSharedLib.loadLibrary("system_private4"));
             TestUtils.assertLibraryInaccessible(
@@ -130,7 +122,7 @@ public class ProductAppTest extends AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesViaVendorSharedLib() {
-        if (!productAppsAreShared()) {
+        if (!TestUtils.productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible(
                     () -> VendorSharedLib.loadLibrary("system_private5"));
             TestUtils.assertLibraryInaccessible(
@@ -155,7 +147,7 @@ public class ProductAppTest extends AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesWithAbsolutePaths() {
-        if (!productAppsAreShared()) {
+        if (!TestUtils.productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible(
                     () -> System.load(TestUtils.libPath("/system", "system_private6")));
             TestUtils.assertLibraryInaccessible(
