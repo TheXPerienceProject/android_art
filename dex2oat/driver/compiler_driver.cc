@@ -488,10 +488,18 @@ static void CompileMethodQuick(
         // Query any JNI optimization annotations such as @FastNative or @CriticalNative.
         access_flags |= annotations::GetNativeMethodAnnotationAccessFlags(
             dex_file, dex_file.GetClassDef(class_def_idx), method_idx);
-
-        compiled_method = driver->GetCompiler()->JniCompile(
-            access_flags, method_idx, dex_file, dex_cache);
-        CHECK(compiled_method != nullptr);
+        const void* boot_jni_stub = nullptr;
+        if (!Runtime::Current()->GetHeap()->GetBootImageSpaces().empty()) {
+          // Skip the compilation for native method if found an usable boot JNI stub.
+          ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
+          std::string_view shorty = dex_file.GetMethodShortyView(dex_file.GetMethodId(method_idx));
+          boot_jni_stub = class_linker->FindBootJniStub(access_flags, shorty);
+        }
+        if (boot_jni_stub == nullptr) {
+          compiled_method =
+              driver->GetCompiler()->JniCompile(access_flags, method_idx, dex_file, dex_cache);
+          CHECK(compiled_method != nullptr);
+        }
       }
     } else if ((access_flags & kAccAbstract) != 0) {
       // Abstract methods don't have code.

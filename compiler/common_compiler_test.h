@@ -89,10 +89,10 @@ class EXPORT CommonCompilerTestImpl {
  protected:
   virtual ClassLinker* GetClassLinker() = 0;
   virtual Runtime* GetRuntime() = 0;
+  class OneCompiledMethodStorage;
 
  private:
   class CodeAndMetadata;
-  class OneCompiledMethodStorage;
 
   std::vector<CodeAndMetadata> code_and_metadata_;
 };
