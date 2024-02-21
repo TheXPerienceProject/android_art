@@ -46,6 +46,18 @@ class JniMacroAssemblerRiscv64Test : public AssemblerTestBase {
  protected:
   InstructionSet GetIsa() override { return InstructionSet::kRiscv64; }
 
+  std::vector<std::string> GetAssemblerCommand() override {
+    std::vector<std::string> result = AssemblerTestBase::GetAssemblerCommand();
+    if (march_override_.has_value()) {
+      auto it = std::find_if(result.begin(),
+                             result.end(),
+                             [](const std::string& s) { return StartsWith(s, "-march="); });
+      CHECK(it != result.end());
+      *it = march_override_.value();
+    }
+    return result;
+  }
+
   void DriverStr(const std::string& assembly_text, const std::string& test_name) {
     assembler_.FinalizeCode();
     size_t cs = assembler_.CodeSize();
@@ -76,6 +88,9 @@ class JniMacroAssemblerRiscv64Test : public AssemblerTestBase {
   MallocArenaPool pool_;
   ArenaAllocator allocator_;
   Riscv64JNIMacroAssembler assembler_;
+
+  // TODO: Implement auto-compression and remove this override.
+  std::optional<std::string> march_override_ = "-march=rv64imafdv_zba_zbb";
 };
 
 TEST_F(JniMacroAssemblerRiscv64Test, StackFrame) {
