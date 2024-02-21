@@ -1003,7 +1003,7 @@ void ArmVIXLJNIMacroAssembler::DeliverPendingException() {
 }
 
 std::unique_ptr<JNIMacroLabel> ArmVIXLJNIMacroAssembler::CreateLabel() {
-  return std::unique_ptr<JNIMacroLabel>(new ArmVIXLJNIMacroLabel());
+  return std::unique_ptr<JNIMacroLabel>(new (asm_.GetAllocator()) ArmVIXLJNIMacroLabel());
 }
 
 void ArmVIXLJNIMacroAssembler::Jump(JNIMacroLabel* label) {
