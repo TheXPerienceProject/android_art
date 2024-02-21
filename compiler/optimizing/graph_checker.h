@@ -30,7 +30,7 @@ namespace art HIDDEN {
 class CodeGenerator;
 
 // A control-flow graph visitor performing various checks.
-class GraphChecker : public HGraphDelegateVisitor {
+class GraphChecker final : public HGraphDelegateVisitor {
  public:
   explicit GraphChecker(HGraph* graph,
                         CodeGenerator* codegen = nullptr,
