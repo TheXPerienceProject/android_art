@@ -142,6 +142,7 @@ bootclasspath_fragment {
         // result in a build failure due to inconsistent flags.
         package_prefixes: [
             "android.compat",
+            "android.crypto.hpke",
             "com.android.okhttp",
             "com.android.org.bouncycastle",
             "com.android.org.kxml2",
