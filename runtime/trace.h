@@ -253,7 +253,7 @@ class TraceWriter {
   // Methods to output traced methods and threads.
   void DumpMethodList(std::ostream& os) REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!tracing_lock_);
-  void DumpThreadList(std::ostream& os) REQUIRES(!Locks::thread_list_lock_) REQUIRES(tracing_lock_);
+  void DumpThreadList(std::ostream& os) REQUIRES(!Locks::thread_list_lock_, !tracing_lock_);
 
   // File to write trace data out to, null if direct to ddms.
   std::unique_ptr<File> trace_file_;
