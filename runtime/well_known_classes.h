@@ -268,11 +268,14 @@ struct EXPORT WellKnownClasses {
       java_lang_Integer_IntegerCache;
   static constexpr ClassFromField<&java_lang_Long_LongCache_cache> java_lang_Long_LongCache;
 
+  static constexpr ClassFromMethod<&java_lang_Boolean_valueOf> java_lang_Boolean;
   static constexpr ClassFromMethod<&java_lang_Byte_valueOf> java_lang_Byte;
   static constexpr ClassFromMethod<&java_lang_Character_valueOf> java_lang_Character;
   static constexpr ClassFromMethod<&java_lang_Short_valueOf> java_lang_Short;
   static constexpr ClassFromMethod<&java_lang_Integer_valueOf> java_lang_Integer;
+  static constexpr ClassFromMethod<&java_lang_Float_valueOf> java_lang_Float;
   static constexpr ClassFromMethod<&java_lang_Long_valueOf> java_lang_Long;
+  static constexpr ClassFromMethod<&java_lang_Double_valueOf> java_lang_Double;
 };
 
 }  // namespace art

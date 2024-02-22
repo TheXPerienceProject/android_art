@@ -675,16 +675,15 @@ void* Thread::CreateCallback(void* arg) {
   return nullptr;
 }
 
-Thread* Thread::FromManagedThread(const ScopedObjectAccessAlreadyRunnable& soa,
-                                  ObjPtr<mirror::Object> thread_peer) {
+Thread* Thread::FromManagedThread(Thread* self, ObjPtr<mirror::Object> thread_peer) {
   ArtField* f = WellKnownClasses::java_lang_Thread_nativePeer;
   Thread* result = reinterpret_cast64<Thread*>(f->GetLong(thread_peer));
   // Check that if we have a result it is either suspended or we hold the thread_list_lock_
   // to stop it from going away.
   if (kIsDebugBuild) {
-    MutexLock mu(soa.Self(), *Locks::thread_suspend_count_lock_);
+    MutexLock mu(self, *Locks::thread_suspend_count_lock_);
     if (result != nullptr && !result->IsSuspended()) {
-      Locks::thread_list_lock_->AssertHeld(soa.Self());
+      Locks::thread_list_lock_->AssertHeld(self);
     }
   }
   return result;
@@ -692,7 +691,7 @@ Thread* Thread::FromManagedThread(const ScopedObjectAccessAlreadyRunnable& soa,
 
 Thread* Thread::FromManagedThread(const ScopedObjectAccessAlreadyRunnable& soa,
                                   jobject java_thread) {
-  return FromManagedThread(soa, soa.Decode<mirror::Object>(java_thread));
+  return FromManagedThread(soa.Self(), soa.Decode<mirror::Object>(java_thread));
 }
 
 static size_t FixStackSize(size_t stack_size) {
@@ -1518,20 +1517,27 @@ bool Thread::PassActiveSuspendBarriers() {
     }
     tlsPtr_.active_suspend1_barriers = nullptr;
     AtomicClearFlag(ThreadFlag::kActiveSuspendBarrier);
+    CHECK_GT(pass_barriers.size(), 0U);  // Since kActiveSuspendBarrier was set.
+    // Decrement suspend barrier(s) while we still hold the lock, since SuspendThread may
+    // remove and deallocate suspend barriers while holding suspend_count_lock_ .
+    // There will typically only be a single barrier to pass here.
+    for (AtomicInteger*& barrier : pass_barriers) {
+      int32_t old_val = barrier->fetch_sub(1, std::memory_order_release);
+      CHECK_GT(old_val, 0) << "Unexpected value for PassActiveSuspendBarriers(): " << old_val;
+      if (old_val != 1) {
+        // We're done with it.
+        barrier = nullptr;
+      }
+    }
   }
-
-  uint32_t barrier_count = 0;
+  // Finally do futex_wakes after releasing the lock.
   for (AtomicInteger* barrier : pass_barriers) {
-    ++barrier_count;
-    int32_t old_val = barrier->fetch_sub(1, std::memory_order_release);
-    CHECK_GT(old_val, 0) << "Unexpected value for PassActiveSuspendBarriers(): " << old_val;
 #if ART_USE_FUTEXES
-    if (old_val == 1) {
+    if (barrier != nullptr) {
       futex(barrier->Address(), FUTEX_WAKE_PRIVATE, INT_MAX, nullptr, nullptr, 0);
     }
 #endif
   }
-  CHECK_GT(barrier_count, 0U);
   return true;
 }
 
@@ -1721,7 +1727,7 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
       Locks::thread_list_lock_->ExclusiveUnlock(self);
       if (IsSuspended()) {
         // See the discussion in mutator_gc_coord.md and SuspendAllInternal for the race here.
-        RemoveFirstSuspend1Barrier();
+        RemoveFirstSuspend1Barrier(&wrapped_barrier);
         if (!HasActiveSuspendBarrier()) {
           AtomicClearFlag(ThreadFlag::kActiveSuspendBarrier);
         }

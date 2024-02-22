@@ -799,7 +799,7 @@ void Arm64JNIMacroAssembler::DeliverPendingException() {
 }
 
 std::unique_ptr<JNIMacroLabel> Arm64JNIMacroAssembler::CreateLabel() {
-  return std::unique_ptr<JNIMacroLabel>(new Arm64JNIMacroLabel());
+  return std::unique_ptr<JNIMacroLabel>(new (asm_.GetAllocator()) Arm64JNIMacroLabel());
 }
 
 void Arm64JNIMacroAssembler::Jump(JNIMacroLabel* label) {
