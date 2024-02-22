@@ -28,6 +28,11 @@
 namespace art HIDDEN {
 namespace riscv64 {
 
+constexpr Riscv64ExtensionMask kRiscv64CompressedExtensionsMask =
+    Riscv64ExtensionBit(Riscv64Extension::kZca) |
+    Riscv64ExtensionBit(Riscv64Extension::kZcd) |
+    Riscv64ExtensionBit(Riscv64Extension::kZcb);
+
 struct RISCV64CpuRegisterCompare {
   bool operator()(const XRegister& a, const XRegister& b) const { return a < b; }
 };
@@ -42,12 +47,11 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
   using Base =
       AssemblerTest<Riscv64Assembler, Riscv64Label, XRegister, FRegister, int32_t, VRegister>;
 
-  AssemblerRISCV64Test()
-      : instruction_set_features_(Riscv64InstructionSetFeatures::FromVariant("generic", nullptr)) {}
+  AssemblerRISCV64Test() {}
 
  protected:
   Riscv64Assembler* CreateAssembler(ArenaAllocator* allocator) override {
-    return new (allocator) Riscv64Assembler(allocator, instruction_set_features_.get());
+    return new (allocator) Riscv64Assembler(allocator, kRiscv64AllExtensionsMask);
   }
 
   InstructionSet GetIsa() override { return InstructionSet::kRiscv64; }
@@ -71,10 +75,40 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
   class ScopedCSuppression {
    public:
     explicit ScopedCSuppression(AssemblerRISCV64Test* test)
-        : smo_(test, "-march=rv64imafdv_zba_zbb") {}
+        : smo_(test, "-march=rv64imafdv_zba_zbb"),
+          exclusion_(test->GetAssembler()) {}
 
    private:
     ScopedMarchOverride smo_;
+    ScopedExtensionsExclusion<kRiscv64CompressedExtensionsMask> exclusion_;
+  };
+
+  class ScopedZbaAndCSuppression {
+   public:
+    explicit ScopedZbaAndCSuppression(AssemblerRISCV64Test* test)
+        : smo_(test, "-march=rv64imafdv_zbb"),
+          exclusion_(test->GetAssembler()) {}
+
+   private:
+    static constexpr Riscv64ExtensionMask kExcludedExtensions =
+        Riscv64ExtensionBit(Riscv64Extension::kZba) | kRiscv64CompressedExtensionsMask;
+
+    ScopedMarchOverride smo_;
+    ScopedExtensionsExclusion<kExcludedExtensions> exclusion_;
+  };
+
+  class ScopedZbbAndCSuppression {
+   public:
+    explicit ScopedZbbAndCSuppression(AssemblerRISCV64Test* test)
+        : smo_(test, "-march=rv64imafdv_zba"),
+          exclusion_(test->GetAssembler()) {}
+
+   private:
+    static constexpr Riscv64ExtensionMask kExcludedExtensions =
+        Riscv64ExtensionBit(Riscv64Extension::kZbb) | kRiscv64CompressedExtensionsMask;
+
+    ScopedMarchOverride smo_;
+    ScopedExtensionsExclusion<kExcludedExtensions> exclusion_;
   };
 
   std::vector<std::string> GetAssemblerCommand() override {
@@ -2186,7 +2220,6 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
 
   std::map<XRegister, std::string, RISCV64CpuRegisterCompare> secondary_register_names_;
 
-  std::unique_ptr<const Riscv64InstructionSetFeatures> instruction_set_features_;
   std::optional<std::string> march_override_;
 };
 
@@ -3419,24 +3452,24 @@ TEST_F(AssemblerRISCV64Test, CSh) {
             "CSh");
 }
 
-TEST_F(AssemblerRISCV64Test, CZext_b) {
-  DriverStr(RepeatCRShort(&Riscv64Assembler::CZext_b, "c.zext.b {reg}"), "CZext_b");
+TEST_F(AssemblerRISCV64Test, CZextB) {
+  DriverStr(RepeatCRShort(&Riscv64Assembler::CZextB, "c.zext.b {reg}"), "CZextB");
 }
 
-TEST_F(AssemblerRISCV64Test, CSext_b) {
-  DriverStr(RepeatCRShort(&Riscv64Assembler::CSext_b, "c.sext.b {reg}"), "CSext_b");
+TEST_F(AssemblerRISCV64Test, CSextB) {
+  DriverStr(RepeatCRShort(&Riscv64Assembler::CSextB, "c.sext.b {reg}"), "CSextB");
 }
 
-TEST_F(AssemblerRISCV64Test, CZext_h) {
-  DriverStr(RepeatCRShort(&Riscv64Assembler::CZext_h, "c.zext.h {reg}"), "CZext_h");
+TEST_F(AssemblerRISCV64Test, CZextH) {
+  DriverStr(RepeatCRShort(&Riscv64Assembler::CZextH, "c.zext.h {reg}"), "CZextH");
 }
 
-TEST_F(AssemblerRISCV64Test, CSext_h) {
-  DriverStr(RepeatCRShort(&Riscv64Assembler::CSext_h, "c.sext.h {reg}"), "CSext_h");
+TEST_F(AssemblerRISCV64Test, CSextH) {
+  DriverStr(RepeatCRShort(&Riscv64Assembler::CSextH, "c.sext.h {reg}"), "CSextH");
 }
 
-TEST_F(AssemblerRISCV64Test, CZext_w) {
-  DriverStr(RepeatCRShort(&Riscv64Assembler::CZext_w, "c.zext.w {reg}"), "CZext_w");
+TEST_F(AssemblerRISCV64Test, CZextW) {
+  DriverStr(RepeatCRShort(&Riscv64Assembler::CZextW, "c.zext.w {reg}"), "CZextW");
 }
 
 TEST_F(AssemblerRISCV64Test, CNot) {
@@ -7875,48 +7908,81 @@ TEST_F(AssemblerRISCV64Test, NegW) {
 }
 
 TEST_F(AssemblerRISCV64Test, SextB) {
+  DriverStr(RepeatRR(&Riscv64Assembler::SextB, "sext.b {reg1}, {reg2}\n"), "SextB");
+}
+
+TEST_F(AssemblerRISCV64Test, SextB_WithoutC) {
   ScopedCSuppression scs(this);
-  // Note: SEXT.B from the Zbb extension is not supported.
-  DriverStr(RepeatRR(&Riscv64Assembler::SextB,
-                     "slli {reg1}, {reg2}, 56\n"
-                     "srai {reg1}, {reg1}, 56"),
-            "SextB");
+  DriverStr(RepeatRR(&Riscv64Assembler::SextB, "sext.b {reg1}, {reg2}\n"), "SextB_WithoutC");
+}
+
+// TODO: Add test `SextB_WithoutZbb` when `Slli()` and `Srai()` auto-forward to 16-bit functions.
+TEST_F(AssemblerRISCV64Test, SextB_WithoutZbbAndC) {
+  ScopedZbbAndCSuppression scs(this);
+  DriverStr(RepeatRR(&Riscv64Assembler::SextB, "sext.b {reg1}, {reg2}\n"), "SextB_WithoutZbbAndC");
 }
 
 TEST_F(AssemblerRISCV64Test, SextH) {
+  DriverStr(RepeatRR(&Riscv64Assembler::SextH, "sext.h {reg1}, {reg2}\n"), "SextH");
+}
+
+TEST_F(AssemblerRISCV64Test, SextH_WithoutC) {
   ScopedCSuppression scs(this);
-  // Note: SEXT.H from the Zbb extension is not supported.
-  DriverStr(RepeatRR(&Riscv64Assembler::SextH,
-                     "slli {reg1}, {reg2}, 48\n"
-                     "srai {reg1}, {reg1}, 48"),
-            "SextH");
+  DriverStr(RepeatRR(&Riscv64Assembler::SextH, "sext.h {reg1}, {reg2}\n"), "SextH_WithoutC");
+}
+
+// TODO: Add test `SextH_WithoutZbb` when `Slli()` and `Srai()` auto-forward to 16-bit functions.
+TEST_F(AssemblerRISCV64Test, SextH_WithoutZbbAndC) {
+  ScopedZbbAndCSuppression scs(this);
+  DriverStr(RepeatRR(&Riscv64Assembler::SextH, "sext.h {reg1}, {reg2}\n"), "SextH_WithoutZbbAndC");
 }
 
 TEST_F(AssemblerRISCV64Test, SextW) {
+  DriverStr(RepeatRR(&Riscv64Assembler::SextW, "sext.w {reg1}, {reg2}\n"), "SextW");
+}
+
+TEST_F(AssemblerRISCV64Test, SextW_WithoutC) {
   ScopedCSuppression scs(this);
-  DriverStr(RepeatRR(&Riscv64Assembler::SextW, "addiw {reg1}, {reg2}, 0\n"), "SextW");
+  DriverStr(RepeatRR(&Riscv64Assembler::SextW, "sext.w {reg1}, {reg2}\n"), "SextW_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, ZextB) {
+  DriverStr(RepeatRR(&Riscv64Assembler::ZextB, "zext.b {reg1}, {reg2}"), "ZextB");
+}
+
+TEST_F(AssemblerRISCV64Test, ZextB_WithoutC) {
   ScopedCSuppression scs(this);
-  DriverStr(RepeatRR(&Riscv64Assembler::ZextB, "andi {reg1}, {reg2}, 255"), "ZextB");
+  DriverStr(RepeatRR(&Riscv64Assembler::ZextB, "zext.b {reg1}, {reg2}"), "ZextB_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, ZextH) {
+  DriverStr(RepeatRR(&Riscv64Assembler::ZextH, "zext.h {reg1}, {reg2}\n"), "ZextH");
+}
+
+TEST_F(AssemblerRISCV64Test, ZextH_WithoutC) {
   ScopedCSuppression scs(this);
-  // Note: ZEXT.H from the Zbb extension is not supported.
-  DriverStr(RepeatRR(&Riscv64Assembler::ZextH,
-                     "slli {reg1}, {reg2}, 48\n"
-                     "srli {reg1}, {reg1}, 48"),
-            "SextH");
+  DriverStr(RepeatRR(&Riscv64Assembler::ZextH, "zext.h {reg1}, {reg2}\n"), "ZextH_WithoutC");
+}
+
+// TODO: Add test `ZextH_WithoutZbb` when `Slli()` and `Srli()` auto-forward to 16-bit functions.
+TEST_F(AssemblerRISCV64Test, ZextH_WithoutZbbAndC) {
+  ScopedZbbAndCSuppression scs(this);
+  DriverStr(RepeatRR(&Riscv64Assembler::ZextH, "zext.h {reg1}, {reg2}\n"), "ZextH_WithoutZbbAndC");
 }
 
 TEST_F(AssemblerRISCV64Test, ZextW) {
+  DriverStr(RepeatRR(&Riscv64Assembler::ZextW, "zext.w {reg1}, {reg2}\n"), "ZextW");
+}
+
+TEST_F(AssemblerRISCV64Test, ZextW_WithoutC) {
   ScopedCSuppression scs(this);
-  DriverStr(RepeatRR(&Riscv64Assembler::ZextW,
-                     "slli {reg1}, {reg2}, 32\n"
-                     "srli {reg1}, {reg1}, 32"),
-            "ZextW");
+  DriverStr(RepeatRR(&Riscv64Assembler::ZextW, "zext.w {reg1}, {reg2}\n"), "ZextW_WithoutC");
+}
+
+// TODO: Add test `ZextW_WithoutZba` when `Slli()` and `Srli()` auto-forward to 16-bit functions.
+TEST_F(AssemblerRISCV64Test, ZextW_WithoutZbaAndC) {
+  ScopedZbaAndCSuppression scs(this);
+  DriverStr(RepeatRR(&Riscv64Assembler::ZextW, "zext.w {reg1}, {reg2}\n"), "ZextW_WithoutZbaAndC");
 }
 
 TEST_F(AssemblerRISCV64Test, Seqz) {
