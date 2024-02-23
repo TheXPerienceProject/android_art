@@ -958,12 +958,12 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
     if (class_linker->IsBootClassLoader(loader)) {
       loader = nullptr;
       class_loader = nullptr;
-      if (caller_class != nullptr) {
-        ObjPtr<mirror::Class> caller = soa.Decode<mirror::Class>(caller_class);
-        ObjPtr<mirror::DexCache> dex_cache = caller->GetDexCache();
-        if (dex_cache != nullptr) {
-          caller_location = dex_cache->GetLocation()->ToModifiedUtf8();
-        }
+    }
+    if (caller_class != nullptr) {
+      ObjPtr<mirror::Class> caller = soa.Decode<mirror::Class>(caller_class);
+      ObjPtr<mirror::DexCache> dex_cache = caller->GetDexCache();
+      if (dex_cache != nullptr) {
+        caller_location = dex_cache->GetLocation()->ToModifiedUtf8();
       }
     }
 
