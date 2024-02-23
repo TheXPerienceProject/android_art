@@ -261,7 +261,7 @@ class JNIMacroAssembler : public DeletableArenaObject<kArenaAllocAssembler> {
 //
 // It is only safe to use a label created
 // via JNIMacroAssembler::CreateLabel with that same macro assembler.
-class JNIMacroLabel {
+class JNIMacroLabel : public DeletableArenaObject<kArenaAllocAssembler> {
  public:
   virtual ~JNIMacroLabel() = 0;
 

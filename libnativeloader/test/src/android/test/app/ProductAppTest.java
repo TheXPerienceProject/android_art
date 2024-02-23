@@ -18,6 +18,7 @@ package android.test.app;
 
 import android.os.Build;
 import android.os.SystemProperties;
+import android.test.lib.AppTestCommon;
 import android.test.lib.TestUtils;
 import android.test.productsharedlib.ProductSharedLib;
 import android.test.systemextsharedlib.SystemExtSharedLib;
@@ -25,14 +26,16 @@ import android.test.systemsharedlib.SystemSharedLib;
 import android.test.vendorsharedlib.VendorSharedLib;
 
 import androidx.test.filters.MediumTest;
-import androidx.test.runner.AndroidJUnit4;
 
 import org.junit.Test;
-import org.junit.runner.RunWith;
 
 @MediumTest
-@RunWith(AndroidJUnit4.class)
-public class ProductAppTest {
+public class ProductAppTest extends AppTestCommon {
+    @Override
+    public AppLocation getAppLocation() {
+        return AppLocation.PRODUCT;
+    }
+
     // True if apps in product partitions get shared library namespaces, so we
     // cannot test that libs in system and system_ext get blocked.
     private static boolean productAppsAreShared() {
@@ -41,12 +44,17 @@ public class ProductAppTest {
     }
 
     @Test
+    public void testPrivateLibsExist() {
+        TestUtils.testPrivateLibsExist("/product", "product_private");
+    }
+
+    @Test
     public void testLoadExtendedPublicLibraries() {
         System.loadLibrary("system_extpub.oem1");
         System.loadLibrary("system_extpub.oem2");
         System.loadLibrary("system_extpub1.oem1");
         if (!productAppsAreShared()) {
-            TestUtils.assertLinkerNamespaceError( // Missing <uses-native-library>.
+            TestUtils.assertLibraryInaccessible( // Missing <uses-native-library>.
                     () -> System.loadLibrary("system_extpub_nouses.oem2"));
         }
         System.loadLibrary("product_extpub.product1");
@@ -56,11 +64,11 @@ public class ProductAppTest {
     @Test
     public void testLoadPrivateLibraries() {
         if (!productAppsAreShared()) {
-            TestUtils.assertLinkerNamespaceError(() -> System.loadLibrary("system_private1"));
-            TestUtils.assertLinkerNamespaceError(() -> System.loadLibrary("systemext_private1"));
+            TestUtils.assertLibraryInaccessible(() -> System.loadLibrary("system_private1"));
+            TestUtils.assertLibraryInaccessible(() -> System.loadLibrary("systemext_private1"));
         }
         System.loadLibrary("product_private1");
-        TestUtils.assertLibraryNotFound(() -> System.loadLibrary("vendor_private1"));
+        TestUtils.assertLibraryInaccessible(() -> System.loadLibrary("vendor_private1"));
     }
 
     @Test
@@ -75,47 +83,62 @@ public class ProductAppTest {
     public void testLoadPrivateLibrariesViaSystemSharedLib() {
         // TODO(b/237577392): Loading a private native system library via a shared system library
         // ought to work.
-        // SystemSharedLib.loadLibrary("system_private2");
-        // SystemSharedLib.loadLibrary("systemext_private2");
+        TestUtils.assertLibraryInaccessible(() -> SystemSharedLib.loadLibrary("system_private2"));
+        TestUtils.assertLibraryInaccessible(
+                () -> SystemSharedLib.loadLibrary("systemext_private2"));
+
         if (!productAppsAreShared()) {
-            TestUtils.assertLibraryNotFound(() -> SystemSharedLib.loadLibrary("product_private2"));
+            TestUtils.assertLibraryInaccessible(
+                    () -> SystemSharedLib.loadLibrary("product_private2"));
         }
-        TestUtils.assertLibraryNotFound(() -> SystemSharedLib.loadLibrary("vendor_private2"));
+
+        TestUtils.assertLibraryInaccessible(() -> SystemSharedLib.loadLibrary("vendor_private2"));
     }
 
     @Test
     public void testLoadPrivateLibrariesViaSystemExtSharedLib() {
         // TODO(b/237577392): Loading a private native system library via a shared system library
         // ought to work.
-        // SystemExtSharedLib.loadLibrary("system_private3");
-        // SystemExtSharedLib.loadLibrary("systemext_private3");
+        TestUtils.assertLibraryInaccessible(
+                () -> SystemExtSharedLib.loadLibrary("system_private3"));
+        TestUtils.assertLibraryInaccessible(
+                () -> SystemExtSharedLib.loadLibrary("systemext_private3"));
+
         if (!productAppsAreShared()) {
-            TestUtils.assertLibraryNotFound(
+            TestUtils.assertLibraryInaccessible(
                     () -> SystemExtSharedLib.loadLibrary("product_private3"));
         }
-        TestUtils.assertLibraryNotFound(() -> SystemExtSharedLib.loadLibrary("vendor_private3"));
+
+        TestUtils.assertLibraryInaccessible(
+                () -> SystemExtSharedLib.loadLibrary("vendor_private3"));
     }
 
     @Test
     public void testLoadPrivateLibrariesViaProductSharedLib() {
         if (!productAppsAreShared()) {
-            TestUtils.assertLinkerNamespaceError(
+            TestUtils.assertLibraryInaccessible(
                     () -> ProductSharedLib.loadLibrary("system_private4"));
-            TestUtils.assertLinkerNamespaceError(
+            TestUtils.assertLibraryInaccessible(
                     () -> ProductSharedLib.loadLibrary("systemext_private4"));
         }
+
+        // Can load product_private4 by name only through the app classloader namespace.
         ProductSharedLib.loadLibrary("product_private4");
-        TestUtils.assertLibraryNotFound(() -> ProductSharedLib.loadLibrary("vendor_private4"));
+
+        TestUtils.assertLibraryInaccessible(() -> ProductSharedLib.loadLibrary("vendor_private4"));
     }
 
     @Test
     public void testLoadPrivateLibrariesViaVendorSharedLib() {
         if (!productAppsAreShared()) {
-            TestUtils.assertLinkerNamespaceError(
+            TestUtils.assertLibraryInaccessible(
                     () -> VendorSharedLib.loadLibrary("system_private5"));
-            TestUtils.assertLinkerNamespaceError(
+            TestUtils.assertLibraryInaccessible(
                     () -> VendorSharedLib.loadLibrary("systemext_private5"));
-            TestUtils.assertLibraryNotFound(() -> VendorSharedLib.loadLibrary("product_private5"));
+
+            TestUtils.assertLibraryInaccessible(
+                    () -> VendorSharedLib.loadLibrary("product_private5"));
+
             // When the app has a shared namespace, its libraries get loaded
             // with shared namespaces as well, inheriting the same paths. So
             // since the app wouldn't have access to /vendor/${LIB},
@@ -133,13 +156,13 @@ public class ProductAppTest {
     @Test
     public void testLoadPrivateLibrariesWithAbsolutePaths() {
         if (!productAppsAreShared()) {
-            TestUtils.assertLinkerNamespaceError(
+            TestUtils.assertLibraryInaccessible(
                     () -> System.load(TestUtils.libPath("/system", "system_private6")));
-            TestUtils.assertLinkerNamespaceError(
+            TestUtils.assertLibraryInaccessible(
                     () -> System.load(TestUtils.libPath("/system_ext", "systemext_private6")));
         }
         System.load(TestUtils.libPath("/product", "product_private6"));
-        TestUtils.assertLinkerNamespaceError(
+        TestUtils.assertLibraryInaccessible(
                 () -> System.load(TestUtils.libPath("/vendor", "vendor_private6")));
     }
 }

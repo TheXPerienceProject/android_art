@@ -42,21 +42,20 @@ public class Main {
     /// CHECK-START: java.lang.String[] Main.$noinline$testArraySetsHonorWriteBarrier(java.lang.String[], java.lang.String) prepare_for_register_allocation (before)
     /// CHECK: <<Null:l\d+>>   NullConstant
     /// CHECK: <<BT:l\d+>>     BoundType [<<Null>>]
-    /// CHECK: ArraySet [<<arr:l\d+>>,<<index:i\d+>>,<<BT>>] value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:EmitBeingReliedOn
-    /// CHECK: ArraySet value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:DontEmit
+    /// CHECK: ArraySet [<<arr:l\d+>>,<<index:i\d+>>,<<BT>>] value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:DontEmit
+    /// CHECK: ArraySet value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:EmitNotBeingReliedOn
 
     /// CHECK-START: java.lang.String[] Main.$noinline$testArraySetsHonorWriteBarrier(java.lang.String[], java.lang.String) prepare_for_register_allocation (after)
     /// CHECK: <<Null:l\d+>>   NullConstant
-    /// CHECK: ArraySet [<<arr:l\d+>>,<<index:i\d+>>,<<Null>>] value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:EmitBeingReliedOn
-    /// CHECK: ArraySet value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:DontEmit
+    /// CHECK: ArraySet [<<arr:l\d+>>,<<index:i\d+>>,<<Null>>] value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:DontEmit
+    /// CHECK: ArraySet value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:EmitNotBeingReliedOn
 
     /// CHECK-START: java.lang.String[] Main.$noinline$testArraySetsHonorWriteBarrier(java.lang.String[], java.lang.String) prepare_for_register_allocation (after)
     /// CHECK-NOT: BoundType
 
     /// CHECK-START: java.lang.String[] Main.$noinline$testArraySetsHonorWriteBarrier(java.lang.String[], java.lang.String) disassembly (after)
-    /// CHECK: ArraySet value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:EmitBeingReliedOn
-    // / CHECK: ; card_table
     /// CHECK: ArraySet value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:DontEmit
+    /// CHECK: ArraySet value_can_be_null:true needs_type_check:false can_trigger_gc:false write_barrier_kind:EmitNotBeingReliedOn
     private static java.lang.String[] $noinline$testArraySetsHonorWriteBarrier(
             String[] arr, String o2) {
         Object o = null;
