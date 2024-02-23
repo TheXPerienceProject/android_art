@@ -25,6 +25,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -32,11 +33,13 @@
 #include "android-base/macros.h"
 #include "android-base/strings.h"
 #include "android-base/thread_annotations.h"
+#include "base/macros.h"
 #include "nativebridge/native_bridge.h"
 #include "nativehelper/scoped_utf_chars.h"
 #include "public_libraries.h"
 
 #ifdef ART_TARGET_ANDROID
+#include "android-modules-utils/sdk_level.h"
 #include "library_namespaces.h"
 #include "log/log.h"
 #include "nativeloader/dlext_namespaces.h"
@@ -50,6 +53,9 @@ namespace {
 
 using ::android::base::Result;
 using ::android::nativeloader::LibraryNamespaces;
+
+const std::regex kPartitionNativeLibPathRegex(
+    "/(system(_ext)?|(system/)?(vendor|product))/lib(64)?/.*");
 
 // NATIVELOADER_DEFAULT_NAMESPACE_LIBS is an environment variable that can be
 // used to list extra libraries (separated by ":") that libnativeloader will
@@ -85,6 +91,23 @@ std::optional<NativeLoaderNamespace> FindApexNamespace(const char* caller_locati
     return ns.value();
   }
   return std::nullopt;
+}
+
+Result<NativeLoaderNamespace> GetNamespaceForApiDomain(nativeloader::ApiDomain api_domain,
+                                                       bool is_bridged) {
+  switch (api_domain) {
+    case nativeloader::API_DOMAIN_VENDOR:
+      return NativeLoaderNamespace::GetExportedNamespace(nativeloader::kVendorNamespaceName,
+                                                         is_bridged);
+    case nativeloader::API_DOMAIN_PRODUCT:
+      return NativeLoaderNamespace::GetExportedNamespace(nativeloader::kProductNamespaceName,
+                                                         is_bridged);
+    case nativeloader::API_DOMAIN_SYSTEM:
+      return NativeLoaderNamespace::GetSystemNamespace(is_bridged);
+    default:
+      LOG_FATAL("Invalid API domain %d", api_domain);
+      UNREACHABLE();
+  }
 }
 
 Result<void> CreateNativeloaderDefaultNamespaceLibsLink(NativeLoaderNamespace& ns)
@@ -309,6 +332,61 @@ void* OpenNativeLibrary(JNIEnv* env,
       *error_msg = dlerror_msg;
     }
     return handle;
+  }
+
+  // If the caller is in any of the system image partitions and the library is
+  // in the same partition then load it without regards to public library
+  // restrictions. This is only done if the library is specified by an absolute
+  // path, so we don't affect the lookup process for libraries specified by name
+  // only.
+  if (caller_location != nullptr &&
+      // Check that the library is in the partition-wide native library
+      // location. Apps in the partition may have their own native libraries,
+      // and those should still be loaded with the app's classloader namespace.
+      std::regex_match(path, kPartitionNativeLibPathRegex) &&
+      // Don't do this if the system image is older than V, to avoid any compat
+      // issues with apps and shared libs in them.
+      android::modules::sdklevel::IsAtLeastV()) {
+    nativeloader::ApiDomain caller_api_domain = nativeloader::GetApiDomainFromPath(caller_location);
+    if (caller_api_domain != nativeloader::API_DOMAIN_DEFAULT) {
+      nativeloader::ApiDomain library_api_domain = nativeloader::GetApiDomainFromPath(path);
+
+      if (library_api_domain == caller_api_domain) {
+        bool is_bridged = false;
+        if (library_path_j != nullptr) {
+          ScopedUtfChars library_path_utf_chars(env, library_path_j);
+          if (library_path_utf_chars[0] != '\0') {
+            is_bridged = NativeBridgeIsPathSupported(library_path_utf_chars.c_str());
+          }
+        }
+
+        Result<NativeLoaderNamespace> ns = GetNamespaceForApiDomain(caller_api_domain, is_bridged);
+        if (!ns.ok()) {
+          ALOGD("Failed to find ns for caller %s in API domain %d to load %s (is_bridged=%b): %s",
+                caller_location,
+                caller_api_domain,
+                path,
+                is_bridged,
+                ns.error().message().c_str());
+          *error_msg = strdup(ns.error().message().c_str());
+          return nullptr;
+        }
+
+        *needs_native_bridge = ns.value().IsBridged();
+        Result<void*> handle = ns.value().Load(path);
+        ALOGD("Load %s using ns %s for caller %s in same partition (is_bridged=%b): %s",
+              path,
+              ns.value().name().c_str(),
+              caller_location,
+              is_bridged,
+              handle.ok() ? "ok" : handle.error().message().c_str());
+        if (!handle.ok()) {
+          *error_msg = strdup(handle.error().message().c_str());
+          return nullptr;
+        }
+        return handle.value();
+      }
+    }
   }
 
   std::lock_guard<std::mutex> guard(g_namespaces_mutex);
