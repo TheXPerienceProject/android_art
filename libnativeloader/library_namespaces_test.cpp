@@ -31,45 +31,40 @@ using ::android::base::testing::HasValue;
 using ::android::base::testing::WithMessage;
 using ::testing::StartsWith;
 
-static ApiDomain GetProductApiDomain(ApiDomain fallback_domain) {
+TEST(LibraryNamespacesTest, TestGetApiDomainFromPath) {
   // GetApiDomainFromPath returns API_DOMAIN_PRODUCT only if the device is
   // trebleized and has an unbundled product partition.
-  return is_product_treblelized() ? API_DOMAIN_PRODUCT : fallback_domain;
-}
+  ApiDomain api_domain_product = is_product_treblelized() ? API_DOMAIN_PRODUCT : API_DOMAIN_DEFAULT;
 
-TEST(LibraryNamespacesTest, TestGetApiDomainFromPath) {
   EXPECT_EQ(GetApiDomainFromPath("/data/somewhere"), API_DOMAIN_DEFAULT);
-  EXPECT_EQ(GetApiDomainFromPath("/system/somewhere"), API_DOMAIN_SYSTEM);
-  EXPECT_EQ(GetApiDomainFromPath("/system_ext/somewhere"), API_DOMAIN_SYSTEM);
-  EXPECT_EQ(GetApiDomainFromPath("/systemext/somewhere"), API_DOMAIN_DEFAULT);
-  EXPECT_EQ(GetApiDomainFromPath("/product/somewhere"), GetProductApiDomain(API_DOMAIN_DEFAULT));
+  EXPECT_EQ(GetApiDomainFromPath("/system/somewhere"), API_DOMAIN_DEFAULT);
+  EXPECT_EQ(GetApiDomainFromPath("/product/somewhere"), api_domain_product);
   EXPECT_EQ(GetApiDomainFromPath("/vendor/somewhere"), API_DOMAIN_VENDOR);
-  EXPECT_EQ(GetApiDomainFromPath("/system/product/somewhere"),
-            GetProductApiDomain(API_DOMAIN_SYSTEM));
+  EXPECT_EQ(GetApiDomainFromPath("/system/product/somewhere"), api_domain_product);
   EXPECT_EQ(GetApiDomainFromPath("/system/vendor/somewhere"), API_DOMAIN_VENDOR);
 
   EXPECT_EQ(GetApiDomainFromPath(""), API_DOMAIN_DEFAULT);
   EXPECT_EQ(GetApiDomainFromPath("/"), API_DOMAIN_DEFAULT);
   EXPECT_EQ(GetApiDomainFromPath("product/somewhere"), API_DOMAIN_DEFAULT);
   EXPECT_EQ(GetApiDomainFromPath("/product"), API_DOMAIN_DEFAULT);
-  EXPECT_EQ(GetApiDomainFromPath("/product/"), GetProductApiDomain(API_DOMAIN_DEFAULT));
+  EXPECT_EQ(GetApiDomainFromPath("/product/"), api_domain_product);
   EXPECT_EQ(GetApiDomainFromPath(":/product/"), API_DOMAIN_DEFAULT);
 
   EXPECT_EQ(GetApiDomainFromPath("/data/somewhere:/product/somewhere"), API_DOMAIN_DEFAULT);
   EXPECT_EQ(GetApiDomainFromPath("/vendor/somewhere:/product/somewhere"), API_DOMAIN_VENDOR);
-  EXPECT_EQ(GetApiDomainFromPath("/product/somewhere:/vendor/somewhere"),
-            GetProductApiDomain(API_DOMAIN_DEFAULT));
+  EXPECT_EQ(GetApiDomainFromPath("/product/somewhere:/vendor/somewhere"), api_domain_product);
 }
 
 TEST(LibraryNamespacesTest, TestGetApiDomainFromPathList) {
+  // GetApiDomainFromPath returns API_DOMAIN_PRODUCT only if the device is
+  // trebleized and has an unbundled product partition.
+  ApiDomain api_domain_product = is_product_treblelized() ? API_DOMAIN_PRODUCT : API_DOMAIN_DEFAULT;
+
   EXPECT_THAT(GetApiDomainFromPathList("/data/somewhere"), HasValue(API_DOMAIN_DEFAULT));
-  EXPECT_THAT(GetApiDomainFromPathList("/system/somewhere"), HasValue(API_DOMAIN_SYSTEM));
-  EXPECT_THAT(GetApiDomainFromPathList("/system_ext/somewhere"), HasValue(API_DOMAIN_SYSTEM));
-  EXPECT_THAT(GetApiDomainFromPathList("/product/somewhere"),
-              HasValue(GetProductApiDomain(API_DOMAIN_DEFAULT)));
+  EXPECT_THAT(GetApiDomainFromPathList("/system/somewhere"), HasValue(API_DOMAIN_DEFAULT));
+  EXPECT_THAT(GetApiDomainFromPathList("/product/somewhere"), HasValue(api_domain_product));
   EXPECT_THAT(GetApiDomainFromPathList("/vendor/somewhere"), HasValue(API_DOMAIN_VENDOR));
-  EXPECT_THAT(GetApiDomainFromPathList("/system/product/somewhere"),
-              HasValue(GetProductApiDomain(API_DOMAIN_SYSTEM)));
+  EXPECT_THAT(GetApiDomainFromPathList("/system/product/somewhere"), HasValue(api_domain_product));
   EXPECT_THAT(GetApiDomainFromPathList("/system/vendor/somewhere"), HasValue(API_DOMAIN_VENDOR));
 
   EXPECT_THAT(GetApiDomainFromPathList(""), HasValue(API_DOMAIN_DEFAULT));
@@ -78,17 +73,13 @@ TEST(LibraryNamespacesTest, TestGetApiDomainFromPathList) {
   EXPECT_THAT(GetApiDomainFromPathList("/vendor/somewhere:"), HasValue(API_DOMAIN_VENDOR));
 
   EXPECT_THAT(GetApiDomainFromPathList("/data/somewhere:/product/somewhere"),
-              HasValue(GetProductApiDomain(API_DOMAIN_DEFAULT)));
-  if (GetProductApiDomain(API_DOMAIN_DEFAULT) == API_DOMAIN_PRODUCT) {
+              HasValue(api_domain_product));
+  if (api_domain_product == API_DOMAIN_PRODUCT) {
     EXPECT_THAT(GetApiDomainFromPathList("/vendor/somewhere:/product/somewhere"),
                 HasError(WithMessage(StartsWith("Path list crosses partition boundaries"))));
     EXPECT_THAT(GetApiDomainFromPathList("/product/somewhere:/vendor/somewhere"),
                 HasError(WithMessage(StartsWith("Path list crosses partition boundaries"))));
   }
-  EXPECT_THAT(GetApiDomainFromPathList("/system/somewhere:/vendor/somewhere"),
-              HasError(WithMessage(StartsWith("Path list crosses partition boundaries"))));
-  EXPECT_THAT(GetApiDomainFromPathList("/system_ext/somewhere:/vendor/somewhere"),
-              HasError(WithMessage(StartsWith("Path list crosses partition boundaries"))));
 }
 
 }  // namespace
