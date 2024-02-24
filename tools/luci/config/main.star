@@ -465,6 +465,18 @@ def host_builders():
         }
     )
     ci_builder(
+        name="qemu-armv8-ndebug",
+        category="qemu|armv8",
+        short_name="ndbg",
+        dimensions=host_dims,
+        is_fyi=True,
+        properties={
+            "debug": False,
+            "device": "qemu-armv8",
+            "on_virtual_machine": True,
+        }
+    )
+    ci_builder(
         name="qemu-riscv64-ndebug",
         category="qemu|riscv64",
         short_name="ndbg",
