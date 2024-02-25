@@ -432,7 +432,6 @@ class ImageSpaceLoadingSingleComponentWithProfilesTest
 TEST_F(ImageSpaceLoadingSingleComponentWithProfilesTest, Test) {
   // Compiling the primary boot image into a single image is not allowed on host.
   TEST_DISABLED_FOR_HOST();
-  TEST_DISABLED_FOR_RISCV64();
 
   CheckImageSpaceAndOatFile(/*space_count=*/1);
 }
@@ -487,7 +486,6 @@ class ImageSpaceLoadingMultipleComponentsWithProfilesTest
 TEST_F(ImageSpaceLoadingMultipleComponentsWithProfilesTest, Test) {
   // Compiling the primary boot image into a single image is not allowed on host.
   TEST_DISABLED_FOR_HOST();
-  TEST_DISABLED_FOR_RISCV64();
 
   CheckImageSpaceAndOatFile(/*space_count=*/1);
 }

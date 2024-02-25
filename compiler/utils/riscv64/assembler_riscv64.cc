@@ -61,18 +61,6 @@ void Riscv64Assembler::FinalizeCode() {
   finalized_ = true;
 }
 
-void Riscv64Assembler::Emit(uint32_t value) {
-  if (overwriting_) {
-    // Branches to labels are emitted into their placeholders here.
-    buffer_.Store<uint32_t>(overwrite_location_, value);
-    overwrite_location_ += sizeof(uint32_t);
-  } else {
-    // Other instructions are simply appended at the end here.
-    AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-    buffer_.Emit<uint32_t>(value);
-  }
-}
-
 /////////////////////////////// RV64 VARIANTS extension ///////////////////////////////
 
 //////////////////////////////// RV64 "I" Instructions ////////////////////////////////
@@ -792,6 +780,270 @@ void Riscv64Assembler::FClassD(XRegister rd, FRegister rs1) {
 
 /////////////////////////////// RV64 "FD" Instructions  END ///////////////////////////////
 
+/////////////////////////////// RV64 "C" Instructions  START /////////////////////////////
+
+void Riscv64Assembler::CLwsp(XRegister rd, int32_t offset) {
+  DCHECK_NE(rd, Zero);
+
+  EmitCI(0b010u, rd, ExtractOffset52_76(offset), 0b10u);
+}
+
+void Riscv64Assembler::CLdsp(XRegister rd, int32_t offset) {
+  DCHECK_NE(rd, Zero);
+
+  EmitCI(0b011u, rd, ExtractOffset53_86(offset), 0b10u);
+}
+
+void Riscv64Assembler::CFLdsp(FRegister rd, int32_t offset) {
+  EmitCI(0b001u, rd, ExtractOffset53_86(offset), 0b10u);
+}
+
+void Riscv64Assembler::CSwsp(XRegister rs2, int32_t offset) {
+  EmitCSS(0b110u, ExtractOffset52_76(offset), rs2, 0b10u);
+}
+
+void Riscv64Assembler::CSdsp(XRegister rs2, int32_t offset) {
+  EmitCSS(0b111u, ExtractOffset53_86(offset), rs2, 0b10u);
+}
+
+void Riscv64Assembler::CFSdsp(FRegister rs2, int32_t offset) {
+  EmitCSS(0b101u, ExtractOffset53_86(offset), rs2, 0b10u);
+}
+
+void Riscv64Assembler::CLw(XRegister rd_s, XRegister rs1_s, int32_t offset) {
+  EmitCM(0b010u, ExtractOffset52_6(offset), rs1_s, rd_s, 0b00u);
+}
+
+void Riscv64Assembler::CLd(XRegister rd_s, XRegister rs1_s, int32_t offset) {
+  EmitCM(0b011u, ExtractOffset53_76(offset), rs1_s, rd_s, 0b00u);
+}
+
+void Riscv64Assembler::CFLd(FRegister rd_s, XRegister rs1_s, int32_t offset) {
+  EmitCM(0b001u, ExtractOffset53_76(offset), rs1_s, rd_s, 0b00u);
+}
+
+void Riscv64Assembler::CSw(XRegister rs2_s, XRegister rs1_s, int32_t offset) {
+  EmitCM(0b110u, ExtractOffset52_6(offset), rs1_s, rs2_s, 0b00u);
+}
+
+void Riscv64Assembler::CSd(XRegister rs2_s, XRegister rs1_s, int32_t offset) {
+  EmitCM(0b111u, ExtractOffset53_76(offset), rs1_s, rs2_s, 0b00u);
+}
+
+void Riscv64Assembler::CFSd(FRegister rs2_s, XRegister rs1_s, int32_t offset) {
+  EmitCM(0b101u, ExtractOffset53_76(offset), rs1_s, rs2_s, 0b00u);
+}
+
+void Riscv64Assembler::CLi(XRegister rd, int32_t imm) {
+  DCHECK_NE(rd, Zero);
+  DCHECK(IsInt<6>(imm));
+
+  EmitCI(0b010u, rd, EncodeInt6(imm), 0b01u);
+}
+
+void Riscv64Assembler::CLui(XRegister rd, uint32_t nzimm6) {
+  DCHECK_NE(rd, Zero);
+  DCHECK_NE(rd, SP);
+  DCHECK(IsImmCLuiEncodable(nzimm6));
+
+  EmitCI(0b011u, rd, nzimm6 & MaskLeastSignificant<uint32_t>(6), 0b01u);
+}
+
+void Riscv64Assembler::CAddi(XRegister rd, int32_t nzimm) {
+  DCHECK_NE(rd, Zero);
+  DCHECK_NE(nzimm, 0);
+
+  EmitCI(0b000u, rd, EncodeInt6(nzimm), 0b01u);
+}
+
+void Riscv64Assembler::CAddiw(XRegister rd, int32_t imm) {
+  DCHECK_NE(rd, Zero);
+
+  EmitCI(0b001u, rd, EncodeInt6(imm), 0b01u);
+}
+
+void Riscv64Assembler::CAddi16Sp(int32_t nzimm) {
+  DCHECK_NE(nzimm, 0);
+  DCHECK(IsAligned<16>(nzimm));
+
+  uint32_t unzimm = static_cast<uint32_t>(nzimm);
+
+  // nzimm[9]
+  uint32_t imms1 =  BitFieldExtract(unzimm, 9, 1);
+  // nzimm[4|6|8:7|5]
+  uint32_t imms0 = (BitFieldExtract(unzimm, 4, 1) << 4) |
+                   (BitFieldExtract(unzimm, 6, 1) << 3) |
+                   (BitFieldExtract(unzimm, 7, 2) << 1) |
+                    BitFieldExtract(unzimm, 5, 1);
+
+  EmitCI(0b011u, SP, BitFieldInsert(imms0, imms1, 5, 1), 0b01u);
+}
+
+void Riscv64Assembler::CAddi4Spn(XRegister rd_s, uint32_t nzuimm) {
+  DCHECK_NE(nzuimm, 0u);
+  DCHECK(IsAligned<4>(nzuimm));
+  DCHECK(IsUint<10>(nzuimm));
+
+  // nzuimm[5:4|9:6|2|3]
+  uint32_t uimm = (BitFieldExtract(nzuimm, 4, 2) << 6) |
+                  (BitFieldExtract(nzuimm, 6, 4) << 2) |
+                  (BitFieldExtract(nzuimm, 2, 1) << 1) |
+                   BitFieldExtract(nzuimm, 3, 1);
+
+  EmitCIW(0b000u, uimm, rd_s, 0b00u);
+}
+
+void Riscv64Assembler::CSlli(XRegister rd, int32_t shamt) {
+  DCHECK_NE(shamt, 0);
+  DCHECK_NE(rd, Zero);
+
+  EmitCI(0b000u, rd, shamt, 0b10u);
+}
+
+void Riscv64Assembler::CSrli(XRegister rd_s, int32_t shamt) {
+  DCHECK_NE(shamt, 0);
+  DCHECK(IsUint<6>(shamt));
+
+  EmitCBArithmetic(0b100u, 0b00u, shamt, rd_s, 0b01u);
+}
+
+void Riscv64Assembler::CSrai(XRegister rd_s, int32_t shamt) {
+  DCHECK_NE(shamt, 0);
+  DCHECK(IsUint<6>(shamt));
+
+  EmitCBArithmetic(0b100u, 0b01u, shamt, rd_s, 0b01u);
+}
+
+void Riscv64Assembler::CAndi(XRegister rd_s, int32_t imm) {
+  DCHECK(IsInt<6>(imm));
+
+  EmitCBArithmetic(0b100u, 0b10u, imm, rd_s, 0b01u);
+}
+
+void Riscv64Assembler::CMv(XRegister rd, XRegister rs2) {
+  DCHECK_NE(rd, Zero);
+  DCHECK_NE(rs2, Zero);
+
+  EmitCR(0b1000u, rd, rs2, 0b10u);
+}
+
+void Riscv64Assembler::CAdd(XRegister rd, XRegister rs2) {
+  DCHECK_NE(rd, Zero);
+  DCHECK_NE(rs2, Zero);
+
+  EmitCR(0b1001u, rd, rs2, 0b10u);
+}
+
+void Riscv64Assembler::CAnd(XRegister rd_s, XRegister rs2_s) {
+  EmitCAReg(0b100011u, rd_s, 0b11u, rs2_s, 0b01u);
+}
+
+void Riscv64Assembler::COr(XRegister rd_s, XRegister rs2_s) {
+  EmitCAReg(0b100011u, rd_s, 0b10u, rs2_s, 0b01u);
+}
+
+void Riscv64Assembler::CXor(XRegister rd_s, XRegister rs2_s) {
+  EmitCAReg(0b100011u, rd_s, 0b01u, rs2_s, 0b01u);
+}
+
+void Riscv64Assembler::CSub(XRegister rd_s, XRegister rs2_s) {
+  EmitCAReg(0b100011u, rd_s, 0b00u, rs2_s, 0b01u);
+}
+
+void Riscv64Assembler::CAddw(XRegister rd_s, XRegister rs2_s) {
+  EmitCAReg(0b100111u, rd_s, 0b01u, rs2_s, 0b01u);
+}
+
+void Riscv64Assembler::CSubw(XRegister rd_s, XRegister rs2_s) {
+  EmitCAReg(0b100111u, rd_s, 0b00u, rs2_s, 0b01u);
+}
+
+// "Zcb" Standard Extension, part of "C", opcode = 0b00, 0b01, funct3 = 0b100.
+
+void Riscv64Assembler::CLbu(XRegister rd_s, XRegister rs1_s, int32_t offset) {
+  EmitCAReg(0b100000u, rs1_s, EncodeOffset0_1(offset), rd_s, 0b00u);
+}
+
+void Riscv64Assembler::CLhu(XRegister rd_s, XRegister rs1_s, int32_t offset) {
+  DCHECK(IsUint<2>(offset));
+  DCHECK_ALIGNED(offset, 2);
+  EmitCAReg(0b100001u, rs1_s, BitFieldExtract<uint32_t>(offset, 1, 1), rd_s, 0b00u);
+}
+
+void Riscv64Assembler::CLh(XRegister rd_s, XRegister rs1_s, int32_t offset) {
+  DCHECK(IsUint<2>(offset));
+  DCHECK_ALIGNED(offset, 2);
+  EmitCAReg(0b100001u, rs1_s, 0b10 | BitFieldExtract<uint32_t>(offset, 1, 1), rd_s, 0b00u);
+}
+
+void Riscv64Assembler::CSb(XRegister rs2_s, XRegister rs1_s, int32_t offset) {
+  EmitCAReg(0b100010u, rs1_s, EncodeOffset0_1(offset), rs2_s, 0b00u);
+}
+
+void Riscv64Assembler::CSh(XRegister rs2_s, XRegister rs1_s, int32_t offset) {
+  DCHECK(IsUint<2>(offset));
+  DCHECK_ALIGNED(offset, 2);
+  EmitCAReg(0b100011u, rs1_s, BitFieldExtract<uint32_t>(offset, 1, 1), rs2_s, 0b00u);
+}
+
+void Riscv64Assembler::CZext_b(XRegister rd_rs1_s) {
+  EmitCAImm(0b100111u, rd_rs1_s, 0b11u, 0b000u, 0b01u);
+}
+
+void Riscv64Assembler::CSext_b(XRegister rd_rs1_s) {
+  EmitCAImm(0b100111u, rd_rs1_s, 0b11u, 0b001u, 0b01u);
+}
+
+void Riscv64Assembler::CZext_h(XRegister rd_rs1_s) {
+  EmitCAImm(0b100111u, rd_rs1_s, 0b11u, 0b010u, 0b01u);
+}
+
+void Riscv64Assembler::CSext_h(XRegister rd_rs1_s) {
+  EmitCAImm(0b100111u, rd_rs1_s, 0b11u, 0b011u, 0b01u);
+}
+
+void Riscv64Assembler::CZext_w(XRegister rd_rs1_s) {
+  EmitCAImm(0b100111u, rd_rs1_s, 0b11u, 0b100u, 0b01u);
+}
+
+void Riscv64Assembler::CNot(XRegister rd_rs1_s) {
+  EmitCAImm(0b100111u, rd_rs1_s, 0b11u, 0b101u, 0b01u);
+}
+
+void Riscv64Assembler::CMul(XRegister rd_s, XRegister rs2_s) {
+  EmitCAReg(0b100111u, rd_s, 0b10u, rs2_s, 0b01u);
+}
+
+void Riscv64Assembler::CJ(int32_t offset) { EmitCJ(0b101u, offset, 0b01u); }
+
+void Riscv64Assembler::CJr(XRegister rs1) {
+  DCHECK_NE(rs1, Zero);
+
+  EmitCR(0b1000u, rs1, Zero, 0b10u);
+}
+
+void Riscv64Assembler::CJalr(XRegister rs1) {
+  DCHECK_NE(rs1, Zero);
+
+  EmitCR(0b1001u, rs1, Zero, 0b10u);
+}
+
+void Riscv64Assembler::CBeqz(XRegister rs1_s, int32_t offset) {
+  EmitCBBranch(0b110u, offset, rs1_s, 0b01u);
+}
+
+void Riscv64Assembler::CBnez(XRegister rs1_s, int32_t offset) {
+  EmitCBBranch(0b111u, offset, rs1_s, 0b01u);
+}
+
+void Riscv64Assembler::CEbreak() { EmitCR(0b1001u, Zero, Zero, 0b10u); }
+
+void Riscv64Assembler::CNop() { EmitCI(0b000u, Zero, 0u, 0b01u); }
+
+void Riscv64Assembler::CUnimp() { Emit16(0x0u); }
+
+/////////////////////////////// RV64 "C" Instructions  END ///////////////////////////////
+
 ////////////////////////////// RV64 "Zba" Instructions  START /////////////////////////////
 
 void Riscv64Assembler::AddUw(XRegister rd, XRegister rs1, XRegister rs2) {
@@ -914,6 +1166,18 @@ void Riscv64Assembler::OrcB(XRegister rd, XRegister rs1) {
 
 void Riscv64Assembler::Rev8(XRegister rd, XRegister rs1) {
   EmitR(0x35, 0x18, rs1, 0x5, rd, 0x13);
+}
+
+void Riscv64Assembler::ZbbSextB(XRegister rd, XRegister rs1) {
+  EmitR(0x30, 0x4, rs1, 0x1, rd, 0x13);
+}
+
+void Riscv64Assembler::ZbbSextH(XRegister rd, XRegister rs1) {
+  EmitR(0x30, 0x5, rs1, 0x1, rd, 0x13);
+}
+
+void Riscv64Assembler::ZbbZextH(XRegister rd, XRegister rs1) {
+  EmitR(0x4, 0x0, rs1, 0x4, rd, 0x3b);
 }
 
 /////////////////////////////// RV64 "Zbb" Instructions  END //////////////////////////////
@@ -5060,7 +5324,7 @@ void Riscv64Assembler::FLoadd(FRegister rd, Literal* literal) {
 
 void Riscv64Assembler::Unimp() {
   // TODO(riscv64): use 16-bit zero C.UNIMP once we support compression
-  Emit(0xC0001073);
+  Emit32(0xC0001073);
 }
 
 /////////////////////////////// RV64 MACRO Instructions END ///////////////////////////////
@@ -5542,7 +5806,7 @@ void Riscv64Assembler::FinalizeLabeledBranch(Riscv64Label* label) {
     // Branch forward (to a following label), distance is unknown.
     // The first branch forward will contain 0, serving as the terminator of
     // the list of forward-reaching branches.
-    Emit(label->position_);
+    Emit32(label->position_);
     length--;
     // Now make the label object point to this branch
     // (this forms a linked list of branches preceding this label).
@@ -5775,7 +6039,7 @@ void Riscv64Assembler::PromoteBranches() {
       DCHECK(!overwriting_);
       overwriting_ = true;
       overwrite_location_ = first_literal_location;
-      Emit(0);  // Illegal instruction.
+      Emit32(0);  // Illegal instruction.
       overwriting_ = false;
       // Increase target addresses in literal and address loads by 4 bytes in order for correct
       // offsets from PC to be generated.
@@ -5838,7 +6102,7 @@ void Riscv64Assembler::EmitJumpTables() {
         CHECK_EQ(buffer_.Load<uint32_t>(overwrite_location_), 0x1abe1234u);
         // The table will contain target addresses relative to the table start.
         uint32_t offset = GetLabelLocation(target) - start;
-        Emit(offset);
+        Emit32(offset);
       }
     }
 

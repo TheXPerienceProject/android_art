@@ -490,6 +490,64 @@ class Riscv64Assembler final : public Assembler {
   void FClassS(XRegister rd, FRegister rs1);
   void FClassD(XRegister rd, FRegister rs1);
 
+  // "C" Standard Extension, Compresseed Instructions
+  void CLwsp(XRegister rd, int32_t offset);
+  void CLdsp(XRegister rd, int32_t offset);
+  void CFLdsp(FRegister rd, int32_t offset);
+  void CSwsp(XRegister rs2, int32_t offset);
+  void CSdsp(XRegister rs2, int32_t offset);
+  void CFSdsp(FRegister rs2, int32_t offset);
+
+  void CLw(XRegister rd_s, XRegister rs1_s, int32_t offset);
+  void CLd(XRegister rd_s, XRegister rs1_s, int32_t offset);
+  void CFLd(FRegister rd_s, XRegister rs1_s, int32_t offset);
+  void CSw(XRegister rs2_s, XRegister rs1_s, int32_t offset);
+  void CSd(XRegister rs2_s, XRegister rs1_s, int32_t offset);
+  void CFSd(FRegister rs2_s, XRegister rs1_s, int32_t offset);
+
+  void CLi(XRegister rd, int32_t imm);
+  void CLui(XRegister rd, uint32_t nzimm6);
+  void CAddi(XRegister rd, int32_t nzimm);
+  void CAddiw(XRegister rd, int32_t imm);
+  void CAddi16Sp(int32_t nzimm);
+  void CAddi4Spn(XRegister rd_s, uint32_t nzuimm);
+  void CSlli(XRegister rd, int32_t shamt);
+  void CSrli(XRegister rd_s, int32_t shamt);
+  void CSrai(XRegister rd_s, int32_t shamt);
+  void CAndi(XRegister rd_s, int32_t imm);
+  void CMv(XRegister rd, XRegister rs2);
+  void CAdd(XRegister rd, XRegister rs2);
+  void CAnd(XRegister rd_s, XRegister rs2_s);
+  void COr(XRegister rd_s, XRegister rs2_s);
+  void CXor(XRegister rd_s, XRegister rs2_s);
+  void CSub(XRegister rd_s, XRegister rs2_s);
+  void CAddw(XRegister rd_s, XRegister rs2_s);
+  void CSubw(XRegister rd_s, XRegister rs2_s);
+
+  // "Zcb" Standard Extension, part of "C", opcode = 0b00, 0b01, funct3 = 0b100.
+  void CLbu(XRegister rd_s, XRegister rs1_s, int32_t offset);
+  void CLhu(XRegister rd_s, XRegister rs1_s, int32_t offset);
+  void CLh(XRegister rd_s, XRegister rs1_s, int32_t offset);
+  void CSb(XRegister rd_s, XRegister rs1_s, int32_t offset);
+  void CSh(XRegister rd_s, XRegister rs1_s, int32_t offset);
+  void CZext_b(XRegister rd_rs1_s);
+  void CSext_b(XRegister rd_rs1_s);
+  void CZext_h(XRegister rd_rs1_s);
+  void CSext_h(XRegister rd_rs1_s);
+  void CZext_w(XRegister rd_rs1_s);
+  void CNot(XRegister rd_rs1_s);
+  void CMul(XRegister rd_s, XRegister rs2_s);
+
+  void CJ(int32_t offset);
+  void CJr(XRegister rs1);
+  void CJalr(XRegister rs1);
+  void CBeqz(XRegister rs1_s, int32_t offset);
+  void CBnez(XRegister rs1_s, int32_t offset);
+
+  void CEbreak();
+  void CNop();
+  void CUnimp();
+
   // "Zba" Standard Extension, opcode = 0x1b, 0x33 or 0x3b, funct3 and funct7 varies.
   void AddUw(XRegister rd, XRegister rs1, XRegister rs2);
   void Sh1Add(XRegister rd, XRegister rs1, XRegister rs2);
@@ -500,9 +558,9 @@ class Riscv64Assembler final : public Assembler {
   void Sh3AddUw(XRegister rd, XRegister rs1, XRegister rs2);
   void SlliUw(XRegister rd, XRegister rs1, int32_t shamt);
 
-  // "Zbb" Standard Extension, opcode = 0x13, 0x1b or 0x33, funct3 and funct7 varies.
-  // Note: We do not support 32-bit sext.b, sext.h and zext.h from the Zbb extension.
-  // (Neither does the clang-r498229's assembler which we currently test against.)
+  // "Zbb" Standard Extension, opcode = 0x13, 0x1b, 0x33 or 0x3b, funct3 and funct7 varies.
+  // Note: 32-bit sext.b, sext.h and zext.h from the Zbb extension are explicitly
+  // prefixed with "Zbb" to differentiate them from the utility macros.
   void Andn(XRegister rd, XRegister rs1, XRegister rs2);
   void Orn(XRegister rd, XRegister rs1, XRegister rs2);
   void Xnor(XRegister rd, XRegister rs1, XRegister rs2);
@@ -524,6 +582,9 @@ class Riscv64Assembler final : public Assembler {
   void Roriw(XRegister rd, XRegister rs1, int32_t shamt);
   void OrcB(XRegister rd, XRegister rs1);
   void Rev8(XRegister rd, XRegister rs1);
+  void ZbbSextB(XRegister rd, XRegister rs1);
+  void ZbbSextH(XRegister rd, XRegister rs1);
+  void ZbbZextH(XRegister rd, XRegister rs1);
 
   ////////////////////////////// RISC-V Vector Instructions  START ///////////////////////////////
   enum class LengthMultiplier : uint32_t {
@@ -1758,6 +1819,13 @@ class Riscv64Assembler final : public Assembler {
   // and emit branches.
   void FinalizeCode() override;
 
+  template <typename Reg>
+  static inline bool IsShortReg(Reg reg) {
+    static_assert(std::is_same_v<Reg, XRegister> || std::is_same_v<Reg, FRegister>);
+    uint32_t uv = enum_cast<uint32_t>(reg) - 8u;
+    return IsUint<3>(uv);
+  }
+
   // Returns the current location of a label.
   //
   // This function must be used instead of `Riscv64Label::GetPosition()`
@@ -1952,7 +2020,23 @@ class Riscv64Assembler final : public Assembler {
   void PatchCFI();
 
   // Emit data (e.g. encoded instruction or immediate) to the instruction stream.
-  void Emit(uint32_t value);
+  template <typename T>
+  void Emit(T value) {
+    static_assert(std::is_same_v<T, uint32_t> || std::is_same_v<T, uint16_t>,
+                  "Only Integer types are allowed");
+    if (overwriting_) {
+      // Branches to labels are emitted into their placeholders here.
+      buffer_.Store<T>(overwrite_location_, value);
+      overwrite_location_ += sizeof(T);
+    } else {
+      // Other instructions are simply appended at the end here.
+      AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+      buffer_.Emit<T>(value);
+    }
+  }
+
+  void Emit16(uint32_t value) { Emit(dchecked_integral_cast<uint16_t>(value)); }
+  void Emit32(uint32_t value) { Emit(value); }
 
   // Adjust base register and offset if needed for load/store with a large offset.
   void AdjustBaseAndOffset(XRegister& base, int32_t& offset, ScratchRegisterScope& srs);
@@ -2030,9 +2114,92 @@ class Riscv64Assembler final : public Assembler {
     return funct6 << 1 | enum_cast<uint32_t>(vm);
   }
 
-  static constexpr uint32_t EncodeInt5(const int32_t imm) {
-    DCHECK(IsInt<5>(imm));
-    return static_cast<uint32_t>(imm) & 0b11111u;
+  template <unsigned kWidth>
+  static constexpr uint32_t EncodeIntWidth(const int32_t imm) {
+    DCHECK(IsInt<kWidth>(imm));
+    return static_cast<uint32_t>(imm) & MaskLeastSignificant<uint32_t>(kWidth);
+  }
+
+  static constexpr uint32_t EncodeInt5(const int32_t imm) { return EncodeIntWidth<5>(imm); }
+  static constexpr uint32_t EncodeInt6(const int32_t imm) { return EncodeIntWidth<6>(imm); }
+
+  template <typename Reg>
+  static constexpr uint32_t EncodeShortReg(const Reg reg) {
+    DCHECK(IsShortReg(reg));
+    return enum_cast<uint32_t>(reg) - 8u;
+  }
+
+  // Rearrange given offset in the way {offset[0] | offset[1]}
+  static constexpr uint32_t EncodeOffset0_1(int32_t offset) {
+    uint32_t u_offset = static_cast<uint32_t>(offset);
+    DCHECK(IsUint<2>(u_offset));
+
+    return u_offset >> 1 | (u_offset & 1u) << 1;
+  }
+
+  // Rearrange given offset, scaled by 4, in the way {offset[5:2] | offset[7:6]}
+  static constexpr uint32_t ExtractOffset52_76(int32_t offset) {
+    DCHECK(IsAligned<4>(offset)) << "Offset should be scalable by 4";
+
+    uint32_t u_offset = static_cast<uint32_t>(offset);
+    DCHECK(IsUint<6 + 2>(u_offset));
+
+    uint32_t imm_52 = BitFieldExtract(u_offset, 2, 4);
+    uint32_t imm_76 = BitFieldExtract(u_offset, 6, 2);
+
+    return BitFieldInsert(imm_76, imm_52, 2, 4);
+  }
+
+  // Rearrange given offset, scaled by 8, in the way {offset[5:3] | offset[8:6]}
+  static constexpr uint32_t ExtractOffset53_86(int32_t offset) {
+    DCHECK(IsAligned<8>(offset)) << "Offset should be scalable by 8";
+
+    uint32_t u_offset = static_cast<uint32_t>(offset);
+    DCHECK(IsUint<6 + 3>(u_offset));
+
+    uint32_t imm_53 = BitFieldExtract(u_offset, 3, 3);
+    uint32_t imm_86 = BitFieldExtract(u_offset, 6, 3);
+
+    return BitFieldInsert(imm_86, imm_53, 3, 3);
+  }
+
+  // Rearrange given offset, scaled by 4, in the way {offset[5:2] | offset[6]}
+  static constexpr uint32_t ExtractOffset52_6(int32_t offset) {
+    DCHECK(IsAligned<4>(offset)) << "Offset should be scalable by 4";
+
+    uint32_t u_offset = static_cast<uint32_t>(offset);
+    DCHECK(IsUint<5 + 2>(u_offset));
+
+    uint32_t imm_52 = BitFieldExtract(u_offset, 2, 4);
+    uint32_t imm_6  = BitFieldExtract(u_offset, 6, 1);
+
+    return BitFieldInsert(imm_6, imm_52, 1, 4);
+  }
+
+  // Rearrange given offset, scaled by 8, in the way {offset[5:3], offset[7:6]}
+  static constexpr uint32_t ExtractOffset53_76(int32_t offset) {
+    DCHECK(IsAligned<8>(offset)) << "Offset should be scalable by 4";
+
+    uint32_t u_offset = static_cast<uint32_t>(offset);
+    DCHECK(IsUint<5 + 3>(u_offset));
+
+    uint32_t imm_53 = BitFieldExtract(u_offset, 3, 3);
+    uint32_t imm_76 = BitFieldExtract(u_offset, 6, 2);
+
+    return BitFieldInsert(imm_76, imm_53, 2, 3);
+  }
+
+  static constexpr bool IsImmCLuiEncodable(uint32_t uimm) {
+    // Instruction c.lui is odd and its immediate value is a bit tricky
+    // Its value is not a full 32 bits value, but its bits [31:12]
+    // (where the bit 17 marks the sign bit) shifted towards the bottom i.e. bits [19:0]
+    // are the meaningful ones. Since that we want a signed non-zero 6-bit immediate to
+    // keep values in the range [0, 0x1f], and the range [0xfffe0, 0xfffff] for negative values
+    // since the sign bit was bit 17 (which is now bit 5 and replicated in the higher bits too)
+    // Also encoding with immediate = 0 is reserved
+    // For more details please see 16.5 chapter is the specification
+
+    return uimm != 0u && (IsUint<5>(uimm) || IsUint<5>(uimm - 0xfffe0u));
   }
 
   // Emit helpers.
@@ -2053,7 +2220,7 @@ class Riscv64Assembler final : public Assembler {
     DCHECK(IsUint<7>(opcode));
     uint32_t encoding = static_cast<uint32_t>(imm12) << 20 | static_cast<uint32_t>(rs1) << 15 |
                         funct3 << 12 | static_cast<uint32_t>(rd) << 7 | opcode;
-    Emit(encoding);
+    Emit32(encoding);
   }
 
   // R-type instruction:
@@ -2074,7 +2241,7 @@ class Riscv64Assembler final : public Assembler {
     uint32_t encoding = funct7 << 25 | static_cast<uint32_t>(rs2) << 20 |
                         static_cast<uint32_t>(rs1) << 15 | funct3 << 12 |
                         static_cast<uint32_t>(rd) << 7 | opcode;
-    Emit(encoding);
+    Emit32(encoding);
   }
 
   // R-type instruction variant for floating-point fused multiply-add/sub (F[N]MADD/ F[N]MSUB):
@@ -2098,7 +2265,7 @@ class Riscv64Assembler final : public Assembler {
                         static_cast<uint32_t>(rs2) << 20 | static_cast<uint32_t>(rs1) << 15 |
                         static_cast<uint32_t>(funct3) << 12 | static_cast<uint32_t>(rd) << 7 |
                         opcode;
-    Emit(encoding);
+    Emit32(encoding);
   }
 
   // S-type instruction:
@@ -2119,7 +2286,7 @@ class Riscv64Assembler final : public Assembler {
                         static_cast<uint32_t>(rs2) << 20 | static_cast<uint32_t>(rs1) << 15 |
                         static_cast<uint32_t>(funct3) << 12 |
                         (static_cast<uint32_t>(imm12) & 0x1F) << 7 | opcode;
-    Emit(encoding);
+    Emit32(encoding);
   }
 
   // I-type instruction variant for shifts (SLLI / SRLI / SRAI):
@@ -2144,7 +2311,7 @@ class Riscv64Assembler final : public Assembler {
     uint32_t encoding = funct6 << 26 | static_cast<uint32_t>(imm6) << 20 |
                         static_cast<uint32_t>(rs1) << 15 | funct3 << 12 |
                         static_cast<uint32_t>(rd) << 7 | opcode;
-    Emit(encoding);
+    Emit32(encoding);
   }
 
   // B-type instruction:
@@ -2166,7 +2333,7 @@ class Riscv64Assembler final : public Assembler {
                         static_cast<uint32_t>(rs2) << 20 | static_cast<uint32_t>(rs1) << 15 |
                         static_cast<uint32_t>(funct3) << 12 |
                         (imm12 & 0xfu) << 8 | (imm12 & 0x400u) >> (10 - 7) | opcode;
-    Emit(encoding);
+    Emit32(encoding);
   }
 
   // U-type instruction:
@@ -2181,7 +2348,7 @@ class Riscv64Assembler final : public Assembler {
     DCHECK(IsUint<5>(static_cast<uint32_t>(rd)));
     DCHECK(IsUint<7>(opcode));
     uint32_t encoding = imm20 << 12 | static_cast<uint32_t>(rd) << 7 | opcode;
-    Emit(encoding);
+    Emit32(encoding);
   }
 
   // J-type instruction:
@@ -2200,7 +2367,224 @@ class Riscv64Assembler final : public Assembler {
     uint32_t encoding = (imm20 & 0x80000u) << (31 - 19) | (imm20 & 0x03ffu) << 21 |
                         (imm20 & 0x400u) << (20 - 10) | (imm20 & 0x7f800u) << (12 - 11) |
                         static_cast<uint32_t>(rd) << 7 | opcode;
-    Emit(encoding);
+    Emit32(encoding);
+  }
+
+  // Compressed Instruction Encodings
+
+  // CR-type instruction:
+  //
+  //   15    12 11      7 6       2 1 0
+  //   ---------------------------------
+  //   [ . . . | . . . . | . . . . | . ]
+  //   [ func4   rd/rs1      rs2    op ]
+  //   ---------------------------------
+  //
+  void EmitCR(uint32_t funct4, XRegister rd_rs1, XRegister rs2, uint32_t opcode) {
+    DCHECK(IsUint<4>(funct4));
+    DCHECK(IsUint<5>(static_cast<uint32_t>(rd_rs1)));
+    DCHECK(IsUint<5>(static_cast<uint32_t>(rs2)));
+    DCHECK(IsUint<2>(opcode));
+
+    uint32_t encoding = funct4 << 12 | static_cast<uint32_t>(rd_rs1) << 7 |
+                        static_cast<uint32_t>(rs2) << 2 | opcode;
+    Emit16(encoding);
+  }
+
+  // CI-type instruction:
+  //
+  //   15  13   11      7 6       2 1 0
+  //   ---------------------------------
+  //   [ . . | | . . . . | . . . . | . ]
+  //   [func3 imm rd/rs1     imm    op ]
+  //   ---------------------------------
+  //
+  template <typename Reg>
+  void EmitCI(uint32_t funct3, Reg rd_rs1, uint32_t imm6, uint32_t opcode) {
+    DCHECK(IsUint<3>(funct3));
+    DCHECK(IsUint<5>(static_cast<uint32_t>(rd_rs1)));
+    DCHECK(IsUint<6>(imm6));
+    DCHECK(IsUint<2>(opcode));
+
+    uint32_t immH1 = BitFieldExtract(imm6, 5, 1);
+    uint32_t immL5 = BitFieldExtract(imm6, 0, 5);
+
+    uint32_t encoding =
+        funct3 << 13 | immH1 << 12 | static_cast<uint32_t>(rd_rs1) << 7 | immL5 << 2 | opcode;
+    Emit16(encoding);
+  }
+
+  // CSS-type instruction:
+  //
+  //   15  13 12        7 6       2 1 0
+  //   ---------------------------------
+  //   [ . . | . . . . . | . . . . | . ]
+  //   [func3     imm6      rs2     op ]
+  //   ---------------------------------
+  //
+  template <typename Reg>
+  void EmitCSS(uint32_t funct3, uint32_t offset6, Reg rs2, uint32_t opcode) {
+    DCHECK(IsUint<3>(funct3));
+    DCHECK(IsUint<6>(offset6));
+    DCHECK(IsUint<5>(static_cast<uint32_t>(rs2)));
+    DCHECK(IsUint<2>(opcode));
+
+    uint32_t encoding = funct3 << 13 | offset6 << 7 | static_cast<uint32_t>(rs2) << 2 | opcode;
+    Emit16(encoding);
+  }
+
+  // CIW-type instruction:
+  //
+  //   15  13 12            5 4   2 1 0
+  //   ---------------------------------
+  //   [ . . | . . . . . . . | . . | . ]
+  //   [func3     imm8         rd'  op ]
+  //   ---------------------------------
+  //
+  void EmitCIW(uint32_t funct3, uint32_t imm8, XRegister rd_s, uint32_t opcode) {
+    DCHECK(IsUint<3>(funct3));
+    DCHECK(IsUint<8>(imm8));
+    DCHECK(IsShortReg(rd_s)) << rd_s;
+    DCHECK(IsUint<2>(opcode));
+
+    uint32_t encoding = funct3 << 13 | imm8 << 5 | EncodeShortReg(rd_s) << 2 | opcode;
+    Emit16(encoding);
+  }
+
+  // CL/S-type instruction:
+  //
+  //   15  13 12  10 9  7 6 5 4   2 1 0
+  //   ---------------------------------
+  //   [ . . | . . | . . | . | . . | . ]
+  //   [func3  imm   rs1' imm rds2' op ]
+  //   ---------------------------------
+  //
+  template <typename Reg>
+  void EmitCM(uint32_t funct3, uint32_t imm5, XRegister rs1_s, Reg rd_rs2_s, uint32_t opcode) {
+    DCHECK(IsUint<3>(funct3));
+    DCHECK(IsUint<5>(imm5));
+    DCHECK(IsShortReg(rs1_s)) << rs1_s;
+    DCHECK(IsShortReg(rd_rs2_s)) << rd_rs2_s;
+    DCHECK(IsUint<2>(opcode));
+
+    uint32_t immH3 = BitFieldExtract(imm5, 2, 3);
+    uint32_t immL2 = BitFieldExtract(imm5, 0, 2);
+
+    uint32_t encoding = funct3 << 13 | immH3 << 10 | EncodeShortReg(rs1_s) << 7 | immL2 << 5 |
+                        EncodeShortReg(rd_rs2_s) << 2 | opcode;
+    Emit16(encoding);
+  }
+
+  // CA-type instruction:
+  //
+  //   15         10 9  7 6 5 4   2 1 0
+  //   ---------------------------------
+  //   [ . . . . . | . . | . | . . | . ]
+  //   [    funct6 rds1' funct2 rs2' op]
+  //   ---------------------------------
+  //
+  void EmitCA(
+      uint32_t funct6, XRegister rd_rs1_s, uint32_t funct2, uint32_t rs2_v, uint32_t opcode) {
+    DCHECK(IsUint<6>(funct6));
+    DCHECK(IsShortReg(rd_rs1_s)) << rd_rs1_s;
+    DCHECK(IsUint<2>(funct2));
+    DCHECK(IsUint<3>(rs2_v));
+    DCHECK(IsUint<2>(opcode));
+
+    uint32_t encoding =
+        funct6 << 10 | EncodeShortReg(rd_rs1_s) << 7 | funct2 << 5  | rs2_v << 2 | opcode;
+    Emit16(encoding);
+  }
+
+  void EmitCAReg(
+      uint32_t funct6, XRegister rd_rs1_s, uint32_t funct2, XRegister rs2_s, uint32_t opcode) {
+    DCHECK(IsShortReg(rs2_s)) << rs2_s;
+    EmitCA(funct6, rd_rs1_s, funct2, EncodeShortReg(rs2_s), opcode);
+  }
+
+  void EmitCAImm(
+      uint32_t funct6, XRegister rd_rs1_s, uint32_t funct2, uint32_t funct3, uint32_t opcode) {
+    EmitCA(funct6, rd_rs1_s, funct2, funct3, opcode);
+  }
+
+  // CB-type instruction:
+  //
+  //   15  13 12  10 9  7 6       2 1 0
+  //   ---------------------------------
+  //   [ . . | . . | . . | . . . . | . ]
+  //   [func3 offset rs1'   offset  op ]
+  //   ---------------------------------
+  //
+  void EmitCB(uint32_t funct3, int32_t offset8, XRegister rd_rs1_s, uint32_t opcode) {
+    DCHECK(IsUint<3>(funct3));
+    DCHECK(IsUint<8>(offset8));
+    DCHECK(IsShortReg(rd_rs1_s)) << rd_rs1_s;
+    DCHECK(IsUint<2>(opcode));
+
+    uint32_t offsetH3 = BitFieldExtract<uint32_t>(offset8, 5, 3);
+    uint32_t offsetL5 = BitFieldExtract<uint32_t>(offset8, 0, 5);
+
+    uint32_t encoding =
+        funct3 << 13 | offsetH3 << 10 | EncodeShortReg(rd_rs1_s) << 7 | offsetL5 << 2 | opcode;
+    Emit16(encoding);
+  }
+
+  // Wrappers for EmitCB with different imm bit permutation
+  void EmitCBBranch(uint32_t funct3, int32_t offset, XRegister rs1_s, uint32_t opcode) {
+    DCHECK(IsInt<9>(offset));
+    DCHECK_ALIGNED(offset, 2);
+
+    uint32_t u_offset = static_cast<uint32_t>(offset);
+
+    // offset[8|4:3]
+    uint32_t offsetH3 = (BitFieldExtract(u_offset, 8, 1) << 2) |
+                         BitFieldExtract(u_offset, 3, 2);
+    // offset[7:6|2:1|5]
+    uint32_t offsetL5 = (BitFieldExtract(u_offset, 6, 2) << 3) |
+                        (BitFieldExtract(u_offset, 1, 2) << 1) |
+                         BitFieldExtract(u_offset, 5, 1);
+
+    EmitCB(funct3, BitFieldInsert(offsetL5, offsetH3, 5, 3), rs1_s, opcode);
+  }
+
+  void EmitCBArithmetic(
+      uint32_t funct3, uint32_t funct2, uint32_t imm, XRegister rd_s, uint32_t opcode) {
+    uint32_t imm_5 = BitFieldExtract(imm, 5, 1);
+    uint32_t immH3 = BitFieldInsert(funct2, imm_5, 2, 1);
+    uint32_t immL5 = BitFieldExtract(imm, 0, 5);
+
+    EmitCB(funct3, BitFieldInsert(immL5, immH3, 5, 3), rd_s, opcode);
+  }
+
+  // CJ-type instruction:
+  //
+  //   15  13 12                  2 1 0
+  //   ---------------------------------
+  //   [ . . | . . . . . . . . . . | . ]
+  //   [func3    jump target 11     op ]
+  //   ---------------------------------
+  //
+  void EmitCJ(uint32_t funct3, int32_t offset, uint32_t opcode) {
+    DCHECK_ALIGNED(offset, 2);
+    DCHECK(IsInt<12>(offset)) << offset;
+    DCHECK(IsUint<3>(funct3));
+    DCHECK(IsUint<2>(opcode));
+
+    uint32_t uoffset = static_cast<uint32_t>(offset);
+    // offset[11|4|9:8|10|6|7|3:1|5]
+    uint32_t jumpt = (BitFieldExtract(uoffset, 11, 1) << 10) |
+                     (BitFieldExtract(uoffset, 4, 1) << 9)   |
+                     (BitFieldExtract(uoffset, 8, 2) << 7)   |
+                     (BitFieldExtract(uoffset, 10, 1) << 6)  |
+                     (BitFieldExtract(uoffset, 6, 1) << 5)   |
+                     (BitFieldExtract(uoffset, 7, 1) << 4)   |
+                     (BitFieldExtract(uoffset, 1, 3) << 1)   |
+                      BitFieldExtract(uoffset, 5, 1);
+
+    DCHECK(IsUint<11>(jumpt));
+
+    uint32_t encoding = funct3 << 13 | jumpt << 2 | opcode;
+    Emit16(encoding);
   }
 
   ArenaVector<Branch> branches_;
