@@ -1238,6 +1238,7 @@
                   "2238-checker-polymorphic-recursive-inlining",
                   "2240-tracing-non-invokable-method",
                   "2246-trace-stream",
+                  "2246-trace-v2",
                   "2254-class-value-before-and-after-u",
                   "2261-badcleaner-in-systemcleaner",
                   "2263-method-trace-jit",
