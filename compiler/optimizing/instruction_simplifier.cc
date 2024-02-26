@@ -621,8 +621,7 @@ bool InstructionSimplifierVisitor::TryReplaceWithRotateConstantPattern(HBinaryOp
   size_t rdist = Int64FromConstant(ushr->GetRight()->AsConstant());
   size_t ldist = Int64FromConstant(shl->GetRight()->AsConstant());
   if (((ldist + rdist) & (reg_bits - 1)) == 0) {
-    ReplaceRotateWithRor(op, ushr, shl);
-    return true;
+    return ReplaceRotateWithRor(op, ushr, shl);
   }
   return false;
 }
@@ -643,6 +642,10 @@ bool InstructionSimplifierVisitor::TryReplaceWithRotateConstantPattern(HBinaryOp
 //    OP   dst, dst, tmp
 // with
 //    Ror  dst, x,   d
+//
+// Requires `d` to be non-zero for the HAdd and HXor case. If `d` is 0 the shifts and rotate are
+// no-ops and the `OP` is never executed. This is fine for HOr since the result is the same, but the
+// result is different for HAdd and HXor.
 bool InstructionSimplifierVisitor::TryReplaceWithRotateRegisterNegPattern(HBinaryOperation* op,
                                                                           HUShr* ushr,
                                                                           HShl* shl) {
@@ -650,11 +653,20 @@ bool InstructionSimplifierVisitor::TryReplaceWithRotateRegisterNegPattern(HBinar
   DCHECK(ushr->GetRight()->IsNeg() || shl->GetRight()->IsNeg());
   bool neg_is_left = shl->GetRight()->IsNeg();
   HNeg* neg = neg_is_left ? shl->GetRight()->AsNeg() : ushr->GetRight()->AsNeg();
-  // And the shift distance being negated is the distance being shifted the other way.
-  if (neg->InputAt(0) == (neg_is_left ? ushr->GetRight() : shl->GetRight())) {
-    ReplaceRotateWithRor(op, ushr, shl);
+  HInstruction* value = neg->InputAt(0);
+
+  // The shift distance being negated is the distance being shifted the other way.
+  if (value != (neg_is_left ? ushr->GetRight() : shl->GetRight())) {
+    return false;
   }
-  return false;
+
+  const bool needs_non_zero_value = !op->IsOr();
+  if (needs_non_zero_value) {
+    if (!value->IsConstant() || value->AsConstant()->IsArithmeticZero()) {
+      return false;
+    }
+  }
+  return ReplaceRotateWithRor(op, ushr, shl);
 }
 
 // Try replacing code looking like (x >>> d OP x << (#bits - d)):
