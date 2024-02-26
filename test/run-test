@@ -114,10 +114,10 @@ if True:
   checker = f"{progdir}/../tools/checker/checker.py"
 
   ON_VM = os.environ.get("ART_TEST_ON_VM")
-  SSH_USER = os.environ.get("ART_TEST_SSH_USER")
-  SSH_HOST = os.environ.get("ART_TEST_SSH_HOST")
-  SSH_PORT = os.environ.get("ART_TEST_SSH_PORT")
-  SSH_CMD = os.environ.get("ART_SSH_CMD")
+  SSH_USER = env.ART_TEST_SSH_USER
+  SSH_HOST = env.ART_TEST_SSH_HOST
+  SSH_PORT = env.ART_TEST_SSH_PORT
+  SSH_CMD = env.ART_SSH_CMD
   SCP_CMD = os.environ.get("ART_SCP_CMD")
   CHROOT = os.environ.get("ART_TEST_CHROOT")
   CHROOT_CMD = os.environ.get("ART_CHROOT_CMD")
