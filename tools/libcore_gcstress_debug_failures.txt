@@ -71,7 +71,8 @@
   result: ERROR,
   modes: [host],
   names: ["libcore.java.util.jar.OldManifestTest#test_equals",
-          "test.java.util.Collection"
+          "test.java.util.Collection",
+          "test.java.util.TestFormatter"
   ]
 },
 {
