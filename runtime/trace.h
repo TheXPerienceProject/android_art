@@ -48,6 +48,8 @@ class DexFile;
 class ShadowFrame;
 class Thread;
 
+struct MethodTraceRecord;
+
 using DexIndexBitSet = std::bitset<65536>;
 
 enum TracingMode {
@@ -146,6 +148,7 @@ class TraceWriter {
               TraceClockSource clock_source,
               size_t buffer_size,
               int num_trace_buffers,
+              int trace_format_version,
               uint32_t clock_overhead_ns);
 
   // This encodes all the events in the per-thread trace buffer and writes it to the trace file /
@@ -210,6 +213,25 @@ class TraceWriter {
   int GetMethodTraceIndex(uintptr_t* current_buffer);
 
  private:
+  void ReadValuesFromRecord(uintptr_t* method_trace_entries,
+                            size_t record_index,
+                            MethodTraceRecord& record,
+                            bool has_thread_cpu_clock,
+                            bool has_wall_clock);
+
+  void FlushEntriesFormatV2(uintptr_t* method_trace_entries,
+                            size_t tid,
+                            const std::unordered_map<ArtMethod*, std::string>& method_infos,
+                            size_t num_records,
+                            size_t* current_index,
+                            uint8_t* init_buffer_ptr) REQUIRES(tracing_lock_);
+
+  void FlushEntriesFormatV1(uintptr_t* method_trace_entries,
+                            size_t tid,
+                            const std::unordered_map<ArtMethod*, std::string>& method_infos,
+                            size_t end_offset,
+                            size_t* current_index,
+                            uint8_t* buffer_ptr) REQUIRES(tracing_lock_);
   // Get a 32-bit id for the method and specify if the method hasn't been seen before. If this is
   // the first time we see this method record information (like method name, declaring class etc.,)
   // about the method.
@@ -236,6 +258,15 @@ class TraceWriter {
                         TraceAction action,
                         uint32_t thread_clock_diff,
                         uint32_t wall_clock_diff) REQUIRES(tracing_lock_);
+
+  // Encodes the header for the events block. This assumes that there is enough space reserved to
+  // encode the entry.
+  void EncodeEventBlockHeader(uint8_t* ptr,
+                              uint32_t thread_id,
+                              uint32_t method_index,
+                              uint32_t init_thread_clock_time,
+                              uint32_t init_wall_clock_time,
+                              uint16_t num_records) REQUIRES(tracing_lock_);
 
   // Ensures there is sufficient space in the buffer to record the requested_size. If there is not
   // enough sufficient space the current contents of the buffer are written to the file and
@@ -291,11 +322,17 @@ class TraceWriter {
   // Size of buf_.
   const size_t buffer_size_;
 
+  // Version of trace output
+  const int trace_format_version_;
+
   // Time trace was created.
   const uint64_t start_time_;
 
   // Did we overflow the buffer recording traces?
   bool overflow_;
+
+  // Total number of records flushed to file.
+  size_t num_records_;
 
   // Clock overhead.
   const uint32_t clock_overhead_ns_;
@@ -321,6 +358,11 @@ class Trace final : public instrumentation::InstrumentationListener {
     kTraceClockSourceWallClock = 0x010,
     kTraceClockSourceThreadCpu = 0x100,
   };
+
+  static const int kFormatV1 = 0;
+  static const int kFormatV2 = 1;
+  static const int kTraceFormatVersionFlagMask = 0b110;
+  static const int kTraceFormatVersionShift = 1;
 
   enum class TraceMode {
     kMethodTracing,
