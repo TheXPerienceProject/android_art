@@ -2109,7 +2109,7 @@ class ImageDumper {
     if (obj_class->IsArrayClass()) {
       os << StringPrintf("%p: %s length:%d\n", obj, obj_class->PrettyDescriptor().c_str(),
                          obj->AsArray()->GetLength());
-    } else if (obj->IsClass()) {
+    } else if (obj_class->IsClassClass()) {
       ObjPtr<mirror::Class> klass = obj->AsClass();
       os << StringPrintf("%p: java.lang.Class \"%s\" (",
                          obj,
@@ -2146,13 +2146,23 @@ class ImageDumper {
             (value == nullptr) ? obj_class->GetComponentType() : value->GetClass();
         PrettyObjectValue(os, value_class, value);
       }
-    } else if (obj->IsClass()) {
+    } else if (obj_class->IsClassClass()) {
       ObjPtr<mirror::Class> klass = obj->AsClass();
 
       if (kBitstringSubtypeCheckEnabled) {
         os << "SUBTYPE_CHECK_BITS: ";
         SubtypeCheck<ObjPtr<mirror::Class>>::Dump(klass, os);
         os << "\n";
+      }
+
+      if (klass->ShouldHaveEmbeddedVTable()) {
+        os << "EMBEDDED VTABLE:\n";
+        ScopedIndentation indent2(&vios_);
+        const PointerSize pointer_size = image_header_.GetPointerSize();
+        for (size_t i = 0, length = klass->GetEmbeddedVTableLength(); i != length; ++i) {
+          os << i << ": "
+             << ArtMethod::PrettyMethod(klass->GetEmbeddedVTableEntry(i, pointer_size)) << '\n';
+        }
       }
 
       if (klass->NumStaticFields() != 0) {
