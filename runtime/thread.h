@@ -1429,21 +1429,18 @@ class EXPORT Thread {
   }
   // Remove the suspend trigger for this thread by making the suspend_trigger_ TLS value
   // equal to a valid pointer.
-  // TODO: does this need to atomic?  I don't think so.
   void RemoveSuspendTrigger() {
-    tlsPtr_.suspend_trigger = reinterpret_cast<uintptr_t*>(&tlsPtr_.suspend_trigger);
+    tlsPtr_.suspend_trigger.store(reinterpret_cast<uintptr_t*>(&tlsPtr_.suspend_trigger),
+                                  std::memory_order_relaxed);
   }
 
   // Trigger a suspend check by making the suspend_trigger_ TLS value an invalid pointer.
   // The next time a suspend check is done, it will load from the value at this address
   // and trigger a SIGSEGV.
-  // Only needed if Runtime::implicit_suspend_checks_ is true and fully implemented.  It currently
-  // is always false. Client code currently just looks at the thread flags directly to determine
-  // whether we should suspend, so this call is currently unnecessary.
-  void TriggerSuspend() {
-    tlsPtr_.suspend_trigger = nullptr;
-  }
-
+  // Only needed if Runtime::implicit_suspend_checks_ is true. On some platforms, and in the
+  // interpreter, client code currently just looks at the thread flags directly to determine
+  // whether we should suspend, so this call is not always necessary.
+  void TriggerSuspend() { tlsPtr_.suspend_trigger.store(nullptr, std::memory_order_release); }
 
   // Push an object onto the allocation stack.
   bool PushOnThreadLocalAllocationStack(mirror::Object* obj)
@@ -2150,8 +2147,12 @@ class EXPORT Thread {
     ManagedStack managed_stack;
 
     // In certain modes, setting this to 0 will trigger a SEGV and thus a suspend check.  It is
-    // normally set to the address of itself.
-    uintptr_t* suspend_trigger;
+    // normally set to the address of itself. It should be cleared with release semantics to ensure
+    // that prior state changes etc. are visible to any thread that faults as a result.
+    // We assume that the kernel ensures that such changes are then visible to the faulting
+    // thread, even if it is not an acquire load that faults. (Indeed, it seems unlikely that the
+    // ordering semantics associated with the faulting load has any impact.)
+    std::atomic<uintptr_t*> suspend_trigger;
 
     // Every thread may have an associated JNI environment
     JNIEnvExt* jni_env;
