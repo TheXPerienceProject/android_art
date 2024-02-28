@@ -139,8 +139,8 @@ void ReadExtensionLibraries(const char* dirname, std::vector<std::string>* sonam
         if (ret.ok()) {
           sonames->insert(sonames->end(), ret->begin(), ret->end());
         } else {
-          LOG_ALWAYS_FATAL("Error reading public native library list from \"%s\": %s",
-                           config_file_path.c_str(), ret.error().message().c_str());
+          LOG_ALWAYS_FATAL("Error reading extension library list: %s",
+                           ret.error().message().c_str());
         }
       }
     }
@@ -158,8 +158,7 @@ static std::string InitDefaultPublicLibraries(bool for_preload) {
         }
       });
   if (!sonames.ok()) {
-    LOG_ALWAYS_FATAL("Error reading public native library list from \"%s\": %s",
-                     config_file.c_str(), sonames.error().message().c_str());
+    LOG_ALWAYS_FATAL("%s", sonames.error().message().c_str());
     return "";
   }
 
@@ -252,7 +251,7 @@ static std::string InitLlndkLibrariesVendor() {
   }
   Result<std::vector<std::string>> sonames = ReadConfig(config_file, always_true);
   if (!sonames.ok()) {
-    LOG_ALWAYS_FATAL("%s: %s", config_file.c_str(), sonames.error().message().c_str());
+    LOG_ALWAYS_FATAL("%s", sonames.error().message().c_str());
     return "";
   }
   std::string libs = android::base::Join(*sonames, ':');
@@ -274,7 +273,7 @@ static std::string InitLlndkLibrariesProduct() {
   }
   Result<std::vector<std::string>> sonames = ReadConfig(config_file, always_true);
   if (!sonames.ok()) {
-    LOG_ALWAYS_FATAL("%s: %s", config_file.c_str(), sonames.error().message().c_str());
+    LOG_ALWAYS_FATAL("%s", sonames.error().message().c_str());
     return "";
   }
   std::string libs = android::base::Join(*sonames, ':');
