@@ -58,12 +58,6 @@
                         "loaded systems."]
     },
     {
-        "tests": "569-checker-pattern-replacement",
-        "variant": "target",
-        "description": ["569-checker-pattern-replacement tests behaviour",
-                        "present only on host."]
-    },
-    {
         "tests": ["116-nodex2oat",
                   "118-noimage-dex2oat"],
         "variant": "prebuild",
