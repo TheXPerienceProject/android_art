@@ -732,7 +732,12 @@ void Trace::StopTracing(bool flush_entries) {
     // We also flush the buffer when destroying a thread which expects the_trace_ to be valid so
     // make sure that the per-thread buffer is reset before resetting the_trace_.
     {
+      MutexLock mu(self, *Locks::trace_lock_);
       MutexLock tl_lock(Thread::Current(), *Locks::thread_list_lock_);
+      // Flush the per-thread buffers and reset the trace inside the trace_lock_ to avoid any
+      // race if the thread is detaching and trying to flush the buffer too. Since we hold the
+      // trace_lock_ both here and when flushing on a thread detach only one of them will succeed
+      // in actually flushing the buffer.
       for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
         if (thread->GetMethodTraceBuffer() != nullptr) {
           // We may have pending requests to flush the data. So just enqueue a
@@ -742,12 +747,9 @@ void Trace::StopTracing(bool flush_entries) {
               thread, /* is_sync= */ false, /* free_buffer= */ true);
         }
       }
+      the_trace_ = nullptr;
+      sampling_pthread_ = 0U;
     }
-
-    // Reset the_trace_ by taking a trace_lock
-    MutexLock mu(self, *Locks::trace_lock_);
-    the_trace_ = nullptr;
-    sampling_pthread_ = 0U;
   }
 
   // At this point, code may read buf_ as its writers are shutdown
@@ -764,6 +766,12 @@ void Trace::StopTracing(bool flush_entries) {
 
 void Trace::FlushThreadBuffer(Thread* self) {
   MutexLock mu(self, *Locks::trace_lock_);
+  // Check if we still need to flush inside the trace_lock_. If we are stopping tracing it is
+  // possible we already deleted the trace and flushed the buffer too.
+  if (the_trace_ == nullptr) {
+    DCHECK_EQ(self->GetMethodTraceBuffer(), nullptr);
+    return;
+  }
   the_trace_->trace_writer_->FlushBuffer(self, /* is_sync= */ false, /* free_buffer= */ true);
 }
 
@@ -1367,9 +1375,11 @@ void TraceWriter::FlushBuffer(Thread* thread, bool is_sync, bool release) {
     // This is a synchronous flush, so no need to allocate a new buffer. This is used either
     // when the tracing has finished or in non-streaming mode.
     // Just reset the buffer pointer to the initial value, so we can reuse the same buffer.
-    *current_offset = kPerThreadBufSize;
     if (release) {
       thread->SetMethodTraceBuffer(nullptr);
+      *current_offset = 0;
+    } else {
+      *current_offset = kPerThreadBufSize;
     }
   } else {
     int old_index = GetMethodTraceIndex(method_trace_entries);
@@ -1378,11 +1388,12 @@ void TraceWriter::FlushBuffer(Thread* thread, bool is_sync, bool release) {
     thread_pool_->AddTask(
         Thread::Current(),
         new TraceWriterTask(this, old_index, method_trace_entries, *current_offset, tid));
-    *current_offset = kPerThreadBufSize;
     if (release) {
       thread->SetMethodTraceBuffer(nullptr);
+      *current_offset = 0;
     } else {
       thread->SetMethodTraceBuffer(AcquireTraceBuffer(tid));
+      *current_offset = kPerThreadBufSize;
     }
   }
 
