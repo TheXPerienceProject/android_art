@@ -2619,10 +2619,6 @@ void Thread::Destroy(bool should_run_callbacks) {
       runtime->GetRuntimeCallbacks()->ThreadDeath(self);
     }
 
-    if (UNLIKELY(self->GetMethodTraceBuffer() != nullptr)) {
-      Trace::FlushThreadBuffer(self);
-    }
-
     // this.nativePeer = 0;
     SetNativePeer</*kSupportTransaction=*/ true>(tlsPtr_.opeer, nullptr);
 
@@ -2637,12 +2633,17 @@ void Thread::Destroy(bool should_run_callbacks) {
       ObjectLock<mirror::Object> locker(self, h_obj);
       locker.NotifyAll();
     }
+
     tlsPtr_.opeer = nullptr;
   }
 
   {
     ScopedObjectAccess soa(self);
     Runtime::Current()->GetHeap()->RevokeThreadLocalBuffers(this);
+
+    if (UNLIKELY(self->GetMethodTraceBuffer() != nullptr)) {
+      Trace::FlushThreadBuffer(self);
+    }
   }
   // Mark-stack revocation must be performed at the very end. No
   // checkpoint/flip-function or read-barrier should be called after this.
@@ -2691,9 +2692,7 @@ Thread::~Thread() {
   SetCachedThreadName(nullptr);  // Deallocate name.
   delete tlsPtr_.deps_or_stack_trace_sample.stack_trace_sample;
 
-  if (tlsPtr_.method_trace_buffer != nullptr) {
-    delete[] tlsPtr_.method_trace_buffer;
-  }
+  CHECK_EQ(tlsPtr_.method_trace_buffer, nullptr);
 
   Runtime::Current()->GetHeap()->AssertThreadLocalBuffersAreRevoked(this);
 

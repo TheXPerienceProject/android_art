@@ -41,10 +41,10 @@ cc_defaults {
         "art-odrefresh-operator-srcs",
     ],
     shared_libs: [
-        "libartpalette",
         "libarttools", // Contains "libc++fs".
         "libbase",
         "liblog",
+        "libselinux",
     ],
     static_libs: [
         "libmodules-utils-build",
