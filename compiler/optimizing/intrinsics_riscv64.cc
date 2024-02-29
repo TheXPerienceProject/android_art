@@ -1139,25 +1139,28 @@ static void GenerateCompareAndSet(Riscv64Assembler* assembler,
   }
   EmitLoadReserved(assembler, type, ptr, old_value, load_aqrl);
   XRegister to_store = new_value;
-  if (mask != kNoXRegister) {
-    DCHECK_EQ(expected2, kNoXRegister);
-    DCHECK_NE(masked, kNoXRegister);
-    __ And(masked, old_value, mask);
-    __ Bne(masked, expected, cmp_failure);
-    // The `old_value` does not need to be preserved as the caller shall use `masked`
-    // to return the old value if needed.
-    to_store = old_value;
-    // TODO(riscv64): We could XOR the old and new value before the loop and use a single XOR here
-    // instead of the XOR+OR. (The `new_value` is either Zero or a temporary we can clobber.)
-    __ Xor(to_store, old_value, masked);
-    __ Or(to_store, to_store, new_value);
-  } else if (expected2 != kNoXRegister) {
-    Riscv64Label match2;
-    __ Beq(old_value, expected2, &match2, /*is_bare=*/ true);
-    __ Bne(old_value, expected, cmp_failure);
-    __ Bind(&match2);
-  } else {
-    __ Bne(old_value, expected, cmp_failure);
+  {
+    ScopedLrScExtensionsRestriction slser(assembler);
+    if (mask != kNoXRegister) {
+      DCHECK_EQ(expected2, kNoXRegister);
+      DCHECK_NE(masked, kNoXRegister);
+      __ And(masked, old_value, mask);
+      __ Bne(masked, expected, cmp_failure);
+      // The `old_value` does not need to be preserved as the caller shall use `masked`
+      // to return the old value if needed.
+      to_store = old_value;
+      // TODO(riscv64): We could XOR the old and new value before the loop and use a single XOR here
+      // instead of the XOR+OR. (The `new_value` is either Zero or a temporary we can clobber.)
+      __ Xor(to_store, old_value, masked);
+      __ Or(to_store, to_store, new_value);
+    } else if (expected2 != kNoXRegister) {
+      Riscv64Label match2;
+      __ Beq(old_value, expected2, &match2, /*is_bare=*/ true);
+      __ Bne(old_value, expected, cmp_failure);
+      __ Bind(&match2);
+    } else {
+      __ Bne(old_value, expected, cmp_failure);
+    }
   }
   EmitStoreConditional(assembler, type, ptr, store_result, to_store, store_aqrl);
   if (strong) {
@@ -1826,8 +1829,11 @@ static void GenerateGetAndUpdate(CodeGeneratorRISCV64* codegen,
         Riscv64Label retry;
         __ Bind(&retry);
         __ LrW(old_value, ptr, load_aqrl);
-        __ And(temp, old_value, mask);
-        __ Or(temp, temp, arg);
+        {
+          ScopedLrScExtensionsRestriction slser(assembler);
+          __ And(temp, old_value, mask);
+          __ Or(temp, temp, arg);
+        }
         __ ScW(temp, temp, ptr, store_aqrl);
         __ Bnez(temp, &retry, /*is_bare=*/ true);  // Bare: `TMP` shall not be clobbered.
       }
@@ -1845,15 +1851,19 @@ static void GenerateGetAndUpdate(CodeGeneratorRISCV64* codegen,
         Riscv64Label retry;
         __ Bind(&retry);
         __ LrW(old_value, ptr, load_aqrl);
-        __ Add(temp, old_value, arg);
-        // We use `(A ^ B) ^ A == B` and with the masking `((A ^ B) & mask) ^ A`, the result
-        // contains bits from `B` for bits specified in `mask` and bits from `A` elsewhere.
-        // Note: These instructions directly depend on each other, so it's not necessarily the
-        // fastest approach but for `(A ^ ~mask) | (B & mask)` we would need an extra register for
-        // `~mask` because ANDN is not in the "I" instruction set as required for a LR/SC sequence.
-        __ Xor(temp, temp, old_value);
-        __ And(temp, temp, mask);
-        __ Xor(temp, temp, old_value);
+        {
+          ScopedLrScExtensionsRestriction slser(assembler);
+          __ Add(temp, old_value, arg);
+          // We use `(A ^ B) ^ A == B` and with the masking `((A ^ B) & mask) ^ A`, the result
+          // contains bits from `B` for bits specified in `mask` and bits from `A` elsewhere.
+          // Note: These instructions directly depend on each other, so it's not necessarily the
+          // fastest approach but for `(A ^ ~mask) | (B & mask)` we would need an extra register
+          // for `~mask` because ANDN is not in the "I" instruction set as required for a LR/SC
+          // sequence.
+          __ Xor(temp, temp, old_value);
+          __ And(temp, temp, mask);
+          __ Xor(temp, temp, old_value);
+        }
         __ ScW(temp, temp, ptr, store_aqrl);
         __ Bnez(temp, &retry, /*is_bare=*/ true);  // Bare: `TMP` shall not be clobbered.
       }
