@@ -499,6 +499,7 @@ def host_builders():
             "debug": False,
             "device": "qemu-armv8",
             "on_virtual_machine": True,
+            "product": "armv8",
         }
     )
     ci_builder(
@@ -512,6 +513,7 @@ def host_builders():
             "debug": False,
             "device": "qemu-riscv64",
             "on_virtual_machine": True,
+            "product": "riscv64",
         }
     )
     ci_builder(
@@ -525,6 +527,7 @@ def host_builders():
             "debug": False,
             "device": "qemu-riscv64",
             "on_virtual_machine": True,
+            "product": "riscv64",
         }
     )
 
