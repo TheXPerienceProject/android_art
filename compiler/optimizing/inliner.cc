@@ -1619,28 +1619,33 @@ bool HInliner::TryBuildAndInline(HInvoke* invoke_instruction,
     return true;
   }
 
+  CodeItemDataAccessor accessor(method->DexInstructionData());
+
+  if (!IsInliningAllowed(method, accessor)) {
+    return false;
+  }
+
+  // We have checked above that inlining is "allowed" to make sure that the method has bytecode
+  // (is not native), is compilable and verified and to enforce the @NeverInline annotation.
+  // However, the pattern substitution is always preferable, so we do it before the check if
+  // inlining is "encouraged". It also has an exception to the `MayInline()` restriction.
+  if (TryPatternSubstitution(invoke_instruction, method, accessor, return_replacement)) {
+    LOG_SUCCESS() << "Successfully replaced pattern of invoke "
+                  << method->PrettyMethod();
+    MaybeRecordStat(stats_, MethodCompilationStat::kReplacedInvokeWithSimplePattern);
+    return true;
+  }
+
   // Check whether we're allowed to inline. The outermost compilation unit is the relevant
   // dex file here (though the transitivity of an inline chain would allow checking the caller).
   if (!MayInline(codegen_->GetCompilerOptions(),
                  *method->GetDexFile(),
                  *outer_compilation_unit_.GetDexFile())) {
-    if (TryPatternSubstitution(invoke_instruction, method, return_replacement)) {
-      LOG_SUCCESS() << "Successfully replaced pattern of invoke "
-                    << method->PrettyMethod();
-      MaybeRecordStat(stats_, MethodCompilationStat::kReplacedInvokeWithSimplePattern);
-      return true;
-    }
     LOG_FAIL(stats_, MethodCompilationStat::kNotInlinedWont)
         << "Won't inline " << method->PrettyMethod() << " in "
         << outer_compilation_unit_.GetDexFile()->GetLocation() << " ("
         << caller_compilation_unit_.GetDexFile()->GetLocation() << ") from "
         << method->GetDexFile()->GetLocation();
-    return false;
-  }
-
-  CodeItemDataAccessor accessor(method->DexInstructionData());
-
-  if (!IsInliningAllowed(method, accessor)) {
     return false;
   }
 
@@ -1683,9 +1688,10 @@ static HInstruction* GetInvokeInputForArgVRegIndex(HInvoke* invoke_instruction,
 // Try to recognize known simple patterns and replace invoke call with appropriate instructions.
 bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
                                       ArtMethod* method,
+                                      const CodeItemDataAccessor& accessor,
                                       HInstruction** return_replacement) {
   InlineMethod inline_method;
-  if (!InlineMethodAnalyser::AnalyseMethodCode(method, &inline_method)) {
+  if (!InlineMethodAnalyser::AnalyseMethodCode(method, &accessor, &inline_method)) {
     return false;
   }
 

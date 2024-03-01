@@ -126,6 +126,7 @@ class HInliner : public HOptimization {
   // Try to recognize known simple patterns and replace invoke call with appropriate instructions.
   bool TryPatternSubstitution(HInvoke* invoke_instruction,
                               ArtMethod* method,
+                              const CodeItemDataAccessor& accessor,
                               HInstruction** return_replacement)
     REQUIRES_SHARED(Locks::mutator_lock_);
 

@@ -472,10 +472,13 @@ void Riscv64JNIMacroAssembler::TryToTransitionFromRunnableToNative(
   __ Bind(&retry);
   static_assert(thread_flags_offset.Int32Value() == 0);  // LR/SC require exact address.
   __ LrW(scratch, TR, AqRl::kNone);
-  __ Li(scratch2, kNativeStateValue);
-  // If any flags are set, go to the slow path.
-  static_assert(kRunnableStateValue == 0u);
-  __ Bnez(scratch, Riscv64JNIMacroLabel::Cast(label)->AsRiscv64());
+  {
+    ScopedLrScExtensionsRestriction slser(&asm_);
+    __ Li(scratch2, kNativeStateValue);
+    // If any flags are set, go to the slow path.
+    static_assert(kRunnableStateValue == 0u);
+    __ Bnez(scratch, Riscv64JNIMacroLabel::Cast(label)->AsRiscv64());
+  }
   __ ScW(scratch, scratch2, TR, AqRl::kRelease);
   __ Bnez(scratch, &retry);
 
@@ -506,11 +509,14 @@ void Riscv64JNIMacroAssembler::TryToTransitionFromNativeToRunnable(
   __ Bind(&retry);
   static_assert(thread_flags_offset.Int32Value() == 0);  // LR/SC require exact address.
   __ LrW(scratch, TR, AqRl::kAcquire);
-  __ Li(scratch2, kNativeStateValue);
-  // If any flags are set, or the state is not Native, go to the slow path.
-  // (While the thread can theoretically transition between different Suspended states,
-  // it would be very unexpected to see a state other than Native at this point.)
-  __ Bne(scratch, scratch2, Riscv64JNIMacroLabel::Cast(label)->AsRiscv64());
+  {
+    ScopedLrScExtensionsRestriction slser(&asm_);
+    __ Li(scratch2, kNativeStateValue);
+    // If any flags are set, or the state is not Native, go to the slow path.
+    // (While the thread can theoretically transition between different Suspended states,
+    // it would be very unexpected to see a state other than Native at this point.)
+    __ Bne(scratch, scratch2, Riscv64JNIMacroLabel::Cast(label)->AsRiscv64());
+  }
   static_assert(kRunnableStateValue == 0u);
   __ ScW(scratch, Zero, TR, AqRl::kNone);
   __ Bnez(scratch, &retry);
