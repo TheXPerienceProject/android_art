@@ -1127,9 +1127,6 @@ bool ThreadList::SuspendThread(Thread* self,
   // Now wait for target to decrement suspend barrier.
   std::optional<std::string> failure_info;
   if (!is_suspended) {
-    // As an experiment, redundantly trigger suspension. TODO: Remove this.
-    std::atomic_thread_fence(std::memory_order_seq_cst);
-    thread->TriggerSuspend();
     failure_info = WaitForSuspendBarrier(&wrapped_barrier.barrier_, tid, attempt_of_4);
     if (!failure_info.has_value()) {
       is_suspended = true;
