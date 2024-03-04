@@ -97,13 +97,14 @@ class OatDumpTest : public CommonRuntimeTest, public testing::WithParamInterface
   }
 
   enum Args {
-    kArgImage = 1 << 0,      // --image=<boot-image>
-    kArgAppImage = 1 << 1,   // --app-image=<app-image>
-    kArgOatBcp = 1 << 2,     // --oat-file=<bcp-oat-file>
-    kArgDexBcp = 1 << 3,     // --dex-file=<bcp-dex-file>
-    kArgOatApp = 1 << 4,     // --oat-file=<app-oat-file>
-    kArgSymbolize = 1 << 5,  // --symbolize=<bcp-oat-file>
-    kArgDexApp = 1 << 6,     // --dex-file=<app-dex-file>
+    kArgImage = 1 << 0,                  // --image=<boot-image>
+    kArgAppImage = 1 << 1,               // --app-image=<app-image>
+    kArgOatBcp = 1 << 2,                 // --oat-file=<bcp-oat-file>
+    kArgDexBcp = 1 << 3,                 // --dex-file=<bcp-dex-file>
+    kArgOatApp = 1 << 4,                 // --oat-file=<app-oat-file>
+    kArgSymbolize = 1 << 5,              // --symbolize=<bcp-oat-file>
+    kArgDexApp = 1 << 6,                 // --dex-file=<app-dex-file>
+    kArgMethodAndOffsetAsJson = 1 << 7,  // --dump-method-and-offset-only
 
     // Runtime args.
     kArgBcp = 1 << 16,        // --runtime-arg -Xbootclasspath:<bcp>
@@ -117,6 +118,7 @@ class OatDumpTest : public CommonRuntimeTest, public testing::WithParamInterface
     kExpectCode = 1 << 2,
     kExpectBssMappingsForBcp = 1 << 3,
     kExpectBssOffsetsForBcp = 1 << 4,
+    kExpectMethodAndOffsetAsJson = 1 << 5,
   };
 
   static std::string GetAppBaseName() {
@@ -204,6 +206,12 @@ class OatDumpTest : public CommonRuntimeTest, public testing::WithParamInterface
     if ((expects & kExpectBssOffsetsForBcp) != 0) {
       expected_prefixes.push_back("Offsets for BCP DexFile");
     }
+    if ((expects & kExpectMethodAndOffsetAsJson) != 0) {
+      expected_prefixes.push_back(
+          "{\"method\":\"void java.lang.Object.<init>()\",\"offset\":\"0x");  // actual offset may
+                                                                              // differ between dex
+                                                                              // files
+    }
 
     std::vector<std::string> exec_argv = {file_path};
     if ((args & kArgSymbolize) != 0) {
@@ -240,6 +248,9 @@ class OatDumpTest : public CommonRuntimeTest, public testing::WithParamInterface
     }
     if ((args & kArgDexApp) != 0) {
       exec_argv.push_back("--dex-file=" + GetTestDexFileName(GetAppBaseName().c_str()));
+    }
+    if ((args & kArgMethodAndOffsetAsJson) != 0) {
+      exec_argv.push_back("--dump-method-and-offset-as-json");
     }
     exec_argv.insert(exec_argv.end(), extra_args.begin(), extra_args.end());
 
