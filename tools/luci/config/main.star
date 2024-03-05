@@ -493,7 +493,6 @@ def host_builders():
         category="qemu|armv8",
         short_name="ndbg",
         dimensions=host_dims,
-        is_fyi=True,
         properties={
             "bitness": 64,
             "debug": False,
