@@ -1089,6 +1089,8 @@ bool ThreadList::SuspendThread(Thread* self,
           if (thread->IsSuspended()) {
             // See the discussion in mutator_gc_coord.md and SuspendAllInternal for the race here.
             thread->RemoveFirstSuspend1Barrier(&wrapped_barrier);
+            // PassActiveSuspendBarriers couldn't have seen our barrier, since it also acquires
+            // 'thread_suspend_count_lock_'. `wrapped_barrier` will not be accessed.
             if (!thread->HasActiveSuspendBarrier()) {
               thread->AtomicClearFlag(ThreadFlag::kActiveSuspendBarrier);
             }
@@ -1185,7 +1187,7 @@ bool ThreadList::SuspendThread(Thread* self,
     }
     is_suspended = true;
   }
-  // wrapped_barrier.barrier_ has been decremented and will no longer be accessed.
+  // wrapped_barrier.barrier_ will no longer be accessed.
   VLOG(threads) << func_name << " suspended: " << *thread;
   if (ATraceEnabled()) {
     std::string name;
@@ -1194,7 +1196,11 @@ bool ThreadList::SuspendThread(Thread* self,
         StringPrintf("%s suspended %s for tid=%d", func_name, name.c_str(), thread->GetTid())
             .c_str());
   }
-  DCHECK(thread->IsSuspended());
+  if (kIsDebugBuild) {
+    CHECK(thread->IsSuspended());
+    MutexLock suspend_count_mu(self, *Locks::thread_suspend_count_lock_);
+    thread->CheckBarrierInactive(&wrapped_barrier);
+  }
   return true;
 }
 

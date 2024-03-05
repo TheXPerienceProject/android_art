@@ -467,10 +467,6 @@ bool InlineMethodAnalyser::AnalyseMethodCode(ArtMethod* method,
     case Instruction::IGET_CHAR:
     case Instruction::IGET_SHORT:
     case Instruction::IGET_WIDE:
-    // TODO: Add handling for JIT.
-    // case Instruction::IGET_QUICK:
-    // case Instruction::IGET_WIDE_QUICK:
-    // case Instruction::IGET_OBJECT_QUICK:
       return AnalyseIGetMethod(method, code_item, result);
     case Instruction::IPUT:
     case Instruction::IPUT_OBJECT:
@@ -479,10 +475,6 @@ bool InlineMethodAnalyser::AnalyseMethodCode(ArtMethod* method,
     case Instruction::IPUT_CHAR:
     case Instruction::IPUT_SHORT:
     case Instruction::IPUT_WIDE:
-      // TODO: Add handling for JIT.
-    // case Instruction::IPUT_QUICK:
-    // case Instruction::IPUT_WIDE_QUICK:
-    // case Instruction::IPUT_OBJECT_QUICK:
       return AnalyseIPutMethod(method, code_item, result);
     default:
       return false;

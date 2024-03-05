@@ -199,8 +199,11 @@ enum class WeakRefAccessState : int32_t {
 
 // See Thread.tlsPtr_.active_suspend1_barriers below for explanation.
 struct WrappedSuspend1Barrier {
-  WrappedSuspend1Barrier() : barrier_(1), next_(nullptr) {}
-  AtomicInteger barrier_;  // Only updated while holding thread_suspend_count_lock_ .
+  // TODO(b/23668816): At least weaken CHECKs to DCHECKs once the bug is fixed.
+  static constexpr int kMagic = 0xba8;
+  WrappedSuspend1Barrier() : magic_(kMagic), barrier_(1), next_(nullptr) {}
+  int magic_;
+  AtomicInteger barrier_;
   struct WrappedSuspend1Barrier* next_ GUARDED_BY(Locks::thread_suspend_count_lock_);
 };
 
@@ -1768,6 +1771,10 @@ class EXPORT Thread {
       REQUIRES(Locks::thread_suspend_count_lock_);
 
   ALWAYS_INLINE bool HasActiveSuspendBarrier() REQUIRES(Locks::thread_suspend_count_lock_);
+
+  // CHECK that the given barrier is no longer on our list.
+  ALWAYS_INLINE void CheckBarrierInactive(WrappedSuspend1Barrier* suspend1_barrier)
+      REQUIRES(Locks::thread_suspend_count_lock_);
 
   // Registers the current thread as the jit sensitive thread. Should be called just once.
   static void SetJitSensitiveThread() {

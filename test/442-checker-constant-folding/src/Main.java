@@ -886,6 +886,91 @@ public class Main {
     return arg & ~arg;
   }
 
+  /// CHECK-START: int Main.OrSelfNegated(int) constant_folding (before)
+  /// CHECK-DAG:     <<Arg:i\d+>>     ParameterValue
+  /// CHECK-DAG:     <<Not:i\d+>>     Not [<<Arg>>]
+  /// CHECK-DAG:     <<Or:i\d+>>      Or [<<Not>>,<<Arg>>]
+  /// CHECK-DAG:                      Return [<<Or>>]
+
+  /// CHECK-START: int Main.OrSelfNegated(int) constant_folding (after)
+  /// CHECK-DAG:     <<Const:i\d+>>  IntConstant -1
+  /// CHECK-DAG:                     Return [<<Const>>]
+
+  /// CHECK-START: int Main.OrSelfNegated(int) constant_folding (after)
+  /// CHECK-NOT:                      Or
+
+  public static int OrSelfNegated(int arg) {
+    return arg | ~arg;
+  }
+
+  /// CHECK-START: int Main.XorSelfNegated(int) constant_folding (before)
+  /// CHECK-DAG:     <<Arg:i\d+>>     ParameterValue
+  /// CHECK-DAG:     <<Not:i\d+>>     Not [<<Arg>>]
+  /// CHECK-DAG:     <<Xor:i\d+>>     Xor [<<Not>>,<<Arg>>]
+  /// CHECK-DAG:                      Return [<<Xor>>]
+
+  /// CHECK-START: int Main.XorSelfNegated(int) constant_folding (after)
+  /// CHECK-DAG:     <<Const:i\d+>>  IntConstant -1
+  /// CHECK-DAG:                     Return [<<Const>>]
+
+  /// CHECK-START: int Main.XorSelfNegated(int) constant_folding (after)
+  /// CHECK-NOT:                      Xor
+
+  public static int XorSelfNegated(int arg) {
+    return arg ^ ~arg;
+  }
+
+  /// CHECK-START: long Main.AndSelfNegated(long) constant_folding (before)
+  /// CHECK-DAG:     <<Arg:j\d+>>     ParameterValue
+  /// CHECK-DAG:     <<Not:j\d+>>     Not [<<Arg>>]
+  /// CHECK-DAG:     <<And:j\d+>>     And [<<Not>>,<<Arg>>]
+  /// CHECK-DAG:                      Return [<<And>>]
+
+  /// CHECK-START: long Main.AndSelfNegated(long) constant_folding (after)
+  /// CHECK-DAG:     <<Const0:j\d+>>  LongConstant 0
+  /// CHECK-DAG:                      Return [<<Const0>>]
+
+  /// CHECK-START: long Main.AndSelfNegated(long) constant_folding (after)
+  /// CHECK-NOT:                      And
+
+  public static long AndSelfNegated(long arg) {
+    return arg & ~arg;
+  }
+
+  /// CHECK-START: long Main.OrSelfNegated(long) constant_folding (before)
+  /// CHECK-DAG:     <<Arg:j\d+>>     ParameterValue
+  /// CHECK-DAG:     <<Not:j\d+>>     Not [<<Arg>>]
+  /// CHECK-DAG:     <<Or:j\d+>>      Or [<<Not>>,<<Arg>>]
+  /// CHECK-DAG:                      Return [<<Or>>]
+
+  /// CHECK-START: long Main.OrSelfNegated(long) constant_folding (after)
+  /// CHECK-DAG:     <<Const:j\d+>>  LongConstant -1
+  /// CHECK-DAG:                     Return [<<Const>>]
+
+  /// CHECK-START: long Main.OrSelfNegated(long) constant_folding (after)
+  /// CHECK-NOT:                      Or
+
+  public static long OrSelfNegated(long arg) {
+    return arg | ~arg;
+  }
+
+  /// CHECK-START: long Main.XorSelfNegated(long) constant_folding (before)
+  /// CHECK-DAG:     <<Arg:j\d+>>     ParameterValue
+  /// CHECK-DAG:     <<Not:j\d+>>     Not [<<Arg>>]
+  /// CHECK-DAG:     <<Xor:j\d+>>     Xor [<<Not>>,<<Arg>>]
+  /// CHECK-DAG:                      Return [<<Xor>>]
+
+  /// CHECK-START: long Main.XorSelfNegated(long) constant_folding (after)
+  /// CHECK-DAG:     <<Const:j\d+>>  LongConstant -1
+  /// CHECK-DAG:                     Return [<<Const>>]
+
+  /// CHECK-START: long Main.XorSelfNegated(long) constant_folding (after)
+  /// CHECK-NOT:                      Xor
+
+  public static long XorSelfNegated(long arg) {
+    return arg ^ ~arg;
+  }
+
 
   /**
    * Exercise constant folding on logical or.
