@@ -163,6 +163,13 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
     compilation_kind = CompilationKind::kBaseline;
   }
 
+  if (method->IsPreCompiled() && !prejit) {
+    VLOG(jit) << "JIT not compiling " << method->PrettyMethod()
+              << " due to method marked pre-compile,"
+              << " and the compilation request isn't for pre-compilation.";
+    return false;
+  }
+
   // If we're asked to compile baseline, but we cannot allocate profiling infos,
   // change the compilation kind to optimized.
   if ((compilation_kind == CompilationKind::kBaseline) &&
@@ -1366,6 +1373,7 @@ void Jit::EnqueueOptimizedCompilation(ArtMethod* method, Thread* self) {
   if (thread_pool_ == nullptr) {
     return;
   }
+
   // We arrive here after a baseline compiled code has reached its baseline
   // hotness threshold. If we're not only using the baseline compiler, enqueue a compilation
   // task that will compile optimize the method.
