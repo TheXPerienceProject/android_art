@@ -928,14 +928,7 @@ void TraceWriter::FinishTracing(int flags, bool flush_entries) {
       os << "gc-count=" <<  Runtime::Current()->GetStat(KIND_GC_INVOCATIONS) << "\n";
     }
     os << StringPrintf("%cthreads\n", kTraceTokenChar);
-    {
-      // TODO(b/280558212): Moving the Mutexlock out of DumpThreadList to try and
-      // narrow down where seg fault is happening. Change this after the bug is
-      // fixed.
-      CHECK_NE(self, nullptr);
-      MutexLock mu(self, tracing_lock_);
-      DumpThreadList(os);
-    }
+    DumpThreadList(os);
     os << StringPrintf("%cmethods\n", kTraceTokenChar);
     DumpMethodList(os);
     os << StringPrintf("%cend\n", kTraceTokenChar);
@@ -1498,6 +1491,7 @@ void TraceWriter::DumpMethodList(std::ostream& os) {
 }
 
 void TraceWriter::DumpThreadList(std::ostream& os) {
+  MutexLock mu(Thread::Current(), tracing_lock_);
   for (const auto& it : threads_list_) {
     os << it.first << "\t" << it.second << "\n";
   }
