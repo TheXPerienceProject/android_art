@@ -60,9 +60,6 @@ class EXPORT CommonCompilerTestImpl {
 
   void SetUpRuntimeOptionsImpl();
 
-  Compiler::Kind GetCompilerKind() const;
-  void SetCompilerKind(Compiler::Kind compiler_kind);
-
   virtual CompilerFilter::Filter GetCompilerFilter() const {
     return CompilerFilter::kDefaultCompilerFilter;
   }
@@ -75,8 +72,6 @@ class EXPORT CommonCompilerTestImpl {
   void OverrideInstructionSetFeatures(InstructionSet instruction_set, const std::string& variant);
 
   void ClearBootImageOption();
-
-  Compiler::Kind compiler_kind_ = Compiler::kOptimizing;
 
   InstructionSet instruction_set_ =
       (kRuntimeISA == InstructionSet::kArm) ? InstructionSet::kThumb2 : kRuntimeISA;
