@@ -1577,6 +1577,8 @@
                 "083-compiler-regressions",
                 "137-cfi",
                 "913-heaps",
+                "989-method-trace-throw",
+                "2029-contended-monitors",
                 "2043-reference-pauses",
                 "2239-varhandle-perf"],
       "bug": "b/328023607",
