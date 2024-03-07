@@ -78,6 +78,7 @@
 #include "profman/profman_result.h"
 #include "selinux/android.h"
 #include "service.h"
+#include "tools/binder_utils.h"
 #include "tools/cmdline_builder.h"
 #include "tools/tools.h"
 
@@ -118,6 +119,9 @@ using ::android::base::WriteStringToFd;
 using ::android::fs_mgr::FstabEntry;
 using ::art::service::ValidateDexPath;
 using ::art::tools::CmdlineBuilder;
+using ::art::tools::Fatal;
+using ::art::tools::GetProcMountsAncestorsOfPath;
+using ::art::tools::NonFatal;
 using ::ndk::ScopedAStatus;
 
 using TmpProfilePath = ProfilePath::TmpProfilePath;
@@ -163,29 +167,6 @@ int64_t GetSizeAndDeleteFile(const std::string& path) {
   }
 
   return size.value();
-}
-
-std::string EscapeErrorMessage(const std::string& message) {
-  return StringReplace(message, std::string("\0", /*n=*/1), "\\0", /*all=*/true);
-}
-
-// Indicates an error that should never happen (e.g., illegal arguments passed by service-art
-// internally). System server should crash if this kind of error happens.
-ScopedAStatus Fatal(const std::string& message) {
-  return ScopedAStatus::fromExceptionCodeWithMessage(EX_ILLEGAL_STATE,
-                                                     EscapeErrorMessage(message).c_str());
-}
-
-// Indicates an error that service-art should handle (e.g., I/O errors, sub-process crashes).
-// The scope of the error depends on the function that throws it, so service-art should catch the
-// error at every call site and take different actions.
-// Ideally, this should be a checked exception or an additional return value that forces service-art
-// to handle it, but `ServiceSpecificException` (a separate runtime exception type) is the best
-// approximate we have given the limitation of Java and Binder.
-ScopedAStatus NonFatal(const std::string& message) {
-  constexpr int32_t kArtdNonFatalErrorCode = 1;
-  return ScopedAStatus::fromServiceSpecificErrorWithMessage(kArtdNonFatalErrorCode,
-                                                            EscapeErrorMessage(message).c_str());
 }
 
 Result<CompilerFilter::Filter> ParseCompilerFilter(const std::string& compiler_filter_str) {
@@ -510,25 +491,6 @@ std::ostream& operator<<(std::ostream& os, const FdLogger& fd_logger) {
 }
 
 }  // namespace
-
-#define OR_RETURN_ERROR(func, expr)                           \
-  ({                                                          \
-    decltype(expr)&& __or_return_error_tmp = (expr);          \
-    if (!__or_return_error_tmp.ok()) {                        \
-      return (func)(__or_return_error_tmp.error().message()); \
-    }                                                         \
-    std::move(__or_return_error_tmp).value();                 \
-  })
-
-#define OR_RETURN_FATAL(expr)     OR_RETURN_ERROR(Fatal, expr)
-#define OR_RETURN_NON_FATAL(expr) OR_RETURN_ERROR(NonFatal, expr)
-#define OR_LOG_AND_RETURN_OK(expr)     \
-  OR_RETURN_ERROR(                     \
-      [](const std::string& message) { \
-        LOG(ERROR) << message;         \
-        return ScopedAStatus::ok();    \
-      },                               \
-      expr)
 
 ScopedAStatus Artd::isAlive(bool* _aidl_return) {
   *_aidl_return = true;
@@ -1270,7 +1232,7 @@ ScopedAStatus Artd::isInDalvikCache(const std::string& in_dexFile, bool* _aidl_r
 
   OR_RETURN_FATAL(ValidateDexPath(in_dexFile));
 
-  std::vector<FstabEntry> entries = OR_RETURN_NON_FATAL(GetProcMountsEntriesForPath(in_dexFile));
+  std::vector<FstabEntry> entries = OR_RETURN_NON_FATAL(GetProcMountsAncestorsOfPath(in_dexFile));
   // The last one controls because `/proc/mounts` reflects the sequence of `mount`.
   for (auto it = entries.rbegin(); it != entries.rend(); it++) {
     if (it->fs_type == "overlay") {

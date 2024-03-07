@@ -63,6 +63,7 @@
 #include "profman/profman_result.h"
 #include "testing.h"
 #include "tools/system_properties.h"
+#include "tools/tools.h"
 #include "ziparchive/zip_writer.h"
 
 namespace art {
@@ -96,6 +97,7 @@ using ::android::base::Split;
 using ::android::base::WriteStringToFd;
 using ::android::base::WriteStringToFile;
 using ::android::base::testing::HasValue;
+using ::art::tools::GetProcMountsAncestorsOfPath;
 using ::testing::_;
 using ::testing::AllOf;
 using ::testing::AnyNumber;
@@ -2217,7 +2219,7 @@ TEST_F(ArtdTest, cleanup) {
 TEST_F(ArtdTest, isInDalvikCache) {
   TEST_DISABLED_FOR_HOST();
 
-  if (GetProcMountsEntriesForPath("/")->empty()) {
+  if (GetProcMountsAncestorsOfPath("/")->empty()) {
     GTEST_SKIP() << "Skipped for chroot";
   }
 
