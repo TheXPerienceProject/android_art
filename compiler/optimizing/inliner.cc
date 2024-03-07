@@ -1695,6 +1695,7 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
     return false;
   }
 
+  size_t number_of_instructions = 0u;  // Note: We do not count constants.
   switch (inline_method.opcode) {
     case kInlineOpNop:
       DCHECK_EQ(invoke_instruction->GetType(), DataType::Type::kVoid);
@@ -1729,6 +1730,7 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
       DCHECK_EQ(iget->IsVolatile() ? 1u : 0u, data.is_volatile);
       invoke_instruction->GetBlock()->InsertInstructionBefore(iget, invoke_instruction);
       *return_replacement = iget;
+      number_of_instructions = 1u;
       break;
     }
     case kInlineOpIPut: {
@@ -1747,6 +1749,7 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
         size_t return_arg = data.return_arg_plus1 - 1u;
         *return_replacement = GetInvokeInputForArgVRegIndex(invoke_instruction, return_arg);
       }
+      number_of_instructions = 1u;
       break;
     }
     case kInlineOpConstructor: {
@@ -1801,11 +1804,16 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
                                                                 invoke_instruction);
       }
       *return_replacement = nullptr;
+      number_of_instructions = number_of_iputs + (needs_constructor_barrier ? 1u : 0u);
       break;
     }
     default:
       LOG(FATAL) << "UNREACHABLE";
       UNREACHABLE();
+  }
+  if (number_of_instructions != 0u) {
+    total_number_of_instructions_ += number_of_instructions;
+    UpdateInliningBudget();
   }
   return true;
 }
