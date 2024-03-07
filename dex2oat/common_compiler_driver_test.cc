@@ -89,6 +89,7 @@ void CommonCompilerDriverTest::CreateCompilerDriver() {
   compiler_options_->profile_compilation_info_ = GetProfileCompilationInfo();
   compiler_driver_.reset(new CompilerDriver(compiler_options_.get(),
                                             verification_results_.get(),
+                                            compiler_kind_,
                                             number_of_threads_,
                                             /* swap_fd= */ -1));
 }
