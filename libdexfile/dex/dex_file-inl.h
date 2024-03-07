@@ -167,7 +167,11 @@ inline std::string_view DexFile::GetMethodNameView(uint32_t idx) const {
 }
 
 inline const char* DexFile::GetMethodShorty(uint32_t idx) const {
-  return StringDataByIdx(GetProtoId(GetMethodId(idx).proto_idx_).shorty_idx_);
+  return GetMethodShorty(GetMethodId(idx));
+}
+
+inline std::string_view DexFile::GetMethodShortyView(uint32_t idx) const {
+  return GetMethodShortyView(GetMethodId(idx));
 }
 
 inline const char* DexFile::GetMethodShorty(const dex::MethodId& method_id) const {
