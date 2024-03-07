@@ -239,6 +239,11 @@ def add_builder(name,
       # userfault-GC configurations must be run on Pixel 6.
       dimensions |= {"device_type": "oriole"}
 
+    testrunner_args = ['--verbose', '--host'] if mode == 'host' else ['--target', '--verbose']
+    testrunner_args += ['--debug'] if debug else ['--ndebug']
+    testrunner_args += ['--gcstress'] if gcstress else []
+    testrunner_args += ['--cdex-fast'] if cdex else []
+
     properties = {
         "builder_group": "client.art",
         "bitness": bitness,
@@ -252,6 +257,7 @@ def add_builder(name,
         "gcstress": gcstress,
         "heap_poisoning": heap_poisoning,
         "cdex_level": "fast" if cdex else False,
+        "testrunner_args": testrunner_args,
     }
 
     is_fyi = (name == "qemu-riscv64-ndebug")
