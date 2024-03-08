@@ -76,7 +76,6 @@ std::ostream& operator<<(std::ostream& os, RemoteProcesses remotes) {
     case RemoteProcesses::kImageOnly: os << "ImageOnly"; break;
     case RemoteProcesses::kZygoteOnly: os << "ZygoteOnly"; break;
     case RemoteProcesses::kImageAndZygote: os << "ImageAndZygote"; break;
-    default: UNREACHABLE();
   }
   return os;
 }

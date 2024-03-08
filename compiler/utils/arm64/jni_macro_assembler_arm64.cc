@@ -832,9 +832,6 @@ void Arm64JNIMacroAssembler::TestGcMarking(JNIMacroLabel* label, JNIMacroUnaryCo
     case JNIMacroUnaryCondition::kNotZero:
       ___ Cbnz(test_reg, Arm64JNIMacroLabel::Cast(label)->AsArm64());
       break;
-    default:
-      LOG(FATAL) << "Not implemented unary condition: " << static_cast<int>(cond);
-      UNREACHABLE();
   }
 }
 
@@ -854,9 +851,6 @@ void Arm64JNIMacroAssembler::TestMarkBit(ManagedRegister m_ref,
     case JNIMacroUnaryCondition::kNotZero:
       ___ Tbnz(scratch, LockWord::kMarkBitStateShift, Arm64JNIMacroLabel::Cast(label)->AsArm64());
       break;
-    default:
-      LOG(FATAL) << "Not implemented unary condition: " << static_cast<int>(cond);
-      UNREACHABLE();
   }
 }
 
