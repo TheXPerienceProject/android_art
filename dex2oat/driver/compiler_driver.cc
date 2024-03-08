@@ -254,13 +254,11 @@ class CompilerDriver::AOTCompilationStats {
 CompilerDriver::CompilerDriver(
     const CompilerOptions* compiler_options,
     const VerificationResults* verification_results,
-    Compiler::Kind compiler_kind,
     size_t thread_count,
     int swap_fd)
     : compiler_options_(compiler_options),
       verification_results_(verification_results),
       compiler_(),
-      compiler_kind_(compiler_kind),
       number_of_soft_verifier_failures_(0),
       had_hard_verifier_failure_(false),
       parallel_thread_count_(thread_count),
@@ -270,7 +268,7 @@ CompilerDriver::CompilerDriver(
   DCHECK(compiler_options_ != nullptr);
 
   compiled_method_storage_.SetDedupeEnabled(compiler_options_->DeduplicateCode());
-  compiler_.reset(Compiler::Create(*compiler_options, &compiled_method_storage_, compiler_kind));
+  compiler_.reset(Compiler::Create(*compiler_options, &compiled_method_storage_));
 }
 
 CompilerDriver::~CompilerDriver() {
