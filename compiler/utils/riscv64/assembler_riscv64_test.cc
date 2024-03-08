@@ -974,18 +974,23 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
       const std::string& fmt) {
     CHECK(f != nullptr);
     std::string str;
-    for (FRegister reg1 : GetFPRegisters()) {
-      for (FRegister reg2 : GetFPRegisters()) {
-        for (FRegister reg3 : GetFPRegisters()) {
-          for (FRegister reg4 : GetFPRegisters()) {
+    ArrayRef<const FRegister> fp_regs = GetFPRegisters();
+    for (FRegister reg1 : fp_regs) {
+      std::string base1 = fmt;
+      ReplaceReg(REG1_TOKEN, GetFPRegName(reg1), &base1);
+      for (FRegister reg2 : fp_regs) {
+        std::string base2 = base1;
+        ReplaceReg(REG2_TOKEN, GetFPRegName(reg2), &base2);
+        for (FRegister reg3 : fp_regs) {
+          std::string base3 = base2;
+          ReplaceReg(REG3_TOKEN, GetFPRegName(reg3), &base3);
+          for (FRegister reg4 : fp_regs) {
+            std::string base4 = base3;
+            ReplaceReg(REG4_TOKEN, GetFPRegName(reg4), &base4);
             for (FPRoundingMode rm : kRoundingModes) {
               (GetAssembler()->*f)(reg1, reg2, reg3, reg4, rm);
 
-              std::string base = fmt;
-              ReplaceReg(REG1_TOKEN, GetFPRegName(reg1), &base);
-              ReplaceReg(REG2_TOKEN, GetFPRegName(reg2), &base);
-              ReplaceReg(REG3_TOKEN, GetFPRegName(reg3), &base);
-              ReplaceReg(REG4_TOKEN, GetFPRegName(reg4), &base);
+              std::string base = base4;
               ReplaceRoundingMode(rm, &base);
               str += base;
               str += "\n";
@@ -1002,16 +1007,20 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
       const std::string& fmt) {
     CHECK(f != nullptr);
     std::string str;
-    for (FRegister reg1 : GetFPRegisters()) {
-      for (FRegister reg2 : GetFPRegisters()) {
-        for (FRegister reg3 : GetFPRegisters()) {
+    ArrayRef<const FRegister> fp_regs = GetFPRegisters();
+    for (FRegister reg1 : fp_regs) {
+      std::string base1 = fmt;
+      ReplaceReg(REG1_TOKEN, GetFPRegName(reg1), &base1);
+      for (FRegister reg2 : fp_regs) {
+        std::string base2 = base1;
+        ReplaceReg(REG2_TOKEN, GetFPRegName(reg2), &base2);
+        for (FRegister reg3 : fp_regs) {
+          std::string base3 = base2;
+          ReplaceReg(REG3_TOKEN, GetFPRegName(reg3), &base3);
           for (FPRoundingMode rm : kRoundingModes) {
             (GetAssembler()->*f)(reg1, reg2, reg3, rm);
 
-            std::string base = fmt;
-            ReplaceReg(REG1_TOKEN, GetFPRegName(reg1), &base);
-            ReplaceReg(REG2_TOKEN, GetFPRegName(reg2), &base);
-            ReplaceReg(REG3_TOKEN, GetFPRegName(reg3), &base);
+            std::string base = base3;
             ReplaceRoundingMode(rm, &base);
             str += base;
             str += "\n";
@@ -1294,19 +1303,23 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
                             InvalidAqRl&& invalid_aqrl) {
     CHECK(f != nullptr);
     std::string str;
-    for (XRegister reg1 : GetRegisters()) {
-      for (XRegister reg2 : GetRegisters()) {
-        for (XRegister reg3 : GetRegisters()) {
+    ArrayRef<const XRegister> regs = GetRegisters();
+    for (XRegister reg1 : regs) {
+      std::string base1 = fmt;
+      ReplaceReg(REG1_TOKEN, GetRegisterName(reg1), &base1);
+      for (XRegister reg2 : regs) {
+        std::string base2 = base1;
+        ReplaceReg(REG2_TOKEN, GetRegisterName(reg2), &base2);
+        for (XRegister reg3 : regs) {
+          std::string base3 = base2;
+          ReplaceReg(REG3_TOKEN, GetRegisterName(reg3), &base3);
           for (AqRl aqrl : kAqRls) {
             if (invalid_aqrl(aqrl)) {
               continue;
             }
             (GetAssembler()->*f)(reg1, reg2, reg3, aqrl);
 
-            std::string base = fmt;
-            ReplaceReg(REG1_TOKEN, GetRegisterName(reg1), &base);
-            ReplaceReg(REG2_TOKEN, GetRegisterName(reg2), &base);
-            ReplaceReg(REG3_TOKEN, GetRegisterName(reg3), &base);
+            std::string base = base3;
             ReplaceAqRl(aqrl, &base);
             str += base;
             str += "\n";
@@ -1439,19 +1452,22 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
 
     std::string str;
     for (auto reg1 : reg1_registers) {
+      std::string base1 = fmt;
+      ReplaceReg(REG1_TOKEN, (this->*GetName1)(reg1), &base1);
       for (auto reg2 : reg2_registers) {
+        std::string base2 = base1;
+        ReplaceReg(REG2_TOKEN, (this->*GetName2)(reg2), &base2);
         for (auto reg3 : reg3_registers) {
+          std::string base3 = base2;
+          ReplaceReg(REG3_TOKEN, (this->*GetName3)(reg3), &base3);
           for (Riscv64Assembler::VM vm : kVMs) {
             if (!pred(reg1, reg2, reg3, vm)) {
               continue;
             }
 
             (GetAssembler()->*f)(reg1, reg2, reg3, vm);
-            std::string base = fmt;
+            std::string base = base3;
 
-            ReplaceReg(REG1_TOKEN, (this->*GetName1)(reg1), &base);
-            ReplaceReg(REG2_TOKEN, (this->*GetName2)(reg2), &base);
-            ReplaceReg(REG3_TOKEN, (this->*GetName3)(reg3), &base);
             ReplaceVm(vm, &base);
 
             str += base;
@@ -1708,9 +1724,16 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
 
     WarnOnCombinations(2 * GetVectorRegisters().size() * GetVectorRegisters().size() * imms.size());
 
-    for (VRegister reg1 : GetVectorRegisters()) {
-      for (VRegister reg2 : GetVectorRegisters()) {
+    ArrayRef<const VRegister> vector_regs = GetVectorRegisters();
+    for (auto reg1 : vector_regs) {
+      std::string base1 = fmt;
+      ReplaceReg(REG1_TOKEN, GetVecRegName(reg1), &base1);
+      for (auto reg2 : vector_regs) {
+        std::string base2 = base1;
+        ReplaceReg(REG2_TOKEN, GetVecRegName(reg2), &base2);
         for (int64_t imm : imms) {
+          std::string base3 = base2;
+          ReplaceImm(imm, bias, /*multiplier=*/ 1, &base3);
           for (Riscv64Assembler::VM vm : kVMs) {
             if (!pred(reg1, reg2, imm, vm)) {
               continue;
@@ -1719,10 +1742,7 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
             ImmType new_imm = CreateImmediate(imm) + bias;
             (GetAssembler()->*f)(reg1, reg2, new_imm, vm);
 
-            std::string base = fmt;
-            ReplaceReg(REG1_TOKEN, GetVecRegName(reg1), &base);
-            ReplaceImm(imm, bias, /*multiplier=*/ 1, &base);
-            ReplaceReg(REG2_TOKEN, GetVecRegName(reg2), &base);
+            std::string base = base3;
             ReplaceVm(vm, &base);
             str += base;
             str += "\n";
