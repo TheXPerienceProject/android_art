@@ -33,7 +33,6 @@
 #include "calling_convention.h"
 #include "class_linker.h"
 #include "dwarf/debug_frame_opcode_writer.h"
-#include "dex/dex_file-inl.h"
 #include "driver/compiler_options.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "instrumentation.h"
@@ -77,26 +76,19 @@ static std::unique_ptr<JNIMacroAssembler<kPointerSize>> GetMacroAssembler(
 //
 template <PointerSize kPointerSize>
 static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& compiler_options,
+                                                     std::string_view shorty,
                                                      uint32_t access_flags,
-                                                     uint32_t method_idx,
-                                                     const DexFile& dex_file,
                                                      ArenaAllocator* allocator) {
   constexpr size_t kRawPointerSize = static_cast<size_t>(kPointerSize);
-  const bool is_native = (access_flags & kAccNative) != 0;
-  CHECK(is_native);
+  CHECK_NE(access_flags & kAccNative, 0u);
   const bool is_static = (access_flags & kAccStatic) != 0;
   const bool is_synchronized = (access_flags & kAccSynchronized) != 0;
-  const char* shorty = dex_file.GetMethodShorty(dex_file.GetMethodId(method_idx));
+  const bool is_fast_native = (access_flags & kAccFastNative) != 0u;
+  const bool is_critical_native = (access_flags & kAccCriticalNative) != 0u;
+
   InstructionSet instruction_set = compiler_options.GetInstructionSet();
   const InstructionSetFeatures* instruction_set_features =
       compiler_options.GetInstructionSetFeatures();
-
-  // i.e. if the method was annotated with @FastNative
-  const bool is_fast_native = (access_flags & kAccFastNative) != 0u;
-
-  // i.e. if the method was annotated with @CriticalNative
-  const bool is_critical_native = (access_flags & kAccCriticalNative) != 0u;
-
   bool emit_read_barrier = compiler_options.EmitReadBarrier();
   bool is_debuggable = compiler_options.GetDebuggable();
   bool needs_entry_exit_hooks = is_debuggable && compiler_options.IsJitCompiler();
@@ -116,25 +108,18 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   // debuggable runtimes.
   bool should_tag_sp = needs_entry_exit_hooks;
 
-  VLOG(jni) << "JniCompile: Method :: "
-              << dex_file.PrettyMethod(method_idx, /* with signature */ true)
-              << " :: access_flags = " << std::hex << access_flags << std::dec;
-
-  if (UNLIKELY(is_fast_native)) {
-    VLOG(jni) << "JniCompile: Fast native method detected :: "
-              << dex_file.PrettyMethod(method_idx, /* with signature */ true);
-  }
-
-  if (UNLIKELY(is_critical_native)) {
-    VLOG(jni) << "JniCompile: Critical native method detected :: "
-              << dex_file.PrettyMethod(method_idx, /* with signature */ true);
-  }
+  VLOG(jni) << "JniCompile: shorty=\"" << shorty
+            << "\", access_flags=0x" << std::hex << access_flags
+            << (is_static ? " static" : "")
+            << (is_synchronized ? " synchronized" : "")
+            << (is_fast_native ? " @FastNative" : "")
+            << (is_critical_native ? " @CriticalNative" : "");
 
   if (kIsDebugBuild) {
     // Don't allow both @FastNative and @CriticalNative. They are mutually exclusive.
     if (UNLIKELY(is_fast_native && is_critical_native)) {
-      LOG(FATAL) << "JniCompile: Method cannot be both @CriticalNative and @FastNative"
-                 << dex_file.PrettyMethod(method_idx, /* with_signature= */ true);
+      LOG(FATAL) << "JniCompile: Method cannot be both @CriticalNative and @FastNative, \""
+                 << shorty << "\", 0x" << std::hex << access_flags;
     }
 
     // @CriticalNative - extra checks:
@@ -144,16 +129,16 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
     if (UNLIKELY(is_critical_native)) {
       CHECK(is_static)
           << "@CriticalNative functions cannot be virtual since that would "
-          << "require passing a reference parameter (this), which is illegal "
-          << dex_file.PrettyMethod(method_idx, /* with_signature= */ true);
+          << "require passing a reference parameter (this), which is illegal, \""
+          << shorty << "\", 0x" << std::hex << access_flags;
       CHECK(!is_synchronized)
           << "@CriticalNative functions cannot be synchronized since that would "
-          << "require passing a (class and/or this) reference parameter, which is illegal "
-          << dex_file.PrettyMethod(method_idx, /* with_signature= */ true);
-      for (size_t i = 0; i < strlen(shorty); ++i) {
-        CHECK_NE(Primitive::kPrimNot, Primitive::GetType(shorty[i]))
-            << "@CriticalNative methods' shorty types must not have illegal references "
-            << dex_file.PrettyMethod(method_idx, /* with_signature= */ true);
+          << "require passing a (class and/or this) reference parameter, which is illegal, \""
+          << shorty << "\", 0x" << std::hex << access_flags;
+      for (char c : shorty) {
+        CHECK_NE(Primitive::kPrimNot, Primitive::GetType(c))
+            << "@CriticalNative methods' shorty types must not have illegal references, \""
+            << shorty << "\", 0x" << std::hex << access_flags;
       }
     }
   }
@@ -783,16 +768,15 @@ static void CallDecodeReferenceResult(JNIMacroAssembler<kPointerSize>* jni_asm,
 }
 
 JniCompiledMethod ArtQuickJniCompileMethod(const CompilerOptions& compiler_options,
+                                           std::string_view shorty,
                                            uint32_t access_flags,
-                                           uint32_t method_idx,
-                                           const DexFile& dex_file,
                                            ArenaAllocator* allocator) {
   if (Is64BitInstructionSet(compiler_options.GetInstructionSet())) {
     return ArtJniCompileMethodInternal<PointerSize::k64>(
-        compiler_options, access_flags, method_idx, dex_file, allocator);
+        compiler_options, shorty, access_flags, allocator);
   } else {
     return ArtJniCompileMethodInternal<PointerSize::k32>(
-        compiler_options, access_flags, method_idx, dex_file, allocator);
+        compiler_options, shorty, access_flags, allocator);
   }
 }
 

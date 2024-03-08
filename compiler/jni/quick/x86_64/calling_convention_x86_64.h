@@ -26,7 +26,8 @@ namespace x86_64 {
 
 class X86_64ManagedRuntimeCallingConvention final : public ManagedRuntimeCallingConvention {
  public:
-  X86_64ManagedRuntimeCallingConvention(bool is_static, bool is_synchronized, const char* shorty)
+  X86_64ManagedRuntimeCallingConvention(
+      bool is_static, bool is_synchronized, std::string_view shorty)
       : ManagedRuntimeCallingConvention(is_static,
                                         is_synchronized,
                                         shorty,
@@ -52,7 +53,7 @@ class X86_64JniCallingConvention final : public JniCallingConvention {
                              bool is_synchronized,
                              bool is_fast_native,
                              bool is_critical_native,
-                             const char* shorty);
+                             std::string_view shorty);
   ~X86_64JniCallingConvention() override {}
   // Calling convention
   ManagedRegister ReturnRegister() const override;
