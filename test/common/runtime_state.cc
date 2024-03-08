@@ -443,22 +443,6 @@ extern "C" JNIEXPORT void JNICALL Java_Main_deoptimizeBootImage(JNIEnv*, jclass)
   Runtime::Current()->DeoptimizeBootImage();
 }
 
-extern "C" JNIEXPORT void JNICALL Java_Main_deoptimizeNativeMethod(JNIEnv* env,
-                                                                   jclass,
-                                                                   jclass cls,
-                                                                   jstring method_name) {
-  Thread* self = Thread::Current();
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  // Make initialized classes visibly initialized to avoid entrypoint being set to boot JNI stub
-  // after deoptimize.
-  class_linker->MakeInitializedClassesVisiblyInitialized(self, /*wait=*/ true);
-  ScopedObjectAccess soa(self);
-  ScopedUtfChars chars(env, method_name);
-  ArtMethod* method = GetMethod(soa, cls, chars);
-  CHECK(method->IsNative());
-  Runtime::Current()->GetInstrumentation()->InitializeMethodsCode(method, /*aot_code=*/ nullptr);
-}
-
 extern "C" JNIEXPORT jboolean JNICALL Java_Main_isDebuggable(JNIEnv*, jclass) {
   return Runtime::Current()->IsJavaDebuggable() ? JNI_TRUE : JNI_FALSE;
 }
