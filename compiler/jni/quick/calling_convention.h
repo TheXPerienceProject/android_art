@@ -76,19 +76,19 @@ class CallingConvention : public DeletableArenaObject<kArenaAllocCallingConventi
  protected:
   CallingConvention(bool is_static,
                     bool is_synchronized,
-                    const char* shorty,
+                    std::string_view shorty,
                     PointerSize frame_pointer_size)
       : itr_slots_(0), itr_refs_(0), itr_args_(0), itr_longs_and_doubles_(0),
         itr_float_and_doubles_(0), displacement_(0),
         frame_pointer_size_(frame_pointer_size),
         is_static_(is_static), is_synchronized_(is_synchronized),
         shorty_(shorty) {
-    num_args_ = (is_static ? 0 : 1) + strlen(shorty) - 1;
+    num_args_ = (is_static ? 0 : 1) + shorty.length() - 1;
     num_ref_args_ = is_static ? 0 : 1;  // The implicit this pointer.
     num_float_or_double_args_ = 0;
     num_long_or_double_args_ = 0;
-    for (size_t i = 1; i < strlen(shorty); i++) {
-      char ch = shorty_[i];
+    for (size_t i = 1; i < shorty.length(); i++) {
+      char ch = shorty[i];
       switch (ch) {
       case 'L':
         num_ref_args_++;
@@ -195,8 +195,8 @@ class CallingConvention : public DeletableArenaObject<kArenaAllocCallingConventi
     }
     return result;
   }
-  const char* GetShorty() const {
-    return shorty_.c_str();
+  std::string_view GetShorty() const {
+    return shorty_;
   }
   // The slot number for current calling_convention argument.
   // Note that each slot is 32-bit. When the current argument is bigger
@@ -238,7 +238,7 @@ class ManagedRuntimeCallingConvention : public CallingConvention {
   static std::unique_ptr<ManagedRuntimeCallingConvention> Create(ArenaAllocator* allocator,
                                                                  bool is_static,
                                                                  bool is_synchronized,
-                                                                 const char* shorty,
+                                                                 std::string_view shorty,
                                                                  InstructionSet instruction_set);
 
   // Offset of Method within the managed frame.
@@ -277,7 +277,7 @@ class ManagedRuntimeCallingConvention : public CallingConvention {
  protected:
   ManagedRuntimeCallingConvention(bool is_static,
                                   bool is_synchronized,
-                                  const char* shorty,
+                                  std::string_view shorty,
                                   PointerSize frame_pointer_size)
       : CallingConvention(is_static, is_synchronized, shorty, frame_pointer_size) {}
 };
@@ -303,7 +303,7 @@ class JniCallingConvention : public CallingConvention {
                                                       bool is_synchronized,
                                                       bool is_fast_native,
                                                       bool is_critical_native,
-                                                      const char* shorty,
+                                                      std::string_view shorty,
                                                       InstructionSet instruction_set);
 
   // Size of frame excluding space for outgoing args (its assumed Method* is
@@ -403,7 +403,7 @@ class JniCallingConvention : public CallingConvention {
                        bool is_synchronized,
                        bool is_fast_native,
                        bool is_critical_native,
-                       const char* shorty,
+                       std::string_view shorty,
                        PointerSize frame_pointer_size)
       : CallingConvention(is_static, is_synchronized, shorty, frame_pointer_size),
         is_fast_native_(is_fast_native),

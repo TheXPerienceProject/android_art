@@ -2615,9 +2615,6 @@ class ImageSpace::BootImageLoader {
       };
       image_header.VisitPackedImTables(method_table_visitor, space->Begin(), kPointerSize);
       image_header.VisitPackedImtConflictTables(method_table_visitor, space->Begin(), kPointerSize);
-      image_header.VisitJniStubMethods</*kUpdate=*/ true>(method_table_visitor,
-                                                          space->Begin(),
-                                                          kPointerSize);
 
       // Patch the intern table.
       if (image_header.GetInternedStringsSection().Size() != 0u) {
