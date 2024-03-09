@@ -840,7 +840,7 @@ void StackVisitor::WalkStack(bool include_transitions) {
           cur_oat_quick_method_header_ = OatQuickMethodHeader::FromCodePointer(code);
         } else {
           // We are sure we are not running GenericJni here. Though the entry point could still be
-          // GenericJnistub. The entry point is usually JITed or AOT code. It could be also a
+          // GenericJnistub. The entry point is usually JITed or AOT code. It could be lso a
           // resolution stub if the class isn't visibly initialized yet.
           const void* existing_entry_point = method->GetEntryPointFromQuickCompiledCode();
           CHECK(existing_entry_point != nullptr);
@@ -856,22 +856,13 @@ void StackVisitor::WalkStack(bool include_transitions) {
             if (code != nullptr) {
               cur_oat_quick_method_header_ = OatQuickMethodHeader::FromEntryPoint(code);
             } else {
-              // This may be either a JITed JNI stub frame or boot JNI stub frame. For
-              // non-debuggable runtimes we will generate JIT stubs if there are no AOT stubs or
-              // boot stubs for native methods. Since we checked for AOT code earlier, we must be
-              // running JITed code or boot stub code. For debuggable runtimes we might have JIT
-              // code even when AOT stub or boot stub is present but we tag SP in JITed JNI stubs
+              // This must be a JITted JNI stub frame. For non-debuggable runtimes we only generate
+              // JIT stubs if there are no AOT stubs for native methods. Since we checked for AOT
+              // code earlier, we must be running JITed code. For debuggable runtimes we might have
+              // JIT code even when AOT code is present but we tag SP in JITed JNI stubs
               // in debuggable runtimes. This case is handled earlier.
-              if (runtime->GetJit() != nullptr) {
-                code = runtime->GetJit()->GetCodeCache()->GetJniStubCode(method);
-              }
-              if (code == nullptr) {
-                // Check if current method uses the boot JNI stub.
-                const void* boot_jni_stub = class_linker->FindBootJniStub(method);
-                if (boot_jni_stub != nullptr) {
-                  code = boot_jni_stub;
-                }
-              }
+              CHECK(runtime->GetJit() != nullptr);
+              code = runtime->GetJit()->GetCodeCache()->GetJniStubCode(method);
               CHECK(code != nullptr) << method->PrettyMethod();
               cur_oat_quick_method_header_ = OatQuickMethodHeader::FromCodePointer(code);
             }

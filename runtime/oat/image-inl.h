@@ -115,36 +115,6 @@ inline void ImageHeader::VisitPackedImtConflictTables(const Visitor& visitor,
   }
 }
 
-template <bool kUpdate, typename Visitor>
-inline void ImageHeader::VisitJniStubMethods(const Visitor& visitor,
-                                             uint8_t* base,
-                                             PointerSize pointer_size)
-    const REQUIRES_SHARED(Locks::mutator_lock_) {
-  const ImageSection& section = GetJniStubMethodsSection();
-  uint8_t* updated_base = base + section.Offset();
-  for (size_t pos = 0; pos < section.Size(); pos += static_cast<size_t>(pointer_size)) {
-    uint8_t* ptr = updated_base + pos;
-    ArtMethod* orig;
-    if (pointer_size == PointerSize::k32) {
-      uint32_t value = *reinterpret_cast<uint32_t*>(ptr);
-      orig = reinterpret_cast32<ArtMethod*>(value);
-    } else {
-      uint64_t value = *reinterpret_cast<uint64_t*>(ptr);
-      orig = reinterpret_cast64<ArtMethod*>(value);
-    }
-    ArtMethod* updated = visitor(orig);
-    if (kUpdate){
-      if (pointer_size == PointerSize::k32) {
-        *reinterpret_cast<uint32_t*>(ptr) = reinterpret_cast32<uint32_t>(updated);
-      } else {
-        *reinterpret_cast<uint64_t*>(ptr) = reinterpret_cast64<uint64_t>(updated);
-      }
-    } else {
-      DCHECK_EQ(updated, orig);
-    }
-  }
-}
-
 }  // namespace art
 
 #endif  // ART_RUNTIME_OAT_IMAGE_INL_H_
