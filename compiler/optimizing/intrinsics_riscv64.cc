@@ -3843,7 +3843,7 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
   }
 
   LocationSummary* locations = CreateVarHandleCommonLocations(invoke, codegen);
-  uint32_t arg_index = invoke->GetNumberOfArguments() - 1;
+  uint32_t arg_index = invoke->GetNumberOfArguments() - 1u;
   DCHECK_EQ(arg_index, 1u + GetExpectedVarHandleCoordinatesCount(invoke));
   DataType::Type value_type = invoke->GetType();
   DCHECK_EQ(value_type, GetDataTypeFromShorty(invoke, arg_index));
@@ -3853,7 +3853,7 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
   if (is_fp) {
     if (get_and_update_op == GetAndUpdateOp::kAdd) {
       // For ADD, do not use ZR for zero bit pattern (+0.0f or +0.0).
-      locations->SetInAt(invoke->GetNumberOfArguments() - 1u, Location::RequiresFpuRegister());
+      locations->SetInAt(arg_index, Location::RequiresFpuRegister());
     } else {
       DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
     }
@@ -4068,6 +4068,9 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
           ftmp, out.AsFpuRegister<FRegister>(), arg.AsFpuRegister<FRegister>(), value_type);
       codegen->MoveLocation(
           Location::RegisterLocation(new_value), Location::FpuRegisterLocation(ftmp), op_type);
+    } else if (arg.IsConstant()) {
+      DCHECK(arg.GetConstant()->IsZeroBitPattern());
+      __ Mv(new_value, out.AsRegister<XRegister>());
     } else if (value_type == DataType::Type::kInt64) {
       __ Add(new_value, out.AsRegister<XRegister>(), arg.AsRegister<XRegister>());
     } else {
