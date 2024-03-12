@@ -1807,9 +1807,6 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
       number_of_instructions = number_of_iputs + (needs_constructor_barrier ? 1u : 0u);
       break;
     }
-    default:
-      LOG(FATAL) << "UNREACHABLE";
-      UNREACHABLE();
   }
   if (number_of_instructions != 0u) {
     total_number_of_instructions_ += number_of_instructions;

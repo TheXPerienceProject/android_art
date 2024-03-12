@@ -1171,9 +1171,6 @@ HBasicBlock* LoopClonerHelper::DoLoopTransformationImpl(TransformationKind trans
       case TransformationKind::kVersioning:
         oss << "versioning";
         break;
-      default:
-        LOG(FATAL) << "Unreachable";
-        UNREACHABLE();
     }
     oss << " was applied to the loop <" << loop_header->GetBlockId() << ">.";
     LOG(INFO) << oss.str();

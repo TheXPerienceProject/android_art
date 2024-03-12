@@ -578,9 +578,6 @@ void Riscv64JNIMacroAssembler::TestGcMarking(JNIMacroLabel* label, JNIMacroUnary
     case JNIMacroUnaryCondition::kNotZero:
       __ Bnez(test_reg, down_cast<Riscv64Label*>(Riscv64JNIMacroLabel::Cast(label)->AsRiscv64()));
       break;
-    default:
-      LOG(FATAL) << "Not implemented unary condition: " << static_cast<int>(cond);
-      UNREACHABLE();
   }
 }
 
@@ -602,9 +599,6 @@ void Riscv64JNIMacroAssembler::TestMarkBit(ManagedRegister m_ref,
     case JNIMacroUnaryCondition::kNotZero:
       __ Bltz(tmp, Riscv64JNIMacroLabel::Cast(label)->AsRiscv64());
       break;
-    default:
-      LOG(FATAL) << "Not implemented unary condition: " << static_cast<int>(cond);
-      UNREACHABLE();
   }
 }
 

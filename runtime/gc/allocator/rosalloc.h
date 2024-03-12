@@ -95,9 +95,6 @@ class RosAlloc {
           return IsLargerThanPageReleaseThreshold(rosalloc) && IsAtEndOfSpace(rosalloc);
         case kPageReleaseModeAll:
           return true;
-        default:
-          LOG(FATAL) << "Unexpected page release mode ";
-          return false;
       }
     }
     void ReleasePages(RosAlloc* rosalloc) REQUIRES(rosalloc->lock_) {
