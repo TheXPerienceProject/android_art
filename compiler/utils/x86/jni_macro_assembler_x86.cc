@@ -556,9 +556,6 @@ static Condition UnaryConditionToX86Condition(JNIMacroUnaryCondition cond) {
       return kZero;
     case JNIMacroUnaryCondition::kNotZero:
       return kNotZero;
-    default:
-      LOG(FATAL) << "Not implemented condition: " << static_cast<int>(cond);
-      UNREACHABLE();
   }
 }
 

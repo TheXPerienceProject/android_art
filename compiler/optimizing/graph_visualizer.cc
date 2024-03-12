@@ -109,9 +109,6 @@ std::ostream& operator<<(std::ostream& os, const StringList& list) {
   switch (list.format_) {
     case StringList::kArrayBrackets: return os << "[" << list.sstream_.str() << "]";
     case StringList::kSetBrackets:   return os << "{" << list.sstream_.str() << "}";
-    default:
-      LOG(FATAL) << "Invalid StringList format";
-      UNREACHABLE();
   }
 }
 
