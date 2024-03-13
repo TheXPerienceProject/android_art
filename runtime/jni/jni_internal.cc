@@ -26,10 +26,10 @@
 #include "base/allocator.h"
 #include "base/atomic.h"
 #include "base/casts.h"
-#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/mutex.h"
+#include "base/pointer_size.h"
 #include "base/safe_map.h"
 #include "base/stl_util.h"
 #include "class_linker-inl.h"

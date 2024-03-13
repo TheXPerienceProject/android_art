@@ -19,7 +19,7 @@
 #include <cmath>
 
 #include "base/casts.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "class_root-inl.h"
 #include "debugger.h"
 #include "dex/dex_file_types.h"

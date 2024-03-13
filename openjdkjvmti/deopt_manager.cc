@@ -37,8 +37,8 @@
 
 #include "art_jvmti.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
 #include "base/mutex-inl.h"
+#include "base/pointer_size.h"
 #include "dex/dex_file_annotations.h"
 #include "dex/modifiers.h"
 #include "events-inl.h"

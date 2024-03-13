@@ -18,8 +18,8 @@
 
 #include "arch/instruction_set_features.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
 #include "base/file_utils.h"
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "base/unix_file/fd_file.h"
 #include "class_linker.h"

@@ -27,9 +27,9 @@
 #include <android-base/parseint.h>
 
 #include "casts.h"
-#include "enums.h"
 #include "globals.h"
 #include "macros.h"
+#include "pointer_size.h"
 
 #if defined(__linux__)
 #include <sys/utsname.h>

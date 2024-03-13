@@ -15,7 +15,7 @@
  */
 
 #include "art_method.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "jit/jit.h"
 #include "jit/jit_code_cache.h"
 #include "jit/profiling_info.h"

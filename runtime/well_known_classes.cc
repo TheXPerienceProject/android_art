@@ -25,7 +25,7 @@
 
 #include "art_method-inl.h"
 #include "base/casts.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "class_linker.h"
 #include "class_root-inl.h"
 #include "entrypoints/quick/quick_entrypoints_enum.h"

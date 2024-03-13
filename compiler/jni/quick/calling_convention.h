@@ -19,8 +19,8 @@
 
 #include "base/arena_object.h"
 #include "base/array_ref.h"
-#include "base/enums.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "dex/primitive.h"
 #include "thread.h"
 #include "utils/managed_register.h"

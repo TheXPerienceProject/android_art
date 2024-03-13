@@ -18,7 +18,7 @@
 
 #include "art_field-inl.h"
 #include "art_method-alloc-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "class_linker.h"
 #include "common_throws.h"
 #include "dex/dex_file-inl.h"
