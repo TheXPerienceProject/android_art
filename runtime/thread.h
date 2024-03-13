@@ -159,6 +159,7 @@ enum class ThreadFlag : uint32_t {
   // Prevents a situation in which we are asked to suspend just before we suspend all
   // other threads, and then notice the suspension request and suspend ourselves,
   // leading to deadlock. Guarded by suspend_count_lock_ .
+  // Should not ever be set when we try to transition to kRunnable.
   // TODO(b/296639267): Generalize use to prevent SuspendAll from blocking
   // in-progress GC.
   kSuspensionImmune = 1u << 6,
@@ -483,10 +484,21 @@ class EXPORT Thread {
       REQUIRES(!Locks::thread_suspend_count_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Transition from non-runnable to runnable state acquiring share on mutator_lock_.
-  ALWAYS_INLINE ThreadState TransitionFromSuspendedToRunnable()
+  // Transition from non-runnable to runnable state acquiring share on mutator_lock_. Returns the
+  // old state, or kInvalidState if we failed because allow_failure and kSuspensionImmune were set.
+  // Should not be called with an argument except by the next function below.
+  ALWAYS_INLINE ThreadState TransitionFromSuspendedToRunnable(bool fail_on_suspend_req = false)
+      REQUIRES(!Locks::thread_suspend_count_lock_) SHARED_LOCK_FUNCTION(Locks::mutator_lock_);
+
+  // A version that does not return the old ThreadState, and fails by returning false if it would
+  // have needed to handle a pending suspension request.
+  ALWAYS_INLINE bool TryTransitionFromSuspendedToRunnable()
       REQUIRES(!Locks::thread_suspend_count_lock_)
-      SHARED_LOCK_FUNCTION(Locks::mutator_lock_);
+      SHARED_TRYLOCK_FUNCTION(true, Locks::mutator_lock_) NO_THREAD_SAFETY_ANALYSIS {
+    // The above function does not really acquire the lock when we pass true and it returns
+    // kInvalidState. We lie in both places, but clients see correct behavior.
+    return TransitionFromSuspendedToRunnable(true) != ThreadState::kInvalidState;
+  }
 
   // Transition from runnable into a state where mutator privileges are denied. Releases share of
   // mutator lock.

@@ -1638,15 +1638,50 @@ void Heap::TrimIndirectReferenceTables(Thread* self) {
 }
 
 void Heap::StartGC(Thread* self, GcCause cause, CollectorType collector_type) {
-  // Need to do this before acquiring the locks since we don't want to get suspended while
-  // holding any locks.
-  ScopedThreadStateChange tsc(self, ThreadState::kWaitingForGcToComplete);
+  // This can be called in either kRunnable or suspended states.
+  // TODO: Consider fixing that?
+  ThreadState old_thread_state = self->GetState();
+  if (old_thread_state == ThreadState::kRunnable) {
+    Locks::mutator_lock_->AssertSharedHeld(self);
+    // Manually inlining the following call breaks thread-safety analysis.
+    StartGCRunnable(self, cause, collector_type);
+    return;
+  }
+  Locks::mutator_lock_->AssertNotHeld(self);
+  self->SetState(ThreadState::kWaitingForGcToComplete);
   MutexLock mu(self, *gc_complete_lock_);
-  // Ensure there is only one GC at a time.
   WaitForGcToCompleteLocked(cause, self);
   collector_type_running_ = collector_type;
   last_gc_cause_ = cause;
   thread_running_gc_ = self;
+  self->SetState(old_thread_state);
+}
+
+void Heap::StartGCRunnable(Thread* self, GcCause cause, CollectorType collector_type) {
+  Locks::mutator_lock_->AssertSharedHeld(self);
+  while (true) {
+    self->TransitionFromRunnableToSuspended(ThreadState::kWaitingForGcToComplete);
+    {
+      MutexLock mu(self, *gc_complete_lock_);
+      // Ensure there is only one GC at a time.
+      WaitForGcToCompleteLocked(cause, self);
+      collector_type_running_ = collector_type;
+      last_gc_cause_ = cause;
+      thread_running_gc_ = self;
+    }
+    // We have to be careful returning to runnable state, since that could cause us to block.
+    // That would be bad, since collector_type_running_ is set, and hence no GC is possible in this
+    // state, allowing deadlock.
+    if (LIKELY(self->TryTransitionFromSuspendedToRunnable())) {
+      return;
+    }
+    {
+      MutexLock mu(self, *gc_complete_lock_);
+      collector_type_running_ = kCollectorTypeNone;
+      thread_running_gc_ = nullptr;
+    }
+    self->TransitionFromSuspendedToRunnable();  // Will handle suspension request and block.
+  }
 }
 
 void Heap::TrimSpaces(Thread* self) {
@@ -2748,6 +2783,8 @@ collector::GcType Heap::CollectGarbageInternal(collector::GcType gc_type,
     bool compacting_gc;
     {
       gc_complete_lock_->AssertNotHeld(self);
+      // Already not runnable; just switch suspended states. We remain in a suspended state until
+      // FinishGC(). This avoids the complicated dance in StartGC().
       ScopedThreadStateChange tsc2(self, ThreadState::kWaitingForGcToComplete);
       MutexLock mu(self, *gc_complete_lock_);
       // Ensure there is only one GC at a time.
@@ -2847,6 +2884,7 @@ collector::GcType Heap::CollectGarbageInternal(collector::GcType gc_type,
     old_native_bytes_allocated_.store(GetNativeBytes());
     LogGC(gc_cause, collector);
     FinishGC(self, gc_type);
+    // We're suspended up to this point.
   }
   // Actually enqueue all cleared references. Do this after the GC has officially finished since
   // otherwise we can deadlock.
