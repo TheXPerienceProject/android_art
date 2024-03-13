@@ -2735,6 +2735,13 @@ class ScopedExtensionsRestriction : public ScopedExtensionsOverride {
 };
 
 template <Riscv64ExtensionMask kMask>
+class ScopedExtensionsInclusion : public ScopedExtensionsOverride {
+ public:
+  explicit ScopedExtensionsInclusion(Riscv64Assembler* assembler)
+      : ScopedExtensionsOverride(assembler, GetEnabledExtensions(assembler) | kMask) {}
+};
+
+template <Riscv64ExtensionMask kMask>
 using ScopedExtensionsExclusion = ScopedExtensionsRestriction<~kMask>;
 
 using ScopedLrScExtensionsRestriction =
@@ -2837,6 +2844,14 @@ class ScratchRegisterScope {
 
   DISALLOW_COPY_AND_ASSIGN(ScratchRegisterScope);
 };
+
+constexpr Riscv64ExtensionMask kRiscv64CompressedExtensionsMask =
+    Riscv64ExtensionBit(Riscv64Extension::kZca) |
+    Riscv64ExtensionBit(Riscv64Extension::kZcd) |
+    Riscv64ExtensionBit(Riscv64Extension::kZcb);
+
+using ScopedNoCInstructions = ScopedExtensionsExclusion<kRiscv64CompressedExtensionsMask>;
+using ScopedUseCInstructions = ScopedExtensionsInclusion<kRiscv64CompressedExtensionsMask>;
 
 }  // namespace riscv64
 }  // namespace art
