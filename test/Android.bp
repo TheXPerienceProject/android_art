@@ -110,6 +110,12 @@ art_cc_defaults {
     name: "art_test_internal_library_defaults",
     defaults: ["art_test_defaults"],
     target: {
+        android: {
+            test_for: [
+                "com.android.art",
+                "com.android.art.debug",
+            ],
+        },
         android_arm: {
             relative_install_path: "com.android.art/lib",
         },
@@ -375,10 +381,6 @@ art_cc_defaults {
         "libart-gtest",
     ],
     version_script: ":art-standalone-gtest-version",
-    test_for: [
-        "com.android.art",
-        "com.android.art.debug",
-    ],
 }
 
 art_cc_defaults {
