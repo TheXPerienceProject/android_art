@@ -1506,8 +1506,6 @@ Location InvokeDexCallingConventionVisitorX86::GetReturnLocation(DataType::Type 
     case DataType::Type::kFloat32:
       return Location::FpuRegisterLocation(XMM0);
   }
-
-  UNREACHABLE();
 }
 
 Location InvokeDexCallingConventionVisitorX86::GetMethodLocation() const {

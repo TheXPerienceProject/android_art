@@ -1715,6 +1715,7 @@ void DisassemblerRiscv64::Printer::Dump16(const uint8_t* insn) {
           os_ << "c.sd " << XRegName(GetRs2Short16(insn16));
           break;
         default:
+          LOG(FATAL) << "Unreachable";
           UNREACHABLE();
       }
       os_ << ", ";
@@ -1831,6 +1832,7 @@ void DisassemblerRiscv64::Printer::Dump16(const uint8_t* insn) {
               break;
             }
             default:
+              LOG(FATAL) << "Unreachable";
               UNREACHABLE();
           }
           break;
@@ -1856,6 +1858,7 @@ void DisassemblerRiscv64::Printer::Dump16(const uint8_t* insn) {
           break;
         }
         default:
+          LOG(FATAL) << "Unreachable";
           UNREACHABLE();
       }
       break;
@@ -1938,6 +1941,7 @@ void DisassemblerRiscv64::Printer::Dump16(const uint8_t* insn) {
           os_ << "c.sdsp " << XRegName(GetRs2_16(insn16));
           break;
         default:
+          LOG(FATAL) << "Unreachable";
           UNREACHABLE();
       }
 
@@ -1946,6 +1950,7 @@ void DisassemblerRiscv64::Printer::Dump16(const uint8_t* insn) {
 
       break;
     default:
+      LOG(FATAL) << "Unreachable";
       UNREACHABLE();
   }
 }

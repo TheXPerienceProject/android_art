@@ -1656,7 +1656,6 @@ int32_t VarHandle::GetNumberOfVarTypeParameters(AccessModeTemplate access_mode_t
     case AccessModeTemplate::kCompareAndExchange:
       return 2;
   }
-  UNREACHABLE();
 }
 
 bool FieldVarHandle::Access(AccessMode access_mode,
