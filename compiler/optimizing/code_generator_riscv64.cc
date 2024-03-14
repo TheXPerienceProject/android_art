@@ -122,7 +122,6 @@ Location Riscv64ReturnLocation(DataType::Type return_type) {
     case DataType::Type::kVoid:
       return Location::NoLocation();
   }
-  UNREACHABLE();
 }
 
 static RegisterSet OneRegInReferenceOutSaveEverythingCallerSaves() {

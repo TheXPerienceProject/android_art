@@ -1584,5 +1584,13 @@
       "bug": "b/328023607",
       "description": ["Fails on QEMU"],
       "env_vars": {"ART_TEST_ON_VM": "true"}
+    },
+    {
+        "tests": ["169-threadgroup-jni"],
+        "variant": "jvm",
+        "description": ["ThreadGroup.isDestroyed() has been deprecated since Java 16: ",
+                        "The ability to destroy a thread group and the concept of a destroyed ",
+                        "thread group no longer exists. A thread group is eligible to be GC'ed ",
+                        "when there are no live threads in the group and it is otherwise unreachable."]
     }
 ]

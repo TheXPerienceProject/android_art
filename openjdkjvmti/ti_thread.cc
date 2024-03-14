@@ -924,7 +924,6 @@ jvmtiError ThreadUtil::SuspendOther(art::Thread* self,
     }
     // We timed out. Just go around and try again.
   } while (true);
-  UNREACHABLE();
 }
 
 jvmtiError ThreadUtil::SuspendSelf(art::Thread* self) {
