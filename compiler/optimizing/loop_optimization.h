@@ -108,6 +108,7 @@ class HLoopOptimization : public HOptimization {
    * Vectorization mode during synthesis
    * (sequential peeling/cleanup loop or vector loop).
    */
+  // TODO(solanes): Change this into enum class
   enum VectorMode {
     kSequential,
     kVector
