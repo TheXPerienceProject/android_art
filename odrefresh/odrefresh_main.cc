@@ -155,7 +155,8 @@ int InitializeConfig(int argc, char** argv, OdrConfig* config) {
     } else if (ArgumentMatches(arg, "--system-server-compiler-filter=", &value)) {
       config->SetSystemServerCompilerFilter(value);
     } else if (ArgumentMatches(arg, "--staging-dir=", &value)) {
-      config->SetStagingDir(value);
+      // Keep this for compatibility with CompOS in old platforms.
+      LOG(WARNING) << "--staging-dir is deprecated and its value is ignored";
     } else if (ArgumentEquals(arg, "--dry-run")) {
       config->SetDryRun();
     } else if (ArgumentMatches(arg, "--partial-compilation=", &value)) {
@@ -238,8 +239,6 @@ NO_RETURN void UsageHelp(const char* argv0) {
   UsageMsg("                                 OS.");
   UsageMsg("--dalvik-cache=<DIR>             Write artifacts to .../<DIR> rather than");
   UsageMsg("                                 .../dalvik-cache");
-  UsageMsg("--staging-dir=<DIR>              Write temporary artifacts to <DIR> rather than");
-  UsageMsg("                                 .../staging");
   UsageMsg("--zygote-arch=<STRING>           Zygote kind that overrides ro.zygote");
   UsageMsg("--boot-image-compiler-filter=<STRING>");
   UsageMsg("                                 Compiler filter for the boot image. Default: ");
