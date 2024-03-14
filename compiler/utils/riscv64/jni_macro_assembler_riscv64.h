@@ -149,22 +149,6 @@ class Riscv64JNIMacroAssembler  : public JNIMacroAssemblerFwd<Riscv64Assembler, 
                      bool null_allowed);
 
   ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, CreateJObject);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, StackFrame);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, ChangeFrameSize);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, Store);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, Load);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, MoveArguments);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, Move);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, GetCurrentThread);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, DecodeJNITransitionOrLocalJObject);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, JumpCodePointer);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, Call);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, Transitions);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, SuspendCheck);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, Exception);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, JumpLabel);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, ReadBarrier);
-  ART_FRIEND_TEST(JniMacroAssemblerRiscv64Test, TestByteAndJumpIfNotZero);
 };
 
 class Riscv64JNIMacroLabel final
