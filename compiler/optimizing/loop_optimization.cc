@@ -2455,13 +2455,9 @@ HInstruction* HLoopOptimization::GenerateVecOp(HInstruction* org,
         new (global_allocator_) HAbs(org_type, opa, dex_pc));
     case HInstruction::kEqual: {
         // Special case.
-        if (vector_mode_ == kVector) {
-          vector = new (global_allocator_) HVecCondition(
-              global_allocator_, opa, opb, type, vector_length_, dex_pc);
-        } else {
-          DCHECK(vector_mode_ == kSequential);
-          UNREACHABLE();
-        }
+        DCHECK_EQ(vector_mode_, kVector);
+        vector = new (global_allocator_)
+            HVecCondition(global_allocator_, opa, opb, type, vector_length_, dex_pc);
       }
       break;
     default:
@@ -2772,19 +2768,14 @@ bool HLoopOptimization::VectorizeIfCondition(LoopNode* node,
                                              vector_map_->Get(opa_promoted),
                                              vector_map_->Get(opb_promoted),
                                              type);
+      DCHECK_EQ(vector_mode_, kVector);
+      HInstruction* vec_pred_not = new (global_allocator_)
+          HVecPredNot(global_allocator_, vec_cond, type, vector_length_, hif->GetDexPc());
 
-      if (vector_mode_ == kVector) {
-          HInstruction* vec_pred_not = new (global_allocator_) HVecPredNot(
-              global_allocator_, vec_cond, type, vector_length_, hif->GetDexPc());
-
-          vector_map_->Put(hif, vec_pred_not);
-          BlockPredicateInfo* pred_info = predicate_info_map_->Get(hif->GetBlock());
-          pred_info->SetControlFlowInfo(vec_cond->AsVecPredSetOperation(),
-                                        vec_pred_not->AsVecPredSetOperation());
-        } else {
-          DCHECK(vector_mode_ == kSequential);
-          UNREACHABLE();
-      }
+      vector_map_->Put(hif, vec_pred_not);
+      BlockPredicateInfo* pred_info = predicate_info_map_->Get(hif->GetBlock());
+      pred_info->SetControlFlowInfo(vec_cond->AsVecPredSetOperation(),
+                                    vec_pred_not->AsVecPredSetOperation());
     }
     return true;
   }
@@ -3140,6 +3131,7 @@ void HLoopOptimization::InitPredicateInfoMap(LoopNode* node,
         return;
       }
     }
+    LOG(FATAL) << "Unreachable";
     UNREACHABLE();
   }
 

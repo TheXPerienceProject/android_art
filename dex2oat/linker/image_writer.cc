@@ -3580,7 +3580,6 @@ ImageWriter::Bin ImageWriter::BinTypeForNativeRelocationType(NativeObjectRelocat
     case NativeObjectRelocationType::kGcRootPointer:
       return Bin::kMetadata;
   }
-  UNREACHABLE();
 }
 
 size_t ImageWriter::GetOatIndex(mirror::Object* obj) const {

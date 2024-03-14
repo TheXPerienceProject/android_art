@@ -10203,6 +10203,7 @@ ObjPtr<mirror::MethodHandle> ClassLinker::ResolveMethodHandleForField(
     case DexFile::MethodHandleType::kInvokeConstructor:
     case DexFile::MethodHandleType::kInvokeDirect:
     case DexFile::MethodHandleType::kInvokeInterface:
+      LOG(FATAL) << "Unreachable";
       UNREACHABLE();
   }
 
@@ -10261,6 +10262,7 @@ ObjPtr<mirror::MethodHandle> ClassLinker::ResolveMethodHandleForField(
     case DexFile::MethodHandleType::kInvokeConstructor:
     case DexFile::MethodHandleType::kInvokeDirect:
     case DexFile::MethodHandleType::kInvokeInterface:
+      LOG(FATAL) << "Unreachable";
       UNREACHABLE();
   }
 
@@ -10301,6 +10303,7 @@ ObjPtr<mirror::MethodHandle> ClassLinker::ResolveMethodHandleForMethod(
     case DexFile::MethodHandleType::kStaticGet:
     case DexFile::MethodHandleType::kInstancePut:
     case DexFile::MethodHandleType::kInstanceGet:
+      LOG(FATAL) << "Unreachable";
       UNREACHABLE();
     case DexFile::MethodHandleType::kInvokeStatic: {
       kind = mirror::MethodHandle::Kind::kInvokeStatic;
