@@ -2178,7 +2178,8 @@ WARN_UNUSED ExitCode OnDeviceRefresh::Compile(OdrMetrics& metrics,
   }
 
   // Don't compile system server if the compilation of BCP failed.
-  if (!system_server_isa_failed && !compilation_options.system_server_jars_to_compile.empty()) {
+  if (!system_server_isa_failed && !compilation_options.system_server_jars_to_compile.empty() &&
+      !config_.GetOnlyBootImages()) {
     OdrMetrics::Stage stage = OdrMetrics::Stage::kSystemServerClasspath;
     CompilationResult ss_result = CompileSystemServer(
         staging_dir, compilation_options.system_server_jars_to_compile, advance_animation_progress);

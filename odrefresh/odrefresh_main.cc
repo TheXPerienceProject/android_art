@@ -165,6 +165,8 @@ int InitializeConfig(int argc, char** argv, OdrConfig* config) {
       config->SetRefresh(false);
     } else if (ArgumentEquals(arg, "--minimal")) {
       config->SetMinimal(true);
+    } else if (ArgumentEquals(arg, "--only-boot-images")) {
+      config->SetOnlyBootImages(true);
     } else {
       ArgumentError("Unrecognized argument: '%s'", arg);
     }
@@ -247,6 +249,7 @@ NO_RETURN void UsageHelp(const char* argv0) {
   UsageMsg("                                 Compiler filter that overrides");
   UsageMsg("                                 dalvik.vm.systemservercompilerfilter");
   UsageMsg("--minimal                        Generate a minimal boot image only.");
+  UsageMsg("--only-boot-images               Generate boot images only.");
 
   exit(EX_USAGE);
 }
