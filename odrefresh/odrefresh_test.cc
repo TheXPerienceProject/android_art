@@ -994,5 +994,22 @@ TEST_F(OdRefreshTest, CompileSystemServerChoosesBootImage_OnSystem) {
       ExitCode::kCompilationSuccess);
 }
 
+TEST_F(OdRefreshTest, OnlyBootImages) {
+  config_.SetOnlyBootImages(true);
+
+  // Primary.
+  EXPECT_CALL(*mock_exec_utils_, DoExecAndReturnCode(Contains(Flag("--dex-file=", core_oj_jar_))))
+      .Times(2)
+      .WillRepeatedly(Return(0));
+
+  // Mainline extension.
+  EXPECT_CALL(*mock_exec_utils_, DoExecAndReturnCode(Contains(Flag("--dex-file=", conscrypt_jar_))))
+      .Times(2)
+      .WillRepeatedly(Return(0));
+
+  EXPECT_EQ(odrefresh_->Compile(*metrics_, CompilationOptions::CompileAll(*odrefresh_)),
+            ExitCode::kCompilationSuccess);
+}
+
 }  // namespace odrefresh
 }  // namespace art
