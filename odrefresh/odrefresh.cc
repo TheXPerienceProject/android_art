@@ -101,6 +101,7 @@ using ::android::base::Dirname;
 using ::android::base::Join;
 using ::android::base::ParseInt;
 using ::android::base::Result;
+using ::android::base::ScopeGuard;
 using ::android::base::SetProperty;
 using ::android::base::Split;
 using ::android::base::StartsWith;
@@ -191,28 +192,6 @@ bool MoveOrEraseFiles(const std::vector<std::unique_ptr<File>>& files,
     }
   }
   return true;
-}
-
-Result<std::string> CreateStagingDirectory() {
-  std::string staging_dir = GetArtApexData() + "/staging";
-
-  std::error_code ec;
-  if (std::filesystem::exists(staging_dir, ec)) {
-    if (!std::filesystem::remove_all(staging_dir, ec)) {
-      return Errorf(
-          "Could not remove existing staging directory '{}': {}", staging_dir, ec.message());
-    }
-  }
-
-  if (mkdir(staging_dir.c_str(), S_IRWXU) != 0) {
-    return ErrnoErrorf("Could not create staging directory '{}'", staging_dir);
-  }
-
-  if (setfilecon(staging_dir.c_str(), "u:object_r:apex_art_staging_data_file:s0") != 0) {
-    return ErrnoErrorf("Could not set label on staging directory '{}'", staging_dir);
-  }
-
-  return staging_dir;
 }
 
 // Gets the `ApexInfo` associated with the currently active ART APEX.
@@ -683,17 +662,21 @@ OnDeviceRefresh::OnDeviceRefresh(const OdrConfig& config)
     : OnDeviceRefresh(config,
                       config.GetArtifactDirectory() + "/" + kCacheInfoFile,
                       std::make_unique<ExecUtils>(),
-                      CheckCompilationSpace) {}
+                      CheckCompilationSpace,
+                      setfilecon) {}
 
-OnDeviceRefresh::OnDeviceRefresh(const OdrConfig& config,
-                                 const std::string& cache_info_filename,
-                                 std::unique_ptr<ExecUtils> exec_utils,
-                                 android::base::function_ref<bool()> check_compilation_space)
+OnDeviceRefresh::OnDeviceRefresh(
+    const OdrConfig& config,
+    const std::string& cache_info_filename,
+    std::unique_ptr<ExecUtils> exec_utils,
+    android::base::function_ref<bool()> check_compilation_space,
+    android::base::function_ref<int(const char*, const char*)> setfilecon)
     : config_(config),
       cache_info_filename_(cache_info_filename),
       start_time_(time(nullptr)),
       exec_utils_(std::move(exec_utils)),
-      check_compilation_space_(check_compilation_space) {
+      check_compilation_space_(check_compilation_space),
+      setfilecon_(setfilecon) {
   // Updatable APEXes should not have DEX files in the DEX2OATBOOTCLASSPATH. At the time of
   // writing i18n is a non-updatable APEX and so does appear in the DEX2OATBOOTCLASSPATH.
   dex2oat_boot_classpath_jars_ = Split(config_.GetDex2oatBootClasspath(), ":");
@@ -720,6 +703,28 @@ time_t OnDeviceRefresh::GetExecutionTimeRemaining() const {
 
 time_t OnDeviceRefresh::GetSubprocessTimeout() const {
   return std::min(GetExecutionTimeRemaining(), kMaxChildProcessSeconds);
+}
+
+Result<std::string> OnDeviceRefresh::CreateStagingDirectory() const {
+  std::string staging_dir = GetArtApexData() + "/staging";
+
+  std::error_code ec;
+  if (std::filesystem::exists(staging_dir, ec)) {
+    if (std::filesystem::remove_all(staging_dir, ec) < 0) {
+      return Errorf(
+          "Could not remove existing staging directory '{}': {}", staging_dir, ec.message());
+    }
+  }
+
+  if (mkdir(staging_dir.c_str(), S_IRWXU) != 0) {
+    return ErrnoErrorf("Could not create staging directory '{}'", staging_dir);
+  }
+
+  if (setfilecon_(staging_dir.c_str(), "u:object_r:apex_art_staging_data_file:s0") != 0) {
+    return ErrnoErrorf("Could not set label on staging directory '{}'", staging_dir);
+  }
+
+  return staging_dir;
 }
 
 std::optional<std::vector<apex::ApexInfo>> OnDeviceRefresh::GetApexInfoList() const {
@@ -1726,21 +1731,6 @@ WARN_UNUSED CompilationResult OnDeviceRefresh::RunDex2oat(
       std::make_pair(artifacts.ImagePath(), artifacts.ImageKind()),
       std::make_pair(artifacts.OatPath(), "oat"),
       std::make_pair(artifacts.VdexPath(), "output-vdex")};
-  std::vector<std::unique_ptr<File>> staging_files;
-  for (const auto& [location, kind] : location_kind_pairs) {
-    std::string staging_location = GetStagingLocation(staging_dir, location);
-    std::unique_ptr<File> staging_file(OS::CreateEmptyFile(staging_location.c_str()));
-    if (staging_file == nullptr) {
-      return CompilationResult::Error(
-          OdrMetrics::Status::kIoError,
-          ART_FORMAT("Failed to create {} file '{}': {}", kind, staging_location, strerror(errno)));
-    }
-    // Don't check the state of the staging file. It doesn't need to be flushed because it's removed
-    // after the compilation regardless of success or failure.
-    staging_file->MarkUnchecked();
-    args.Add(StringPrintf("--%s-fd=%d", kind, staging_file->Fd()));
-    staging_files.emplace_back(std::move(staging_file));
-  }
 
   std::string install_location = Dirname(artifacts.OatPath());
   if (!EnsureDirectoryExists(install_location)) {
@@ -1748,6 +1738,27 @@ WARN_UNUSED CompilationResult OnDeviceRefresh::RunDex2oat(
         OdrMetrics::Status::kIoError,
         ART_FORMAT("Error encountered when preparing directory '{}'", install_location));
   }
+
+  std::vector<std::unique_ptr<File>> output_files;
+  for (const auto& [location, kind] : location_kind_pairs) {
+    std::string output_location =
+        staging_dir.empty() ? location : GetStagingLocation(staging_dir, location);
+    std::unique_ptr<File> output_file(OS::CreateEmptyFile(output_location.c_str()));
+    if (output_file == nullptr) {
+      return CompilationResult::Error(
+          OdrMetrics::Status::kIoError,
+          ART_FORMAT("Failed to create {} file '{}': {}", kind, output_location, strerror(errno)));
+    }
+    args.Add(StringPrintf("--%s-fd=%d", kind, output_file->Fd()));
+    output_files.emplace_back(std::move(output_file));
+  }
+
+  // We don't care about file state on failure.
+  auto cleanup = ScopeGuard([&] {
+    for (const std::unique_ptr<File>& file : output_files) {
+      file->MarkUnchecked();
+    }
+  });
 
   args.Concat(std::move(extra_args));
 
@@ -1772,12 +1783,29 @@ WARN_UNUSED CompilationResult OnDeviceRefresh::RunDex2oat(
         dex2oat_result);
   }
 
-  if (!MoveOrEraseFiles(staging_files, install_location)) {
-    return CompilationResult::Error(
-        OdrMetrics::Status::kIoError,
-        ART_FORMAT("Failed to commit artifacts to '{}'", install_location));
+  if (staging_dir.empty()) {
+    for (const std::unique_ptr<File>& file : output_files) {
+      if (file->FlushCloseOrErase() != 0) {
+        return CompilationResult::Error(
+            OdrMetrics::Status::kIoError,
+            ART_FORMAT("Failed to flush close file '{}'", file->GetPath()));
+      }
+    }
+  } else {
+    for (const std::unique_ptr<File>& file : output_files) {
+      if (file->Flush() != 0) {
+        return CompilationResult::Error(OdrMetrics::Status::kIoError,
+                                        ART_FORMAT("Failed to flush file '{}'", file->GetPath()));
+      }
+    }
+    if (!MoveOrEraseFiles(output_files, install_location)) {
+      return CompilationResult::Error(
+          OdrMetrics::Status::kIoError,
+          ART_FORMAT("Failed to commit artifacts to '{}'", install_location));
+    }
   }
 
+  cleanup.Disable();
   return CompilationResult::Dex2oatOk(timer.duration().count(), dex2oat_result);
 }
 
@@ -2103,8 +2131,10 @@ WARN_UNUSED ExitCode OnDeviceRefresh::Compile(OdrMetrics& metrics,
     return ExitCode::kCleanupFailed;
   }
 
-  if (!config_.GetStagingDir().empty()) {
-    staging_dir = config_.GetStagingDir();
+  if (config_.GetCompilationOsMode()) {
+    // We don't need to stage files in CompOS. If the compilation fails (partially or entirely),
+    // CompOS will not sign any artifacts, and odsign will discard CompOS outputs entirely.
+    staging_dir = "";
   } else {
     // Create staging area and assign label for generating compilation artifacts.
     Result<std::string> res = CreateStagingDirectory();
@@ -2115,8 +2145,6 @@ WARN_UNUSED ExitCode OnDeviceRefresh::Compile(OdrMetrics& metrics,
     }
     staging_dir = res.value();
   }
-
-  std::string error_msg;
 
   uint32_t dex2oat_invocation_count = 0;
   uint32_t total_dex2oat_invocation_count = compilation_options.CompilationUnitCount();
