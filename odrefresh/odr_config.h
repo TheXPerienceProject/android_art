@@ -143,10 +143,6 @@ class OdrConfig final {
   // A helper for reading from `system_properties_`.
   OdrSystemProperties odr_system_properties_;
 
-  // Staging directory for artifacts. The directory must exist and will be automatically removed
-  // after compilation. If empty, use the default directory.
-  std::string staging_dir_;
-
  public:
   explicit OdrConfig(const char* program_name)
       : dry_run_(false),
@@ -232,9 +228,6 @@ class OdrConfig final {
   const std::string& GetSystemServerCompilerFilter() const {
     return system_server_compiler_filter_;
   }
-  const std::string& GetStagingDir() const {
-    return staging_dir_;
-  }
   bool GetCompilationOsMode() const { return compilation_os_mode_; }
   bool GetMinimal() const { return minimal_; }
   const OdrSystemProperties& GetSystemProperties() const { return odr_system_properties_; }
@@ -275,10 +268,6 @@ class OdrConfig final {
   const std::string& GetBootClasspath() const { return boot_classpath_; }
 
   void SetBootClasspath(const std::string& classpath) { boot_classpath_ = classpath; }
-
-  void SetStagingDir(const std::string& staging_dir) {
-    staging_dir_ = staging_dir;
-  }
 
   const std::string& GetStandaloneSystemServerJars() const {
     return standalone_system_server_jars_;

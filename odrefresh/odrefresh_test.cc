@@ -226,19 +226,18 @@ class OdRefreshTest : public CommonArtTest {
     config_.SetSystemServerCompilerFilter("");
     config_.SetArtifactDirectory(dalvik_cache_dir_);
 
-    std::string staging_dir = dalvik_cache_dir_ + "/staging";
-    ASSERT_TRUE(EnsureDirectoryExists(staging_dir));
-    config_.SetStagingDir(staging_dir);
-
     auto mock_exec_utils = std::make_unique<MockExecUtils>();
     mock_exec_utils_ = mock_exec_utils.get();
 
     metrics_ = std::make_unique<OdrMetrics>(dalvik_cache_dir_);
     cache_info_xml_ = dalvik_cache_dir_ + "/cache-info.xml";
+    check_compilation_space_ = [] { return true; };
+    setfilecon_ = [](auto, auto) { return 0; };
     odrefresh_ = std::make_unique<OnDeviceRefresh>(config_,
                                                    cache_info_xml_,
                                                    std::move(mock_exec_utils),
-                                                   /*check_compilation_space=*/[] { return true; });
+                                                   check_compilation_space_,
+                                                   setfilecon_);
   }
 
   void TearDown() override {
@@ -275,6 +274,8 @@ class OdRefreshTest : public CommonArtTest {
   std::string dirty_image_objects_file_;
   std::string preloaded_classes_file_;
   std::string cache_info_xml_;
+  std::function<bool()> check_compilation_space_;
+  std::function<int(const char*, const char*)> setfilecon_;
 };
 
 TEST_F(OdRefreshTest, PrimaryBootImage) {
