@@ -1050,6 +1050,8 @@ class Heap {
   void LogGC(GcCause gc_cause, collector::GarbageCollector* collector);
   void StartGC(Thread* self, GcCause cause, CollectorType collector_type)
       REQUIRES(!*gc_complete_lock_);
+  void StartGCRunnable(Thread* self, GcCause cause, CollectorType collector_type)
+      REQUIRES(!*gc_complete_lock_) REQUIRES_SHARED(Locks::mutator_lock_);
   void FinishGC(Thread* self, collector::GcType gc_type) REQUIRES(!*gc_complete_lock_);
 
   double CalculateGcWeightedAllocatedBytes(uint64_t gc_last_process_cpu_time_ns,
@@ -1461,7 +1463,7 @@ class Heap {
   // Collector type of the running GC.
   volatile CollectorType collector_type_running_ GUARDED_BY(gc_complete_lock_);
 
-  // Cause of the last running GC.
+  // Cause of the last running or attempted GC or GC-like action.
   volatile GcCause last_gc_cause_ GUARDED_BY(gc_complete_lock_);
 
   // The thread currently running the GC.
