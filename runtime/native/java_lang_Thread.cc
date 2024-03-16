@@ -108,6 +108,7 @@ static jint Thread_nativeGetStatus(JNIEnv* env, jobject java_thread, jboolean ha
     case ThreadState::kWaitingForGcThreadFlip:         return kJavaWaiting;
     case ThreadState::kNativeForAbort:                 return kJavaWaiting;
     case ThreadState::kSuspended:                      return kJavaRunnable;
+    case ThreadState::kInvalidState:                   break;
     // Don't add a 'default' here so the compiler can spot incompatible enum changes.
   }
   LOG(ERROR) << "Unexpected thread state: " << internal_thread_state;

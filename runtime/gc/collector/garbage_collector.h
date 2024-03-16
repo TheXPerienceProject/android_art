@@ -147,7 +147,7 @@ class GarbageCollector : public RootVisitor, public IsMarkedVisitor, public Mark
 
  protected:
   // Run all of the GC phases.
-  virtual void RunPhases() = 0;
+  virtual void RunPhases() REQUIRES(!Locks::mutator_lock_) = 0;
   // Revoke all the thread-local buffers.
   virtual void RevokeAllThreadLocalBuffers() = 0;
 

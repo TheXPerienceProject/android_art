@@ -64,6 +64,7 @@ enum class ThreadState : uint8_t {
   kStarting,                        // NEW            TS_WAIT      native thread started, not yet ready to run managed code
   kNative,                          // RUNNABLE       TS_RUNNING   running in a JNI native method
   kSuspended,                       // RUNNABLE       TS_RUNNING   suspended by GC or debugger
+  kInvalidState,                    // Used as error value; never stored.
 };
 EXPORT std::ostream& operator<<(std::ostream& os, ThreadState rhs);
 
