@@ -28,11 +28,6 @@
 namespace art HIDDEN {
 namespace riscv64 {
 
-constexpr Riscv64ExtensionMask kRiscv64CompressedExtensionsMask =
-    Riscv64ExtensionBit(Riscv64Extension::kZca) |
-    Riscv64ExtensionBit(Riscv64Extension::kZcd) |
-    Riscv64ExtensionBit(Riscv64Extension::kZcb);
-
 struct RISCV64CpuRegisterCompare {
   bool operator()(const XRegister& a, const XRegister& b) const { return a < b; }
 };
