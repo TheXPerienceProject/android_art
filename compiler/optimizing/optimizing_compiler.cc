@@ -50,7 +50,7 @@
 #include "jni/quick/jni_compiler.h"
 #include "linker/linker_patch.h"
 #include "nodes.h"
-#include "oat_quick_method_header.h"
+#include "oat/oat_quick_method_header.h"
 #include "optimizing/write_barrier_elimination.h"
 #include "prepare_for_register_allocation.h"
 #include "profiling_info_builder.h"
@@ -368,10 +368,10 @@ class OptimizingCompiler final : public Compiler {
                             const DexCompilationUnit& dex_compilation_unit,
                             PassObserver* pass_observer) const;
 
-  bool RunBaselineOptimizations(HGraph* graph,
-                                CodeGenerator* codegen,
-                                const DexCompilationUnit& dex_compilation_unit,
-                                PassObserver* pass_observer) const;
+  bool RunRequiredPasses(HGraph* graph,
+                         CodeGenerator* codegen,
+                         const DexCompilationUnit& dex_compilation_unit,
+                         PassObserver* pass_observer) const;
 
   std::vector<uint8_t> GenerateJitDebugInfo(const debug::MethodDebugInfo& method_debug_info);
 
@@ -444,10 +444,10 @@ static bool IsInstructionSetSupported(InstructionSet instruction_set) {
          instruction_set == InstructionSet::kX86_64;
 }
 
-bool OptimizingCompiler::RunBaselineOptimizations(HGraph* graph,
-                                                  CodeGenerator* codegen,
-                                                  const DexCompilationUnit& dex_compilation_unit,
-                                                  PassObserver* pass_observer) const {
+bool OptimizingCompiler::RunRequiredPasses(HGraph* graph,
+                                           CodeGenerator* codegen,
+                                           const DexCompilationUnit& dex_compilation_unit,
+                                           PassObserver* pass_observer) const {
   switch (codegen->GetCompilerOptions().GetInstructionSet()) {
 #if defined(ART_ENABLE_CODEGEN_arm)
     case InstructionSet::kThumb2:
@@ -904,25 +904,21 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
     }
   }
 
-  if (compilation_kind == CompilationKind::kBaseline) {
-    RunBaselineOptimizations(graph, codegen.get(), dex_compilation_unit, &pass_observer);
+  if (compilation_kind == CompilationKind::kBaseline && compiler_options.ProfileBranches()) {
+    graph->SetUsefulOptimizing();
+    // Branch profiling currently doesn't support running optimizations.
+    RunRequiredPasses(graph, codegen.get(), dex_compilation_unit, &pass_observer);
   } else {
     RunOptimizations(graph, codegen.get(), dex_compilation_unit, &pass_observer);
     PassScope scope(WriteBarrierElimination::kWBEPassName, &pass_observer);
     WriteBarrierElimination(graph, compilation_stats_.get()).Run();
   }
 
-  RegisterAllocator::Strategy regalloc_strategy =
-    compiler_options.GetRegisterAllocationStrategy();
-  AllocateRegisters(graph,
-                    codegen.get(),
-                    &pass_observer,
-                    regalloc_strategy,
-                    compilation_stats_.get());
   // If we are compiling baseline and we haven't created a profiling info for
   // this method already, do it now.
   if (jit != nullptr &&
       compilation_kind == CompilationKind::kBaseline &&
+      graph->IsUsefulOptimizing() &&
       graph->GetProfilingInfo() == nullptr) {
     ProfilingInfoBuilder(
         graph, codegen->GetCompilerOptions(), codegen.get(), compilation_stats_.get()).Run();
@@ -933,6 +929,22 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
       MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kJitOutOfMemoryForCommit);
       return nullptr;
     }
+  }
+
+  RegisterAllocator::Strategy regalloc_strategy =
+    compiler_options.GetRegisterAllocationStrategy();
+  AllocateRegisters(graph,
+                    codegen.get(),
+                    &pass_observer,
+                    regalloc_strategy,
+                    compilation_stats_.get());
+
+  if (UNLIKELY(codegen->GetFrameSize() > codegen->GetMaximumFrameSize())) {
+    LOG(WARNING) << "Stack frame size is " << codegen->GetFrameSize()
+                 << " which is larger than the maximum of " << codegen->GetMaximumFrameSize()
+                 << " bytes. Method: " << graph->PrettyMethod();
+    MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kNotCompiledFrameTooBig);
+    return nullptr;
   }
 
   codegen->Compile();
@@ -1033,6 +1045,7 @@ CodeGenerator* OptimizingCompiler::TryCompileIntrinsic(
     return nullptr;
   }
 
+  CHECK_LE(codegen->GetFrameSize(), codegen->GetMaximumFrameSize());
   codegen->Compile();
   pass_observer.DumpDisassembly();
 
@@ -1435,6 +1448,11 @@ bool OptimizingCompiler::JitCompile(Thread* self,
     info.code_info = stack_map.size() == 0 ? nullptr : stack_map.data();
     info.cfi = ArrayRef<const uint8_t>(*codegen->GetAssembler()->cfi().data());
     debug_info = GenerateJitDebugInfo(info);
+  }
+
+  if (compilation_kind == CompilationKind::kBaseline &&
+      !codegen->GetGraph()->IsUsefulOptimizing()) {
+    compilation_kind = CompilationKind::kOptimized;
   }
 
   if (!code_cache->Commit(self,

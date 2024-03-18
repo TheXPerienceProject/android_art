@@ -72,8 +72,8 @@
 #include "exec_utils.h"
 #include "file_utils.h"
 #include "fstab/fstab.h"
-#include "oat_file_assistant.h"
-#include "oat_file_assistant_context.h"
+#include "oat/oat_file_assistant.h"
+#include "oat/oat_file_assistant_context.h"
 #include "path_utils.h"
 #include "profman/profman_result.h"
 #include "selinux/android.h"
@@ -123,6 +123,7 @@ using ::ndk::ScopedAStatus;
 using TmpProfilePath = ProfilePath::TmpProfilePath;
 
 constexpr const char* kServiceName = "artd";
+constexpr const char* kPreRebootServiceName = "artd_pre_reboot";
 constexpr const char* kArtdCancellationSignalType = "ArtdCancellationSignal";
 
 // Timeout for short operations, such as merging profiles.
@@ -1336,8 +1337,8 @@ Result<void> Artd::Start() {
   OR_RETURN(SetLogVerbosity());
   MemMap::Init();
 
-  ScopedAStatus status = ScopedAStatus::fromStatus(
-      AServiceManager_registerLazyService(this->asBinder().get(), kServiceName));
+  ScopedAStatus status = ScopedAStatus::fromStatus(AServiceManager_registerLazyService(
+      this->asBinder().get(), options_.is_pre_reboot ? kPreRebootServiceName : kServiceName));
   if (!status.isOk()) {
     return Error() << status.getDescription();
   }

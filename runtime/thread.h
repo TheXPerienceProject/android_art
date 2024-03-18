@@ -200,7 +200,7 @@ enum class WeakRefAccessState : int32_t {
 // See Thread.tlsPtr_.active_suspend1_barriers below for explanation.
 struct WrappedSuspend1Barrier {
   WrappedSuspend1Barrier() : barrier_(1), next_(nullptr) {}
-  AtomicInteger barrier_;
+  AtomicInteger barrier_;  // Only updated while holding thread_suspend_count_lock_ .
   struct WrappedSuspend1Barrier* next_ GUARDED_BY(Locks::thread_suspend_count_lock_);
 };
 
@@ -300,8 +300,7 @@ class EXPORT Thread {
   void CheckEmptyCheckpointFromWeakRefAccess(BaseMutex* cond_var_mutex);
   void CheckEmptyCheckpointFromMutex();
 
-  static Thread* FromManagedThread(const ScopedObjectAccessAlreadyRunnable& ts,
-                                   ObjPtr<mirror::Object> thread_peer)
+  static Thread* FromManagedThread(Thread* self, ObjPtr<mirror::Object> thread_peer)
       REQUIRES(Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
   static Thread* FromManagedThread(const ScopedObjectAccessAlreadyRunnable& ts, jobject thread)
@@ -1350,14 +1349,6 @@ class EXPORT Thread {
     return tlsPtr_.method_trace_buffer = buffer;
   }
 
-  void ResetMethodTraceBuffer() {
-    if (tlsPtr_.method_trace_buffer != nullptr) {
-      delete[] tlsPtr_.method_trace_buffer;
-    }
-    tlsPtr_.method_trace_buffer = nullptr;
-    tlsPtr_.method_trace_buffer_index = 0;
-  }
-
   uint64_t GetTraceClockBase() const {
     return tls64_.trace_clock_base;
   }
@@ -1541,6 +1532,13 @@ class EXPORT Thread {
   }
 
   bool IsSystemDaemon() const REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Cause the 'this' thread to abort the process by sending SIGABRT.  Thus we should get an
+  // asynchronous stack trace for 'this' thread, rather than waiting for it to process a
+  // checkpoint. Useful mostly to discover why a thread isn't responding to a suspend request or
+  // checkpoint. The caller should "suspend" (in the Java sense) 'thread' before invoking this, so
+  // 'thread' can't get deallocated before we access it.
+  NO_RETURN void AbortInThis(std::string message);
 
   // Returns true if StrictMode events are traced for the current thread.
   static bool IsSensitiveThread() {
@@ -1763,7 +1761,14 @@ class EXPORT Thread {
 
   // Remove last-added entry from active_suspend1_barriers.
   // Only makes sense if we're still holding thread_suspend_count_lock_ since insertion.
-  ALWAYS_INLINE void RemoveFirstSuspend1Barrier() REQUIRES(Locks::thread_suspend_count_lock_);
+  // We redundantly pass in the barrier to be removed in order to enable a DCHECK.
+  ALWAYS_INLINE void RemoveFirstSuspend1Barrier(WrappedSuspend1Barrier* suspend1_barrier)
+      REQUIRES(Locks::thread_suspend_count_lock_);
+
+  // Remove the "barrier" from the list no matter where it appears. Called only under exceptional
+  // circumstances. The barrier must be in the list.
+  ALWAYS_INLINE void RemoveSuspend1Barrier(WrappedSuspend1Barrier* suspend1_barrier)
+      REQUIRES(Locks::thread_suspend_count_lock_);
 
   ALWAYS_INLINE bool HasActiveSuspendBarrier() REQUIRES(Locks::thread_suspend_count_lock_);
 
@@ -1947,7 +1952,7 @@ class EXPORT Thread {
   // first if possible.
   /***********************************************************************************************/
 
-  struct PACKED(4) tls_32bit_sized_values {
+  struct alignas(4) tls_32bit_sized_values {
     // We have no control over the size of 'bool', but want our boolean fields
     // to be 4-byte quantities.
     using bool32_t = uint32_t;
@@ -2075,7 +2080,7 @@ class EXPORT Thread {
     uint32_t shared_method_hotness;
   } tls32_;
 
-  struct PACKED(8) tls_64bit_sized_values {
+  struct alignas(8) tls_64bit_sized_values {
     tls_64bit_sized_values() : trace_clock_base(0) {
     }
 
@@ -2085,7 +2090,7 @@ class EXPORT Thread {
     RuntimeStats stats;
   } tls64_;
 
-  struct PACKED(sizeof(void*)) tls_ptr_sized_values {
+  struct alignas(sizeof(void*)) tls_ptr_sized_values {
       tls_ptr_sized_values() : card_table(nullptr),
                                exception(nullptr),
                                stack_end(nullptr),

@@ -986,7 +986,7 @@ static void GenUnsafePut(HInvoke* invoke,
 
   if (type == DataType::Type::kReference) {
     bool value_can_be_null = true;  // TODO: Worth finding out this information?
-    codegen->MarkGCCard(base, value, value_can_be_null);
+    codegen->MaybeMarkGCCard(base, value, value_can_be_null);
   }
 }
 
@@ -1457,7 +1457,7 @@ static void GenUnsafeCas(HInvoke* invoke, DataType::Type type, CodeGeneratorARM6
   if (type == DataType::Type::kReference) {
     // Mark card for object assuming new value is stored.
     bool new_value_can_be_null = true;  // TODO: Worth finding out this information?
-    codegen->MarkGCCard(base, new_value, new_value_can_be_null);
+    codegen->MaybeMarkGCCard(base, new_value, new_value_can_be_null);
   }
 
   UseScratchRegisterScope temps(masm);
@@ -1733,7 +1733,7 @@ static void GenUnsafeGetAndUpdate(HInvoke* invoke,
     DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
     // Mark card for object as a new value shall be stored.
     bool new_value_can_be_null = true;  // TODO: Worth finding out this information?
-    codegen->MarkGCCard(base, /*value=*/ arg, new_value_can_be_null);
+    codegen->MaybeMarkGCCard(base, /*value=*/arg, new_value_can_be_null);
   }
 
   __ Add(tmp_ptr, base.X(), Operand(offset));
@@ -3046,7 +3046,7 @@ void IntrinsicCodeGeneratorARM64::VisitSystemArrayCopyChar(HInvoke* invoke) {
   __ Bind(slow_path->GetExitLabel());
 }
 
-// We can choose to use the native implementation there for longer copy lengths.
+// We choose to use the native implementation for longer copy lengths.
 static constexpr int32_t kSystemArrayCopyThreshold = 128;
 
 void IntrinsicLocationsBuilderARM64::VisitSystemArrayCopy(HInvoke* invoke) {
@@ -3194,7 +3194,7 @@ void IntrinsicCodeGeneratorARM64::VisitSystemArrayCopy(HInvoke* invoke) {
     __ Cbz(temp, intrinsic_slow_path->GetEntryLabel());
     // Check that the component type is not a primitive.
     // /* uint16_t */ temp = static_cast<uint16>(klass->primitive_type_);
-    __ Ldr(temp, HeapOperand(temp, primitive_offset));
+    __ Ldrh(temp, HeapOperand(temp, primitive_offset));
     static_assert(Primitive::kPrimNot == 0, "Expected 0 for kPrimNot");
     __ Cbnz(temp, intrinsic_slow_path->GetEntryLabel());
   };
@@ -3394,7 +3394,7 @@ void IntrinsicCodeGeneratorARM64::VisitSystemArrayCopy(HInvoke* invoke) {
     }
 
     // We only need one card marking on the destination array.
-    codegen_->MarkGCCard(dest.W(), Register(), /* emit_null_check= */ false);
+    codegen_->MarkGCCard(dest.W());
 
     __ Bind(&skip_copy_and_write_barrier);
   }
@@ -3969,7 +3969,7 @@ template<typename OP>
 void GenerateFP16Round(HInvoke* invoke,
                        CodeGeneratorARM64* const codegen_,
                        MacroAssembler* masm,
-                       const OP roundOp) {
+                       OP&& roundOp) {
   DCHECK(codegen_->GetInstructionSetFeatures().HasFP16());
   LocationSummary* locations = invoke->GetLocations();
   UseScratchRegisterScope scratch_scope(masm);
@@ -4977,7 +4977,7 @@ static void GenerateVarHandleSet(HInvoke* invoke,
   }
 
   if (CodeGenerator::StoreNeedsWriteBarrier(value_type, invoke->InputAt(value_index))) {
-    codegen->MarkGCCard(target.object, Register(value), /* emit_null_check= */ true);
+    codegen->MaybeMarkGCCard(target.object, Register(value), /* emit_null_check= */ true);
   }
 
   if (slow_path != nullptr) {
@@ -5141,7 +5141,7 @@ static void GenerateVarHandleCompareAndSetOrExchange(HInvoke* invoke,
   if (CodeGenerator::StoreNeedsWriteBarrier(value_type, invoke->InputAt(new_value_index))) {
     // Mark card for object assuming new value is stored.
     bool new_value_can_be_null = true;  // TODO: Worth finding out this information?
-    codegen->MarkGCCard(target.object, new_value.W(), new_value_can_be_null);
+    codegen->MaybeMarkGCCard(target.object, new_value.W(), new_value_can_be_null);
   }
 
   // Reuse the `offset` temporary for the pointer to the target location,
@@ -5445,7 +5445,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
     DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
     // Mark card for object, the new value shall be stored.
     bool new_value_can_be_null = true;  // TODO: Worth finding out this information?
-    codegen->MarkGCCard(target.object, arg.W(), new_value_can_be_null);
+    codegen->MaybeMarkGCCard(target.object, arg.W(), new_value_can_be_null);
   }
 
   // Reuse the `target.offset` temporary for the pointer to the target location,

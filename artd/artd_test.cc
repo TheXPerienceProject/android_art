@@ -58,7 +58,7 @@
 #include "exec_utils.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oat_file.h"
+#include "oat/oat_file.h"
 #include "path_utils.h"
 #include "profman/profman_result.h"
 #include "testing.h"
@@ -320,7 +320,8 @@ class ArtdTest : public CommonArtTest {
     EXPECT_CALL(*mock_props_, GetProperty).Times(AnyNumber()).WillRepeatedly(Return(""));
     auto mock_exec_utils = std::make_unique<MockExecUtils>();
     mock_exec_utils_ = mock_exec_utils.get();
-    artd_ = ndk::SharedRefBase::make<Artd>(std::move(mock_props),
+    artd_ = ndk::SharedRefBase::make<Artd>(Options(),
+                                           std::move(mock_props),
                                            std::move(mock_exec_utils),
                                            mock_kill_.AsStdFunction(),
                                            mock_fstat_.AsStdFunction());
@@ -2199,7 +2200,7 @@ TEST_F(ArtdTest, cleanup) {
               },
               {
                   RuntimeArtifactsPath{
-                      .packageName = "com.android.foo", .isa = "arm64", .dexPath = "/a/b/base.apk"},
+                      .packageName = "com.android.foo", .dexPath = "/a/b/base.apk", .isa = "arm64"},
               },
               &aidl_return)
           .isOk());

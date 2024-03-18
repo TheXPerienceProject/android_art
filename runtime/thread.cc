@@ -91,7 +91,8 @@
 #include "nativehelper/scoped_utf_chars.h"
 #include "nterp_helpers.h"
 #include "nth_caller_visitor.h"
-#include "oat_quick_method_header.h"
+#include "oat/oat_quick_method_header.h"
+#include "oat/stack_map.h"
 #include "obj_ptr-inl.h"
 #include "object_lock.h"
 #include "palette/palette.h"
@@ -106,12 +107,15 @@
 #include "scoped_thread_state_change-inl.h"
 #include "scoped_disable_public_sdk_checker.h"
 #include "stack.h"
-#include "stack_map.h"
 #include "thread-inl.h"
 #include "thread_list.h"
 #include "trace.h"
 #include "verify_object.h"
 #include "well_known_classes-inl.h"
+
+#ifdef ART_TARGET_ANDROID
+#include <android/set_abort_message.h>
+#endif
 
 #if ART_USE_FUTEXES
 #include "linux/futex.h"
@@ -671,16 +675,15 @@ void* Thread::CreateCallback(void* arg) {
   return nullptr;
 }
 
-Thread* Thread::FromManagedThread(const ScopedObjectAccessAlreadyRunnable& soa,
-                                  ObjPtr<mirror::Object> thread_peer) {
+Thread* Thread::FromManagedThread(Thread* self, ObjPtr<mirror::Object> thread_peer) {
   ArtField* f = WellKnownClasses::java_lang_Thread_nativePeer;
   Thread* result = reinterpret_cast64<Thread*>(f->GetLong(thread_peer));
   // Check that if we have a result it is either suspended or we hold the thread_list_lock_
   // to stop it from going away.
   if (kIsDebugBuild) {
-    MutexLock mu(soa.Self(), *Locks::thread_suspend_count_lock_);
+    MutexLock mu(self, *Locks::thread_suspend_count_lock_);
     if (result != nullptr && !result->IsSuspended()) {
-      Locks::thread_list_lock_->AssertHeld(soa.Self());
+      Locks::thread_list_lock_->AssertHeld(self);
     }
   }
   return result;
@@ -688,7 +691,7 @@ Thread* Thread::FromManagedThread(const ScopedObjectAccessAlreadyRunnable& soa,
 
 Thread* Thread::FromManagedThread(const ScopedObjectAccessAlreadyRunnable& soa,
                                   jobject java_thread) {
-  return FromManagedThread(soa, soa.Decode<mirror::Object>(java_thread));
+  return FromManagedThread(soa.Self(), soa.Decode<mirror::Object>(java_thread));
 }
 
 static size_t FixStackSize(size_t stack_size) {
@@ -1444,7 +1447,8 @@ ObjPtr<mirror::String> Thread::GetThreadName() const {
 void Thread::GetThreadName(std::string& name) const {
   tls32_.num_name_readers.fetch_add(1, std::memory_order_seq_cst);
   // The store part of the increment has to be ordered with respect to the following load.
-  name.assign(tlsPtr_.name.load(std::memory_order_seq_cst));
+  const char* c_name = tlsPtr_.name.load(std::memory_order_seq_cst);
+  name.assign(c_name == nullptr ? "<no name>" : c_name);
   tls32_.num_name_readers.fetch_sub(1 /* at least memory_order_release */);
 }
 
@@ -1513,20 +1517,27 @@ bool Thread::PassActiveSuspendBarriers() {
     }
     tlsPtr_.active_suspend1_barriers = nullptr;
     AtomicClearFlag(ThreadFlag::kActiveSuspendBarrier);
+    CHECK_GT(pass_barriers.size(), 0U);  // Since kActiveSuspendBarrier was set.
+    // Decrement suspend barrier(s) while we still hold the lock, since SuspendThread may
+    // remove and deallocate suspend barriers while holding suspend_count_lock_ .
+    // There will typically only be a single barrier to pass here.
+    for (AtomicInteger*& barrier : pass_barriers) {
+      int32_t old_val = barrier->fetch_sub(1, std::memory_order_release);
+      CHECK_GT(old_val, 0) << "Unexpected value for PassActiveSuspendBarriers(): " << old_val;
+      if (old_val != 1) {
+        // We're done with it.
+        barrier = nullptr;
+      }
+    }
   }
-
-  uint32_t barrier_count = 0;
+  // Finally do futex_wakes after releasing the lock.
   for (AtomicInteger* barrier : pass_barriers) {
-    ++barrier_count;
-    int32_t old_val = barrier->fetch_sub(1, std::memory_order_release);
-    CHECK_GT(old_val, 0) << "Unexpected value for PassActiveSuspendBarriers(): " << old_val;
 #if ART_USE_FUTEXES
-    if (old_val == 1) {
+    if (barrier != nullptr) {
       futex(barrier->Address(), FUTEX_WAKE_PRIVATE, INT_MAX, nullptr, nullptr, 0);
     }
 #endif
   }
-  CHECK_GT(barrier_count, 0U);
   return true;
 }
 
@@ -1716,7 +1727,7 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
       Locks::thread_list_lock_->ExclusiveUnlock(self);
       if (IsSuspended()) {
         // See the discussion in mutator_gc_coord.md and SuspendAllInternal for the race here.
-        RemoveFirstSuspend1Barrier();
+        RemoveFirstSuspend1Barrier(&wrapped_barrier);
         if (!HasActiveSuspendBarrier()) {
           AtomicClearFlag(ThreadFlag::kActiveSuspendBarrier);
         }
@@ -1724,6 +1735,9 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
       }
     }
     if (!is_suspended) {
+      // This waits while holding the mutator lock. Effectively `self` becomes
+      // impossible to suspend until `this` responds to the suspend request.
+      // Arguably that's not making anything qualitatively worse.
       bool success = !Runtime::Current()
                           ->GetThreadList()
                           ->WaitForSuspendBarrier(&wrapped_barrier.barrier_)
@@ -2607,7 +2621,6 @@ void Thread::Destroy(bool should_run_callbacks) {
 
     if (UNLIKELY(self->GetMethodTraceBuffer() != nullptr)) {
       Trace::FlushThreadBuffer(self);
-      self->ResetMethodTraceBuffer();
     }
 
     // this.nativePeer = 0;
@@ -4826,6 +4839,27 @@ int Thread::GetNativePriority() const {
   palette_status_t status = PaletteSchedGetPriority(GetTid(), &priority);
   CHECK(status == PALETTE_STATUS_OK || status == PALETTE_STATUS_CHECK_ERRNO);
   return priority;
+}
+
+void Thread::AbortInThis(std::string message) {
+  std::string thread_name;
+  Thread::Current()->GetThreadName(thread_name);
+  LOG(ERROR) << message;
+  LOG(ERROR) << "Aborting culprit thread";
+  Runtime::Current()->SetAbortMessage(("Caused " + thread_name + " failure : " + message).c_str());
+  // Unlike Runtime::Abort() we do not fflush(nullptr), since we want to send the signal with as
+  // little delay as possible.
+  int res = pthread_kill(tlsPtr_.pthread_self, SIGABRT);
+  if (res != 0) {
+    LOG(ERROR) << "pthread_kill failed with " << res << " " << strerror(res) << " target was "
+               << tls32_.tid;
+  } else {
+    // Wait for our process to be aborted.
+    sleep(10 /* seconds */);
+  }
+  // The process should have died long before we got here. Never return.
+  LOG(FATAL) << "Failed to abort in culprit thread: " << message;
+  UNREACHABLE();
 }
 
 bool Thread::IsSystemDaemon() const {

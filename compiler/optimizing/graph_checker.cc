@@ -27,9 +27,11 @@
 #include "base/scoped_arena_containers.h"
 #include "code_generator.h"
 #include "handle.h"
+#include "intrinsics.h"
 #include "mirror/class.h"
 #include "nodes.h"
 #include "obj_ptr-inl.h"
+#include "optimizing/data_type.h"
 #include "scoped_thread_state_change-inl.h"
 #include "subtype_check.h"
 
@@ -738,50 +740,14 @@ void GraphChecker::VisitInvoke(HInvoke* invoke) {
 
   // Check for intrinsics which should have been replaced by intermediate representation in the
   // instruction builder.
-  switch (invoke->GetIntrinsic()) {
-    case Intrinsics::kIntegerRotateRight:
-    case Intrinsics::kLongRotateRight:
-    case Intrinsics::kIntegerRotateLeft:
-    case Intrinsics::kLongRotateLeft:
-    case Intrinsics::kIntegerCompare:
-    case Intrinsics::kLongCompare:
-    case Intrinsics::kIntegerSignum:
-    case Intrinsics::kLongSignum:
-    case Intrinsics::kFloatIsNaN:
-    case Intrinsics::kDoubleIsNaN:
-    case Intrinsics::kStringIsEmpty:
-    case Intrinsics::kUnsafeLoadFence:
-    case Intrinsics::kUnsafeStoreFence:
-    case Intrinsics::kUnsafeFullFence:
-    case Intrinsics::kJdkUnsafeLoadFence:
-    case Intrinsics::kJdkUnsafeStoreFence:
-    case Intrinsics::kJdkUnsafeFullFence:
-    case Intrinsics::kVarHandleFullFence:
-    case Intrinsics::kVarHandleAcquireFence:
-    case Intrinsics::kVarHandleReleaseFence:
-    case Intrinsics::kVarHandleLoadLoadFence:
-    case Intrinsics::kVarHandleStoreStoreFence:
-    case Intrinsics::kMathMinIntInt:
-    case Intrinsics::kMathMinLongLong:
-    case Intrinsics::kMathMinFloatFloat:
-    case Intrinsics::kMathMinDoubleDouble:
-    case Intrinsics::kMathMaxIntInt:
-    case Intrinsics::kMathMaxLongLong:
-    case Intrinsics::kMathMaxFloatFloat:
-    case Intrinsics::kMathMaxDoubleDouble:
-    case Intrinsics::kMathAbsInt:
-    case Intrinsics::kMathAbsLong:
-    case Intrinsics::kMathAbsFloat:
-    case Intrinsics::kMathAbsDouble:
-      AddError(
-          StringPrintf("The graph contains an instrinsic which should have been replaced in the "
-                       "instruction builder: %s:%d in block %d.",
-                       invoke->DebugName(),
-                       invoke->GetId(),
-                       invoke->GetBlock()->GetBlockId()));
-      break;
-    default:
-      break;
+  if (!IsValidIntrinsicAfterBuilder(invoke->GetIntrinsic())) {
+    AddError(
+        StringPrintf("The graph contains the instrinsic %d which should have been replaced in the "
+                     "instruction builder: %s:%d in block %d.",
+                     enum_cast<int>(invoke->GetIntrinsic()),
+                     invoke->DebugName(),
+                     invoke->GetId(),
+                     invoke->GetBlock()->GetBlockId()));
   }
 }
 
@@ -1308,6 +1274,26 @@ void GraphChecker::VisitNeg(HNeg* instruction) {
   }
 }
 
+HInstruction* HuntForOriginalReference(HInstruction* ref) {
+  // An original reference can be transformed by instructions like:
+  //   i0 NewArray
+  //   i1 HInstruction(i0)  <-- NullCheck, BoundType, IntermediateAddress.
+  //   i2 ArraySet(i1, index, value)
+  DCHECK(ref != nullptr);
+  while (ref->IsNullCheck() || ref->IsBoundType() || ref->IsIntermediateAddress()) {
+    ref = ref->InputAt(0);
+  }
+  return ref;
+}
+
+bool IsRemovedWriteBarrier(DataType::Type type,
+                           WriteBarrierKind write_barrier_kind,
+                           HInstruction* value) {
+  return write_barrier_kind == WriteBarrierKind::kDontEmit &&
+         type == DataType::Type::kReference &&
+         !HuntForOriginalReference(value)->IsNullConstant();
+}
+
 void GraphChecker::VisitArraySet(HArraySet* instruction) {
   VisitInstruction(instruction);
 
@@ -1320,6 +1306,80 @@ void GraphChecker::VisitArraySet(HArraySet* instruction) {
                      instruction->GetId(),
                      StrBool(instruction->NeedsTypeCheck()),
                      StrBool(instruction->GetSideEffects().Includes(SideEffects::CanTriggerGC()))));
+  }
+
+  if (IsRemovedWriteBarrier(instruction->GetComponentType(),
+                            instruction->GetWriteBarrierKind(),
+                            instruction->GetValue())) {
+    CheckWriteBarrier(instruction, [](HInstruction* it_instr) {
+      return it_instr->AsArraySet()->GetWriteBarrierKind();
+    });
+  }
+}
+
+void GraphChecker::VisitInstanceFieldSet(HInstanceFieldSet* instruction) {
+  VisitInstruction(instruction);
+  if (IsRemovedWriteBarrier(instruction->GetFieldType(),
+                            instruction->GetWriteBarrierKind(),
+                            instruction->GetValue())) {
+    CheckWriteBarrier(instruction, [](HInstruction* it_instr) {
+      return it_instr->AsInstanceFieldSet()->GetWriteBarrierKind();
+    });
+  }
+}
+
+void GraphChecker::VisitStaticFieldSet(HStaticFieldSet* instruction) {
+  VisitInstruction(instruction);
+  if (IsRemovedWriteBarrier(instruction->GetFieldType(),
+                            instruction->GetWriteBarrierKind(),
+                            instruction->GetValue())) {
+    CheckWriteBarrier(instruction, [](HInstruction* it_instr) {
+      return it_instr->AsStaticFieldSet()->GetWriteBarrierKind();
+    });
+  }
+}
+
+template <typename GetWriteBarrierKind>
+void GraphChecker::CheckWriteBarrier(HInstruction* instruction,
+                                     GetWriteBarrierKind&& get_write_barrier_kind) {
+  DCHECK(instruction->IsStaticFieldSet() ||
+         instruction->IsInstanceFieldSet() ||
+         instruction->IsArraySet());
+
+  // For removed write barriers, we expect that the write barrier they are relying on is:
+  // A) In the same block, and
+  // B) There's no instruction between them that can trigger a GC.
+  HInstruction* object = HuntForOriginalReference(instruction->InputAt(0));
+  bool found = false;
+  for (HBackwardInstructionIterator it(instruction); !it.Done(); it.Advance()) {
+    if (instruction->GetKind() == it.Current()->GetKind() &&
+        object == HuntForOriginalReference(it.Current()->InputAt(0)) &&
+        get_write_barrier_kind(it.Current()) == WriteBarrierKind::kEmitBeingReliedOn) {
+      // Found the write barrier we are relying on.
+      found = true;
+      break;
+    }
+
+    // We check the `SideEffects::CanTriggerGC` after failing to find the write barrier since having
+    // a write barrier that's relying on an ArraySet that can trigger GC is fine because the card
+    // table is marked after the GC happens.
+    if (it.Current()->GetSideEffects().Includes(SideEffects::CanTriggerGC())) {
+      AddError(
+          StringPrintf("%s %d from block %d was expecting a write barrier and it didn't find "
+                       "any. %s %d can trigger GC",
+                       instruction->DebugName(),
+                       instruction->GetId(),
+                       instruction->GetBlock()->GetBlockId(),
+                       it.Current()->DebugName(),
+                       it.Current()->GetId()));
+    }
+  }
+
+  if (!found) {
+    AddError(StringPrintf("%s %d in block %d didn't find a write barrier to latch onto",
+                          instruction->DebugName(),
+                          instruction->GetId(),
+                          instruction->GetBlock()->GetBlockId()));
   }
 }
 

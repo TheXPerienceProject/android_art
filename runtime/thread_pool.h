@@ -22,10 +22,11 @@
 #include <vector>
 
 #include "barrier.h"
+#include "base/macros.h"
 #include "base/mem_map.h"
 #include "base/mutex.h"
 
-namespace art {
+namespace art HIDDEN {
 
 class AbstractThreadPool;
 
@@ -115,13 +116,13 @@ class AbstractThreadPool {
     return threads_.size();
   }
 
-  const std::vector<ThreadPoolWorker*>& GetWorkers();
+  EXPORT const std::vector<ThreadPoolWorker*>& GetWorkers();
 
   // Broadcast to the workers and tell them to empty out the work queue.
-  void StartWorkers(Thread* self) REQUIRES(!task_queue_lock_);
+  EXPORT void StartWorkers(Thread* self) REQUIRES(!task_queue_lock_);
 
   // Do not allow workers to grab any new tasks.
-  void StopWorkers(Thread* self) REQUIRES(!task_queue_lock_);
+  EXPORT void StopWorkers(Thread* self) REQUIRES(!task_queue_lock_);
 
   // Returns if the thread pool has started.
   bool HasStarted(Thread* self) REQUIRES(!task_queue_lock_);
@@ -136,7 +137,7 @@ class AbstractThreadPool {
   virtual size_t GetTaskCount(Thread* self) REQUIRES(!task_queue_lock_) = 0;
 
   // Create the threads of this pool.
-  void CreateThreads();
+  EXPORT void CreateThreads();
 
   // Stops and deletes all threads in this pool.
   void DeleteThreads();
@@ -144,7 +145,7 @@ class AbstractThreadPool {
   // Wait for all tasks currently on queue to get completed. If the pool has been stopped, only
   // wait till all already running tasks are done.
   // When the pool was created with peers for workers, do_work must not be true (see ThreadPool()).
-  void Wait(Thread* self, bool do_work, bool may_hold_locks) REQUIRES(!task_queue_lock_);
+  EXPORT void Wait(Thread* self, bool do_work, bool may_hold_locks) REQUIRES(!task_queue_lock_);
 
   // Returns the total amount of workers waited for tasks.
   uint64_t GetWaitTime() const {
@@ -182,10 +183,10 @@ class AbstractThreadPool {
 
   virtual bool HasOutstandingTasks() const REQUIRES(task_queue_lock_) = 0;
 
-  AbstractThreadPool(const char* name,
-                     size_t num_threads,
-                     bool create_peers,
-                     size_t worker_stack_size);
+  EXPORT AbstractThreadPool(const char* name,
+                            size_t num_threads,
+                            bool create_peers,
+                            size_t worker_stack_size);
 
   const std::string name_;
   Mutex task_queue_lock_;
@@ -210,7 +211,7 @@ class AbstractThreadPool {
   DISALLOW_COPY_AND_ASSIGN(AbstractThreadPool);
 };
 
-class ThreadPool : public AbstractThreadPool {
+class EXPORT ThreadPool : public AbstractThreadPool {
  public:
   // Create a named thread pool with the given number of threads.
   //
@@ -238,13 +239,13 @@ class ThreadPool : public AbstractThreadPool {
     return started_ && !tasks_.empty();
   }
 
- private:
   ThreadPool(const char* name,
              size_t num_threads,
              bool create_peers,
              size_t worker_stack_size)
       : AbstractThreadPool(name, num_threads, create_peers, worker_stack_size) {}
 
+ private:
   std::deque<Task*> tasks_ GUARDED_BY(task_queue_lock_);
 
   DISALLOW_COPY_AND_ASSIGN(ThreadPool);

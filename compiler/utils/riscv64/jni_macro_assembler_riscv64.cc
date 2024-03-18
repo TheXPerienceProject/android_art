@@ -548,7 +548,7 @@ void Riscv64JNIMacroAssembler::DeliverPendingException() {
 }
 
 std::unique_ptr<JNIMacroLabel> Riscv64JNIMacroAssembler::CreateLabel() {
-  return std::unique_ptr<JNIMacroLabel>(new Riscv64JNIMacroLabel());
+  return std::unique_ptr<JNIMacroLabel>(new (asm_.GetAllocator()) Riscv64JNIMacroLabel());
 }
 
 void Riscv64JNIMacroAssembler::Jump(JNIMacroLabel* label) {

@@ -31,28 +31,28 @@
 #include "compilation_kind.h"
 #include "debugger.h"
 #include "dex/type_lookup_table.h"
-#include "gc/space/image_space.h"
 #include "entrypoints/entrypoint_utils-inl.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
-#include "image-inl.h"
+#include "gc/space/image_space.h"
 #include "interpreter/interpreter.h"
 #include "jit-inl.h"
 #include "jit_code_cache.h"
 #include "jit_create.h"
-#include "small_pattern_matcher.h"
 #include "jni/java_vm_ext.h"
 #include "mirror/method_handle_impl.h"
 #include "mirror/var_handle.h"
-#include "oat_file.h"
-#include "oat_file_manager.h"
-#include "oat_quick_method_header.h"
+#include "oat/image-inl.h"
+#include "oat/oat_file.h"
+#include "oat/oat_file_manager.h"
+#include "oat/oat_quick_method_header.h"
+#include "oat/stack_map.h"
 #include "profile/profile_boot_info.h"
 #include "profile/profile_compilation_info.h"
 #include "profile_saver.h"
 #include "runtime.h"
 #include "runtime_options.h"
+#include "small_pattern_matcher.h"
 #include "stack.h"
-#include "stack_map.h"
 #include "thread-inl.h"
 #include "thread_list.h"
 
@@ -63,102 +63,8 @@ namespace jit {
 
 static constexpr bool kEnableOnStackReplacement = true;
 
-// Maximum permitted threshold value.
-static constexpr uint32_t kJitMaxThreshold = std::numeric_limits<uint16_t>::max();
-
-static constexpr uint32_t kJitDefaultOptimizeThreshold = 0xffff;
-// Different optimization threshold constants. These default to the equivalent optimization
-// thresholds divided by 2, but can be overridden at the command-line.
-static constexpr uint32_t kJitStressDefaultOptimizeThreshold = kJitDefaultOptimizeThreshold / 2;
-static constexpr uint32_t kJitSlowStressDefaultOptimizeThreshold =
-    kJitStressDefaultOptimizeThreshold / 2;
-
-static constexpr uint32_t kJitDefaultWarmupThreshold = 0x3fff;
-// Different warm-up threshold constants. These default to the equivalent warmup thresholds divided
-// by 2, but can be overridden at the command-line.
-static constexpr uint32_t kJitStressDefaultWarmupThreshold = kJitDefaultWarmupThreshold / 2;
-static constexpr uint32_t kJitSlowStressDefaultWarmupThreshold =
-    kJitStressDefaultWarmupThreshold / 2;
-
-DEFINE_RUNTIME_DEBUG_FLAG(Jit, kSlowMode);
-
 // JIT compiler
 JitCompilerInterface* Jit::jit_compiler_ = nullptr;
-
-JitOptions* JitOptions::CreateFromRuntimeArguments(const RuntimeArgumentMap& options) {
-  auto* jit_options = new JitOptions;
-  jit_options->use_jit_compilation_ = options.GetOrDefault(RuntimeArgumentMap::UseJitCompilation);
-  jit_options->use_profiled_jit_compilation_ =
-      options.GetOrDefault(RuntimeArgumentMap::UseProfiledJitCompilation);
-
-  jit_options->code_cache_initial_capacity_ =
-      options.GetOrDefault(RuntimeArgumentMap::JITCodeCacheInitialCapacity);
-  jit_options->code_cache_max_capacity_ =
-      options.GetOrDefault(RuntimeArgumentMap::JITCodeCacheMaxCapacity);
-  jit_options->dump_info_on_shutdown_ =
-      options.Exists(RuntimeArgumentMap::DumpJITInfoOnShutdown);
-  jit_options->profile_saver_options_ =
-      options.GetOrDefault(RuntimeArgumentMap::ProfileSaverOpts);
-  jit_options->thread_pool_pthread_priority_ =
-      options.GetOrDefault(RuntimeArgumentMap::JITPoolThreadPthreadPriority);
-  jit_options->zygote_thread_pool_pthread_priority_ =
-      options.GetOrDefault(RuntimeArgumentMap::JITZygotePoolThreadPthreadPriority);
-
-  // Set default optimize threshold to aid with checking defaults.
-  jit_options->optimize_threshold_ =
-      kIsDebugBuild
-      ? (Jit::kSlowMode
-         ? kJitSlowStressDefaultOptimizeThreshold
-         : kJitStressDefaultOptimizeThreshold)
-      : kJitDefaultOptimizeThreshold;
-
-  // Set default warm-up threshold to aid with checking defaults.
-  jit_options->warmup_threshold_ =
-      kIsDebugBuild ? (Jit::kSlowMode
-                       ? kJitSlowStressDefaultWarmupThreshold
-                       : kJitStressDefaultWarmupThreshold)
-      : kJitDefaultWarmupThreshold;
-
-  if (options.Exists(RuntimeArgumentMap::JITOptimizeThreshold)) {
-    jit_options->optimize_threshold_ = *options.Get(RuntimeArgumentMap::JITOptimizeThreshold);
-  }
-  DCHECK_LE(jit_options->optimize_threshold_, kJitMaxThreshold);
-
-  if (options.Exists(RuntimeArgumentMap::JITWarmupThreshold)) {
-    jit_options->warmup_threshold_ = *options.Get(RuntimeArgumentMap::JITWarmupThreshold);
-  }
-  DCHECK_LE(jit_options->warmup_threshold_, kJitMaxThreshold);
-
-  if (options.Exists(RuntimeArgumentMap::JITPriorityThreadWeight)) {
-    jit_options->priority_thread_weight_ =
-        *options.Get(RuntimeArgumentMap::JITPriorityThreadWeight);
-    if (jit_options->priority_thread_weight_ > jit_options->warmup_threshold_) {
-      LOG(FATAL) << "Priority thread weight is above the warmup threshold.";
-    } else if (jit_options->priority_thread_weight_ == 0) {
-      LOG(FATAL) << "Priority thread weight cannot be 0.";
-    }
-  } else {
-    jit_options->priority_thread_weight_ = std::max(
-        jit_options->warmup_threshold_ / Jit::kDefaultPriorityThreadWeightRatio,
-        static_cast<size_t>(1));
-  }
-
-  if (options.Exists(RuntimeArgumentMap::JITInvokeTransitionWeight)) {
-    jit_options->invoke_transition_weight_ =
-        *options.Get(RuntimeArgumentMap::JITInvokeTransitionWeight);
-    if (jit_options->invoke_transition_weight_ > jit_options->warmup_threshold_) {
-      LOG(FATAL) << "Invoke transition weight is above the warmup threshold.";
-    } else if (jit_options->invoke_transition_weight_  == 0) {
-      LOG(FATAL) << "Invoke transition weight cannot be 0.";
-    }
-  } else {
-    jit_options->invoke_transition_weight_ = std::max(
-        jit_options->warmup_threshold_ / Jit::kDefaultInvokeTransitionWeightRatio,
-        static_cast<size_t>(1));
-  }
-
-  return jit_options;
-}
 
 void Jit::DumpInfo(std::ostream& os) {
   code_cache_->Dump(os);
@@ -225,6 +131,25 @@ std::unique_ptr<Jit> Jit::Create(JitCodeCache* code_cache, JitOptions* options) 
   return jit;
 }
 
+
+bool Jit::TryPatternMatch(ArtMethod* method_to_compile, CompilationKind compilation_kind) {
+  // Try to pattern match the method. Only on arm and arm64 for now as we have
+  // sufficiently similar calling convention between C++ and managed code.
+  if (kRuntimeISA == InstructionSet::kArm || kRuntimeISA == InstructionSet::kArm64) {
+    if (!Runtime::Current()->IsJavaDebuggable() &&
+        compilation_kind == CompilationKind::kBaseline &&
+        !method_to_compile->StillNeedsClinitCheck()) {
+      const void* pattern = SmallPatternMatcher::TryMatch(method_to_compile);
+      if (pattern != nullptr) {
+        VLOG(jit) << "Successfully pattern matched " << method_to_compile->PrettyMethod();
+        Runtime::Current()->GetInstrumentation()->UpdateMethodsCode(method_to_compile, pattern);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool Jit::CompileMethodInternal(ArtMethod* method,
                                 Thread* self,
                                 CompilationKind compilation_kind,
@@ -281,19 +206,8 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
   // of that proxy method, as the compiler does not expect a proxy method.
   ArtMethod* method_to_compile = method->GetInterfaceMethodIfProxy(kRuntimePointerSize);
 
-  // Try to pattern match the method. Only on arm and arm64 for now as we have
-  // sufficiently similar calling convention between C++ and managed code.
-  if (kRuntimeISA == InstructionSet::kArm || kRuntimeISA == InstructionSet::kArm64) {
-    if (!Runtime::Current()->IsJavaDebuggable() &&
-        compilation_kind == CompilationKind::kBaseline &&
-        !method_to_compile->StillNeedsClinitCheck()) {
-      const void* pattern = SmallPatternMatcher::TryMatch(method_to_compile);
-      if (pattern != nullptr) {
-        VLOG(jit) << "Successfully pattern matched " << method_to_compile->PrettyMethod();
-        Runtime::Current()->GetInstrumentation()->UpdateMethodsCode(method_to_compile, pattern);
-        return true;
-      }
-    }
+  if (TryPatternMatch(method_to_compile, compilation_kind)) {
+    return true;
   }
 
   if (!code_cache_->NotifyCompilationOf(method_to_compile, self, compilation_kind, prejit)) {
@@ -767,6 +681,10 @@ class JitCompileTask final : public Task {
 
   ArtMethod* GetArtMethod() const {
     return method_;
+  }
+
+  CompilationKind GetCompilationKind() const {
+    return compilation_kind_;
   }
 
  private:
@@ -1820,12 +1738,24 @@ void JitThreadPool::AddTask(Thread* self, ArtMethod* method, CompilationKind kin
   }
   switch (kind) {
     case CompilationKind::kOsr:
+      if (ContainsElement(osr_enqueued_methods_, method)) {
+        return;
+      }
+      osr_enqueued_methods_.insert(method);
       osr_queue_.push_back(method);
       break;
     case CompilationKind::kBaseline:
+      if (ContainsElement(baseline_enqueued_methods_, method)) {
+        return;
+      }
+      baseline_enqueued_methods_.insert(method);
       baseline_queue_.push_back(method);
       break;
     case CompilationKind::kOptimized:
+      if (ContainsElement(optimized_enqueued_methods_, method)) {
+        return;
+      }
+      optimized_enqueued_methods_.insert(method);
       optimized_queue_.push_back(method);
       break;
   }
@@ -1872,6 +1802,20 @@ Task* JitThreadPool::FetchFrom(std::deque<ArtMethod*>& methods, CompilationKind 
 void JitThreadPool::Remove(JitCompileTask* task) {
   MutexLock mu(Thread::Current(), task_queue_lock_);
   current_compilations_.erase(task);
+  switch (task->GetCompilationKind()) {
+    case CompilationKind::kOsr: {
+      osr_enqueued_methods_.erase(task->GetArtMethod());
+      break;
+    }
+    case CompilationKind::kBaseline: {
+      baseline_enqueued_methods_.erase(task->GetArtMethod());
+      break;
+    }
+    case CompilationKind::kOptimized: {
+      optimized_enqueued_methods_.erase(task->GetArtMethod());
+      break;
+    }
+  }
 }
 
 void Jit::VisitRoots(RootVisitor* visitor) {

@@ -1,10 +1,5 @@
 [
     {
-        "tests": "2247-checker-write-barrier-elimination",
-        "description": ["Disable 2247- until we fix the WBE issue."],
-        "bug": "http://b/310755375"
-    },
-    {
         "tests": "153-reference-stress",
         "description": ["Disable 153-reference-stress temporarily until a fix",
                         "arrives."],
@@ -1576,7 +1571,7 @@
     },
     {
       "tests": ["2271-profile-inline-cache"],
-      "variant": "jit-on-first-use",
+      "variant": "jit-on-first-use | debuggable | trace |  stream",
       "description": ["Test relies on profiling done by baseline compiled code. Meanwhile, it",
                       "can't use --baseline because it has a test case checking the behavior when",
                       "a method is optimized compiled."]

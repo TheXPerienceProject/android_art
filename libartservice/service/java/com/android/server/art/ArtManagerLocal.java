@@ -196,7 +196,7 @@ public final class ArtManagerLocal {
         PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
         AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
 
-        try {
+        try (var pin = mInjector.createArtdPin()) {
             long freedBytes = 0;
             WritableArtifactLists list =
                     mInjector.getArtFileManager().getWritableArtifacts(pkgState, pkg);
@@ -251,7 +251,7 @@ public final class ArtManagerLocal {
                 (flags & ArtFlags.FLAG_FOR_SECONDARY_DEX) != 0,
                 false /* excludeObsoleteDexesAndLoaders */);
 
-        try {
+        try (var pin = mInjector.createArtdPin()) {
             List<DexContainerFileDexoptStatus> statuses = new ArrayList<>();
 
             for (Pair<DetailedDexInfo, Abi> pair : dexAndAbis) {
@@ -302,7 +302,7 @@ public final class ArtManagerLocal {
         PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
         AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
 
-        try {
+        try (var pin = mInjector.createArtdPin()) {
             // We want to delete as many profiles as possible, so this deletes profiles of all known
             // secondary dex files. If there are unknown secondary dex files, their profiles will be
             // deleted by `cleanup`.
@@ -349,8 +349,10 @@ public final class ArtManagerLocal {
     public DexoptResult dexoptPackage(@NonNull PackageManagerLocal.FilteredSnapshot snapshot,
             @NonNull String packageName, @NonNull DexoptParams params,
             @NonNull CancellationSignal cancellationSignal) {
-        return mInjector.getDexoptHelper().dexopt(
-                snapshot, List.of(packageName), params, cancellationSignal, Runnable::run);
+        try (var pin = mInjector.createArtdPin()) {
+            return mInjector.getDexoptHelper().dexopt(
+                    snapshot, List.of(packageName), params, cancellationSignal, Runnable::run);
+        }
     }
 
     /**
@@ -459,7 +461,7 @@ public final class ArtManagerLocal {
         ExecutorService dexoptExecutor =
                 Executors.newFixedThreadPool(ReasonMapping.getConcurrencyForReason(reason));
         Map<Integer, DexoptResult> dexoptResults = new HashMap<>();
-        try {
+        try (var pin = mInjector.createArtdPin()) {
             if (reason.equals(ReasonMapping.REASON_BG_DEXOPT)) {
                 DexoptResult downgradeResult = maybeDowngradePackages(snapshot,
                         new HashSet<>(params.getPackages()) /* excludedPackages */,
@@ -722,7 +724,7 @@ public final class ArtManagerLocal {
             @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName,
             @Nullable String splitName, @NonNull MergeProfileOptions options)
             throws SnapshotProfileException {
-        try {
+        try (var pin = mInjector.createArtdPin()) {
             PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
             AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
             PrimaryDexInfo dexInfo = PrimaryDexUtils.getDexInfoBySplitName(pkg, splitName);
@@ -824,7 +826,10 @@ public final class ArtManagerLocal {
         var options = new MergeProfileOptions();
         options.forceMerge = true;
         options.forBootImage = true;
-        return mergeProfilesAndGetFd(profiles, output, dexPaths, options);
+
+        try (var pin = mInjector.createArtdPin()) {
+            return mergeProfilesAndGetFd(profiles, output, dexPaths, options);
+        }
     }
 
     /**
@@ -848,6 +853,25 @@ public final class ArtManagerLocal {
     }
 
     /**
+     * Notifies ART Service that there are apexes staged for installation on next reboot (see
+     * <a href="https://source.android.com/docs/core/ota/apex#apex-manager">the update sequence of
+     * an APEX</a>). ART Service may use this to schedule a pre-reboot dexopt job. This might change
+     * in the future.
+     *
+     * This immediately returns after scheduling the job and doesn't wait for the job to run.
+     *
+     * @param stagedApexModuleNames The <b>module names</b> of the staged apexes, corresponding to
+     *         the directory beneath /apex, e.g., {@code com.android.art} (not the <b>package
+     *         names</b>, e.g., {@code com.google.android.art}).
+     */
+    @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void onApexStaged(@NonNull String[] stagedApexModuleNames) {
+        // TODO(b/311377497): Check system requirements.
+        mInjector.getPreRebootDexoptJob().schedule();
+    }
+
+    /**
      * Dumps the dexopt state of all packages in text format for debugging purposes.
      *
      * There are no stability guarantees for the output format.
@@ -858,7 +882,9 @@ public final class ArtManagerLocal {
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void dump(
             @NonNull PrintWriter pw, @NonNull PackageManagerLocal.FilteredSnapshot snapshot) {
-        new DumpHelper(this).dump(pw, snapshot);
+        try (var pin = mInjector.createArtdPin()) {
+            new DumpHelper(this).dump(pw, snapshot);
+        }
     }
 
     /**
@@ -873,8 +899,10 @@ public final class ArtManagerLocal {
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void dumpPackage(@NonNull PrintWriter pw,
             @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName) {
-        new DumpHelper(this).dumpPackage(
-                pw, snapshot, Utils.getPackageStateOrThrow(snapshot, packageName));
+        try (var pin = mInjector.createArtdPin()) {
+            new DumpHelper(this).dumpPackage(
+                    pw, snapshot, Utils.getPackageStateOrThrow(snapshot, packageName));
+        }
     }
 
     /**
@@ -892,7 +920,7 @@ public final class ArtManagerLocal {
         PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
         AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
 
-        try {
+        try (var pin = mInjector.createArtdPin()) {
             long artifactsSize = 0;
             long refProfilesSize = 0;
             long curProfilesSize = 0;
@@ -919,10 +947,10 @@ public final class ArtManagerLocal {
                 curProfilesSize += artd.getProfileSize(profile);
             }
 
-            return ArtManagedFileStats.create(artifactsSize, refProfilesSize, curProfilesSize);
+            return new ArtManagedFileStats(artifactsSize, refProfilesSize, curProfilesSize);
         } catch (RemoteException e) {
             Utils.logArtdException(e);
-            return ArtManagedFileStats.create(
+            return new ArtManagedFileStats(
                     0 /* artifactsSize */, 0 /* refProfilesSize */, 0 /* curProfilesSize */);
         }
     }
@@ -959,9 +987,9 @@ public final class ArtManagerLocal {
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public long cleanup(@NonNull PackageManagerLocal.FilteredSnapshot snapshot) {
-        mInjector.getDexUseManager().cleanup();
+        try (var pin = mInjector.createArtdPin()) {
+            mInjector.getDexUseManager().cleanup();
 
-        try {
             // For every primary dex container file or secondary dex container file of every app, if
             // it has code, we keep the following types of files:
             // - The reference profile and the current profiles, regardless of the hibernation state
@@ -1013,6 +1041,17 @@ public final class ArtManagerLocal {
     @NonNull
     BackgroundDexoptJob getBackgroundDexoptJob() {
         return mInjector.getBackgroundDexoptJob();
+    }
+
+    /**
+     * Should be used by {@link BackgroundDexoptJobService} ONLY.
+     *
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @NonNull
+    PreRebootDexoptJob getPreRebootDexoptJob() {
+        return mInjector.getPreRebootDexoptJob();
     }
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -1345,6 +1384,7 @@ public final class ArtManagerLocal {
         @Nullable private final PackageManagerLocal mPackageManagerLocal;
         @Nullable private final Config mConfig;
         @Nullable private BackgroundDexoptJob mBgDexoptJob = null;
+        @Nullable private PreRebootDexoptJob mPrDexoptJob = null;
 
         /** For compatibility with S and T. New code should not use this. */
         @Deprecated
@@ -1388,7 +1428,13 @@ public final class ArtManagerLocal {
         @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
         @NonNull
         public IArtd getArtd() {
-            return Utils.getArtd();
+            return ArtdRefCache.getInstance().getArtd();
+        }
+
+        @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        @NonNull
+        public ArtdRefCache.Pin createArtdPin() {
+            return ArtdRefCache.getInstance().new Pin();
         }
 
         /** Returns a new {@link DexoptHelper} instance. */
@@ -1424,6 +1470,15 @@ public final class ArtManagerLocal {
                 mBgDexoptJob = new BackgroundDexoptJob(mContext, mArtManagerLocal, mConfig);
             }
             return mBgDexoptJob;
+        }
+
+        @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        @NonNull
+        public synchronized PreRebootDexoptJob getPreRebootDexoptJob() {
+            if (mPrDexoptJob == null) {
+                mPrDexoptJob = new PreRebootDexoptJob(mContext);
+            }
+            return mPrDexoptJob;
         }
 
         @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)

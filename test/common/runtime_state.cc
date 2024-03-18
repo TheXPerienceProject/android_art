@@ -36,9 +36,9 @@
 #include "mirror/class.h"
 #include "mirror/executable.h"
 #include "nativehelper/ScopedUtfChars.h"
-#include "oat.h"
-#include "oat_file.h"
-#include "oat_quick_method_header.h"
+#include "oat/oat.h"
+#include "oat/oat_file.h"
+#include "oat/oat_quick_method_header.h"
 #include "profile/profile_compilation_info.h"
 #include "runtime.h"
 #include "scoped_thread_state_change-inl.h"
@@ -273,16 +273,21 @@ static void ForceJitCompiled(Thread* self,
   // Update the code cache to make sure the JIT code does not get deleted.
   // Note: this will apply to all JIT compilations.
   code_cache->SetGarbageCollectCode(false);
+  if (jit->JitAtFirstUse()) {
+    ScopedObjectAccess soa(self);
+    jit->CompileMethod(method, self, kind, /*prejit=*/ false);
+  } else if (kind == CompilationKind::kBaseline || jit->GetJitCompiler()->IsBaselineCompiler()) {
+    ScopedObjectAccess soa(self);
+    if (jit->TryPatternMatch(method, CompilationKind::kBaseline)) {
+      return;
+    }
+    jit->MaybeEnqueueCompilation(method, self);
+  } else {
+    jit->EnqueueOptimizedCompilation(method, self);
+  }
   do {
     // Sleep to yield to the compiler thread.
     usleep(1000);
-    ScopedObjectAccess soa(self);
-    // Will either ensure it's compiled or do the compilation itself. We do
-    // this before checking if we will execute JIT code in case the request
-    // is for an 'optimized' compilation.
-    if (jit->CompileMethod(method, self, kind, /*prejit=*/ false)) {
-      return;
-    }
     const void* entry_point = method->GetEntryPointFromQuickCompiledCode();
     if (code_cache->ContainsPc(entry_point)) {
       // If we're running baseline or not requesting optimized, we're good to go.

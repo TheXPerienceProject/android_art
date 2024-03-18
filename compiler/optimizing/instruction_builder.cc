@@ -33,8 +33,9 @@
 #include "intrinsics.h"
 #include "intrinsics_utils.h"
 #include "jit/jit.h"
+#include "jit/profiling_info.h"
 #include "mirror/dex_cache.h"
-#include "oat_file.h"
+#include "oat/oat_file.h"
 #include "optimizing_compiler_stats.h"
 #include "reflective_handle_scope-inl.h"
 #include "scoped_thread_state_change-inl.h"
@@ -2009,6 +2010,7 @@ bool HInstructionBuilder::BuildSimpleIntrinsic(ArtMethod* method,
       break;
     default:
       // We do not have intermediate representation for other intrinsics.
+      DCHECK(!IsIntrinsicWithSpecializedHir(intrinsic));
       return false;
   }
   DCHECK(instruction != nullptr);
