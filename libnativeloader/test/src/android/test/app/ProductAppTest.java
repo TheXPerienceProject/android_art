@@ -72,14 +72,21 @@ public class ProductAppTest extends AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesViaSystemSharedLib() {
-        if (!TestUtils.productAppsAreShared()) {
-            // TODO(b/237577392): Loading a private native system library via a shared system
-            // library ought to work.
+        if (TestUtils.productAppsAreShared() || TestUtils.canLoadPrivateLibsFromSamePartition()) {
+            // TODO(b/186729817): These loads work in the
+            // canLoadPrivateLibsFromSamePartition case because the findLibrary
+            // call in loadLibrary0 in Runtime.java searches the system libs and
+            // converts them to absolute paths.
+            SystemSharedLib.loadLibrary("system_private2");
+            SystemSharedLib.loadLibrary("systemext_private2");
+        } else {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemSharedLib.loadLibrary("system_private2"));
             TestUtils.assertLibraryInaccessible(
                     () -> SystemSharedLib.loadLibrary("systemext_private2"));
+        }
 
+        if (!TestUtils.productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemSharedLib.loadLibrary("product_private2"));
         }
@@ -89,14 +96,21 @@ public class ProductAppTest extends AppTestCommon {
 
     @Test
     public void testLoadPrivateLibrariesViaSystemExtSharedLib() {
-        if (!TestUtils.productAppsAreShared()) {
-            // TODO(b/237577392): Loading a private native system library via a shared system
-            // library ought to work.
+        if (TestUtils.productAppsAreShared() || TestUtils.canLoadPrivateLibsFromSamePartition()) {
+            // TODO(b/186729817): These loads work in the
+            // canLoadPrivateLibsFromSamePartition case because the findLibrary
+            // call in loadLibrary0 in Runtime.java searches the system libs and
+            // converts them to absolute paths.
+            SystemExtSharedLib.loadLibrary("system_private3");
+            SystemExtSharedLib.loadLibrary("systemext_private3");
+        } else {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemExtSharedLib.loadLibrary("system_private3"));
             TestUtils.assertLibraryInaccessible(
                     () -> SystemExtSharedLib.loadLibrary("systemext_private3"));
+        }
 
+        if (!TestUtils.productAppsAreShared()) {
             TestUtils.assertLibraryInaccessible(
                     () -> SystemExtSharedLib.loadLibrary("product_private3"));
         }
