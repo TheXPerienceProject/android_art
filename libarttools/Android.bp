@@ -60,7 +60,6 @@ art_cc_defaults {
         "tools_test.cc",
     ],
     shared_libs: [
-        "libarttools",
         "libbase",
     ],
     static_libs: [
@@ -81,6 +80,9 @@ art_cc_test {
         "art_gtest_defaults",
         "art_libarttools_tests_defaults",
     ],
+    shared_libs: [
+        "libarttools",
+    ],
 }
 
 // Standalone version of ART gtest `art_libarttools_tests`, not bundled with the ART APEX on
@@ -90,6 +92,9 @@ art_cc_test {
     defaults: [
         "art_standalone_gtest_defaults",
         "art_libarttools_tests_defaults",
+    ],
+    static_libs: [
+        "libarttools",
     ],
 }
 

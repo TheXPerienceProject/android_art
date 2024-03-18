@@ -163,7 +163,7 @@ class DisassemblerRiscv64::Printer {
 
   // Extracts the immediate from a compressed instruction
   // where `imm[5]` is in bit `[12]` and `imm[4:0]` is in bits `[6:2]`
-  // and performes sign-extension if required
+  // and performs sign-extension if required
   template <typename T>
   static T Decode16Imm6(uint32_t insn16) {
     DCHECK(IsUint<16>(insn16));

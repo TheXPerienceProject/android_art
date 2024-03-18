@@ -41,6 +41,45 @@ static constexpr size_t kRiscv64WordSize = 4;
 static constexpr size_t kRiscv64DoublewordSize = 8;
 static constexpr size_t kRiscv64FloatRegSizeInBytes = 8;
 
+// The `Riscv64Extension` enumeration is used for restricting the instructions that the assembler
+// can use. Some restrictions are checked only in debug mode (for example load and store
+// instructions check `kLoadStore`), other restrictions are checked at run time and affect the
+// emitted code (for example, the `SextW()` pseudo-instruction selects between an implementation
+// from "Zcb", "Zbb" and a two-instruction sequence from the basic instruction set.
+enum class Riscv64Extension : uint32_t {
+  kLoadStore,  // Pseudo-extension encompassing all loads and stores. Used to check that
+               // we do not have loads and stores in the middle of a LR/SC sequence.
+  kZifencei,
+  kM,
+  kA,
+  kZicsr,
+  kF,
+  kD,
+  kZba,
+  kZbb,
+  kZbs,  // TODO(riscv64): Implement "Zbs" instructions.
+  kV,
+  kZca,  // "C" extension instructions except floating point loads/stores.
+  kZcd,  // "C" extension double loads/stores.
+         // Note: RV64 cannot implement Zcf ("C" extension float loads/stores).
+  kZcb,  // Simple 16-bit operations not present in the original "C" extension.
+
+  kLast = kZcb
+};
+
+using Riscv64ExtensionMask = uint32_t;
+
+constexpr Riscv64ExtensionMask Riscv64ExtensionBit(Riscv64Extension ext) {
+  return 1u << enum_cast<>(ext);
+}
+
+constexpr Riscv64ExtensionMask kRiscv64AllExtensionsMask =
+    MaxInt<Riscv64ExtensionMask>(enum_cast<>(Riscv64Extension::kLast) + 1);
+
+// Extensions allowed in a LR/SC sequence (between the LR and SC).
+constexpr Riscv64ExtensionMask kRiscv64LrScSequenceExtensionsMask =
+    Riscv64ExtensionBit(Riscv64Extension::kZca);
+
 enum class FPRoundingMode : uint32_t {
   kRNE = 0x0,  // Round to Nearest, ties to Even
   kRTZ = 0x1,  // Round towards Zero
@@ -175,6 +214,12 @@ class Riscv64Assembler final : public Assembler {
  public:
   explicit Riscv64Assembler(ArenaAllocator* allocator,
                             const Riscv64InstructionSetFeatures* instruction_set_features = nullptr)
+      : Riscv64Assembler(allocator,
+                         instruction_set_features != nullptr
+                             ? ConvertExtensions(instruction_set_features)
+                             : kRiscv64AllExtensionsMask) {}
+
+  Riscv64Assembler(ArenaAllocator* allocator, Riscv64ExtensionMask enabled_extensions)
       : Assembler(allocator),
         branches_(allocator->Adapter(kArenaAllocAssembler)),
         finalized_(false),
@@ -186,9 +231,9 @@ class Riscv64Assembler final : public Assembler {
         last_position_adjustment_(0),
         last_old_position_(0),
         last_branch_id_(0),
+        enabled_extensions_(enabled_extensions),
         available_scratch_core_registers_((1u << TMP) | (1u << TMP2)),
         available_scratch_fp_registers_(1u << FTMP) {
-    UNUSED(instruction_set_features);
     cfi().DelayEmittingAdvancePCs();
   }
 
@@ -200,6 +245,10 @@ class Riscv64Assembler final : public Assembler {
 
   size_t CodeSize() const override { return Assembler::CodeSize(); }
   DebugFrameOpCodeWriterForAssembler& cfi() { return Assembler::cfi(); }
+
+  bool IsExtensionEnabled(Riscv64Extension ext) {
+    return (enabled_extensions_ & Riscv64ExtensionBit(ext)) != 0u;
+  }
 
   // According to "The RISC-V Instruction Set Manual"
 
@@ -530,13 +579,15 @@ class Riscv64Assembler final : public Assembler {
   void CLh(XRegister rd_s, XRegister rs1_s, int32_t offset);
   void CSb(XRegister rd_s, XRegister rs1_s, int32_t offset);
   void CSh(XRegister rd_s, XRegister rs1_s, int32_t offset);
-  void CZext_b(XRegister rd_rs1_s);
-  void CSext_b(XRegister rd_rs1_s);
-  void CZext_h(XRegister rd_rs1_s);
-  void CSext_h(XRegister rd_rs1_s);
-  void CZext_w(XRegister rd_rs1_s);
+  void CZextB(XRegister rd_rs1_s);
+  void CSextB(XRegister rd_rs1_s);
+  void CZextH(XRegister rd_rs1_s);
+  void CSextH(XRegister rd_rs1_s);
+  void CZextW(XRegister rd_rs1_s);
   void CNot(XRegister rd_rs1_s);
   void CMul(XRegister rd_s, XRegister rs2_s);
+  // "Zcb" Standard Extension End; resume "C" Standard Extension.
+  // TODO(riscv64): Reorder "Zcb" after remaining "C" instructions.
 
   void CJ(int32_t offset);
   void CJr(XRegister rs1);
@@ -1841,6 +1892,38 @@ class Riscv64Assembler final : public Assembler {
   uint32_t GetAdjustedPosition(uint32_t old_position);
 
  private:
+  static uint32_t ConvertExtensions(
+      const Riscv64InstructionSetFeatures* instruction_set_features) {
+    // The `Riscv64InstructionSetFeatures` currently does not support "Zcb",
+    // only the original "C" extension. For riscv64 that means "Zca" and "Zcd".
+    constexpr Riscv64ExtensionMask kCompressedExtensionsMask =
+        Riscv64ExtensionBit(Riscv64Extension::kZca) | Riscv64ExtensionBit(Riscv64Extension::kZcd);
+    return
+        (Riscv64ExtensionBit(Riscv64Extension::kLoadStore)) |
+        (Riscv64ExtensionBit(Riscv64Extension::kZifencei)) |
+        (Riscv64ExtensionBit(Riscv64Extension::kM)) |
+        (Riscv64ExtensionBit(Riscv64Extension::kA)) |
+        (Riscv64ExtensionBit(Riscv64Extension::kZicsr)) |
+        (Riscv64ExtensionBit(Riscv64Extension::kF)) |
+        (Riscv64ExtensionBit(Riscv64Extension::kD)) |
+        (instruction_set_features->HasZba() ? Riscv64ExtensionBit(Riscv64Extension::kZba) : 0u) |
+        (instruction_set_features->HasZbb() ? Riscv64ExtensionBit(Riscv64Extension::kZbb) : 0u) |
+        (instruction_set_features->HasZbs() ? Riscv64ExtensionBit(Riscv64Extension::kZbs) : 0u) |
+        (instruction_set_features->HasVector() ? Riscv64ExtensionBit(Riscv64Extension::kV) : 0u) |
+        (instruction_set_features->HasCompressed() ? kCompressedExtensionsMask : 0u);
+  }
+
+  void AssertExtensionsEnabled(Riscv64Extension ext) {
+    DCHECK(IsExtensionEnabled(ext))
+        << "ext=" << enum_cast<>(ext) << " enabled=0x" << std::hex << enabled_extensions_;
+  }
+
+  template <typename... OtherExt>
+  void AssertExtensionsEnabled(Riscv64Extension ext, OtherExt... other_ext) {
+    AssertExtensionsEnabled(ext);
+    AssertExtensionsEnabled(other_ext...);
+  }
+
   enum BranchCondition : uint8_t {
     kCondEQ,
     kCondNE,
@@ -2610,15 +2693,52 @@ class Riscv64Assembler final : public Assembler {
   uint32_t last_old_position_;
   uint32_t last_branch_id_;
 
+  Riscv64ExtensionMask enabled_extensions_;
   uint32_t available_scratch_core_registers_;
   uint32_t available_scratch_fp_registers_;
 
   static constexpr uint32_t kXlen = 64;
 
+  friend class ScopedExtensionsOverride;
   friend class ScratchRegisterScope;
 
   DISALLOW_COPY_AND_ASSIGN(Riscv64Assembler);
 };
+
+class ScopedExtensionsOverride {
+ public:
+  ScopedExtensionsOverride(Riscv64Assembler* assembler, Riscv64ExtensionMask enabled_extensions)
+      : assembler_(assembler),
+        old_enabled_extensions_(assembler->enabled_extensions_) {
+    assembler->enabled_extensions_ = enabled_extensions;
+  }
+
+  ~ScopedExtensionsOverride() {
+    assembler_->enabled_extensions_ = old_enabled_extensions_;
+  }
+
+ protected:
+  static Riscv64ExtensionMask GetEnabledExtensions(Riscv64Assembler* assembler) {
+    return assembler->enabled_extensions_;
+  }
+
+ private:
+  Riscv64Assembler* const assembler_;
+  const Riscv64ExtensionMask old_enabled_extensions_;
+};
+
+template <Riscv64ExtensionMask kMask>
+class ScopedExtensionsRestriction : public ScopedExtensionsOverride {
+ public:
+  explicit ScopedExtensionsRestriction(Riscv64Assembler* assembler)
+      : ScopedExtensionsOverride(assembler, GetEnabledExtensions(assembler) & kMask) {}
+};
+
+template <Riscv64ExtensionMask kMask>
+using ScopedExtensionsExclusion = ScopedExtensionsRestriction<~kMask>;
+
+using ScopedLrScExtensionsRestriction =
+    ScopedExtensionsRestriction<kRiscv64LrScSequenceExtensionsMask>;
 
 class ScratchRegisterScope {
  public:
