@@ -56,6 +56,7 @@ art_cc_library {
         "native_loader.cpp",
     ],
     header_libs: [
+        "art_libartbase_headers",
         "libnativehelper_header_only",
     ],
     shared_libs: [
@@ -88,6 +89,7 @@ art_cc_library {
             ],
             static_libs: [
                 "libPlatformProperties",
+                "libmodules-utils-build",
             ],
         },
     },
