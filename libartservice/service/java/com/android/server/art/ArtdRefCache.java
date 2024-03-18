@@ -23,6 +23,7 @@ import android.annotation.Nullable;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.system.SystemCleaner;
 import android.util.CloseGuard;
 
 import androidx.annotation.RequiresApi;
@@ -30,6 +31,7 @@ import androidx.annotation.RequiresApi;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 
+import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -108,6 +110,22 @@ public class ArtdRefCache {
         }
     }
 
+    /**
+     * Resets ArtdRefCache to its initial state. ArtdRefCache is guaranteed to be GC-able after
+     * this call.
+     *
+     * Can only be called when there is no pin.
+     */
+    public void reset() {
+        synchronized (mLock) {
+            if (mPinCount != 0) {
+                throw new IllegalStateException("Cannot reset ArtdRefCache when there are pins");
+            }
+            mArtd = null;
+            mDebouncer.cancel();
+        }
+    }
+
     @GuardedBy("mLock")
     private void delayedDropIfNoPinLocked() {
         if (mPinCount == 0) {
@@ -134,41 +152,48 @@ public class ArtdRefCache {
      * scope. The reference is dropped when there is no more pin within {@link #CACHE_TIMEOUT_MS}.
      */
     public class Pin implements AutoCloseable {
-        private final CloseGuard mGuard = new CloseGuard();
-        private boolean mClosed = false;
+        @NonNull private final CloseGuard mGuard = new CloseGuard();
+        @NonNull private final Cleaner.Cleanable mCleanable;
 
         public Pin() {
             synchronized (mLock) {
                 mPinCount++;
             }
             mGuard.open("close");
+            mCleanable =
+                    SystemCleaner.cleaner().register(this, new Cleanup(ArtdRefCache.this, mGuard));
         }
 
         @Override
         public void close() {
             try {
                 mGuard.close();
-                if (!mClosed) {
-                    mClosed = true;
-                    synchronized (mLock) {
-                        mPinCount--;
-                        Utils.check(mPinCount >= 0);
-                        delayedDropIfNoPinLocked();
-                    }
-                }
+                mCleanable.clean();
             } finally {
-                // This prevents the GC from running the finalizer during the execution of `close`.
+                // This prevents the cleaner from running the cleanup during the execution of
+                // `close`.
                 Reference.reachabilityFence(this);
             }
         }
 
-        @SuppressWarnings("Finalize") // Follows the recommended pattern for CloseGuard.
-        protected void finalize() throws Throwable {
-            try {
+        // Don't use a lambda. See {@link Cleaner} for the reason.
+        static class Cleanup implements Runnable {
+            @NonNull private final ArtdRefCache mRefCache;
+            @NonNull private final CloseGuard mGuard;
+
+            Cleanup(@NonNull ArtdRefCache refCache, @NonNull CloseGuard guard) {
+                mRefCache = refCache;
+                mGuard = guard;
+            }
+
+            @Override
+            public void run() {
                 mGuard.warnIfOpen();
-                close();
-            } finally {
-                super.finalize();
+                synchronized (mRefCache.mLock) {
+                    mRefCache.mPinCount--;
+                    Utils.check(mRefCache.mPinCount >= 0);
+                    mRefCache.delayedDropIfNoPinLocked();
+                }
             }
         }
     }
