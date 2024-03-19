@@ -145,14 +145,6 @@ inline void ForceRead(const T* pointer) {
 // there is an I/O error.
 std::string GetProcessStatus(const char* key);
 
-// Return whether the address is guaranteed to be backed by a file or is shared.
-// This information can be used to know whether MADV_DONTNEED will make
-// following accesses repopulate the memory or return zero.
-bool IsAddressKnownBackedByFileOrShared(const void* addr);
-
-// Returns the number of threads running.
-int GetTaskCount();
-
 }  // namespace art
 
 #endif  // ART_LIBARTBASE_BASE_UTILS_H_
