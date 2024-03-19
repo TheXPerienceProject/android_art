@@ -6612,11 +6612,21 @@ void InstructionCodeGeneratorX86::VisitArraySet(HArraySet* instruction) {
       }
 
       Register register_value = value.AsRegister<Register>();
-      bool can_value_be_null = instruction->GetValueCanBeNull();
+      const bool can_value_be_null = instruction->GetValueCanBeNull();
+      // The WriteBarrierKind::kEmitNotBeingReliedOn case is able to skip the write barrier when its
+      // value is null (without an extra CompareAndBranchIfZero since we already checked if the
+      // value is null for the type check).
+      const bool skip_marking_gc_card =
+          can_value_be_null && write_barrier_kind == WriteBarrierKind::kEmitNotBeingReliedOn;
       NearLabel do_store;
+      NearLabel skip_writing_card;
       if (can_value_be_null) {
         __ testl(register_value, register_value);
-        __ j(kEqual, &do_store);
+        if (skip_marking_gc_card) {
+          __ j(kEqual, &skip_writing_card);
+        } else {
+          __ j(kEqual, &do_store);
+        }
       }
 
       SlowPathCode* slow_path = nullptr;
@@ -6667,16 +6677,12 @@ void InstructionCodeGeneratorX86::VisitArraySet(HArraySet* instruction) {
         }
       }
 
-      if (can_value_be_null) {
+      if (can_value_be_null && !skip_marking_gc_card) {
         DCHECK(do_store.IsLinked());
         __ Bind(&do_store);
       }
 
       if (needs_write_barrier) {
-        // TODO(solanes): The WriteBarrierKind::kEmitNotBeingReliedOn case should be able to skip
-        // this write barrier when its value is null (without an extra testl since we already
-        // checked if the value is null for the type check). This will be done as a follow-up since
-        // it is a runtime optimization that needs extra care.
         Register temp = locations->GetTemp(0).AsRegister<Register>();
         Register card = locations->GetTemp(1).AsRegister<Register>();
         codegen_->MarkGCCard(temp, card, array);
@@ -6685,6 +6691,12 @@ void InstructionCodeGeneratorX86::VisitArraySet(HArraySet* instruction) {
         Register temp = locations->GetTemp(0).AsRegister<Register>();
         Register card = locations->GetTemp(1).AsRegister<Register>();
         codegen_->CheckGCCardIsValid(temp, card, array);
+      }
+
+      if (skip_marking_gc_card) {
+        // Note that we don't check that the GC card is valid as it can be correctly clean.
+        DCHECK(skip_writing_card.IsLinked());
+        __ Bind(&skip_writing_card);
       }
 
       Register source = register_value;
