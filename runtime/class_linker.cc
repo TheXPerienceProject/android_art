@@ -32,6 +32,7 @@
 #include <utility>
 #include <vector>
 
+#include "android-base/macros.h"
 #include "android-base/stringprintf.h"
 #include "android-base/strings.h"
 #include "art_field-inl.h"
@@ -40,6 +41,7 @@
 #include "base/arena_allocator.h"
 #include "base/arena_bit_vector.h"
 #include "base/casts.h"
+#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/hash_map.h"
 #include "base/hash_set.h"
@@ -1301,12 +1303,13 @@ bool ClassLinker::InitFromBootImage(std::string* error_msg) {
   std::vector<gc::space::ImageSpace*> spaces = heap->GetBootImageSpaces();
   CHECK(!spaces.empty());
   const ImageHeader& image_header = spaces[0]->GetImageHeader();
-  uint32_t pointer_size_unchecked = image_header.GetPointerSizeUnchecked();
-  if (!ValidPointerSize(pointer_size_unchecked)) {
-    *error_msg = StringPrintf("Invalid image pointer size: %u", pointer_size_unchecked);
+  image_pointer_size_ = image_header.GetPointerSize();
+  if (UNLIKELY(image_pointer_size_ != PointerSize::k32 &&
+               image_pointer_size_ != PointerSize::k64)) {
+    *error_msg =
+        StringPrintf("Invalid image pointer size: %u", static_cast<uint32_t>(image_pointer_size_));
     return false;
   }
-  image_pointer_size_ = image_header.GetPointerSize();
   if (!runtime->IsAotCompiler()) {
     // Only the Aot compiler supports having an image with a different pointer size than the
     // runtime. This happens on the host for compiling 32 bit tests since we use a 64 bit libart
