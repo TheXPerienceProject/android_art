@@ -305,7 +305,7 @@ public class ArtFileManager {
 
             // Call the getters for the dependencies that aren't optional, to ensure correct
             // initialization order.
-            ArtModuleServiceInitializer.getArtModuleServiceManager();
+            GlobalInjector.getInstance().checkArtModuleServiceManager();
             getUserManager();
             getDexUseManager();
         }
