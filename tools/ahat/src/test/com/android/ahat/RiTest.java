@@ -20,19 +20,16 @@ import com.android.ahat.heapdump.AhatInstance;
 import com.android.ahat.heapdump.Reachability;
 import java.io.IOException;
 import org.junit.Test;
-import org.junit.Ignore;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 public class RiTest {
-  @Ignore("b/329817005")
   @Test
   public void loadRi() throws IOException {
     // Verify we can load a heap dump generated from the RI.
     TestDump.getTestDump("ri-test-dump.hprof", null, null, Reachability.STRONG);
   }
 
-  @Ignore("b/329817005")
   @Test
   public void finalizable() throws IOException {
     // Verify we can recognize finalizer references in the RI.
