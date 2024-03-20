@@ -774,6 +774,15 @@ Trace::Trace(File* trace_file,
   CHECK_IMPLIES(trace_file == nullptr, output_mode == TraceOutputMode::kDDMS);
 
   uint16_t trace_version = GetTraceVersion(clock_source_);
+
+  // We initialize the start_time_ from the timestamp counter. This may not match
+  // with the monotonic timer but we only use this time to calculate the elapsed
+  // time from this point which should be the same for both cases.
+  // We record monotonic time at the start of the trace, because Android Studio
+  // fetches the monotonic timer from other places and matches these times to
+  // construct a cpu profile. See b/318052824 for more context.
+  uint64_t start_time_monotonic = start_time_ + (MicroTime() - GetMicroTime(GetTimestamp()));
+
   if (output_mode == TraceOutputMode::kStreaming) {
     trace_version |= 0xF0U;
   }
@@ -782,7 +791,7 @@ Trace::Trace(File* trace_file,
   Append4LE(buf_.get(), kTraceMagicValue);
   Append2LE(buf_.get() + 4, trace_version);
   Append2LE(buf_.get() + 6, kTraceHeaderLength);
-  Append8LE(buf_.get() + 8, start_time_);
+  Append8LE(buf_.get() + 8, start_time_monotonic);
   if (trace_version >= kTraceVersionDualClock) {
     uint16_t record_size = GetRecordSize(clock_source_);
     Append2LE(buf_.get() + 16, record_size);
