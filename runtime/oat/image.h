@@ -259,9 +259,10 @@ class PACKED(8) ImageHeader {
     kSectionObjects,
     kSectionArtFields,
     kSectionArtMethods,
-    kSectionRuntimeMethods,
     kSectionImTables,
     kSectionIMTConflictTables,
+    kSectionRuntimeMethods,
+    kSectionJniStubMethods,
     kSectionInternedStrings,
     kSectionClassTable,
     kSectionStringReferenceOffsets,
@@ -331,6 +332,10 @@ class PACKED(8) ImageHeader {
     return GetImageSection(kSectionMetadata);
   }
 
+  const ImageSection& GetJniStubMethodsSection() const {
+    return GetImageSection(kSectionJniStubMethods);
+  }
+
   const ImageSection& GetImageBitmapSection() const {
     return GetImageSection(kSectionImageBitmap);
   }
@@ -398,6 +403,11 @@ class PACKED(8) ImageHeader {
   void VisitPackedImtConflictTables(const Visitor& visitor,
                                     uint8_t* base,
                                     PointerSize pointer_size) const;
+
+  template <bool kUpdate = false, typename Visitor>
+  void VisitJniStubMethods(const Visitor& visitor,
+                           uint8_t* base,
+                           PointerSize pointer_size) const REQUIRES_SHARED(Locks::mutator_lock_);
 
   IterationRange<const Block*> GetBlocks() const {
     return GetBlocks(GetImageBegin());
