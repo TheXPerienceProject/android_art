@@ -2808,7 +2808,7 @@ void ImageWriter::CreateHeader(size_t oat_index, size_t component_count) {
       boot_image_size_,
       boot_image_components,
       boot_image_checksums,
-      static_cast<uint32_t>(target_ptr_size_));
+      target_ptr_size_);
 }
 
 ArtMethod* ImageWriter::GetImageMethodAddress(ArtMethod* method) {

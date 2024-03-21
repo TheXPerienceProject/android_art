@@ -17,6 +17,7 @@
 #include <sys/mman.h>
 
 #include "base/common_art_test.h"
+#include "base/enums.h"
 #include "base/utils.h"
 #include "gc/collector/immune_spaces.h"
 #include "gc/space/image_space.h"
@@ -151,7 +152,7 @@ class ImmuneSpacesTest : public CommonArtTest {
         /*boot_image_size=*/ 0u,
         /*boot_image_component_count=*/ 0u,
         /*boot_image_checksum=*/ 0u,
-        /*pointer_size=*/ sizeof(void*));
+        /*pointer_size=*/ kRuntimePointerSize);
     return new FakeImageSpace(std::move(image_map),
                               std::move(live_bitmap),
                               std::move(oat_file),
