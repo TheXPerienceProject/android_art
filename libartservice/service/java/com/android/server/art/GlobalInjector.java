@@ -70,7 +70,9 @@ public abstract class GlobalInjector {
 
     @NonNull public abstract IArtd getArtd();
 
-    @NonNull public abstract IDexoptChrootSetup getDexoptChrootSetup();
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @NonNull
+    public abstract IDexoptChrootSetup getDexoptChrootSetup();
 
     @NonNull public abstract DexUseManagerLocal getDexUseManager();
 
@@ -102,6 +104,7 @@ public abstract class GlobalInjector {
             return artd;
         }
 
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
         @Override
         @NonNull
         public IDexoptChrootSetup getDexoptChrootSetup() {
