@@ -559,7 +559,14 @@ void Riscv64Assembler::Sraw(XRegister rd, XRegister rs1, XRegister rs2) {
 
 void Riscv64Assembler::Ecall() { EmitI(0x0, 0x0, 0x0, 0x0, 0x73); }
 
-void Riscv64Assembler::Ebreak() { EmitI(0x1, 0x0, 0x0, 0x0, 0x73); }
+void Riscv64Assembler::Ebreak() {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    CEbreak();
+    return;
+  }
+
+  EmitI(0x1, 0x0, 0x0, 0x0, 0x73);
+}
 
 // Fence instruction (RV32I): opcode = 0xf, funct3 = 0
 
@@ -6489,8 +6496,11 @@ void Riscv64Assembler::FLoadd(FRegister rd, Literal* literal) {
 }
 
 void Riscv64Assembler::Unimp() {
-  // TODO(riscv64): use 16-bit zero C.UNIMP once we support compression
-  Emit32(0xC0001073);
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    CUnimp();
+  } else {
+    Emit32(0xC0001073);
+  }
 }
 
 /////////////////////////////// RV64 MACRO Instructions END ///////////////////////////////
