@@ -410,6 +410,15 @@ void ClassLinker::ForceClassInitialized(Thread* self, Handle<mirror::Class> klas
   MakeInitializedClassesVisiblyInitialized(self, /*wait=*/true);
 }
 
+const void* ClassLinker::FindBootJniStub(JniStubKey key) {
+  auto it = boot_image_jni_stubs_.find(key);
+  if (it == boot_image_jni_stubs_.end()) {
+    return nullptr;
+  } else {
+    return it->second;
+  }
+}
+
 ClassLinker::VisiblyInitializedCallback* ClassLinker::MarkClassInitialized(
     Thread* self, Handle<mirror::Class> klass) {
   if (kRuntimeISA == InstructionSet::kX86 || kRuntimeISA == InstructionSet::kX86_64) {
@@ -618,6 +627,8 @@ ClassLinker::ClassLinker(InternTable* intern_table, bool fast_class_not_found_ex
       visibly_initialize_classes_with_membarier_(RegisterMemBarrierForClassInitialization()),
       critical_native_code_with_clinit_check_lock_("critical native code with clinit check lock"),
       critical_native_code_with_clinit_check_(),
+      boot_image_jni_stubs_(JniStubKeyHash(Runtime::Current()->GetInstructionSet()),
+                            JniStubKeyEquals(Runtime::Current()->GetInstructionSet())),
       cha_(Runtime::Current()->IsAotCompiler() ? nullptr : new ClassHierarchyAnalysis()) {
   // For CHA disabled during Aot, see b/34193647.
 
@@ -1440,6 +1451,19 @@ bool ClassLinker::InitFromBootImage(std::string* error_msg) {
                       error_msg)) {
     return false;
   }
+  // We never use AOT code for debuggable.
+  if (!runtime->IsJavaDebuggable()) {
+    for (gc::space::ImageSpace* space : spaces) {
+      const ImageHeader& header = space->GetImageHeader();
+      header.VisitJniStubMethods([&](ArtMethod* method)
+          REQUIRES_SHARED(Locks::mutator_lock_) {
+        const void* stub = method->GetOatMethodQuickCode(image_pointer_size_);
+        boot_image_jni_stubs_.Put(std::make_pair(JniStubKey(method), stub));
+        return method;
+      }, space->Begin(), image_pointer_size_);
+    }
+  }
+
   InitializeObjectVirtualMethodHashes(GetClassRoot<mirror::Object>(this),
                                       image_pointer_size_,
                                       ArrayRef<uint32_t>(object_virtual_method_hashes_));
@@ -3678,10 +3702,19 @@ void ClassLinker::FixupStaticTrampolines(Thread* self, ObjPtr<mirror::Class> kla
   }
 
   instrumentation::Instrumentation* instrumentation = runtime->GetInstrumentation();
+  bool enable_boot_jni_stub = !runtime->IsJavaDebuggable();
   for (size_t method_index = 0; method_index < num_direct_methods; ++method_index) {
     ArtMethod* method = klass->GetDirectMethod(method_index, pointer_size);
     if (method->NeedsClinitCheckBeforeCall()) {
-      instrumentation->UpdateMethodsCode(method, instrumentation->GetCodeForInvoke(method));
+      const void* quick_code = instrumentation->GetCodeForInvoke(method);
+      if (method->IsNative() && IsQuickGenericJniStub(quick_code) && enable_boot_jni_stub) {
+        const void* boot_jni_stub = FindBootJniStub(method);
+        if (boot_jni_stub != nullptr) {
+          // Use boot JNI stub if found.
+          quick_code = boot_jni_stub;
+        }
+      }
+      instrumentation->UpdateMethodsCode(method, quick_code);
     }
   }
   // Ignore virtual methods on the iterator.
@@ -3724,6 +3757,13 @@ static void LinkCode(ClassLinker* class_linker,
     // non-abstract methods also get their code pointers.
     const OatFile::OatMethod oat_method = oat_class->GetOatMethod(class_def_method_index);
     quick_code = oat_method.GetQuickCode();
+  }
+  if (method->IsNative() && quick_code == nullptr) {
+    const void* boot_jni_stub = class_linker->FindBootJniStub(method);
+    if (boot_jni_stub != nullptr) {
+      // Use boot JNI stub if found.
+      quick_code = boot_jni_stub;
+    }
   }
   runtime->GetInstrumentation()->InitializeMethodsCode(method, quick_code);
 
