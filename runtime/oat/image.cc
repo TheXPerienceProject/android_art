@@ -52,7 +52,7 @@ ImageHeader::ImageHeader(uint32_t image_reservation_size,
                          uint32_t boot_image_size,
                          uint32_t boot_image_component_count,
                          uint32_t boot_image_checksum,
-                         uint32_t pointer_size)
+                         PointerSize pointer_size)
   : image_reservation_size_(image_reservation_size),
     component_count_(component_count),
     image_begin_(image_begin),
@@ -78,7 +78,8 @@ ImageHeader::ImageHeader(uint32_t image_reservation_size,
     CHECK_LT(oat_data_begin, oat_data_end);
     CHECK_LE(oat_data_end, oat_file_end);
   }
-  CHECK(ValidPointerSize(pointer_size_)) << pointer_size_;
+  static_assert(sizeof(PointerSize) == sizeof(uint32_t),
+                "PointerSize class is expected to be a uint32_t for the header");
   memcpy(magic_, kImageMagic, sizeof(kImageMagic));
   memcpy(version_, kImageVersion, sizeof(kImageVersion));
   std::copy_n(sections, kSectionCount, sections_);
@@ -196,7 +197,7 @@ void ImageHeader::VisitObjects(ObjectVisitor* visitor,
 }
 
 PointerSize ImageHeader::GetPointerSize() const {
-  return ConvertToPointerSize(pointer_size_);
+  return pointer_size_;
 }
 
 bool LZ4_decompress_safe_checked(const char* source,

@@ -19,6 +19,7 @@
 
 #include "image_test.h"
 
+#include "base/enums.h"
 #include "oat/image.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread.h"
@@ -89,8 +90,7 @@ TEST_F(ImageTest, ImageHeaderIsValid) {
                            /*boot_image_size=*/ 0u,
                            /*boot_image_component_count=*/ 0u,
                            /*boot_image_checksum=*/ 0u,
-                           sizeof(void*));
-
+                           kRuntimePointerSize);
   ASSERT_TRUE(image_header.IsValid());
 
   // Please note that for the following condition to be true, the above values should be chosen in
@@ -239,7 +239,7 @@ TEST_F(ImageTest, ImageChecksum) {
                            /*boot_image_size=*/ 0u,
                            /*boot_image_component_count=*/ 0u,
                            /*boot_image_checksum=*/ 0u,
-                           sizeof(void*));
+                           kRuntimePointerSize);
     ASSERT_TRUE(image_header.IsValid());
 
     std::string error_msg;
