@@ -1251,10 +1251,13 @@ void Runtime::InitNonZygoteOrPostFork(
     }
   }
 
+  // We only used the runtime thread pool for loading app images. However the
+  // speed up that this brings in theory isn't there in practice b/328173302.
+  static constexpr bool kUseRuntimeThreadPool = false;
   // Create the thread pools.
   // Avoid creating the runtime thread pool for system server since it will not be used and would
   // waste memory.
-  if (!is_system_server) {
+  if (!is_system_server && kUseRuntimeThreadPool) {
     ScopedTrace timing("CreateThreadPool");
     constexpr size_t kStackSize = 64 * KB;
     constexpr size_t kMaxRuntimeWorkers = 4u;

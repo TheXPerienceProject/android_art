@@ -88,10 +88,6 @@ inline bool TestBitmap(size_t idx, const uint8_t* bitmap) {
   return ((bitmap[idx / kBitsPerByte] >> (idx % kBitsPerByte)) & 0x01) != 0;
 }
 
-static inline constexpr bool ValidPointerSize(size_t pointer_size) {
-  return pointer_size == 4 || pointer_size == 8;
-}
-
 static inline const void* EntryPointToCodePointer(const void* entry_point) {
   uintptr_t code = reinterpret_cast<uintptr_t>(entry_point);
   // TODO: Make this Thumb2 specific. It is benign on other architectures as code is always at
@@ -132,16 +128,6 @@ bool IsKernelVersionAtLeast(int reqd_major, int reqd_minor);
 
 // On some old kernels, a cache operation may segfault.
 WARN_UNUSED bool CacheOperationsMaySegFault();
-
-template <typename T>
-constexpr PointerSize ConvertToPointerSize(T any) {
-  if (any == 4 || any == 8) {
-    return static_cast<PointerSize>(any);
-  } else {
-    LOG(FATAL);
-    UNREACHABLE();
-  }
-}
 
 // Return -1 if <, 0 if ==, 1 if >.
 template <typename T>
