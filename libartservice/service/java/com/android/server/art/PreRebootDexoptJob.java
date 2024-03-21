@@ -30,7 +30,7 @@ import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.ArtServiceJobInterface;
 
 /** @hide */
-@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+@RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public class PreRebootDexoptJob implements ArtServiceJobInterface {
     private static final String TAG = ArtManagerLocal.TAG;
 
