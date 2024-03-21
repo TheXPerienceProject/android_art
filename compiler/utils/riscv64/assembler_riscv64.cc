@@ -997,6 +997,7 @@ void Riscv64Assembler::CAddi16Sp(int32_t nzimm) {
   AssertExtensionsEnabled(Riscv64Extension::kZca);
   DCHECK_NE(nzimm, 0);
   DCHECK(IsAligned<16>(nzimm));
+  DCHECK(IsInt<10>(nzimm));
 
   uint32_t unzimm = static_cast<uint32_t>(nzimm);
 
