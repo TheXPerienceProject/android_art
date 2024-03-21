@@ -2947,12 +2947,23 @@ void InstructionCodeGeneratorRISCV64::VisitArraySet(HArraySet* instruction) {
     DCHECK_EQ(value_type, DataType::Type::kReference);
     DCHECK_IMPLIES(value.IsConstant(), value.GetConstant()->IsArithmeticZero());
     const bool storing_constant_zero = value.IsConstant();
+    // The WriteBarrierKind::kEmitNotBeingReliedOn case is able to skip the write barrier when its
+    // value is null (without an extra CompareAndBranchIfZero since we already checked if the
+    // value is null for the type check).
+    bool skip_marking_gc_card = false;
+    Riscv64Label skip_writing_card;
     if (!storing_constant_zero) {
       Riscv64Label do_store;
 
       bool can_value_be_null = instruction->GetValueCanBeNull();
+      skip_marking_gc_card =
+          can_value_be_null && write_barrier_kind == WriteBarrierKind::kEmitNotBeingReliedOn;
       if (can_value_be_null) {
-        __ Beqz(value.AsRegister<XRegister>(), &do_store);
+        if (skip_marking_gc_card) {
+          __ Beqz(value.AsRegister<XRegister>(), &skip_writing_card);
+        } else {
+          __ Beqz(value.AsRegister<XRegister>(), &do_store);
+        }
       }
 
       if (needs_type_check) {
@@ -3002,19 +3013,22 @@ void InstructionCodeGeneratorRISCV64::VisitArraySet(HArraySet* instruction) {
         }
       }
 
-      if (can_value_be_null) {
+      if (can_value_be_null && !skip_marking_gc_card) {
+        DCHECK(do_store.IsLinked());
         __ Bind(&do_store);
       }
     }
 
     DCHECK_NE(write_barrier_kind, WriteBarrierKind::kDontEmit);
-    // TODO(solanes): The WriteBarrierKind::kEmitNotBeingReliedOn case should be able to skip
-    // this write barrier when its value is null (without an extra Beqz since we already checked
-    // if the value is null for the type check). This will be done as a follow-up since it is a
-    // runtime optimization that needs extra care.
     DCHECK_IMPLIES(storing_constant_zero,
                    write_barrier_kind == WriteBarrierKind::kEmitBeingReliedOn);
     codegen_->MarkGCCard(array);
+
+    if (skip_marking_gc_card) {
+      // Note that we don't check that the GC card is valid as it can be correctly clean.
+      DCHECK(skip_writing_card.IsLinked());
+      __ Bind(&skip_writing_card);
+    }
   } else if (codegen_->ShouldCheckGCCard(value_type, instruction->GetValue(), write_barrier_kind)) {
     codegen_->CheckGCCardIsValid(array);
   }
