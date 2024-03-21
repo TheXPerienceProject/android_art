@@ -2976,12 +2976,23 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
   } else {
     DCHECK(!instruction->GetArray()->IsIntermediateAddress());
     bool can_value_be_null = true;
+    // The WriteBarrierKind::kEmitNotBeingReliedOn case is able to skip the write barrier when its
+    // value is null (without an extra CompareAndBranchIfZero since we already checked if the
+    // value is null for the type check).
+    bool skip_marking_gc_card = false;
     SlowPathCodeARM64* slow_path = nullptr;
+    vixl::aarch64::Label skip_writing_card;
     if (!Register(value).IsZero()) {
       can_value_be_null = instruction->GetValueCanBeNull();
+      skip_marking_gc_card =
+          can_value_be_null && write_barrier_kind == WriteBarrierKind::kEmitNotBeingReliedOn;
       vixl::aarch64::Label do_store;
       if (can_value_be_null) {
-        __ Cbz(Register(value), &do_store);
+        if (skip_marking_gc_card) {
+          __ Cbz(Register(value), &skip_writing_card);
+        } else {
+          __ Cbz(Register(value), &do_store);
+        }
       }
 
       if (needs_type_check) {
@@ -3039,20 +3050,22 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
         }
       }
 
-      if (can_value_be_null) {
+      if (can_value_be_null && !skip_marking_gc_card) {
         DCHECK(do_store.IsLinked());
         __ Bind(&do_store);
       }
     }
 
     DCHECK_NE(write_barrier_kind, WriteBarrierKind::kDontEmit);
-    // TODO(solanes): The WriteBarrierKind::kEmitNotBeingReliedOn case should be able to skip this
-    // write barrier when its value is null (without an extra cbz since we already checked if the
-    // value is null for the type check). This will be done as a follow-up since it is a runtime
-    // optimization that needs extra care.
     DCHECK_IMPLIES(Register(value).IsZero(),
                    write_barrier_kind == WriteBarrierKind::kEmitBeingReliedOn);
     codegen_->MarkGCCard(array);
+
+    if (skip_marking_gc_card) {
+      // Note that we don't check that the GC card is valid as it can be correctly clean.
+      DCHECK(skip_writing_card.IsLinked());
+      __ Bind(&skip_writing_card);
+    }
 
     UseScratchRegisterScope temps(masm);
     if (kPoisonHeapReferences) {
