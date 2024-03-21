@@ -6960,10 +6960,20 @@ void InstructionCodeGeneratorARMVIXL::VisitArraySet(HArraySet* instruction) {
         break;
       }
 
-      bool can_value_be_null = instruction->GetValueCanBeNull();
+      const bool can_value_be_null = instruction->GetValueCanBeNull();
+      // The WriteBarrierKind::kEmitNotBeingReliedOn case is able to skip the write barrier when its
+      // value is null (without an extra CompareAndBranchIfZero since we already checked if the
+      // value is null for the type check).
+      const bool skip_marking_gc_card =
+          can_value_be_null && write_barrier_kind == WriteBarrierKind::kEmitNotBeingReliedOn;
       vixl32::Label do_store;
+      vixl32::Label skip_writing_card;
       if (can_value_be_null) {
-        __ CompareAndBranchIfZero(value, &do_store, /* is_far_target= */ false);
+        if (skip_marking_gc_card) {
+          __ CompareAndBranchIfZero(value, &skip_writing_card, /* is_far_target= */ false);
+        } else {
+          __ CompareAndBranchIfZero(value, &do_store, /* is_far_target= */ false);
+        }
       }
 
       SlowPathCodeARMVIXL* slow_path = nullptr;
@@ -7023,16 +7033,12 @@ void InstructionCodeGeneratorARMVIXL::VisitArraySet(HArraySet* instruction) {
         }
       }
 
-      if (can_value_be_null) {
+      if (can_value_be_null && !skip_marking_gc_card) {
         DCHECK(do_store.IsReferenced());
         __ Bind(&do_store);
       }
 
       if (needs_write_barrier) {
-        // TODO(solanes): The WriteBarrierKind::kEmitNotBeingReliedOn case should be able to skip
-        // this write barrier when its value is null (without an extra CompareAndBranchIfZero since
-        // we already checked if the value is null for the type check). This will be done as a
-        // follow-up since it is a runtime optimization that needs extra care.
         vixl32::Register temp1 = RegisterFrom(locations->GetTemp(0));
         vixl32::Register temp2 = RegisterFrom(locations->GetTemp(1));
         codegen_->MarkGCCard(temp1, temp2, array);
@@ -7041,6 +7047,12 @@ void InstructionCodeGeneratorARMVIXL::VisitArraySet(HArraySet* instruction) {
         vixl32::Register temp1 = RegisterFrom(locations->GetTemp(0));
         vixl32::Register temp2 = RegisterFrom(locations->GetTemp(1));
         codegen_->CheckGCCardIsValid(temp1, temp2, array);
+      }
+
+      if (skip_marking_gc_card) {
+        // Note that we don't check that the GC card is valid as it can be correctly clean.
+        DCHECK(skip_writing_card.IsReferenced());
+        __ Bind(&skip_writing_card);
       }
 
       vixl32::Register source = value;
