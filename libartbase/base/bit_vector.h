@@ -123,6 +123,7 @@ class BitVector {
     other.storage_size_ = 0u;
   }
 
+  // Guarantees the BitVector starts empty.
   BitVector(uint32_t start_bits,
             bool expandable,
             Allocator* allocator);

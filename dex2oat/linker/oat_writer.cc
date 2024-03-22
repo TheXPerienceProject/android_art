@@ -780,7 +780,6 @@ class OatWriter::InitBssLayoutMethodVisitor : public DexMethodVisitor {
       refs_it = references->Put(
           ref.dex_file,
           BitVector(number_of_indexes, /* expandable */ false, Allocator::GetMallocAllocator()));
-      refs_it->second.ClearAllBits();
     }
     refs_it->second.SetBit(ref.index);
   }
