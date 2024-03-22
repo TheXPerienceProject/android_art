@@ -25,11 +25,10 @@
 
 namespace art {
 
-// Note that this class is a misnomer as it calls `calloc` which sets the memory to zero.
-class MallocAllocator final : public Allocator {
+class CallocAllocator final : public Allocator {
  public:
-  MallocAllocator() {}
-  ~MallocAllocator() {}
+  CallocAllocator() {}
+  ~CallocAllocator() {}
 
   void* Alloc(size_t size) override {
     return calloc(sizeof(uint8_t), size);
@@ -40,10 +39,10 @@ class MallocAllocator final : public Allocator {
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(MallocAllocator);
+  DISALLOW_COPY_AND_ASSIGN(CallocAllocator);
 };
 
-MallocAllocator g_malloc_allocator;
+CallocAllocator g_malloc_allocator;
 
 class NoopAllocator final : public Allocator {
  public:
@@ -65,7 +64,7 @@ class NoopAllocator final : public Allocator {
 
 NoopAllocator g_noop_allocator;
 
-Allocator* Allocator::GetMallocAllocator() {
+Allocator* Allocator::GetCallocAllocator() {
   return &g_malloc_allocator;
 }
 
