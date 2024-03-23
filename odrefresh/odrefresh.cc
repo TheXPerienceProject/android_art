@@ -772,7 +772,9 @@ Result<art_apex::CacheInfo> OnDeviceRefresh::ReadCacheInfo() const {
   return cache_info.value();
 }
 
-Result<void> OnDeviceRefresh::WriteCacheInfo() const {
+// This function has a large stack frame, so avoid inlining it because doing so
+// could push its caller's stack frame over the limit. See b/330851312.
+NO_INLINE Result<void> OnDeviceRefresh::WriteCacheInfo() const {
   if (OS::FileExists(cache_info_filename_.c_str())) {
     if (unlink(cache_info_filename_.c_str()) != 0) {
       return ErrnoErrorf("Failed to unlink file {}", QuotePath(cache_info_filename_));

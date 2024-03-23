@@ -23,6 +23,7 @@ import android.os.Build;
 
 import androidx.annotation.RequiresApi;
 
+import com.android.modules.utils.build.SdkLevel;
 import com.android.server.LocalManagerRegistry;
 import com.android.server.art.model.ArtServiceJobInterface;
 
@@ -48,7 +49,7 @@ public class BackgroundDexoptJobService extends JobService {
     static ArtServiceJobInterface getJob(int jobId) {
         if (jobId == BackgroundDexoptJob.JOB_ID) {
             return LocalManagerRegistry.getManager(ArtManagerLocal.class).getBackgroundDexoptJob();
-        } else if (jobId == PreRebootDexoptJob.JOB_ID) {
+        } else if (jobId == PreRebootDexoptJob.JOB_ID && SdkLevel.isAtLeastV()) {
             return LocalManagerRegistry.getManager(ArtManagerLocal.class).getPreRebootDexoptJob();
         }
         throw new IllegalArgumentException("Unknown job ID " + jobId);
