@@ -28,7 +28,7 @@ namespace art {
 TEST(BitVector, Test) {
   const size_t kBits = 32;
 
-  BitVector bv(kBits, false, Allocator::GetMallocAllocator());
+  BitVector bv(kBits, false, Allocator::GetCallocAllocator());
   EXPECT_EQ(1U, bv.GetStorageSize());
   EXPECT_EQ(sizeof(uint32_t), bv.GetSizeOf());
   EXPECT_FALSE(bv.IsExpandable());
@@ -70,7 +70,7 @@ TEST(BitVector, Test) {
 
 struct MessyAllocator : public Allocator {
  public:
-  MessyAllocator() : malloc_(Allocator::GetMallocAllocator()) {}
+  MessyAllocator() : malloc_(Allocator::GetCallocAllocator()) {}
   ~MessyAllocator() {}
 
   void* Alloc(size_t s) override {
@@ -172,9 +172,9 @@ TEST(BitVector, SetInitialBits) {
 
 TEST(BitVector, UnionIfNotIn) {
   {
-    BitVector first(2, true, Allocator::GetMallocAllocator());
-    BitVector second(5, true, Allocator::GetMallocAllocator());
-    BitVector third(5, true, Allocator::GetMallocAllocator());
+    BitVector first(2, true, Allocator::GetCallocAllocator());
+    BitVector second(5, true, Allocator::GetCallocAllocator());
+    BitVector third(5, true, Allocator::GetCallocAllocator());
 
     second.SetBit(64);
     third.SetBit(64);
@@ -184,9 +184,9 @@ TEST(BitVector, UnionIfNotIn) {
   }
 
   {
-    BitVector first(2, true, Allocator::GetMallocAllocator());
-    BitVector second(5, true, Allocator::GetMallocAllocator());
-    BitVector third(5, true, Allocator::GetMallocAllocator());
+    BitVector first(2, true, Allocator::GetCallocAllocator());
+    BitVector second(5, true, Allocator::GetCallocAllocator());
+    BitVector third(5, true, Allocator::GetCallocAllocator());
 
     second.SetBit(64);
     bool changed = first.UnionIfNotIn(&second, &third);
@@ -198,8 +198,8 @@ TEST(BitVector, UnionIfNotIn) {
 
 TEST(BitVector, Subset) {
   {
-    BitVector first(2, true, Allocator::GetMallocAllocator());
-    BitVector second(5, true, Allocator::GetMallocAllocator());
+    BitVector first(2, true, Allocator::GetCallocAllocator());
+    BitVector second(5, true, Allocator::GetCallocAllocator());
 
     EXPECT_TRUE(first.IsSubsetOf(&second));
     second.SetBit(4);
@@ -207,8 +207,8 @@ TEST(BitVector, Subset) {
   }
 
   {
-    BitVector first(5, true, Allocator::GetMallocAllocator());
-    BitVector second(5, true, Allocator::GetMallocAllocator());
+    BitVector first(5, true, Allocator::GetCallocAllocator());
+    BitVector second(5, true, Allocator::GetCallocAllocator());
 
     first.SetBit(5);
     EXPECT_FALSE(first.IsSubsetOf(&second));
@@ -217,8 +217,8 @@ TEST(BitVector, Subset) {
   }
 
   {
-    BitVector first(5, true, Allocator::GetMallocAllocator());
-    BitVector second(5, true, Allocator::GetMallocAllocator());
+    BitVector first(5, true, Allocator::GetCallocAllocator());
+    BitVector second(5, true, Allocator::GetCallocAllocator());
 
     first.SetBit(16);
     first.SetBit(32);
@@ -243,7 +243,7 @@ TEST(BitVector, Subset) {
 TEST(BitVector, CopyTo) {
   {
     // Test copying an empty BitVector. Padding should fill `buf` with zeroes.
-    BitVector bv(0, true, Allocator::GetMallocAllocator());
+    BitVector bv(0, true, Allocator::GetCallocAllocator());
     uint32_t buf;
 
     bv.CopyTo(&buf, sizeof(buf));
@@ -253,7 +253,7 @@ TEST(BitVector, CopyTo) {
 
   {
     // Test copying when `bv.storage_` and `buf` are of equal lengths.
-    BitVector bv(0, true, Allocator::GetMallocAllocator());
+    BitVector bv(0, true, Allocator::GetCallocAllocator());
     uint32_t buf;
 
     bv.SetBit(0);
@@ -268,7 +268,7 @@ TEST(BitVector, CopyTo) {
   {
     // Test copying when the `bv.storage_` is longer than `buf`. As long as
     // `buf` is long enough to hold all set bits, copying should succeed.
-    BitVector bv(0, true, Allocator::GetMallocAllocator());
+    BitVector bv(0, true, Allocator::GetCallocAllocator());
     uint8_t buf[5];
 
     bv.SetBit(18);
@@ -285,7 +285,7 @@ TEST(BitVector, CopyTo) {
 
   {
     // Test zero padding when `bv.storage_` is shorter than `buf`.
-    BitVector bv(0, true, Allocator::GetMallocAllocator());
+    BitVector bv(0, true, Allocator::GetCallocAllocator());
     uint32_t buf[2];
 
     bv.SetBit(18);
@@ -299,7 +299,7 @@ TEST(BitVector, CopyTo) {
 }
 
 TEST(BitVector, TransformIterator) {
-  BitVector bv(16, false, Allocator::GetMallocAllocator());
+  BitVector bv(16, false, Allocator::GetCallocAllocator());
   bv.SetBit(4);
   bv.SetBit(8);
 

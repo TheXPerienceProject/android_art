@@ -51,7 +51,6 @@ BitVector::BitVector(uint32_t start_bits,
   // * `ScopedArenaAllocator` which does not.
   // We also have `NoopAllocator` but that allocator should never call this method (as the Alloc
   // call will turn into a LOG(FATAL)).
-  // As a note, MallocAllocator is a misnomer as it uses `calloc` which sets the memory to zero.
   ClearAllBits();
 }
 

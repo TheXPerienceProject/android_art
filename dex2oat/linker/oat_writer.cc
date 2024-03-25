@@ -779,7 +779,7 @@ class OatWriter::InitBssLayoutMethodVisitor : public DexMethodVisitor {
     if (refs_it == references->end()) {
       refs_it = references->Put(
           ref.dex_file,
-          BitVector(number_of_indexes, /* expandable */ false, Allocator::GetMallocAllocator()));
+          BitVector(number_of_indexes, /* expandable */ false, Allocator::GetCallocAllocator()));
     }
     refs_it->second.SetBit(ref.index);
   }
@@ -4054,7 +4054,7 @@ OatWriter::OatClass::OatClass(const dchecked_vector<CompiledMethod*>& compiled_m
     num_methods_ = num_methods;
     oat_method_offsets_offset_from_oat_class += sizeof(num_methods_);
     if (oat_class_type == enum_cast<uint16_t>(OatClassType::kSomeCompiled)) {
-      method_bitmap_.reset(new BitVector(num_methods, false, Allocator::GetMallocAllocator()));
+      method_bitmap_.reset(new BitVector(num_methods, false, Allocator::GetCallocAllocator()));
       uint32_t bitmap_size = BitVector::BitsToWords(num_methods) * BitVector::kWordBytes;
       DCHECK_EQ(bitmap_size, method_bitmap_->GetSizeOf());
       oat_method_offsets_offset_from_oat_class += bitmap_size;
