@@ -538,7 +538,6 @@ ArenaBitVector* HInstructionBuilder::FindNativeDebugInfoLocations() {
                                                      code_item_accessor_.InsnsSizeInCodeUnits(),
                                                      /* expandable= */ false,
                                                      kArenaAllocGraphBuilder);
-  locations->ClearAllBits();
   // The visitor gets called when the line number changes.
   // In other words, it marks the start of new java statement.
   code_item_accessor_.DecodeDebugPositionInfo([&](const DexFile::PositionInfo& entry) {

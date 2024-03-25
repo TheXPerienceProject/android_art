@@ -38,16 +38,11 @@ BitVector::BitVector(bool expandable,
   static_assert(sizeof(*storage_) * 8u == kWordBits, "word bits");
 }
 
-BitVector::BitVector(uint32_t start_bits,
-                     bool expandable,
-                     Allocator* allocator)
-  : BitVector(expandable,
-              allocator,
-              BitsToWords(start_bits),
-              static_cast<uint32_t*>(allocator->Alloc(BitsToWords(start_bits) * kWordBytes))) {
-  // We don't know if the allocator cleared things.
-  ClearAllBits();
-}
+BitVector::BitVector(uint32_t start_bits, bool expandable, Allocator* allocator)
+    : BitVector(expandable,
+                allocator,
+                BitsToWords(start_bits),
+                static_cast<uint32_t*>(allocator->Alloc(BitsToWords(start_bits) * kWordBytes))) {}
 
 BitVector::BitVector(const BitVector& src,
                      bool expandable,

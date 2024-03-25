@@ -340,7 +340,7 @@ class OptimizingUnitTestHelper {
 
   void EnsurePredecessorOrder(HBasicBlock* target, std::initializer_list<HBasicBlock*> preds) {
     // Make sure the given preds and block predecessors have the same blocks.
-    BitVector bv(preds.size(), false, Allocator::GetMallocAllocator());
+    BitVector bv(preds.size(), false, Allocator::GetCallocAllocator());
     auto preds_and_idx = ZipCount(MakeIterationRange(target->GetPredecessors()));
     bool correct_preds = preds.size() == target->GetPredecessors().size() &&
                          std::all_of(preds.begin(), preds.end(), [&](HBasicBlock* pred) {

@@ -353,16 +353,13 @@ class ValueSet : public ArenaObject<kArenaAllocGvn> {
  */
 class GlobalValueNumberer : public ValueObject {
  public:
-  GlobalValueNumberer(HGraph* graph,
-                      const SideEffectsAnalysis& side_effects)
+  GlobalValueNumberer(HGraph* graph, const SideEffectsAnalysis& side_effects)
       : graph_(graph),
         allocator_(graph->GetArenaStack()),
         side_effects_(side_effects),
         sets_(graph->GetBlocks().size(), nullptr, allocator_.Adapter(kArenaAllocGvn)),
         visited_blocks_(
-            &allocator_, graph->GetBlocks().size(), /* expandable= */ false, kArenaAllocGvn) {
-    visited_blocks_.ClearAllBits();
-  }
+            &allocator_, graph->GetBlocks().size(), /* expandable= */ false, kArenaAllocGvn) {}
 
   bool Run();
 

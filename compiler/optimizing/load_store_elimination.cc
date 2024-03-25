@@ -1427,9 +1427,8 @@ LSEVisitor::LSEVisitor(HGraph* graph,
       loads_and_stores_(allocator_.Adapter(kArenaAllocLSE)),
       // We may add new instructions (default values, Phis) but we're not adding loads
       // or stores, so we shall not need to resize following vector and BitVector.
-      substitute_instructions_for_loads_(graph->GetCurrentInstructionId(),
-                                         nullptr,
-                                         allocator_.Adapter(kArenaAllocLSE)),
+      substitute_instructions_for_loads_(
+          graph->GetCurrentInstructionId(), nullptr, allocator_.Adapter(kArenaAllocLSE)),
       kept_stores_(&allocator_,
                    /*start_bits=*/graph->GetCurrentInstructionId(),
                    /*expandable=*/false,
@@ -1440,17 +1439,12 @@ LSEVisitor::LSEVisitor(HGraph* graph,
                                                   kArenaAllocLSE),
       loads_requiring_loop_phi_(allocator_.Adapter(kArenaAllocLSE)),
       store_records_(allocator_.Adapter(kArenaAllocLSE)),
-      phi_placeholder_replacements_(num_phi_placeholders_,
-                                    Value::Invalid(),
-                                    allocator_.Adapter(kArenaAllocLSE)),
+      phi_placeholder_replacements_(
+          num_phi_placeholders_, Value::Invalid(), allocator_.Adapter(kArenaAllocLSE)),
       singleton_new_instances_(allocator_.Adapter(kArenaAllocLSE)),
       field_infos_(heap_location_collector_.GetNumberOfHeapLocations(),
                    allocator_.Adapter(kArenaAllocLSE)),
-      current_phase_(Phase::kLoadElimination) {
-  // Clear bit vectors.
-  phi_placeholders_to_search_for_kept_stores_.ClearAllBits();
-  kept_stores_.ClearAllBits();
-}
+      current_phase_(Phase::kLoadElimination) {}
 
 LSEVisitor::Value LSEVisitor::PrepareLoopValue(HBasicBlock* block, size_t idx) {
   // If the pre-header value is known (which implies that the reference dominates this
@@ -1876,7 +1870,6 @@ bool LSEVisitor::TryReplacingLoopPhiPlaceholderWithDefault(
                          /*start_bits=*/ num_phi_placeholders_,
                          /*expandable=*/ false,
                          kArenaAllocLSE);
-  visited.ClearAllBits();
   ScopedArenaVector<PhiPlaceholder> work_queue(allocator.Adapter(kArenaAllocLSE));
 
   // Use depth first search to check if any non-Phi input is unknown.
@@ -1966,7 +1959,6 @@ bool LSEVisitor::TryReplacingLoopPhiPlaceholderWithSingleInput(
                          /*start_bits=*/ num_phi_placeholders_,
                          /*expandable=*/ false,
                          kArenaAllocLSE);
-  visited.ClearAllBits();
   ScopedArenaVector<PhiPlaceholder> work_queue(allocator.Adapter(kArenaAllocLSE));
 
   // Use depth first search to check if any non-Phi input is unknown.
@@ -2278,7 +2270,6 @@ bool LSEVisitor::MaterializeLoopPhis(const ArenaBitVector& phi_placeholders_to_m
     dependencies.push_back(
         ArenaBitVector::Create(&allocator, num_phi_placeholders, kExpandable, kArenaAllocLSE));
     ArenaBitVector* current_dependencies = dependencies.back();
-    current_dependencies->ClearAllBits();
     current_dependencies->SetBit(matrix_index);  // Count the Phi placeholder as its own dependency.
     PhiPlaceholder current_phi_placeholder =
         GetPhiPlaceholderAt(phi_placeholder_indexes[matrix_index]);
@@ -2377,7 +2368,6 @@ std::optional<LSEVisitor::PhiPlaceholder> LSEVisitor::TryToMaterializeLoopPhis(
   // Find Phi placeholders to materialize.
   ArenaBitVector phi_placeholders_to_materialize(
       &allocator, num_phi_placeholders_, /*expandable=*/ false, kArenaAllocLSE);
-  phi_placeholders_to_materialize.ClearAllBits();
   DataType::Type type = load->GetType();
   bool can_use_default_or_phi = IsDefaultOrPhiAllowedForLoad(load);
   std::optional<PhiPlaceholder> loop_phi_with_unknown_input = FindLoopPhisToMaterialize(
@@ -2681,12 +2671,10 @@ void LSEVisitor::FindOldValueForPhiPlaceholder(PhiPlaceholder phi_placeholder,
                          /*start_bits=*/ num_phi_placeholders_,
                          /*expandable=*/ false,
                          kArenaAllocLSE);
-  visited.ClearAllBits();
 
   // Find Phi placeholders to try and match against existing Phis or other replacement values.
   ArenaBitVector phi_placeholders_to_materialize(
       &allocator, num_phi_placeholders_, /*expandable=*/ false, kArenaAllocLSE);
-  phi_placeholders_to_materialize.ClearAllBits();
   std::optional<PhiPlaceholder> loop_phi_with_unknown_input = FindLoopPhisToMaterialize(
       phi_placeholder, &phi_placeholders_to_materialize, type, /*can_use_default_or_phi=*/true);
   if (loop_phi_with_unknown_input) {
@@ -2791,7 +2779,6 @@ void LSEVisitor::FindStoresWritingOldValues() {
                                    /*start_bits=*/ GetGraph()->GetCurrentInstructionId(),
                                    /*expandable=*/ false,
                                    kArenaAllocLSE);
-  eliminated_stores.ClearAllBits();
 
   for (uint32_t store_id : kept_stores_.Indexes()) {
     DCHECK(kept_stores_.IsBitSet(store_id));
