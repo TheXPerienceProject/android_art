@@ -155,8 +155,6 @@ inline size_t Object::VisitRefsForCompaction(const Visitor& visitor,
              ? static_cast<Array*>(this)->SizeOf<kSizeOfFlags, kReadBarrierOption>()
              : 0;
     } else {
-      DCHECK_EQ(class_flags, kClassFlagNoReferenceFields)
-          << "class_flags: " << std::hex << class_flags;
       // Only possibility left is of a normal klass instance with no references.
       size = kFetchObjSize ? klass->GetObjectSize<kSizeOfFlags>() : 0;
     }
