@@ -38,21 +38,11 @@ BitVector::BitVector(bool expandable,
   static_assert(sizeof(*storage_) * 8u == kWordBits, "word bits");
 }
 
-BitVector::BitVector(uint32_t start_bits,
-                     bool expandable,
-                     Allocator* allocator)
-  : BitVector(expandable,
-              allocator,
-              BitsToWords(start_bits),
-              static_cast<uint32_t*>(allocator->Alloc(BitsToWords(start_bits) * kWordBytes))) {
-  // We don't know if the allocator cleared things.
-  // TODO(solanes): We should be able to remove this call to `ClearAllBits`. Currently we have:
-  // * `MallocAllocator` and `ArenaAllocator` which sets it to zero, and
-  // * `ScopedArenaAllocator` which does not.
-  // We also have `NoopAllocator` but that allocator should never call this method (as the Alloc
-  // call will turn into a LOG(FATAL)).
-  ClearAllBits();
-}
+BitVector::BitVector(uint32_t start_bits, bool expandable, Allocator* allocator)
+    : BitVector(expandable,
+                allocator,
+                BitsToWords(start_bits),
+                static_cast<uint32_t*>(allocator->Alloc(BitsToWords(start_bits) * kWordBytes))) {}
 
 BitVector::BitVector(const BitVector& src,
                      bool expandable,

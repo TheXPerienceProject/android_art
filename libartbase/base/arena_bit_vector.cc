@@ -18,6 +18,7 @@
 
 #include "allocator.h"
 #include "arena_allocator.h"
+#include "bit_vector-inl.h"
 
 namespace art {
 
@@ -94,7 +95,7 @@ ArenaBitVector::ArenaBitVector(ScopedArenaAllocator* allocator,
   :  BitVector(start_bits,
                expandable,
                ArenaBitVectorAllocator<ScopedArenaAllocator>::Create(allocator, kind)) {
-  DCHECK_EQ(GetHighestBitSet(), -1) << "The arena bit vector should start empty";
+  ClearAllBits();
 }
 
 }  // namespace art
