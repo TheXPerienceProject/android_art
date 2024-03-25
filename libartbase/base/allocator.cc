@@ -25,6 +25,7 @@
 
 namespace art {
 
+// Note that this class is a misnomer as it calls `calloc` which sets the memory to zero.
 class MallocAllocator final : public Allocator {
  public:
   MallocAllocator() {}

@@ -214,7 +214,6 @@ bool RegisterAllocator::ValidateIntervals(ArrayRef<LiveInterval* const> interval
   for (size_t i = 0; i < number_of_registers + number_of_spill_slots; ++i) {
     liveness_of_values.push_back(
         ArenaBitVector::Create(&allocator, max_end, false, kArenaAllocRegisterAllocatorValidate));
-    liveness_of_values.back()->ClearAllBits();
   }
 
   for (LiveInterval* start_interval : intervals) {
