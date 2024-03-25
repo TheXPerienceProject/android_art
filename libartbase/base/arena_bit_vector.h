@@ -27,7 +27,8 @@ class ArenaAllocator;
 class ScopedArenaAllocator;
 
 /*
- * A BitVector implementation that uses Arena allocation.
+ * A BitVector implementation that uses Arena allocation. All constructors of ArenaBitVector start
+ * with an empty ArenaBitVector.
  */
 class ArenaBitVector : public BitVector, public ArenaObject<kArenaAllocGrowableBitMap> {
  public:
