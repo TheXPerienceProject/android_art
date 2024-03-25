@@ -90,6 +90,7 @@ struct MessyAllocator : public Allocator {
 TEST(BitVector, MessyAllocator) {
   MessyAllocator alloc;
   BitVector bv(32, false, &alloc);
+  bv.ClearAllBits();
   EXPECT_EQ(bv.NumSetBits(), 0u);
   EXPECT_EQ(bv.GetHighestBitSet(), -1);
 }
