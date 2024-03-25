@@ -73,14 +73,6 @@ struct ElfTypes64 {
 #define EF_RISCV_FLOAT_ABI_DOUBLE 0x4
 #endif
 
-#define DT_BIND_NOW 24
-#define DT_INIT_ARRAY 25
-#define DT_FINI_ARRAY 26
-#define DT_INIT_ARRAYSZ 27
-#define DT_FINI_ARRAYSZ 28
-#define DT_RUNPATH 29
-#define DT_FLAGS 30
-
 // Patching section type
 #define SHT_OAT_PATCH        SHT_LOUSER
 
