@@ -3883,10 +3883,22 @@ class HUnaryOperation : public HExpression<1> {
   HConstant* TryStaticEvaluation(HInstruction* input) const;
 
   // Apply this operation to `x`.
-  virtual HConstant* Evaluate(HIntConstant* x) const = 0;
-  virtual HConstant* Evaluate(HLongConstant* x) const = 0;
-  virtual HConstant* Evaluate(HFloatConstant* x) const = 0;
-  virtual HConstant* Evaluate(HDoubleConstant* x) const = 0;
+  virtual HConstant* Evaluate([[maybe_unused]] HIntConstant* x) const {
+    LOG(FATAL) << DebugName() << " is not defined for int values";
+    UNREACHABLE();
+  }
+  virtual HConstant* Evaluate([[maybe_unused]] HLongConstant* x) const {
+    LOG(FATAL) << DebugName() << " is not defined for long values";
+    UNREACHABLE();
+  }
+  virtual HConstant* Evaluate([[maybe_unused]] HFloatConstant* x) const {
+    LOG(FATAL) << DebugName() << " is not defined for float values";
+    UNREACHABLE();
+  }
+  virtual HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x) const {
+    LOG(FATAL) << DebugName() << " is not defined for double values";
+    UNREACHABLE();
+  }
 
   DECLARE_ABSTRACT_INSTRUCTION(UnaryOperation);
 
@@ -3967,15 +3979,31 @@ class HBinaryOperation : public HExpression<2> {
     LOG(FATAL) << DebugName() << " is not defined for the (null, null) case.";
     UNREACHABLE();
   }
-  virtual HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const = 0;
-  virtual HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const = 0;
+  virtual HConstant* Evaluate([[maybe_unused]] HIntConstant* x,
+                              [[maybe_unused]] HIntConstant* y) const {
+    LOG(FATAL) << DebugName() << " is not defined for the (int, int) case.";
+    UNREACHABLE();
+  }
+  virtual HConstant* Evaluate([[maybe_unused]] HLongConstant* x,
+                              [[maybe_unused]] HLongConstant* y) const {
+    LOG(FATAL) << DebugName() << " is not defined for the (long, long) case.";
+    UNREACHABLE();
+  }
   virtual HConstant* Evaluate([[maybe_unused]] HLongConstant* x,
                               [[maybe_unused]] HIntConstant* y) const {
     LOG(FATAL) << DebugName() << " is not defined for the (long, int) case.";
     UNREACHABLE();
   }
-  virtual HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const = 0;
-  virtual HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const = 0;
+  virtual HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
+                              [[maybe_unused]] HFloatConstant* y) const {
+    LOG(FATAL) << DebugName() << " is not defined for float values";
+    UNREACHABLE();
+  }
+  virtual HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
+                              [[maybe_unused]] HDoubleConstant* y) const {
+    LOG(FATAL) << DebugName() << " is not defined for double values";
+    UNREACHABLE();
+  }
 
   // Returns an input that can legally be used as the right input and is
   // constant, or null.
@@ -4352,16 +4380,6 @@ class HBelow final : public HCondition {
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
     return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
   }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
-                      [[maybe_unused]] HFloatConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
-                      [[maybe_unused]] HDoubleConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
-  }
 
   DECLARE_INSTRUCTION(Below);
 
@@ -4393,16 +4411,6 @@ class HBelowOrEqual final : public HCondition {
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
     return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
-                      [[maybe_unused]] HFloatConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
-                      [[maybe_unused]] HDoubleConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
   }
 
   DECLARE_INSTRUCTION(BelowOrEqual);
@@ -4436,16 +4444,6 @@ class HAbove final : public HCondition {
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
     return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
   }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
-                      [[maybe_unused]] HFloatConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
-                      [[maybe_unused]] HDoubleConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
-  }
 
   DECLARE_INSTRUCTION(Above);
 
@@ -4477,16 +4475,6 @@ class HAboveOrEqual final : public HCondition {
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
     return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
-                      [[maybe_unused]] HFloatConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
-                      [[maybe_unused]] HDoubleConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
   }
 
   DECLARE_INSTRUCTION(AboveOrEqual);
@@ -5789,21 +5777,6 @@ class HShl final : public HBinaryOperation {
     return GetBlock()->GetGraph()->GetLongConstant(
         Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
   }
-  HConstant* Evaluate([[maybe_unused]] HLongConstant* value,
-                      [[maybe_unused]] HLongConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for the (long, long) case.";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* value,
-                      [[maybe_unused]] HFloatConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* value,
-                      [[maybe_unused]] HDoubleConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
-  }
 
   DECLARE_INSTRUCTION(Shl);
 
@@ -5834,21 +5807,6 @@ class HShr final : public HBinaryOperation {
   HConstant* Evaluate(HLongConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
         Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
-  }
-  HConstant* Evaluate([[maybe_unused]] HLongConstant* value,
-                      [[maybe_unused]] HLongConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for the (long, long) case.";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* value,
-                      [[maybe_unused]] HFloatConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* value,
-                      [[maybe_unused]] HDoubleConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
   }
 
   DECLARE_INSTRUCTION(Shr);
@@ -5883,21 +5841,6 @@ class HUShr final : public HBinaryOperation {
     return GetBlock()->GetGraph()->GetLongConstant(
         Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
   }
-  HConstant* Evaluate([[maybe_unused]] HLongConstant* value,
-                      [[maybe_unused]] HLongConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for the (long, long) case.";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* value,
-                      [[maybe_unused]] HFloatConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* value,
-                      [[maybe_unused]] HDoubleConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
-  }
 
   DECLARE_INSTRUCTION(UShr);
 
@@ -5925,16 +5868,6 @@ class HAnd final : public HBinaryOperation {
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
         Compute(x->GetValue(), y->GetValue()), GetDexPc());
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
-                      [[maybe_unused]] HFloatConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
-                      [[maybe_unused]] HDoubleConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
   }
 
   DECLARE_INSTRUCTION(And);
@@ -5964,16 +5897,6 @@ class HOr final : public HBinaryOperation {
     return GetBlock()->GetGraph()->GetLongConstant(
         Compute(x->GetValue(), y->GetValue()), GetDexPc());
   }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
-                      [[maybe_unused]] HFloatConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
-                      [[maybe_unused]] HDoubleConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
-  }
 
   DECLARE_INSTRUCTION(Or);
 
@@ -6001,16 +5924,6 @@ class HXor final : public HBinaryOperation {
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
         Compute(x->GetValue(), y->GetValue()), GetDexPc());
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
-                      [[maybe_unused]] HFloatConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
-                      [[maybe_unused]] HDoubleConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
   }
 
   DECLARE_INSTRUCTION(Xor);
@@ -6045,21 +5958,6 @@ class HRor final : public HBinaryOperation {
   HConstant* Evaluate(HLongConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
         Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
-  }
-  HConstant* Evaluate([[maybe_unused]] HLongConstant* value,
-                      [[maybe_unused]] HLongConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for the (long, long) case.";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* value,
-                      [[maybe_unused]] HFloatConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* value,
-                      [[maybe_unused]] HDoubleConstant* distance) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
   }
 
   DECLARE_INSTRUCTION(Ror);
@@ -6132,14 +6030,6 @@ class HNot final : public HUnaryOperation {
   HConstant* Evaluate(HLongConstant* x) const override {
     return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue()), GetDexPc());
   }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
-  }
 
   DECLARE_INSTRUCTION(Not);
 
@@ -6165,18 +6055,6 @@ class HBooleanNot final : public HUnaryOperation {
 
   HConstant* Evaluate(HIntConstant* x) const override {
     return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()), GetDexPc());
-  }
-  HConstant* Evaluate([[maybe_unused]] HLongConstant* x) const override {
-    LOG(FATAL) << DebugName() << " is not defined for long values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
   }
 
   DECLARE_INSTRUCTION(BooleanNot);
