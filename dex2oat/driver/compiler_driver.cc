@@ -33,9 +33,9 @@
 #include "base/arena_allocator.h"
 #include "base/array_ref.h"
 #include "base/bit_vector.h"
-#include "base/enums.h"
 #include "base/hash_set.h"
 #include "base/logging.h"  // For VLOG
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "base/string_view_cpp20.h"
 #include "base/systrace.h"

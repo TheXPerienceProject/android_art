@@ -18,8 +18,8 @@
 #define ART_RUNTIME_MIRROR_ARRAY_H_
 
 #include "base/bit_utils.h"
-#include "base/enums.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "obj_ptr.h"
 #include "object.h"
 

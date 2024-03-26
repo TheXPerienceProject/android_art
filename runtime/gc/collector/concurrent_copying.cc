@@ -18,9 +18,9 @@
 
 #include "art_field-inl.h"
 #include "barrier.h"
-#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/histogram-inl.h"
+#include "base/pointer_size.h"
 #include "base/quasi_atomic.h"
 #include "base/stl_util.h"
 #include "base/systrace.h"

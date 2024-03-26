@@ -27,12 +27,12 @@
 #include <vector>
 
 #include "base/array_ref.h"
-#include "base/enums.h"
 #include "base/hash_map.h"
 #include "base/intrusive_forward_list.h"
 #include "base/locks.h"
 #include "base/macros.h"
 #include "base/mutex.h"
+#include "base/pointer_size.h"
 #include "dex/class_accessor.h"
 #include "dex/dex_file_types.h"
 #include "gc_root.h"

@@ -25,8 +25,8 @@
 #include "base/arena_allocator.h"
 #include "base/arena_object.h"
 #include "base/array_ref.h"
-#include "base/enums.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "managed_register.h"
 #include "offsets.h"
 

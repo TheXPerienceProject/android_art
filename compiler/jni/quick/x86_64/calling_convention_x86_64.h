@@ -17,8 +17,8 @@
 #ifndef ART_COMPILER_JNI_QUICK_X86_64_CALLING_CONVENTION_X86_64_H_
 #define ART_COMPILER_JNI_QUICK_X86_64_CALLING_CONVENTION_X86_64_H_
 
-#include "base/enums.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "jni/quick/calling_convention.h"
 
 namespace art HIDDEN {

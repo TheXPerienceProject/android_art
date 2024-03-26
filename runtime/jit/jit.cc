@@ -19,11 +19,11 @@
 #include <dlfcn.h>
 
 #include "art_method-inl.h"
-#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/memfd.h"
 #include "base/memory_tool.h"
+#include "base/pointer_size.h"
 #include "base/runtime_debug.h"
 #include "base/scoped_flock.h"
 #include "base/utils.h"
