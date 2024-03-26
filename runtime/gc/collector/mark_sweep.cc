@@ -23,11 +23,11 @@
 #include <vector>
 
 #include "base/bounded_fifo.h"
-#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/macros.h"
 #include "base/mutex-inl.h"
+#include "base/pointer_size.h"
 #include "base/systrace.h"
 #include "base/time_utils.h"
 #include "base/timing_logger.h"

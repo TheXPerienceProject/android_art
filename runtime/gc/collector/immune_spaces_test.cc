@@ -17,7 +17,7 @@
 #include <sys/mman.h>
 
 #include "base/common_art_test.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "base/utils.h"
 #include "gc/collector/immune_spaces.h"
 #include "gc/space/image_space.h"

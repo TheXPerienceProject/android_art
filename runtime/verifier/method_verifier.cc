@@ -23,11 +23,11 @@
 #include "art_field-inl.h"
 #include "art_method-inl.h"
 #include "base/aborting.h"
-#include "base/enums.h"
 #include "base/leb128.h"
 #include "base/indenter.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/mutex-inl.h"
+#include "base/pointer_size.h"
 #include "base/sdk_version.h"
 #include "base/stl_util.h"
 #include "base/systrace.h"

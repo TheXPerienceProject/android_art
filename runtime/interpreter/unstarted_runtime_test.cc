@@ -20,8 +20,8 @@
 #include <locale>
 
 #include "base/casts.h"
-#include "base/enums.h"
 #include "base/memory_tool.h"
+#include "base/pointer_size.h"
 #include "class_linker.h"
 #include "class_root-inl.h"
 #include "common_runtime_test.h"
