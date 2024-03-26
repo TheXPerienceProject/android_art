@@ -133,7 +133,11 @@ static constexpr bool kHostStaticBuildEnabled = false;
 #ifdef ART_PAGE_SIZE_AGNOSTIC
 inline ALWAYS_INLINE size_t GetPageSizeSlow() {
   static_assert(kPageSizeAgnostic, "The dynamic version is only for page size agnostic build");
+#ifdef __linux__
   static const size_t page_size = sysconf(_SC_PAGE_SIZE);
+#else
+  static const size_t page_size = 4096;
+#endif
   return page_size;
 }
 #else
