@@ -84,10 +84,6 @@ class VoidFunctor {
   inline void operator()([[maybe_unused]] A a, [[maybe_unused]] B b, [[maybe_unused]] C c) const {}
 };
 
-inline bool TestBitmap(size_t idx, const uint8_t* bitmap) {
-  return ((bitmap[idx / kBitsPerByte] >> (idx % kBitsPerByte)) & 0x01) != 0;
-}
-
 static inline const void* EntryPointToCodePointer(const void* entry_point) {
   uintptr_t code = reinterpret_cast<uintptr_t>(entry_point);
   // TODO: Make this Thumb2 specific. It is benign on other architectures as code is always at
@@ -128,18 +124,6 @@ bool IsKernelVersionAtLeast(int reqd_major, int reqd_minor);
 
 // On some old kernels, a cache operation may segfault.
 WARN_UNUSED bool CacheOperationsMaySegFault();
-
-// Return -1 if <, 0 if ==, 1 if >.
-template <typename T>
-inline static int32_t Compare(T lhs, T rhs) {
-  return (lhs < rhs) ? -1 : ((lhs == rhs) ? 0 : 1);
-}
-
-// Return -1 if < 0, 0 if == 0, 1 if > 0.
-template <typename T>
-inline static int32_t Signum(T opnd) {
-  return (opnd < 0) ? -1 : ((opnd == 0) ? 0 : 1);
-}
 
 template <typename Func, typename... Args>
 static inline void CheckedCall(const Func& function, const char* what, Args... args) {
