@@ -716,6 +716,32 @@ static std::string GetBootProfileFile(const std::string& profile) {
   return ReplaceFileExtension(profile, "bprof");
 }
 
+// Return whether the address is guaranteed to be backed by a file or is shared.
+// This information can be used to know whether MADV_DONTNEED will make
+// following accesses repopulate the memory or return zero.
+static bool IsAddressKnownBackedByFileOrShared(const void* addr) {
+  // We use the Linux pagemap interface for knowing if an address is backed
+  // by a file or is shared. See:
+  // https://www.kernel.org/doc/Documentation/vm/pagemap.txt
+  const size_t page_size = MemMap::GetPageSize();
+  uintptr_t vmstart = reinterpret_cast<uintptr_t>(AlignDown(addr, page_size));
+  off_t index = (vmstart / page_size) * sizeof(uint64_t);
+  android::base::unique_fd pagemap(open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC));
+  if (pagemap == -1) {
+    return false;
+  }
+  if (lseek(pagemap, index, SEEK_SET) != index) {
+    return false;
+  }
+  uint64_t flags;
+  if (read(pagemap, &flags, sizeof(uint64_t)) != sizeof(uint64_t)) {
+    return false;
+  }
+  // From https://www.kernel.org/doc/Documentation/vm/pagemap.txt:
+  //  * Bit  61    page is file-page or shared-anon (since 3.5)
+  return (flags & (1LL << 61)) != 0;
+}
+
 /**
  * A JIT task to run after all profile compilation is done.
  */
@@ -1534,6 +1560,25 @@ void Jit::PreZygoteFork() {
   thread_pool_->DeleteThreads();
 
   NativeDebugInfoPreFork();
+}
+
+// Returns the number of threads running.
+static int GetTaskCount() {
+  DIR* directory = opendir("/proc/self/task");
+  if (directory == nullptr) {
+    return -1;
+  }
+
+  uint32_t count = 0;
+  struct dirent* entry = nullptr;
+  while ((entry = readdir(directory)) != nullptr) {
+    if ((strcmp(entry->d_name, ".") == 0) || (strcmp(entry->d_name, "..") == 0)) {
+      continue;
+    }
+    ++count;
+  }
+  closedir(directory);
+  return count;
 }
 
 void Jit::PostZygoteFork() {
