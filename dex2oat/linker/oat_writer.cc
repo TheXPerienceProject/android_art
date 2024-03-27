@@ -27,12 +27,12 @@
 #include "art_method-inl.h"
 #include "base/allocator.h"
 #include "base/bit_vector-inl.h"
-#include "base/enums.h"
 #include "base/file_magic.h"
 #include "base/file_utils.h"
 #include "base/indenter.h"
 #include "base/logging.h"  // For VLOG
 #include "base/os.h"
+#include "base/pointer_size.h"
 #include "base/safe_map.h"
 #include "base/stl_util.h"
 #include "base/unix_file/fd_file.h"

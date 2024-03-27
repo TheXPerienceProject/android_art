@@ -19,9 +19,9 @@
 
 #include "interpreter_switch_impl.h"
 
-#include "base/enums.h"
 #include "base/globals.h"
 #include "base/memory_tool.h"
+#include "base/pointer_size.h"
 #include "base/quasi_atomic.h"
 #include "dex/dex_file_types.h"
 #include "dex/dex_instruction_list.h"

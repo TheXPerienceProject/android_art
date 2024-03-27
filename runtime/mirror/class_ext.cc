@@ -18,7 +18,7 @@
 
 #include "art_method-inl.h"
 #include "base/casts.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "base/utils.h"
 #include "class-alloc-inl.h"
 #include "class-inl.h"

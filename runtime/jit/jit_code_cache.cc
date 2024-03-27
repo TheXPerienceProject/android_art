@@ -22,12 +22,12 @@
 
 #include "arch/context.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
 #include "base/histogram-inl.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/membarrier.h"
 #include "base/memfd.h"
 #include "base/mem_map.h"
+#include "base/pointer_size.h"
 #include "base/quasi_atomic.h"
 #include "base/stl_util.h"
 #include "base/systrace.h"

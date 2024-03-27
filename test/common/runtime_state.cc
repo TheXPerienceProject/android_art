@@ -20,7 +20,7 @@
 
 #include "art_field.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "common_throws.h"
 #include "dex/dex_file-inl.h"
 #include "dex/dex_file_types.h"

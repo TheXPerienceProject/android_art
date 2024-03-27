@@ -25,8 +25,8 @@
 #include "array-inl.h"
 #include "art_field-inl.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
 #include "base/logging.h"  // For VLOG.
+#include "base/pointer_size.h"
 #include "base/sdk_version.h"
 #include "base/utils.h"
 #include "class-inl.h"

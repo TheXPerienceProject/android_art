@@ -41,11 +41,11 @@
 #include "arch/instruction_set_features.h"
 #include "art_method.h"
 #include "base/bit_vector.h"
-#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/logging.h"  // For VLOG_IS_ON.
 #include "base/mem_map.h"
 #include "base/os.h"
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "base/string_view_cpp20.h"
 #include "base/systrace.h"
