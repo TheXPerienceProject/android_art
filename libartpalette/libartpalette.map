@@ -51,3 +51,9 @@ LIBARTPALETTE_3 { # introduced=34
     # --- VERSION 03 API ---
     PaletteSetTaskProfiles; # apex
 } LIBARTPALETTE_2;
+
+LIBARTPALETTE_4 { # introduced=36
+  global:
+    # --- VERSION 04 API ---
+    PaletteDebugStoreGetString; # apex
+} LIBARTPALETTE_3;

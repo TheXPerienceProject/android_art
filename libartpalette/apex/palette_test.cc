@@ -21,6 +21,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cstring>
 #include <filesystem>
 
 #ifdef ART_TARGET_ANDROID
@@ -44,6 +45,14 @@ pid_t GetTid() {
 #ifdef ART_TARGET_ANDROID
 bool PaletteSetTaskProfilesIsSupported(palette_status_t res) {
   if (android::modules::sdklevel::IsAtLeastU()) {
+    return true;
+  }
+  EXPECT_EQ(PALETTE_STATUS_NOT_SUPPORTED, res)
+      << "Device API level: " << android_get_device_api_level();
+  return false;
+}
+bool PaletteDebugStoreIsSupported(palette_status_t res) {
+  if (android::modules::sdklevel::IsAtLeastV()) {
     return true;
   }
   EXPECT_EQ(PALETTE_STATUS_NOT_SUPPORTED, res)
@@ -163,6 +172,27 @@ TEST_F(PaletteClientTest, SetTaskProfilesCpp) {
     } else {
       EXPECT_EQ(PALETTE_STATUS_FAILED_CHECK_LOG, res);
     }
+  }
+#endif
+}
+
+TEST_F(PaletteClientTest, DebugStore) {
+#ifndef ART_TARGET_ANDROID
+  GTEST_SKIP() << "DebugStore is only supported on Android";
+#else
+  std::array<char, 20> result{};
+  palette_status_t pstatus = PaletteDebugStoreGetString(result.data(), result.size());
+  // Make sure the we are on a correct API level.
+  if (PaletteDebugStoreIsSupported(pstatus)) {
+    EXPECT_EQ(PALETTE_STATUS_OK, pstatus);
+
+    size_t len = strnlen(result.data(), result.size());
+    EXPECT_TRUE(len < result.size());
+
+    const char* start = "1,0,";
+    const char* end = "::";
+    EXPECT_TRUE(len > strlen(start) + strlen(end));
+    EXPECT_EQ(strncmp(result.data() + len - strlen(end), end, strlen(end)), 0);
   }
 #endif
 }
