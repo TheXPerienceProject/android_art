@@ -493,11 +493,10 @@ void CodeGenerator::FinishCriticalNativeFrameSetup(size_t out_frame_size,
   GetMoveResolver()->EmitNativeCode(parallel_move);
 }
 
-const char* CodeGenerator::GetCriticalNativeShorty(HInvokeStaticOrDirect* invoke,
-                                                   uint32_t* shorty_len) {
+std::string_view CodeGenerator::GetCriticalNativeShorty(HInvokeStaticOrDirect* invoke) {
   ScopedObjectAccess soa(Thread::Current());
   DCHECK(invoke->GetResolvedMethod()->IsCriticalNative());
-  return invoke->GetResolvedMethod()->GetShorty(shorty_len);
+  return invoke->GetResolvedMethod()->GetShortyView();
 }
 
 void CodeGenerator::GenerateInvokeStaticOrDirectRuntimeCall(

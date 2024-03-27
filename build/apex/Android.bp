@@ -253,6 +253,11 @@ apex_defaults {
 apex_defaults {
     name: "com.android.art-devel-defaults",
     defaults: ["com.android.art-defaults"],
+    // Use a different manifest for the Debug & Testing ART APEXes (which have
+    // no prebuilts and are thus always built from sources), with a high version
+    // number that ensures that these packages can be installed on virtually all
+    // Android dessert releases.
+    manifest: "manifest-art-debug.json",
     native_shared_libs: art_runtime_debug_native_shared_libs +
         libcore_debug_native_shared_libs,
     jni_libs: [

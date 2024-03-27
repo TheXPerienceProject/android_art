@@ -485,8 +485,6 @@ const uint8_t* OatHeader::GetOatAddress(StubType type) const {
       return static_cast<const uint8_t*>(GetQuickToInterpreterBridge());
     case StubType::kNterpTrampoline:
       return static_cast<const uint8_t*>(GetNterpTrampoline());
-    default:
-      UNREACHABLE();
   }
 }
 

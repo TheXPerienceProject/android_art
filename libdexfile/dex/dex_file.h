@@ -500,6 +500,7 @@ class DexFile {
 
   // Returns the shorty of a method by its index.
   const char* GetMethodShorty(uint32_t idx) const;
+  std::string_view GetMethodShortyView(uint32_t idx) const;
 
   // Returns the shorty of a method id.
   const char* GetMethodShorty(const dex::MethodId& method_id) const;

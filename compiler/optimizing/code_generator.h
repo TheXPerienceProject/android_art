@@ -597,7 +597,7 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
 
   template <typename CriticalNativeCallingConventionVisitor,
             size_t kNativeStackAlignment,
-            size_t GetCriticalNativeDirectCallFrameSize(const char* shorty, uint32_t shorty_len)>
+            size_t GetCriticalNativeDirectCallFrameSize(std::string_view shorty)>
   size_t PrepareCriticalNativeCall(HInvokeStaticOrDirect* invoke) {
       DCHECK(!invoke->GetLocations()->Intrinsified());
       CriticalNativeCallingConventionVisitor calling_convention_visitor(
@@ -607,9 +607,8 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
       size_t out_frame_size =
           RoundUp(calling_convention_visitor.GetStackOffset(), kNativeStackAlignment);
       if (kIsDebugBuild) {
-        uint32_t shorty_len;
-        const char* shorty = GetCriticalNativeShorty(invoke, &shorty_len);
-        CHECK_EQ(GetCriticalNativeDirectCallFrameSize(shorty, shorty_len), out_frame_size);
+        std::string_view shorty = GetCriticalNativeShorty(invoke);
+        CHECK_EQ(GetCriticalNativeDirectCallFrameSize(shorty), out_frame_size);
       }
       if (out_frame_size != 0u) {
         FinishCriticalNativeFrameSetup(out_frame_size, &parallel_move);
@@ -882,7 +881,7 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
 
   void FinishCriticalNativeFrameSetup(size_t out_frame_size, /*inout*/HParallelMove* parallel_move);
 
-  static const char* GetCriticalNativeShorty(HInvokeStaticOrDirect* invoke, uint32_t* shorty_len);
+  static std::string_view GetCriticalNativeShorty(HInvokeStaticOrDirect* invoke);
 
   OptimizingCompilerStats* stats_;
 

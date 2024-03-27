@@ -54,7 +54,12 @@ Options ParseOptions(int argc, char** argv) {
 int main([[maybe_unused]] int argc, char* argv[]) {
   android::base::InitLogging(argv);
 
-  auto artd = ndk::SharedRefBase::make<art::artd::Artd>(art::artd::ParseOptions(argc, argv));
+  art::artd::Options options = art::artd::ParseOptions(argc, argv);
+  if (options.is_pre_reboot) {
+    android::base::SetDefaultTag("artd_pre_reboot");
+  }
+
+  auto artd = ndk::SharedRefBase::make<art::artd::Artd>(std::move(options));
 
   LOG(INFO) << "Starting artd";
 
