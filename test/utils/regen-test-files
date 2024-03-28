@@ -229,6 +229,8 @@ postsubmit_only_tests = frozenset([
 
 known_failing_on_hwasan_tests = frozenset([
   "CtsJdwpTestCases", # times out
+  # apexd fails to unmount com.android.runtime on ASan builds.
+  "art_standalone_dexopt_chroot_setup_tests",
 ])
 
 # ART gtests that do not need root access to the device.
