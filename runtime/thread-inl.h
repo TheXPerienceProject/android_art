@@ -279,7 +279,21 @@ inline void Thread::CheckActiveSuspendBarriers() {
   }
 }
 
+inline void Thread::CheckBarrierInactive(WrappedSuspend1Barrier* suspend1_barrier) {
+  for (WrappedSuspend1Barrier* w = tlsPtr_.active_suspend1_barriers; w != nullptr; w = w->next_) {
+    CHECK_EQ(w->magic_, WrappedSuspend1Barrier::kMagic)
+        << "first = " << tlsPtr_.active_suspend1_barriers << " current = " << w
+        << " next = " << w->next_;
+    CHECK_NE(w, suspend1_barrier);
+  }
+}
+
 inline void Thread::AddSuspend1Barrier(WrappedSuspend1Barrier* suspend1_barrier) {
+  if (tlsPtr_.active_suspend1_barriers != nullptr) {
+    CHECK_EQ(tlsPtr_.active_suspend1_barriers->magic_, WrappedSuspend1Barrier::kMagic)
+        << "first = " << tlsPtr_.active_suspend1_barriers;
+  }
+  CHECK_EQ(suspend1_barrier->magic_, WrappedSuspend1Barrier::kMagic);
   suspend1_barrier->next_ = tlsPtr_.active_suspend1_barriers;
   tlsPtr_.active_suspend1_barriers = suspend1_barrier;
 }

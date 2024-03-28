@@ -4070,9 +4070,6 @@ void MarkCompact::ScanDirtyObjects(bool paused, uint8_t minimum_age) {
     case space::kGcRetentionPolicyAlwaysCollect:
       name = paused ? "(Paused)ScanGrayAllocSpaceObjects" : "ScanGrayAllocSpaceObjects";
       break;
-    default:
-      LOG(FATAL) << "Unreachable";
-      UNREACHABLE();
     }
     TimingLogger::ScopedTiming t(name, GetTimings());
     card_table->Scan</*kClearCard*/ false>(

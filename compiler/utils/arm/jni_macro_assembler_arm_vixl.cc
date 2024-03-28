@@ -1035,9 +1035,6 @@ void ArmVIXLJNIMacroAssembler::TestGcMarking(JNIMacroLabel* label, JNIMacroUnary
     case JNIMacroUnaryCondition::kNotZero:
       ___ CompareAndBranchIfNonZero(test_reg, ArmVIXLJNIMacroLabel::Cast(label)->AsArm());
       break;
-    default:
-      LOG(FATAL) << "Not implemented unary condition: " << static_cast<int>(cond);
-      UNREACHABLE();
   }
 }
 
@@ -1058,9 +1055,6 @@ void ArmVIXLJNIMacroAssembler::TestMarkBit(ManagedRegister mref,
     case JNIMacroUnaryCondition::kNotZero:
       ___ B(ne, ArmVIXLJNIMacroLabel::Cast(label)->AsArm());
       break;
-    default:
-      LOG(FATAL) << "Not implemented unary condition: " << static_cast<int>(cond);
-      UNREACHABLE();
   }
 }
 

@@ -23,12 +23,10 @@
 #include "aidl/com/android/server/art/BnArtd.h"
 #include "android-base/errors.h"
 #include "android-base/result.h"
-#include "android-base/strings.h"
 #include "arch/instruction_set.h"
 #include "base/file_utils.h"
 #include "base/macros.h"
 #include "file_utils.h"
-#include "fstab/fstab.h"
 #include "oat/oat_file_assistant.h"
 #include "runtime_image.h"
 #include "service.h"
@@ -46,10 +44,6 @@ using ::aidl::com::android::server::art::RuntimeArtifactsPath;
 using ::aidl::com::android::server::art::VdexPath;
 using ::android::base::Error;
 using ::android::base::Result;
-using ::android::base::StartsWith;
-using ::android::fs_mgr::Fstab;
-using ::android::fs_mgr::FstabEntry;
-using ::android::fs_mgr::ReadFstabFromProcMounts;
 using ::art::service::ValidateDexPath;
 using ::art::service::ValidatePathElement;
 using ::art::service::ValidatePathElementSubstring;
@@ -278,35 +272,6 @@ Result<std::string> BuildProfileOrDmPath(const ProfilePath& profile_path) {
 Result<std::string> BuildVdexPath(const VdexPath& vdex_path) {
   DCHECK(vdex_path.getTag() == VdexPath::artifactsPath);
   return OatPathToVdexPath(OR_RETURN(BuildOatPath(vdex_path.get<VdexPath::artifactsPath>())));
-}
-
-bool PathStartsWith(std::string_view path, std::string_view prefix) {
-  CHECK(!prefix.empty() && !path.empty() && prefix[0] == '/' && path[0] == '/')
-      << ART_FORMAT("path={}, prefix={}", path, prefix);
-  android::base::ConsumeSuffix(&prefix, "/");
-  return StartsWith(path, prefix) &&
-         (path.length() == prefix.length() || path[prefix.length()] == '/');
-}
-
-Result<std::vector<FstabEntry>> GetProcMountsEntriesForPath(const std::string& path) {
-  Fstab fstab;
-  if (!ReadFstabFromProcMounts(&fstab)) {
-    return Errorf("Failed to read fstab from /proc/mounts");
-  }
-  std::vector<FstabEntry> entries;
-  for (FstabEntry& entry : fstab) {
-    // Ignore swap areas as a swap area doesn't have a meaningful `mount_point` (a.k.a., `fs_file`)
-    // field, according to fstab(5). In addition, ignore any other entries whose mount points are
-    // not absolute paths, just in case there are other fs types that also have an meaningless mount
-    // point.
-    if (entry.fs_type == "swap" || !StartsWith(entry.mount_point, '/')) {
-      continue;
-    }
-    if (PathStartsWith(path, entry.mount_point)) {
-      entries.push_back(std::move(entry));
-    }
-  }
-  return entries;
 }
 
 void TestOnlySetListRootDir(std::string_view root_dir) { gListRootDir = root_dir; }

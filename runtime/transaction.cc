@@ -582,9 +582,6 @@ void Transaction::ObjectLog::UndoFieldWrite(mirror::Object* obj,
             reinterpret_cast<mirror::Object*>(field_value.value));
       }
       break;
-    default:
-      LOG(FATAL) << "Unknown value kind " << static_cast<int>(field_value.kind);
-      UNREACHABLE();
   }
 }
 

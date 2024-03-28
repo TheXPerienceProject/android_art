@@ -261,5 +261,27 @@ TEST_F(ArtExecTest, Env) {
   EXPECT_THAT(Split(envs, "\n"), Contains("FOO=BAR"));
 }
 
+TEST_F(ArtExecTest, ProcessNameSuffix) {
+  std::string filename = "/data/local/tmp/art-exec-test-XXXXXX";
+  ScratchFile scratch_file(new File(mkstemp(filename.data()), filename, /*check_usage=*/false));
+  ASSERT_GE(scratch_file.GetFd(), 0);
+
+  std::vector<std::string> args{art_exec_bin_,
+                                "--process-name-suffix=my suffix",
+                                kEmptyLdLibraryPath,
+                                "--",
+                                GetBin("toybox"),
+                                "cp",
+                                "/proc/self/cmdline",
+                                filename};
+
+  ScopedExecAndWait(args);
+
+  std::string cmdline;
+  ASSERT_TRUE(android::base::ReadFileToString(filename, &cmdline));
+
+  EXPECT_THAT(cmdline, HasSubstr("toybox (my suffix)\0"));
+}
+
 }  // namespace
 }  // namespace art
