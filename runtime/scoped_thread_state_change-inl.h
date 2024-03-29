@@ -48,7 +48,7 @@ inline ScopedThreadStateChange::ScopedThreadStateChange(Thread* self, ThreadStat
       } else if (old_thread_state_ == ThreadState::kRunnable) {
         self_->TransitionFromRunnableToSuspended(new_thread_state);
       } else {
-        // A suspended transition to another effectively suspended transition, ok to use Unsafe.
+        // A transition between suspended states.
         self_->SetState(new_thread_state);
       }
     }
@@ -65,7 +65,7 @@ inline ScopedThreadStateChange::~ScopedThreadStateChange() {
       } else if (thread_state_ == ThreadState::kRunnable) {
         self_->TransitionFromRunnableToSuspended(old_thread_state_);
       } else {
-        // A suspended transition to another effectively suspended transition, ok to use Unsafe.
+        // A transition between suspended states.
         self_->SetState(old_thread_state_);
       }
     }

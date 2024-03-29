@@ -673,9 +673,15 @@ void GraphChecker::VisitInstruction(HInstruction* instruction) {
     }
   }
 
-  if (instruction->NeedsEnvironment() && !instruction->HasEnvironment()) {
-    AddError(StringPrintf("Instruction %s:%d in block %d requires an environment "
-                          "but does not have one.",
+  if (instruction->NeedsEnvironment() != instruction->HasEnvironment()) {
+    const char* str;
+    if (instruction->NeedsEnvironment()) {
+      str = "Instruction %s:%d in block %d requires an environment but does not have one.";
+    } else {
+      str = "Instruction %s:%d in block %d doesn't require an environment but it has one.";
+    }
+
+    AddError(StringPrintf(str,
                           instruction->DebugName(),
                           instruction->GetId(),
                           current_block_->GetBlockId()));

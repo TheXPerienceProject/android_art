@@ -75,4 +75,14 @@ public class Debouncer {
         mCurrentTask = mExecutor.schedule(
                 () -> runTask(command, executor), mIntervalMs, TimeUnit.MILLISECONDS);
     }
+
+    synchronized public void cancel() {
+        if (mCurrentTask != null) {
+            mCurrentTask.cancel(false /* mayInterruptIfRunning */);
+        }
+        if (mExecutor != null) {
+            mExecutor.shutdown();
+            mExecutor = null;
+        }
+    }
 }

@@ -144,7 +144,7 @@ class PACKED(8) ImageHeader {
                      uint32_t boot_image_size,
                      uint32_t boot_image_component_count,
                      uint32_t boot_image_checksum,
-                     uint32_t pointer_size);
+                     PointerSize pointer_size);
 
   EXPORT bool IsValid() const;
   EXPORT const char* GetMagic() const;
@@ -200,10 +200,6 @@ class PACKED(8) ImageHeader {
   }
 
   EXPORT PointerSize GetPointerSize() const;
-
-  uint32_t GetPointerSizeUnchecked() const {
-    return pointer_size_;
-  }
 
   static std::string GetOatLocationFromImageLocation(const std::string& image) {
     return GetLocationFromImageLocation(image, "oat");
@@ -263,9 +259,10 @@ class PACKED(8) ImageHeader {
     kSectionObjects,
     kSectionArtFields,
     kSectionArtMethods,
-    kSectionRuntimeMethods,
     kSectionImTables,
     kSectionIMTConflictTables,
+    kSectionRuntimeMethods,
+    kSectionJniStubMethods,
     kSectionInternedStrings,
     kSectionClassTable,
     kSectionStringReferenceOffsets,
@@ -335,6 +332,10 @@ class PACKED(8) ImageHeader {
     return GetImageSection(kSectionMetadata);
   }
 
+  const ImageSection& GetJniStubMethodsSection() const {
+    return GetImageSection(kSectionJniStubMethods);
+  }
+
   const ImageSection& GetImageBitmapSection() const {
     return GetImageSection(kSectionImageBitmap);
   }
@@ -402,6 +403,11 @@ class PACKED(8) ImageHeader {
   void VisitPackedImtConflictTables(const Visitor& visitor,
                                     uint8_t* base,
                                     PointerSize pointer_size) const;
+
+  template <bool kUpdate = false, typename Visitor>
+  void VisitJniStubMethods(const Visitor& visitor,
+                           uint8_t* base,
+                           PointerSize pointer_size) const REQUIRES_SHARED(Locks::mutator_lock_);
 
   IterationRange<const Block*> GetBlocks() const {
     return GetBlocks(GetImageBegin());
@@ -502,7 +508,7 @@ class PACKED(8) ImageHeader {
   uint32_t image_roots_ = 0u;
 
   // Pointer size, this affects the size of the ArtMethods.
-  uint32_t pointer_size_ = 0u;
+  PointerSize pointer_size_;
 
   // Image section sizes/offsets correspond to the uncompressed form.
   ImageSection sections_[kSectionCount];

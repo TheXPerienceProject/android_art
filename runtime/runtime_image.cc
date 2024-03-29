@@ -164,7 +164,7 @@ class RuntimeImageHelper {
         heap->GetBootImagesSize(),
         boot_image_components,
         boot_image_checksums,
-        static_cast<uint32_t>(kRuntimePointerSize));
+        kRuntimePointerSize);
 
     // Data size includes everything except the bitmap and the header.
     header_.data_size_ = sections_end - sizeof(ImageHeader);
@@ -955,7 +955,16 @@ class RuntimeImageHelper {
       const OatFile* oat_file = image_spaces[0]->GetOatFile();
       DCHECK(oat_file != nullptr);
       const OatHeader& header = oat_file->GetOatHeader();
-      copy->SetEntryPointFromQuickCompiledCode(header.GetOatAddress(stub));
+      const void* entrypoint = header.GetOatAddress(stub);
+      if (method->IsNative() && (is_class_initialized || !method->NeedsClinitCheckBeforeCall())) {
+        // Use boot JNI stub if found.
+        ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
+        const void* boot_jni_stub = class_linker->FindBootJniStub(method);
+        if (boot_jni_stub != nullptr) {
+          entrypoint = boot_jni_stub;
+        }
+      }
+      copy->SetEntryPointFromQuickCompiledCode(entrypoint);
 
       if (method->IsNative()) {
         StubType stub_type = method->IsCriticalNative()

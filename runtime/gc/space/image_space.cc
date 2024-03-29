@@ -1125,7 +1125,10 @@ class ImageSpace::Loader {
    public:
     ALWAYS_INLINE bool InSource(uintptr_t) const { return false; }
     ALWAYS_INLINE bool InDest(uintptr_t) const { return false; }
-    ALWAYS_INLINE uintptr_t ToDest(uintptr_t) const { UNREACHABLE(); }
+    ALWAYS_INLINE uintptr_t ToDest(uintptr_t) const {
+      LOG(FATAL) << "Unreachable";
+      UNREACHABLE();
+    }
   };
 
   template <typename Range0, typename Range1 = EmptyRange, typename Range2 = EmptyRange>
@@ -2615,6 +2618,9 @@ class ImageSpace::BootImageLoader {
       };
       image_header.VisitPackedImTables(method_table_visitor, space->Begin(), kPointerSize);
       image_header.VisitPackedImtConflictTables(method_table_visitor, space->Begin(), kPointerSize);
+      image_header.VisitJniStubMethods</*kUpdate=*/ true>(method_table_visitor,
+                                                          space->Begin(),
+                                                          kPointerSize);
 
       // Patch the intern table.
       if (image_header.GetInternedStringsSection().Size() != 0u) {

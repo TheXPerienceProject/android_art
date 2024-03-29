@@ -74,18 +74,38 @@ cc_defaults {
     },
 }
 
-cc_library_headers {
-    name: "odrefresh_headers",
+cc_defaults {
+    name: "odrefresh_headers_defaults",
     defaults: ["art_defaults"],
     export_include_dirs: ["include"],
     host_supported: true,
     stl: "none",
     system_shared_libs: [],
     sdk_version: "minimum", // The minimum sdk version required by users of this module.
+}
+
+cc_library_headers {
+    name: "odrefresh_headers",
+    defaults: ["odrefresh_headers_defaults"],
     apex_available: [
         "//apex_available:platform", // For odsign.
     ],
     visibility: ["//visibility:public"],
+}
+
+// Same header as above, but for use within the ART module. This is separated
+// from above so that the build system doesn't incorrectly recognize it as a
+// dependency of the ART module exported by the platform.
+cc_library_headers {
+    name: "odrefresh_headers_art",
+    defaults: ["odrefresh_headers_defaults"],
+    apex_available: [
+        "com.android.art",
+        "com.android.art.debug",
+    ],
+    visibility: [
+        "//art:__subpackages__",
+    ],
 }
 
 gensrcs {
