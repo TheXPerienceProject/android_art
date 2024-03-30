@@ -865,8 +865,13 @@ bool ClassLinker::InitWithoutImage(std::vector<std::unique_ptr<const DexFile>> b
   }
 
   // Object, String, ClassExt and DexCache need to be rerun through FindSystemClass to finish init
+  // We also need to immediately clear the finalizable flag for Object so that other classes are
+  // not erroneously marked as finalizable. (Object defines an empty finalizer, so that other
+  // classes can override it but it is not itself finalizable.)
   mirror::Class::SetStatus(java_lang_Object, ClassStatus::kNotReady, self);
   CheckSystemClass(self, java_lang_Object, "Ljava/lang/Object;");
+  CHECK(java_lang_Object->IsFinalizable());
+  java_lang_Object->ClearFinalizable();
   CHECK_EQ(java_lang_Object->GetObjectSize(), mirror::Object::InstanceSize());
   mirror::Class::SetStatus(java_lang_String, ClassStatus::kNotReady, self);
   CheckSystemClass(self, java_lang_String, "Ljava/lang/String;");
@@ -913,6 +918,14 @@ bool ClassLinker::InitWithoutImage(std::vector<std::unique_ptr<const DexFile>> b
 
   CHECK_EQ(object_array_string.Get(),
            FindSystemClass(self, GetClassRootDescriptor(ClassRoot::kJavaLangStringArrayClass)));
+
+  // The Enum class declares a "final" finalize() method to prevent subclasses from introducing
+  // a finalizer but it is not itself consedered finalizable. Load the Enum class now and clear
+  // the finalizable flag to prevent subclasses from being marked as finalizable.
+  CHECK_EQ(LookupClass(self, "Ljava/lang/Enum;", /*class_loader=*/ nullptr), nullptr);
+  Handle<mirror::Class> java_lang_Enum = hs.NewHandle(FindSystemClass(self, "Ljava/lang/Enum;"));
+  CHECK(java_lang_Enum->IsFinalizable());
+  java_lang_Enum->ClearFinalizable();
 
   // End of special init trickery, all subsequent classes may be loaded via FindSystemClass.
 
@@ -4007,24 +4020,11 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
            memcmp(ascii_name, method_name, length) == 0;
   };
   if (UNLIKELY(has_ascii_name("finalize", sizeof("finalize") - 1u))) {
-    // Set finalizable flag on declaring class.
+    // Set finalizable flag on declaring class if the method has the right signature.
+    // When initializing without a boot image, `Object` and `Enum` shall have the finalizable
+    // flag cleared immediately after loading these classes, see  `InitWithoutImage()`.
     if (shorty == "V") {
-      // Void return type.
-      if (klass->GetClassLoader() != nullptr) {  // All non-boot finalizer methods are flagged.
-        klass->SetFinalizable();
-      } else {
-        std::string_view klass_descriptor =
-            dex_file.GetTypeDescriptorView(dex_file.GetTypeId(klass->GetDexTypeIndex()));
-        // The Enum class declares a "final" finalize() method to prevent subclasses from
-        // introducing a finalizer. We don't want to set the finalizable flag for Enum or its
-        // subclasses, so we exclude it here.
-        // We also want to avoid setting the flag on Object, where we know that finalize() is
-        // empty.
-        if (klass_descriptor != "Ljava/lang/Object;" &&
-            klass_descriptor != "Ljava/lang/Enum;") {
-          klass->SetFinalizable();
-        }
-      }
+      klass->SetFinalizable();
     }
   } else if (method_name[0] == '<') {
     // Fix broken access flags for initializers. Bug 11157540.
