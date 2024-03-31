@@ -136,16 +136,13 @@ class OdrConfig final {
   std::string standalone_system_server_jars_;
   bool compilation_os_mode_ = false;
   bool minimal_ = false;
+  bool only_boot_images_ = false;
 
   // The current values of system properties listed in `kSystemProperties`.
   std::unordered_map<std::string, std::string> system_properties_;
 
   // A helper for reading from `system_properties_`.
   OdrSystemProperties odr_system_properties_;
-
-  // Staging directory for artifacts. The directory must exist and will be automatically removed
-  // after compilation. If empty, use the default directory.
-  std::string staging_dir_;
 
  public:
   explicit OdrConfig(const char* program_name)
@@ -232,11 +229,9 @@ class OdrConfig final {
   const std::string& GetSystemServerCompilerFilter() const {
     return system_server_compiler_filter_;
   }
-  const std::string& GetStagingDir() const {
-    return staging_dir_;
-  }
   bool GetCompilationOsMode() const { return compilation_os_mode_; }
   bool GetMinimal() const { return minimal_; }
+  bool GetOnlyBootImages() const { return only_boot_images_; }
   const OdrSystemProperties& GetSystemProperties() const { return odr_system_properties_; }
 
   void SetApexInfoListFile(const std::string& file_path) { apex_info_list_file_ = file_path; }
@@ -276,10 +271,6 @@ class OdrConfig final {
 
   void SetBootClasspath(const std::string& classpath) { boot_classpath_ = classpath; }
 
-  void SetStagingDir(const std::string& staging_dir) {
-    staging_dir_ = staging_dir;
-  }
-
   const std::string& GetStandaloneSystemServerJars() const {
     return standalone_system_server_jars_;
   }
@@ -291,6 +282,8 @@ class OdrConfig final {
   void SetCompilationOsMode(bool value) { compilation_os_mode_ = value; }
 
   void SetMinimal(bool value) { minimal_ = value; }
+
+  void SetOnlyBootImages(bool value) { only_boot_images_ = value; }
 
   std::unordered_map<std::string, std::string>* MutableSystemProperties() {
     return &system_properties_;

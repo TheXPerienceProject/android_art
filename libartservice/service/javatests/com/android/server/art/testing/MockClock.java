@@ -80,7 +80,7 @@ public class MockClock {
                 Pair<RunnableScheduledFuture<?>, Long> pair = tasks.peek();
                 RunnableScheduledFuture<?> task = pair.first;
                 long scheduledTimeMs = pair.second;
-                if (getCurrentTimeMs() >= scheduledTimeMs) {
+                if (getCurrentTimeMs() >= scheduledTimeMs || task.isCancelled()) {
                     if (!task.isDone() && !task.isCancelled()) {
                         task.run();
                     }

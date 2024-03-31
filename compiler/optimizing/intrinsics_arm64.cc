@@ -56,6 +56,7 @@ using helpers::CPURegisterFrom;
 using helpers::DRegisterFrom;
 using helpers::HeapOperand;
 using helpers::LocationFrom;
+using helpers::InputCPURegisterAt;
 using helpers::InputCPURegisterOrZeroRegAt;
 using helpers::OperandFrom;
 using helpers::RegisterFrom;
@@ -5423,10 +5424,13 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
                                           bool byte_swap = false) {
   uint32_t arg_index = invoke->GetNumberOfArguments() - 1;
   DataType::Type value_type = GetDataTypeFromShorty(invoke, arg_index);
+  bool is_fp = DataType::IsFloatingPointType(value_type);
 
   MacroAssembler* masm = codegen->GetVIXLAssembler();
   LocationSummary* locations = invoke->GetLocations();
-  CPURegister arg = InputCPURegisterOrZeroRegAt(invoke, arg_index);
+  CPURegister arg = (is_fp && get_and_update_op == GetAndUpdateOp::kAdd)
+      ? InputCPURegisterAt(invoke, arg_index)
+      : InputCPURegisterOrZeroRegAt(invoke, arg_index);
   CPURegister out = helpers::OutputCPURegister(invoke);
 
   VarHandleTarget target = GetVarHandleTarget(invoke);
@@ -5458,7 +5462,6 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
   __ Add(tmp_ptr, target.object.X(), target.offset.X());
 
   // The load/store type is never floating point.
-  bool is_fp = DataType::IsFloatingPointType(value_type);
   DataType::Type load_store_type = is_fp
       ? ((value_type == DataType::Type::kFloat32) ? DataType::Type::kInt32 : DataType::Type::kInt64)
       : value_type;
@@ -5476,7 +5479,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
     // For floating point GetAndSet, do the GenerateGetAndUpdate() with core registers,
     // rather than moving between core and FP registers in the loop.
     arg = MoveToTempIfFpRegister(arg, value_type, masm, &temps);
-    if (DataType::IsFloatingPointType(value_type) && !arg.IsZero()) {
+    if (is_fp && !arg.IsZero()) {
       // We need a temporary register but we have already used a scratch register for
       // the new value unless it is zero bit pattern (+0.0f or +0.0) and need another one
       // in GenerateGetAndUpdate(). We have allocated a normal temporary to handle that.

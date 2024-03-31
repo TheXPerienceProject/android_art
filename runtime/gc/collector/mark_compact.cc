@@ -3578,6 +3578,7 @@ void MarkCompact::ConcurrentlyProcessLinearAllocPage(uint8_t* fault_page, bool i
           // The page is processed but not mapped. We should map it.
           break;
         case PageState::kMutatorProcessing:
+          LOG(FATAL) << "Unreachable";
           UNREACHABLE();
         case PageState::kProcessingAndMapping:
         case PageState::kProcessedAndMapping:

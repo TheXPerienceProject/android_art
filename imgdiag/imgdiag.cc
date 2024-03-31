@@ -394,11 +394,13 @@ class ReferenceFieldVisitor {
   [[noreturn]] void VisitRootIfNonNull(
       [[maybe_unused]] mirror::CompressedReference<mirror::Object>* root) const
       REQUIRES_SHARED(Locks::mutator_lock_) {
+    LOG(FATAL) << "Unreachable";
     UNREACHABLE();
   }
 
   [[noreturn]] void VisitRoot([[maybe_unused]] mirror::CompressedReference<mirror::Object>* root)
       const REQUIRES_SHARED(Locks::mutator_lock_) {
+    LOG(FATAL) << "Unreachable";
     UNREACHABLE();
   }
 

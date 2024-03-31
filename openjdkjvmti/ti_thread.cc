@@ -489,6 +489,7 @@ static jint GetJvmtiThreadStateFromInternal(const InternalThreadState& state) {
     case art::ThreadState::kObsoleteRunnable:  // Obsolete value.
     case art::ThreadState::kStarting:
     case art::ThreadState::kTerminated:
+    case art::ThreadState::kInvalidState:
       // We only call this if we are alive so we shouldn't see either of these states.
       LOG(FATAL) << "Should not be in state " << internal_thread_state;
       UNREACHABLE();
@@ -541,7 +542,8 @@ static jint GetJavaStateFromInternal(const InternalThreadState& state) {
       return JVMTI_JAVA_LANG_THREAD_STATE_WAITING;
 
     case art::ThreadState::kObsoleteRunnable:
-      break;  // Obsolete value.
+    case art::ThreadState::kInvalidState:
+      break;  // Obsolete or invalid value.
   }
   LOG(FATAL) << "Unreachable";
   UNREACHABLE();
@@ -924,7 +926,6 @@ jvmtiError ThreadUtil::SuspendOther(art::Thread* self,
     }
     // We timed out. Just go around and try again.
   } while (true);
-  UNREACHABLE();
 }
 
 jvmtiError ThreadUtil::SuspendSelf(art::Thread* self) {
