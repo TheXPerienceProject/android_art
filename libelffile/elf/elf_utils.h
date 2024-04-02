@@ -64,9 +64,6 @@ struct ElfTypes64 {
 #define EF_ARM_EABI_VER5 0x05000000
 
 #define EI_ABIVERSION 8
-#if !defined(STV_DEFAULT)
-#define STV_DEFAULT 0
-#endif
 
 #ifndef EF_RISCV_RVC
 #define EF_RISCV_RVC 0x1
