@@ -60,11 +60,7 @@ struct ElfTypes64 {
 #define ELF_ST_BIND(x) ((x) >> 4)
 #define ELF_ST_TYPE(x) ((x) & 0xf)
 
-// Architecture dependent flags for the ELF header.
-#define EF_ARM_EABI_VER5 0x05000000
-
-#define EI_ABIVERSION 8
-
+// Missing from musl (https://www.openwall.com/lists/musl/2024/03/21/10).
 #ifndef EF_RISCV_RVC
 #define EF_RISCV_RVC 0x1
 #define EF_RISCV_FLOAT_ABI_DOUBLE 0x4
