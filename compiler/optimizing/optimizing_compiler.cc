@@ -535,6 +535,7 @@ bool OptimizingCompiler::RunArchOptimizations(HGraph* graph,
 #if defined(ART_ENABLE_CODEGEN_riscv64)
     case InstructionSet::kRiscv64: {
       OptimizationDef riscv64_optimizations[] = {
+          OptDef(OptimizationPass::kInstructionSimplifierRiscv64),
           OptDef(OptimizationPass::kSideEffectsAnalysis),
           OptDef(OptimizationPass::kGlobalValueNumbering, "GVN$after_arch"),
           OptDef(OptimizationPass::kCriticalNativeAbiFixupRiscv64)
