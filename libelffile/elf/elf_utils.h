@@ -57,8 +57,13 @@ struct ElfTypes64 {
   using Dyn = Elf64_Dyn;
 };
 
-#define ELF_ST_BIND(x) ((x) >> 4)
-#define ELF_ST_TYPE(x) ((x) & 0xf)
+// Only bionic has ELF class generic macros; glibc/musl require you to specify
+// ELF32 or ELF64, even though they're the same, and that makes call sites look
+// misleadingly class-specific.
+#ifndef __BIONIC__
+#define ELF_ST_BIND(x) ELF64_ST_BIND(x)
+#define ELF_ST_TYPE(x) ELF64_ST_TYPE(x)
+#endif
 
 // Missing from musl (https://www.openwall.com/lists/musl/2024/03/21/10).
 #ifndef EF_RISCV_RVC
