@@ -590,7 +590,6 @@ NO_INLINE  // Avoid increasing caller's frame size by large stack-allocated obje
 static void AllocateRegisters(HGraph* graph,
                               CodeGenerator* codegen,
                               PassObserver* pass_observer,
-                              RegisterAllocator::Strategy strategy,
                               OptimizingCompilerStats* stats) {
   {
     PassScope scope(PrepareForRegisterAllocation::kPrepareForRegisterAllocationPassName,
@@ -608,7 +607,7 @@ static void AllocateRegisters(HGraph* graph,
   {
     PassScope scope(RegisterAllocator::kRegisterAllocatorPassName, pass_observer);
     std::unique_ptr<RegisterAllocator> register_allocator =
-        RegisterAllocator::Create(&local_allocator, codegen, liveness, strategy);
+        RegisterAllocator::Create(&local_allocator, codegen, liveness);
     register_allocator->AllocateRegisters();
   }
 }
@@ -933,12 +932,9 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
     }
   }
 
-  RegisterAllocator::Strategy regalloc_strategy =
-    compiler_options.GetRegisterAllocationStrategy();
   AllocateRegisters(graph,
                     codegen.get(),
                     &pass_observer,
-                    regalloc_strategy,
                     compilation_stats_.get());
 
   if (UNLIKELY(codegen->GetFrameSize() > codegen->GetMaximumFrameSize())) {
@@ -1039,7 +1035,6 @@ CodeGenerator* OptimizingCompiler::TryCompileIntrinsic(
   AllocateRegisters(graph,
                     codegen.get(),
                     &pass_observer,
-                    compiler_options.GetRegisterAllocationStrategy(),
                     compilation_stats_.get());
   if (!codegen->IsLeafMethod()) {
     VLOG(compiler) << "Intrinsic method is not leaf: " << method->GetIntrinsic()
