@@ -304,10 +304,11 @@ void GraphChecker::VisitBasicBlock(HBasicBlock* block) {
                             current_block_->GetBlockId()));
     }
     if (current->GetNext() == nullptr && current != block->GetLastInstruction()) {
-      AddError(StringPrintf("The recorded last instruction of block %d does not match "
-                            "the actual last instruction %d.",
-                            current_block_->GetBlockId(),
-                            current->GetId()));
+      AddError(
+          StringPrintf("The recorded last instruction of block %d does not match "
+                       "the actual last instruction %d.",
+                       current_block_->GetBlockId(),
+                       current->GetId()));
     }
     current->Accept(this);
   }
@@ -657,42 +658,53 @@ void GraphChecker::VisitInstruction(HInstruction* instruction) {
   // Ensure an instruction dominates all its uses.
   for (const HUseListNode<HInstruction*>& use : instruction->GetUses()) {
     HInstruction* user = use.GetUser();
-    if (!user->IsPhi() && !instruction->StrictlyDominates(user)) {
-      AddError(StringPrintf("Instruction %s:%d in block %d does not dominate "
-                            "use %s:%d in block %d.",
-                            instruction->DebugName(),
-                            instruction->GetId(),
-                            current_block_->GetBlockId(),
-                            user->DebugName(),
-                            user->GetId(),
-                            user->GetBlock()->GetBlockId()));
+    if (!user->IsPhi() && (instruction->GetBlock() == user->GetBlock()
+                               ? seen_ids_.IsBitSet(user->GetId())
+                               : !instruction->GetBlock()->Dominates(user->GetBlock()))) {
+      AddError(
+          StringPrintf("Instruction %s:%d in block %d does not dominate "
+                       "use %s:%d in block %d.",
+                       instruction->DebugName(),
+                       instruction->GetId(),
+                       current_block_->GetBlockId(),
+                       user->DebugName(),
+                       user->GetId(),
+                       user->GetBlock()->GetBlockId()));
     }
   }
 
-  if (instruction->NeedsEnvironment() && !instruction->HasEnvironment()) {
-    AddError(StringPrintf("Instruction %s:%d in block %d requires an environment "
-                          "but does not have one.",
+  if (instruction->NeedsEnvironment() != instruction->HasEnvironment()) {
+    const char* str;
+    if (instruction->NeedsEnvironment()) {
+      str = "Instruction %s:%d in block %d requires an environment but does not have one.";
+    } else {
+      str = "Instruction %s:%d in block %d doesn't require an environment but it has one.";
+    }
+
+    AddError(StringPrintf(str,
                           instruction->DebugName(),
                           instruction->GetId(),
                           current_block_->GetBlockId()));
   }
 
-  // Ensure an instruction having an environment is dominated by the
-  // instructions contained in the environment.
-  for (HEnvironment* environment = instruction->GetEnvironment();
-       environment != nullptr;
-       environment = environment->GetParent()) {
-    for (size_t i = 0, e = environment->Size(); i < e; ++i) {
-      HInstruction* env_instruction = environment->GetInstructionAt(i);
-      if (env_instruction != nullptr
-          && !env_instruction->StrictlyDominates(instruction)) {
-        AddError(StringPrintf("Instruction %d in environment of instruction %d "
-                              "from block %d does not dominate instruction %d.",
-                              env_instruction->GetId(),
-                              instruction->GetId(),
-                              current_block_->GetBlockId(),
-                              instruction->GetId()));
-      }
+  // Ensure an instruction dominates all its environment uses.
+  for (const HUseListNode<HEnvironment*>& use : instruction->GetEnvUses()) {
+    HInstruction* user = use.GetUser()->GetHolder();
+    if (user->IsPhi()) {
+      AddError(StringPrintf("Phi %d shouldn't have an environment", instruction->GetId()));
+    }
+    if (instruction->GetBlock() == user->GetBlock()
+            ? seen_ids_.IsBitSet(user->GetId())
+            : !instruction->GetBlock()->Dominates(user->GetBlock())) {
+      AddError(
+          StringPrintf("Instruction %s:%d in block %d does not dominate "
+                       "environment use %s:%d in block %d.",
+                       instruction->DebugName(),
+                       instruction->GetId(),
+                       current_block_->GetBlockId(),
+                       user->DebugName(),
+                       user->GetId(),
+                       user->GetBlock()->GetBlockId()));
     }
   }
 
@@ -709,14 +721,15 @@ void GraphChecker::VisitInstruction(HInstruction* instruction) {
       for (HInstructionIterator phi_it(catch_block->GetPhis()); !phi_it.Done(); phi_it.Advance()) {
         HPhi* catch_phi = phi_it.Current()->AsPhi();
         if (environment->GetInstructionAt(catch_phi->GetRegNumber()) == nullptr) {
-          AddError(StringPrintf("Instruction %s:%d throws into catch block %d "
-                                "with catch phi %d for vreg %d but its "
-                                "corresponding environment slot is empty.",
-                                instruction->DebugName(),
-                                instruction->GetId(),
-                                catch_block->GetBlockId(),
-                                catch_phi->GetId(),
-                                catch_phi->GetRegNumber()));
+          AddError(
+              StringPrintf("Instruction %s:%d throws into catch block %d "
+                           "with catch phi %d for vreg %d but its "
+                           "corresponding environment slot is empty.",
+                           instruction->DebugName(),
+                           instruction->GetId(),
+                           catch_block->GetBlockId(),
+                           catch_phi->GetId(),
+                           catch_phi->GetRegNumber()));
         }
       }
     }

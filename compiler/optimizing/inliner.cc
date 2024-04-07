@@ -684,7 +684,6 @@ bool HInliner::TryInlineFromInlineCache(HInvoke* invoke_instruction)
       return false;
     }
   }
-  UNREACHABLE();
 }
 
 HInliner::InlineCacheType HInliner::GetInlineCacheJIT(
@@ -1619,28 +1618,33 @@ bool HInliner::TryBuildAndInline(HInvoke* invoke_instruction,
     return true;
   }
 
+  CodeItemDataAccessor accessor(method->DexInstructionData());
+
+  if (!IsInliningAllowed(method, accessor)) {
+    return false;
+  }
+
+  // We have checked above that inlining is "allowed" to make sure that the method has bytecode
+  // (is not native), is compilable and verified and to enforce the @NeverInline annotation.
+  // However, the pattern substitution is always preferable, so we do it before the check if
+  // inlining is "encouraged". It also has an exception to the `MayInline()` restriction.
+  if (TryPatternSubstitution(invoke_instruction, method, accessor, return_replacement)) {
+    LOG_SUCCESS() << "Successfully replaced pattern of invoke "
+                  << method->PrettyMethod();
+    MaybeRecordStat(stats_, MethodCompilationStat::kReplacedInvokeWithSimplePattern);
+    return true;
+  }
+
   // Check whether we're allowed to inline. The outermost compilation unit is the relevant
   // dex file here (though the transitivity of an inline chain would allow checking the caller).
   if (!MayInline(codegen_->GetCompilerOptions(),
                  *method->GetDexFile(),
                  *outer_compilation_unit_.GetDexFile())) {
-    if (TryPatternSubstitution(invoke_instruction, method, return_replacement)) {
-      LOG_SUCCESS() << "Successfully replaced pattern of invoke "
-                    << method->PrettyMethod();
-      MaybeRecordStat(stats_, MethodCompilationStat::kReplacedInvokeWithSimplePattern);
-      return true;
-    }
     LOG_FAIL(stats_, MethodCompilationStat::kNotInlinedWont)
         << "Won't inline " << method->PrettyMethod() << " in "
         << outer_compilation_unit_.GetDexFile()->GetLocation() << " ("
         << caller_compilation_unit_.GetDexFile()->GetLocation() << ") from "
         << method->GetDexFile()->GetLocation();
-    return false;
-  }
-
-  CodeItemDataAccessor accessor(method->DexInstructionData());
-
-  if (!IsInliningAllowed(method, accessor)) {
     return false;
   }
 
@@ -1683,12 +1687,14 @@ static HInstruction* GetInvokeInputForArgVRegIndex(HInvoke* invoke_instruction,
 // Try to recognize known simple patterns and replace invoke call with appropriate instructions.
 bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
                                       ArtMethod* method,
+                                      const CodeItemDataAccessor& accessor,
                                       HInstruction** return_replacement) {
   InlineMethod inline_method;
-  if (!InlineMethodAnalyser::AnalyseMethodCode(method, &inline_method)) {
+  if (!InlineMethodAnalyser::AnalyseMethodCode(method, &accessor, &inline_method)) {
     return false;
   }
 
+  size_t number_of_instructions = 0u;  // Note: We do not count constants.
   switch (inline_method.opcode) {
     case kInlineOpNop:
       DCHECK_EQ(invoke_instruction->GetType(), DataType::Type::kVoid);
@@ -1723,6 +1729,7 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
       DCHECK_EQ(iget->IsVolatile() ? 1u : 0u, data.is_volatile);
       invoke_instruction->GetBlock()->InsertInstructionBefore(iget, invoke_instruction);
       *return_replacement = iget;
+      number_of_instructions = 1u;
       break;
     }
     case kInlineOpIPut: {
@@ -1741,6 +1748,7 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
         size_t return_arg = data.return_arg_plus1 - 1u;
         *return_replacement = GetInvokeInputForArgVRegIndex(invoke_instruction, return_arg);
       }
+      number_of_instructions = 1u;
       break;
     }
     case kInlineOpConstructor: {
@@ -1795,11 +1803,13 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
                                                                 invoke_instruction);
       }
       *return_replacement = nullptr;
+      number_of_instructions = number_of_iputs + (needs_constructor_barrier ? 1u : 0u);
       break;
     }
-    default:
-      LOG(FATAL) << "UNREACHABLE";
-      UNREACHABLE();
+  }
+  if (number_of_instructions != 0u) {
+    total_number_of_instructions_ += number_of_instructions;
+    UpdateInliningBudget();
   }
   return true;
 }

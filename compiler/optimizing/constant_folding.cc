@@ -876,18 +876,35 @@ void InstructionWithAbsorbingInputSimplifier::VisitMul(HMul* instruction) {
 
 void InstructionWithAbsorbingInputSimplifier::VisitOr(HOr* instruction) {
   HConstant* input_cst = instruction->GetConstantRight();
-
-  if (input_cst == nullptr) {
-    return;
-  }
-
-  if (Int64FromConstant(input_cst) == -1) {
+  if (input_cst != nullptr && Int64FromConstant(input_cst) == -1) {
     // Replace code looking like
     //    OR dst, src, 0xFFF...FF
     // with
     //    CONSTANT 0xFFF...FF
     instruction->ReplaceWith(input_cst);
     instruction->GetBlock()->RemoveInstruction(instruction);
+    return;
+  }
+
+  HInstruction* left = instruction->GetLeft();
+  HInstruction* right = instruction->GetRight();
+  if (left->IsNot() ^ right->IsNot()) {
+    // Replace code looking like
+    //    NOT notsrc, src
+    //    OR  dst, notsrc, src
+    // with
+    //    CONSTANT 0xFFF...FF
+    HInstruction* hnot = (left->IsNot() ? left : right);
+    HInstruction* hother = (left->IsNot() ? right : left);
+    HInstruction* src = hnot->AsNot()->GetInput();
+
+    if (src == hother) {
+      DCHECK(instruction->GetType() == DataType::Type::kInt32 ||
+             instruction->GetType() == DataType::Type::kInt64);
+      instruction->ReplaceWith(GetGraph()->GetConstant(instruction->GetType(), -1));
+      instruction->GetBlock()->RemoveInstruction(instruction);
+      return;
+    }
   }
 }
 
@@ -974,6 +991,28 @@ void InstructionWithAbsorbingInputSimplifier::VisitXor(HXor* instruction) {
     HBasicBlock* block = instruction->GetBlock();
     instruction->ReplaceWith(GetGraph()->GetConstant(type, 0));
     block->RemoveInstruction(instruction);
+    return;
+  }
+
+  HInstruction* left = instruction->GetLeft();
+  HInstruction* right = instruction->GetRight();
+  if (left->IsNot() ^ right->IsNot()) {
+    // Replace code looking like
+    //    NOT notsrc, src
+    //    XOR dst, notsrc, src
+    // with
+    //    CONSTANT 0xFFF...FF
+    HInstruction* hnot = (left->IsNot() ? left : right);
+    HInstruction* hother = (left->IsNot() ? right : left);
+    HInstruction* src = hnot->AsNot()->GetInput();
+
+    if (src == hother) {
+      DCHECK(instruction->GetType() == DataType::Type::kInt32 ||
+             instruction->GetType() == DataType::Type::kInt64);
+      instruction->ReplaceWith(GetGraph()->GetConstant(instruction->GetType(), -1));
+      instruction->GetBlock()->RemoveInstruction(instruction);
+      return;
+    }
   }
 }
 

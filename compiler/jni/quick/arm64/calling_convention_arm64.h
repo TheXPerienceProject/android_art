@@ -26,7 +26,8 @@ namespace arm64 {
 
 class Arm64ManagedRuntimeCallingConvention final : public ManagedRuntimeCallingConvention {
  public:
-  Arm64ManagedRuntimeCallingConvention(bool is_static, bool is_synchronized, const char* shorty)
+  Arm64ManagedRuntimeCallingConvention(
+      bool is_static, bool is_synchronized, std::string_view shorty)
       : ManagedRuntimeCallingConvention(is_static,
                                         is_synchronized,
                                         shorty,
@@ -52,7 +53,7 @@ class Arm64JniCallingConvention final : public JniCallingConvention {
                             bool is_synchronized,
                             bool is_fast_native,
                             bool is_critical_native,
-                            const char* shorty);
+                            std::string_view shorty);
   ~Arm64JniCallingConvention() override {}
   // Calling convention
   ManagedRegister ReturnRegister() const override;

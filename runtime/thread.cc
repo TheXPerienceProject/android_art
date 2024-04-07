@@ -1513,6 +1513,9 @@ bool Thread::PassActiveSuspendBarriers() {
       tlsPtr_.active_suspendall_barrier = nullptr;
     }
     for (WrappedSuspend1Barrier* w = tlsPtr_.active_suspend1_barriers; w != nullptr; w = w->next_) {
+      CHECK_EQ(w->magic_, WrappedSuspend1Barrier::kMagic)
+          << "first = " << tlsPtr_.active_suspend1_barriers << " current = " << w
+          << " next = " << w->next_;
       pass_barriers.push_back(&(w->barrier_));
     }
     tlsPtr_.active_suspend1_barriers = nullptr;
@@ -1685,9 +1688,9 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
   // Although this is a thread suspension, the target thread only blocks while we run the
   // checkpoint, which is presumed to terminate quickly even if other threads are blocked.
   // Note: IncrementSuspendCount also expects the thread_list_lock to be held unless this == self.
+  WrappedSuspend1Barrier wrapped_barrier{};
   {
     bool is_suspended = false;
-    WrappedSuspend1Barrier wrapped_barrier{};
 
     {
       MutexLock suspend_count_mu(self, *Locks::thread_suspend_count_lock_);
@@ -1767,6 +1770,9 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
     DCHECK_NE(GetState(), ThreadState::kRunnable);
     DCHECK_GT(GetSuspendCount(), 0);
     DecrementSuspendCount(self);
+    if (kIsDebugBuild) {
+      CheckBarrierInactive(&wrapped_barrier);
+    }
     resume_cond_->Broadcast(self);
   }
 
@@ -2619,10 +2625,6 @@ void Thread::Destroy(bool should_run_callbacks) {
       runtime->GetRuntimeCallbacks()->ThreadDeath(self);
     }
 
-    if (UNLIKELY(self->GetMethodTraceBuffer() != nullptr)) {
-      Trace::FlushThreadBuffer(self);
-    }
-
     // this.nativePeer = 0;
     SetNativePeer</*kSupportTransaction=*/ true>(tlsPtr_.opeer, nullptr);
 
@@ -2637,12 +2639,17 @@ void Thread::Destroy(bool should_run_callbacks) {
       ObjectLock<mirror::Object> locker(self, h_obj);
       locker.NotifyAll();
     }
+
     tlsPtr_.opeer = nullptr;
   }
 
   {
     ScopedObjectAccess soa(self);
     Runtime::Current()->GetHeap()->RevokeThreadLocalBuffers(this);
+
+    if (UNLIKELY(self->GetMethodTraceBuffer() != nullptr)) {
+      Trace::FlushThreadBuffer(self);
+    }
   }
   // Mark-stack revocation must be performed at the very end. No
   // checkpoint/flip-function or read-barrier should be called after this.
@@ -2691,9 +2698,7 @@ Thread::~Thread() {
   SetCachedThreadName(nullptr);  // Deallocate name.
   delete tlsPtr_.deps_or_stack_trace_sample.stack_trace_sample;
 
-  if (tlsPtr_.method_trace_buffer != nullptr) {
-    delete[] tlsPtr_.method_trace_buffer;
-  }
+  CHECK_EQ(tlsPtr_.method_trace_buffer, nullptr);
 
   Runtime::Current()->GetHeap()->AssertThreadLocalBuffersAreRevoked(this);
 

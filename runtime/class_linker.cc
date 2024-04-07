@@ -32,6 +32,7 @@
 #include <utility>
 #include <vector>
 
+#include "android-base/macros.h"
 #include "android-base/stringprintf.h"
 #include "android-base/strings.h"
 #include "art_field-inl.h"
@@ -40,6 +41,7 @@
 #include "base/arena_allocator.h"
 #include "base/arena_bit_vector.h"
 #include "base/casts.h"
+#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/hash_map.h"
 #include "base/hash_set.h"
@@ -408,6 +410,15 @@ void ClassLinker::ForceClassInitialized(Thread* self, Handle<mirror::Class> klas
   MakeInitializedClassesVisiblyInitialized(self, /*wait=*/true);
 }
 
+const void* ClassLinker::FindBootJniStub(JniStubKey key) {
+  auto it = boot_image_jni_stubs_.find(key);
+  if (it == boot_image_jni_stubs_.end()) {
+    return nullptr;
+  } else {
+    return it->second;
+  }
+}
+
 ClassLinker::VisiblyInitializedCallback* ClassLinker::MarkClassInitialized(
     Thread* self, Handle<mirror::Class> klass) {
   if (kRuntimeISA == InstructionSet::kX86 || kRuntimeISA == InstructionSet::kX86_64) {
@@ -616,6 +627,8 @@ ClassLinker::ClassLinker(InternTable* intern_table, bool fast_class_not_found_ex
       visibly_initialize_classes_with_membarier_(RegisterMemBarrierForClassInitialization()),
       critical_native_code_with_clinit_check_lock_("critical native code with clinit check lock"),
       critical_native_code_with_clinit_check_(),
+      boot_image_jni_stubs_(JniStubKeyHash(Runtime::Current()->GetInstructionSet()),
+                            JniStubKeyEquals(Runtime::Current()->GetInstructionSet())),
       cha_(Runtime::Current()->IsAotCompiler() ? nullptr : new ClassHierarchyAnalysis()) {
   // For CHA disabled during Aot, see b/34193647.
 
@@ -1301,12 +1314,13 @@ bool ClassLinker::InitFromBootImage(std::string* error_msg) {
   std::vector<gc::space::ImageSpace*> spaces = heap->GetBootImageSpaces();
   CHECK(!spaces.empty());
   const ImageHeader& image_header = spaces[0]->GetImageHeader();
-  uint32_t pointer_size_unchecked = image_header.GetPointerSizeUnchecked();
-  if (!ValidPointerSize(pointer_size_unchecked)) {
-    *error_msg = StringPrintf("Invalid image pointer size: %u", pointer_size_unchecked);
+  image_pointer_size_ = image_header.GetPointerSize();
+  if (UNLIKELY(image_pointer_size_ != PointerSize::k32 &&
+               image_pointer_size_ != PointerSize::k64)) {
+    *error_msg =
+        StringPrintf("Invalid image pointer size: %u", static_cast<uint32_t>(image_pointer_size_));
     return false;
   }
-  image_pointer_size_ = image_header.GetPointerSize();
   if (!runtime->IsAotCompiler()) {
     // Only the Aot compiler supports having an image with a different pointer size than the
     // runtime. This happens on the host for compiling 32 bit tests since we use a 64 bit libart
@@ -1437,6 +1451,19 @@ bool ClassLinker::InitFromBootImage(std::string* error_msg) {
                       error_msg)) {
     return false;
   }
+  // We never use AOT code for debuggable.
+  if (!runtime->IsJavaDebuggable()) {
+    for (gc::space::ImageSpace* space : spaces) {
+      const ImageHeader& header = space->GetImageHeader();
+      header.VisitJniStubMethods([&](ArtMethod* method)
+          REQUIRES_SHARED(Locks::mutator_lock_) {
+        const void* stub = method->GetOatMethodQuickCode(image_pointer_size_);
+        boot_image_jni_stubs_.Put(std::make_pair(JniStubKey(method), stub));
+        return method;
+      }, space->Begin(), image_pointer_size_);
+    }
+  }
+
   InitializeObjectVirtualMethodHashes(GetClassRoot<mirror::Object>(this),
                                       image_pointer_size_,
                                       ArrayRef<uint32_t>(object_virtual_method_hashes_));
@@ -3675,10 +3702,19 @@ void ClassLinker::FixupStaticTrampolines(Thread* self, ObjPtr<mirror::Class> kla
   }
 
   instrumentation::Instrumentation* instrumentation = runtime->GetInstrumentation();
+  bool enable_boot_jni_stub = !runtime->IsJavaDebuggable();
   for (size_t method_index = 0; method_index < num_direct_methods; ++method_index) {
     ArtMethod* method = klass->GetDirectMethod(method_index, pointer_size);
     if (method->NeedsClinitCheckBeforeCall()) {
-      instrumentation->UpdateMethodsCode(method, instrumentation->GetCodeForInvoke(method));
+      const void* quick_code = instrumentation->GetCodeForInvoke(method);
+      if (method->IsNative() && IsQuickGenericJniStub(quick_code) && enable_boot_jni_stub) {
+        const void* boot_jni_stub = FindBootJniStub(method);
+        if (boot_jni_stub != nullptr) {
+          // Use boot JNI stub if found.
+          quick_code = boot_jni_stub;
+        }
+      }
+      instrumentation->UpdateMethodsCode(method, quick_code);
     }
   }
   // Ignore virtual methods on the iterator.
@@ -3721,6 +3757,13 @@ static void LinkCode(ClassLinker* class_linker,
     // non-abstract methods also get their code pointers.
     const OatFile::OatMethod oat_method = oat_class->GetOatMethod(class_def_method_index);
     quick_code = oat_method.GetQuickCode();
+  }
+  if (method->IsNative() && quick_code == nullptr) {
+    const void* boot_jni_stub = class_linker->FindBootJniStub(method);
+    if (boot_jni_stub != nullptr) {
+      // Use boot JNI stub if found.
+      quick_code = boot_jni_stub;
+    }
   }
   runtime->GetInstrumentation()->InitializeMethodsCode(method, quick_code);
 
@@ -10203,6 +10246,7 @@ ObjPtr<mirror::MethodHandle> ClassLinker::ResolveMethodHandleForField(
     case DexFile::MethodHandleType::kInvokeConstructor:
     case DexFile::MethodHandleType::kInvokeDirect:
     case DexFile::MethodHandleType::kInvokeInterface:
+      LOG(FATAL) << "Unreachable";
       UNREACHABLE();
   }
 
@@ -10261,6 +10305,7 @@ ObjPtr<mirror::MethodHandle> ClassLinker::ResolveMethodHandleForField(
     case DexFile::MethodHandleType::kInvokeConstructor:
     case DexFile::MethodHandleType::kInvokeDirect:
     case DexFile::MethodHandleType::kInvokeInterface:
+      LOG(FATAL) << "Unreachable";
       UNREACHABLE();
   }
 
@@ -10301,6 +10346,7 @@ ObjPtr<mirror::MethodHandle> ClassLinker::ResolveMethodHandleForMethod(
     case DexFile::MethodHandleType::kStaticGet:
     case DexFile::MethodHandleType::kInstancePut:
     case DexFile::MethodHandleType::kInstanceGet:
+      LOG(FATAL) << "Unreachable";
       UNREACHABLE();
     case DexFile::MethodHandleType::kInvokeStatic: {
       kind = mirror::MethodHandle::Kind::kInvokeStatic;

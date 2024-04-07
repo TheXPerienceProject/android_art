@@ -108,7 +108,8 @@ static constexpr uint8_t ToJdwpThreadStatus(ThreadState state) {
     case ThreadState::kSuspended:
       return TS_RUNNING;
     case ThreadState::kObsoleteRunnable:
-      break;  // Obsolete value.
+    case ThreadState::kInvalidState:
+      break;  // Obsolete or invalid value.
     case ThreadState::kSleeping:
       return TS_SLEEPING;
     case ThreadState::kStarting:

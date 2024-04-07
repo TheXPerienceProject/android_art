@@ -3578,6 +3578,7 @@ void MarkCompact::ConcurrentlyProcessLinearAllocPage(uint8_t* fault_page, bool i
           // The page is processed but not mapped. We should map it.
           break;
         case PageState::kMutatorProcessing:
+          LOG(FATAL) << "Unreachable";
           UNREACHABLE();
         case PageState::kProcessingAndMapping:
         case PageState::kProcessedAndMapping:
@@ -4070,9 +4071,6 @@ void MarkCompact::ScanDirtyObjects(bool paused, uint8_t minimum_age) {
     case space::kGcRetentionPolicyAlwaysCollect:
       name = paused ? "(Paused)ScanGrayAllocSpaceObjects" : "ScanGrayAllocSpaceObjects";
       break;
-    default:
-      LOG(FATAL) << "Unreachable";
-      UNREACHABLE();
     }
     TimingLogger::ScopedTiming t(name, GetTimings());
     card_table->Scan</*kClearCard*/ false>(

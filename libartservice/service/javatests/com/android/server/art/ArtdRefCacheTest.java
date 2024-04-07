@@ -25,6 +25,7 @@ import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -40,6 +41,9 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
+
+import java.lang.ref.PhantomReference;
+import java.lang.ref.ReferenceQueue;
 
 @SmallTest
 @RunWith(MockitoJUnitRunner.StrictStubs.class)
@@ -211,5 +215,27 @@ public class ArtdRefCacheTest {
         }
 
         verify(mInjector, times(3)).getArtd();
+    }
+
+    @Test
+    public void testReset() throws Exception {
+        var queue = new ReferenceQueue<ArtdRefCache>();
+        var phantomRef = new PhantomReference(mArtdRefCache, queue);
+
+        try (var pin = mArtdRefCache.new Pin()) {
+            mArtdRefCache.getArtd();
+        }
+
+        // Mockito mocks hold the arguments of historical calls. `reset` removes them.
+        reset(mBinder);
+
+        mArtdRefCache.reset();
+        mArtdRefCache = null;
+        mMockClock.advanceTime(0); // Flush the task queue.
+        Runtime.getRuntime().gc();
+        Runtime.getRuntime().runFinalization();
+
+        // The reference is enqueued if it's GC-able.
+        assertThat(phantomRef.isEnqueued()).isTrue();
     }
 }

@@ -45,6 +45,7 @@
 #include "lock_word.h"
 #include "mirror/dex_cache.h"
 #include "oat/image.h"
+#include "oat/jni_stub_hash_map.h"
 #include "oat/oat.h"
 #include "oat/oat_file.h"
 #include "obj_ptr.h"
@@ -209,6 +210,8 @@ class ImageWriter final {
     kIMTConflictTable,
     // Runtime methods (always clean, do not have a length prefix array).
     kRuntimeMethod,
+    // Methods with unique JNI stubs.
+    kJniStubMethod,
     // Metadata bin for data that is temporary during image lifetime.
     kMetadata,
     kLast = kMetadata,
@@ -450,6 +453,7 @@ class ImageWriter final {
 
   // Creates the contiguous image in memory and adjusts pointers.
   void CopyAndFixupNativeData(size_t oat_index) REQUIRES_SHARED(Locks::mutator_lock_);
+  void CopyAndFixupJniStubMethods(size_t oat_index) REQUIRES_SHARED(Locks::mutator_lock_);
   void CopyAndFixupObjects() REQUIRES_SHARED(Locks::mutator_lock_);
   void CopyAndFixupObject(mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_);
   template <bool kCheckIfDone>
@@ -495,6 +499,10 @@ class ImageWriter final {
                           size_t oat_index)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  // Assign the offset for a method with unique JNI stub.
+  void AssignJniStubMethodOffset(ArtMethod* method, size_t oat_index)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   // Return true if imt was newly inserted.
   bool TryAssignImTableOffset(ImTable* imt, size_t oat_index) REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -528,6 +536,11 @@ class ImageWriter final {
     size_t oat_index;
     uintptr_t offset;
     NativeObjectRelocationType type;
+  };
+
+  struct JniStubMethodRelocation {
+    size_t oat_index;
+    uintptr_t offset;
   };
 
   NativeObjectRelocation GetNativeRelocation(void* obj) REQUIRES_SHARED(Locks::mutator_lock_);
@@ -644,6 +657,9 @@ class ImageWriter final {
   // have one entry per art field for convenience. ArtFields are placed right after the end of the
   // image objects (aka sum of bin_slot_sizes_). ArtMethods are placed right after the ArtFields.
   HashMap<void*, NativeObjectRelocation> native_object_relocations_;
+
+  // HashMap used for generating JniStubMethodsSection.
+  JniStubHashMap<std::pair<ArtMethod*, JniStubMethodRelocation>> jni_stub_map_;
 
   // Runtime ArtMethods which aren't reachable from any Class but need to be copied into the image.
   ArtMethod* image_methods_[ImageHeader::kImageMethodsCount];

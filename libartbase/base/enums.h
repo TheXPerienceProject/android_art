@@ -18,11 +18,12 @@
 #define ART_LIBARTBASE_BASE_ENUMS_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 
 namespace art {
 
-enum class PointerSize : size_t {
+enum class PointerSize : uint32_t {
   k32 = 4,
   k64 = 8
 };

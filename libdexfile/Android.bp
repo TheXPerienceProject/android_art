@@ -386,7 +386,6 @@ art_cc_defaults {
         "external/dex_file_ext_test.cc",
     ],
     shared_libs: [
-        "libartbase",
         "libdexfile",
     ],
     header_libs: [
@@ -468,7 +467,6 @@ art_cc_defaults {
         "external/dex_file_supp_test.cc",
     ],
     shared_libs: [
-        "libartbase",
         "libbase",
         "libdexfile",
         "liblog",

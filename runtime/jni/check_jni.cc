@@ -853,8 +853,6 @@ class ScopedCheck {
     case kThrowable:
       what = "jthrowable";
       break;
-    default:
-      LOG(FATAL) << "Unknown kind " << static_cast<int>(kind);
     }
 
     if (java_object == nullptr) {
@@ -3303,9 +3301,6 @@ class CheckJNI {
               LOG(FATAL) << "Unexpected invoke: " << invoke;
           }
           break;
-        default:
-          LOG(FATAL) << "Unexpected return type: " << type;
-          result_check = nullptr;
       }
       if (sc.Check(soa, false, result_check, &result)) {
         return result;
@@ -3489,9 +3484,6 @@ class CheckJNI {
               LOG(FATAL) << "Unexpected invoke: " << invoke;
           }
           break;
-        default:
-          LOG(FATAL) << "Unexpected return type: " << type;
-          result_check = nullptr;
       }
       if (sc.Check(soa, false, result_check, &result)) {
         return result;

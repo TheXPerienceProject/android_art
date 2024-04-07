@@ -80,6 +80,7 @@ struct Options {
   std::unordered_set<int> keep_fds{fileno(stdin), fileno(stdout), fileno(stderr)};
   std::unordered_map<std::string, std::string> envs;
   std::string chroot;
+  std::string process_name_suffix;
 };
 
 [[noreturn]] void Usage(const std::string& error_msg) {
@@ -125,6 +126,8 @@ Options ParseOptions(int argc, char** argv) {
           std::string(arg.substr(pos + 1));
     } else if (ConsumePrefix(&arg, "--chroot=")) {
       options.chroot = arg;
+    } else if (ConsumePrefix(&arg, "--process-name-suffix=")) {
+      options.process_name_suffix = arg;
     } else if (arg == "--") {
       if (i + 1 >= argc) {
         Usage("Missing command after '--'");
@@ -224,9 +227,19 @@ int main(int argc, char** argv) {
     }
   }
 
-  execv(argv[options.command_pos], argv + options.command_pos);
+  // `argv[argc]` is `nullptr`, which `execv` needs.
+  std::vector<char*> command_args(&argv[options.command_pos], &argv[argc + 1]);
+  std::string override_program_name;
+  if (!options.process_name_suffix.empty()) {
+    override_program_name = ART_FORMAT("{} ({})", command_args[0], options.process_name_suffix);
+    command_args[0] = override_program_name.data();
+  }
 
-  std::vector<const char*> command_args(argv + options.command_pos, argv + argc);
+  execv(argv[options.command_pos], command_args.data());
+
+  // Remove the trialing `nullptr`.
+  command_args.resize(command_args.size() - 1);
+
   PLOG(FATAL) << "Failed to execute (" << Join(command_args, ' ') << ")";
   UNREACHABLE();
 }

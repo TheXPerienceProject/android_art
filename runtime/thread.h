@@ -159,6 +159,7 @@ enum class ThreadFlag : uint32_t {
   // Prevents a situation in which we are asked to suspend just before we suspend all
   // other threads, and then notice the suspension request and suspend ourselves,
   // leading to deadlock. Guarded by suspend_count_lock_ .
+  // Should not ever be set when we try to transition to kRunnable.
   // TODO(b/296639267): Generalize use to prevent SuspendAll from blocking
   // in-progress GC.
   kSuspensionImmune = 1u << 6,
@@ -199,8 +200,11 @@ enum class WeakRefAccessState : int32_t {
 
 // See Thread.tlsPtr_.active_suspend1_barriers below for explanation.
 struct WrappedSuspend1Barrier {
-  WrappedSuspend1Barrier() : barrier_(1), next_(nullptr) {}
-  AtomicInteger barrier_;  // Only updated while holding thread_suspend_count_lock_ .
+  // TODO(b/23668816): At least weaken CHECKs to DCHECKs once the bug is fixed.
+  static constexpr int kMagic = 0xba8;
+  WrappedSuspend1Barrier() : magic_(kMagic), barrier_(1), next_(nullptr) {}
+  int magic_;
+  AtomicInteger barrier_;
   struct WrappedSuspend1Barrier* next_ GUARDED_BY(Locks::thread_suspend_count_lock_);
 };
 
@@ -480,10 +484,21 @@ class EXPORT Thread {
       REQUIRES(!Locks::thread_suspend_count_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Transition from non-runnable to runnable state acquiring share on mutator_lock_.
-  ALWAYS_INLINE ThreadState TransitionFromSuspendedToRunnable()
+  // Transition from non-runnable to runnable state acquiring share on mutator_lock_. Returns the
+  // old state, or kInvalidState if we failed because allow_failure and kSuspensionImmune were set.
+  // Should not be called with an argument except by the next function below.
+  ALWAYS_INLINE ThreadState TransitionFromSuspendedToRunnable(bool fail_on_suspend_req = false)
+      REQUIRES(!Locks::thread_suspend_count_lock_) SHARED_LOCK_FUNCTION(Locks::mutator_lock_);
+
+  // A version that does not return the old ThreadState, and fails by returning false if it would
+  // have needed to handle a pending suspension request.
+  ALWAYS_INLINE bool TryTransitionFromSuspendedToRunnable()
       REQUIRES(!Locks::thread_suspend_count_lock_)
-      SHARED_LOCK_FUNCTION(Locks::mutator_lock_);
+      SHARED_TRYLOCK_FUNCTION(true, Locks::mutator_lock_) NO_THREAD_SAFETY_ANALYSIS {
+    // The above function does not really acquire the lock when we pass true and it returns
+    // kInvalidState. We lie in both places, but clients see correct behavior.
+    return TransitionFromSuspendedToRunnable(true) != ThreadState::kInvalidState;
+  }
 
   // Transition from runnable into a state where mutator privileges are denied. Releases share of
   // mutator lock.
@@ -1429,21 +1444,18 @@ class EXPORT Thread {
   }
   // Remove the suspend trigger for this thread by making the suspend_trigger_ TLS value
   // equal to a valid pointer.
-  // TODO: does this need to atomic?  I don't think so.
   void RemoveSuspendTrigger() {
-    tlsPtr_.suspend_trigger = reinterpret_cast<uintptr_t*>(&tlsPtr_.suspend_trigger);
+    tlsPtr_.suspend_trigger.store(reinterpret_cast<uintptr_t*>(&tlsPtr_.suspend_trigger),
+                                  std::memory_order_relaxed);
   }
 
   // Trigger a suspend check by making the suspend_trigger_ TLS value an invalid pointer.
   // The next time a suspend check is done, it will load from the value at this address
   // and trigger a SIGSEGV.
-  // Only needed if Runtime::implicit_suspend_checks_ is true and fully implemented.  It currently
-  // is always false. Client code currently just looks at the thread flags directly to determine
-  // whether we should suspend, so this call is currently unnecessary.
-  void TriggerSuspend() {
-    tlsPtr_.suspend_trigger = nullptr;
-  }
-
+  // Only needed if Runtime::implicit_suspend_checks_ is true. On some platforms, and in the
+  // interpreter, client code currently just looks at the thread flags directly to determine
+  // whether we should suspend, so this call is not always necessary.
+  void TriggerSuspend() { tlsPtr_.suspend_trigger.store(nullptr, std::memory_order_release); }
 
   // Push an object onto the allocation stack.
   bool PushOnThreadLocalAllocationStack(mirror::Object* obj)
@@ -1771,6 +1783,10 @@ class EXPORT Thread {
       REQUIRES(Locks::thread_suspend_count_lock_);
 
   ALWAYS_INLINE bool HasActiveSuspendBarrier() REQUIRES(Locks::thread_suspend_count_lock_);
+
+  // CHECK that the given barrier is no longer on our list.
+  ALWAYS_INLINE void CheckBarrierInactive(WrappedSuspend1Barrier* suspend1_barrier)
+      REQUIRES(Locks::thread_suspend_count_lock_);
 
   // Registers the current thread as the jit sensitive thread. Should be called just once.
   static void SetJitSensitiveThread() {
@@ -2150,8 +2166,12 @@ class EXPORT Thread {
     ManagedStack managed_stack;
 
     // In certain modes, setting this to 0 will trigger a SEGV and thus a suspend check.  It is
-    // normally set to the address of itself.
-    uintptr_t* suspend_trigger;
+    // normally set to the address of itself. It should be cleared with release semantics to ensure
+    // that prior state changes etc. are visible to any thread that faults as a result.
+    // We assume that the kernel ensures that such changes are then visible to the faulting
+    // thread, even if it is not an acquire load that faults. (Indeed, it seems unlikely that the
+    // ordering semantics associated with the faulting load has any impact.)
+    std::atomic<uintptr_t*> suspend_trigger;
 
     // Every thread may have an associated JNI environment
     JNIEnvExt* jni_env;

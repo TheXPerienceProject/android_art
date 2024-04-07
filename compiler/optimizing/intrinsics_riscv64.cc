@@ -1073,6 +1073,122 @@ static void EmitLoadReserved(Riscv64Assembler* assembler,
   }
 }
 
+void IntrinsicLocationsBuilderRISCV64::VisitStringEquals(HInvoke* invoke) {
+  LocationSummary* locations =
+      new (allocator_) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
+  locations->SetInAt(0, Location::RequiresRegister());
+  locations->SetInAt(1, Location::RequiresRegister());
+  locations->AddTemp(Location::RequiresRegister());
+  // TODO: If the String.equals() is used only for an immediately following HIf, we can
+  // mark it as emitted-at-use-site and emit branches directly to the appropriate blocks.
+  // Then we shall need an extra temporary register instead of the output register.
+  locations->SetOut(Location::RequiresRegister(), Location::kOutputOverlap);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitStringEquals(HInvoke* invoke) {
+  Riscv64Assembler* assembler = GetAssembler();
+  LocationSummary* locations = invoke->GetLocations();
+
+  // Get offsets of count, value, and class fields within a string object.
+  const int32_t count_offset = mirror::String::CountOffset().Int32Value();
+  const int32_t value_offset = mirror::String::ValueOffset().Int32Value();
+  const int32_t class_offset = mirror::Object::ClassOffset().Int32Value();
+
+  XRegister str = locations->InAt(0).AsRegister<XRegister>();
+  XRegister arg = locations->InAt(1).AsRegister<XRegister>();
+  XRegister out = locations->Out().AsRegister<XRegister>();
+
+  ScratchRegisterScope srs(assembler);
+  XRegister temp = srs.AllocateXRegister();
+  XRegister temp1 = locations->GetTemp(0).AsRegister<XRegister>();
+
+  Riscv64Label loop;
+  Riscv64Label end;
+  Riscv64Label return_true;
+  Riscv64Label return_false;
+
+  DCHECK(!invoke->CanDoImplicitNullCheckOn(invoke->InputAt(0)));
+
+  StringEqualsOptimizations optimizations(invoke);
+  if (!optimizations.GetArgumentNotNull()) {
+    // Check if input is null, return false if it is.
+    __ Beqz(arg, &return_false);
+  }
+
+  // Reference equality check, return true if same reference.
+  __ Beq(str, arg, &return_true);
+
+  if (!optimizations.GetArgumentIsString()) {
+    // Instanceof check for the argument by comparing class fields.
+    // All string objects must have the same type since String cannot be subclassed.
+    // Receiver must be a string object, so its class field is equal to all strings' class fields.
+    // If the argument is a string object, its class field must be equal to receiver's class field.
+    //
+    // As the String class is expected to be non-movable, we can read the class
+    // field from String.equals' arguments without read barriers.
+    AssertNonMovableStringClass();
+    // /* HeapReference<Class> */ temp = str->klass_
+    __ Loadwu(temp, str, class_offset);
+    // /* HeapReference<Class> */ temp1 = arg->klass_
+    __ Loadwu(temp1, arg, class_offset);
+    // Also, because we use the previously loaded class references only in the
+    // following comparison, we don't need to unpoison them.
+    __ Bne(temp, temp1, &return_false);
+  }
+
+  // Load `count` fields of this and argument strings.
+  __ Loadwu(temp, str, count_offset);
+  __ Loadwu(temp1, arg, count_offset);
+  // Check if `count` fields are equal, return false if they're not.
+  // Also compares the compression style, if differs return false.
+  __ Bne(temp, temp1, &return_false);
+
+  // Assertions that must hold in order to compare strings 8 bytes at a time.
+  // Ok to do this because strings are zero-padded to kObjectAlignment.
+  DCHECK_ALIGNED(value_offset, 8);
+  static_assert(IsAligned<8>(kObjectAlignment), "String of odd length is not zero padded");
+
+  // Return true if both strings are empty. Even with string compression `count == 0` means empty.
+  static_assert(static_cast<uint32_t>(mirror::StringCompressionFlag::kCompressed) == 0u,
+                "Expecting 0=compressed, 1=uncompressed");
+  __ Beqz(temp, &return_true);
+
+  if (mirror::kUseStringCompression) {
+    // For string compression, calculate the number of bytes to compare (not chars).
+    // This could in theory exceed INT32_MAX, so treat temp as unsigned.
+    __ Andi(temp1, temp, 1);     // Extract compression flag.
+    __ Srliw(temp, temp, 1u);    // Extract length.
+    __ Sllw(temp, temp, temp1);  // Calculate number of bytes to compare.
+  }
+
+  // Store offset of string value in preparation for comparison loop
+  __ Li(temp1, value_offset);
+
+  XRegister temp2 = srs.AllocateXRegister();
+  // Loop to compare strings 8 bytes at a time starting at the front of the string.
+  __ Bind(&loop);
+  __ Add(out, str, temp1);
+  __ Ld(out, out, 0);
+  __ Add(temp2, arg, temp1);
+  __ Ld(temp2, temp2, 0);
+  __ Addi(temp1, temp1, sizeof(uint64_t));
+  __ Bne(out, temp2, &return_false);
+  // With string compression, we have compared 8 bytes, otherwise 4 chars.
+  __ Addi(temp, temp, mirror::kUseStringCompression ? -8 : -4);
+  __ Bgt(temp, Zero, &loop);
+
+  // Return true and exit the function.
+  // If loop does not result in returning false, we return true.
+  __ Bind(&return_true);
+  __ Li(out, 1);
+  __ J(&end);
+
+  // Return false and exit the function.
+  __ Bind(&return_false);
+  __ Li(out, 0);
+  __ Bind(&end);
+}
+
 static void EmitStoreConditional(Riscv64Assembler* assembler,
                                  DataType::Type type,
                                  XRegister ptr,
@@ -1139,25 +1255,28 @@ static void GenerateCompareAndSet(Riscv64Assembler* assembler,
   }
   EmitLoadReserved(assembler, type, ptr, old_value, load_aqrl);
   XRegister to_store = new_value;
-  if (mask != kNoXRegister) {
-    DCHECK_EQ(expected2, kNoXRegister);
-    DCHECK_NE(masked, kNoXRegister);
-    __ And(masked, old_value, mask);
-    __ Bne(masked, expected, cmp_failure);
-    // The `old_value` does not need to be preserved as the caller shall use `masked`
-    // to return the old value if needed.
-    to_store = old_value;
-    // TODO(riscv64): We could XOR the old and new value before the loop and use a single XOR here
-    // instead of the XOR+OR. (The `new_value` is either Zero or a temporary we can clobber.)
-    __ Xor(to_store, old_value, masked);
-    __ Or(to_store, to_store, new_value);
-  } else if (expected2 != kNoXRegister) {
-    Riscv64Label match2;
-    __ Beq(old_value, expected2, &match2, /*is_bare=*/ true);
-    __ Bne(old_value, expected, cmp_failure);
-    __ Bind(&match2);
-  } else {
-    __ Bne(old_value, expected, cmp_failure);
+  {
+    ScopedLrScExtensionsRestriction slser(assembler);
+    if (mask != kNoXRegister) {
+      DCHECK_EQ(expected2, kNoXRegister);
+      DCHECK_NE(masked, kNoXRegister);
+      __ And(masked, old_value, mask);
+      __ Bne(masked, expected, cmp_failure);
+      // The `old_value` does not need to be preserved as the caller shall use `masked`
+      // to return the old value if needed.
+      to_store = old_value;
+      // TODO(riscv64): We could XOR the old and new value before the loop and use a single XOR here
+      // instead of the XOR+OR. (The `new_value` is either Zero or a temporary we can clobber.)
+      __ Xor(to_store, old_value, masked);
+      __ Or(to_store, to_store, new_value);
+    } else if (expected2 != kNoXRegister) {
+      Riscv64Label match2;
+      __ Beq(old_value, expected2, &match2, /*is_bare=*/ true);
+      __ Bne(old_value, expected, cmp_failure);
+      __ Bind(&match2);
+    } else {
+      __ Bne(old_value, expected, cmp_failure);
+    }
   }
   EmitStoreConditional(assembler, type, ptr, store_result, to_store, store_aqrl);
   if (strong) {
@@ -1826,8 +1945,11 @@ static void GenerateGetAndUpdate(CodeGeneratorRISCV64* codegen,
         Riscv64Label retry;
         __ Bind(&retry);
         __ LrW(old_value, ptr, load_aqrl);
-        __ And(temp, old_value, mask);
-        __ Or(temp, temp, arg);
+        {
+          ScopedLrScExtensionsRestriction slser(assembler);
+          __ And(temp, old_value, mask);
+          __ Or(temp, temp, arg);
+        }
         __ ScW(temp, temp, ptr, store_aqrl);
         __ Bnez(temp, &retry, /*is_bare=*/ true);  // Bare: `TMP` shall not be clobbered.
       }
@@ -1845,15 +1967,19 @@ static void GenerateGetAndUpdate(CodeGeneratorRISCV64* codegen,
         Riscv64Label retry;
         __ Bind(&retry);
         __ LrW(old_value, ptr, load_aqrl);
-        __ Add(temp, old_value, arg);
-        // We use `(A ^ B) ^ A == B` and with the masking `((A ^ B) & mask) ^ A`, the result
-        // contains bits from `B` for bits specified in `mask` and bits from `A` elsewhere.
-        // Note: These instructions directly depend on each other, so it's not necessarily the
-        // fastest approach but for `(A ^ ~mask) | (B & mask)` we would need an extra register for
-        // `~mask` because ANDN is not in the "I" instruction set as required for a LR/SC sequence.
-        __ Xor(temp, temp, old_value);
-        __ And(temp, temp, mask);
-        __ Xor(temp, temp, old_value);
+        {
+          ScopedLrScExtensionsRestriction slser(assembler);
+          __ Add(temp, old_value, arg);
+          // We use `(A ^ B) ^ A == B` and with the masking `((A ^ B) & mask) ^ A`, the result
+          // contains bits from `B` for bits specified in `mask` and bits from `A` elsewhere.
+          // Note: These instructions directly depend on each other, so it's not necessarily the
+          // fastest approach but for `(A ^ ~mask) | (B & mask)` we would need an extra register
+          // for `~mask` because ANDN is not in the "I" instruction set as required for a LR/SC
+          // sequence.
+          __ Xor(temp, temp, old_value);
+          __ And(temp, temp, mask);
+          __ Xor(temp, temp, old_value);
+        }
         __ ScW(temp, temp, ptr, store_aqrl);
         __ Bnez(temp, &retry, /*is_bare=*/ true);  // Bare: `TMP` shall not be clobbered.
       }
@@ -3833,7 +3959,7 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
   }
 
   LocationSummary* locations = CreateVarHandleCommonLocations(invoke, codegen);
-  uint32_t arg_index = invoke->GetNumberOfArguments() - 1;
+  uint32_t arg_index = invoke->GetNumberOfArguments() - 1u;
   DCHECK_EQ(arg_index, 1u + GetExpectedVarHandleCoordinatesCount(invoke));
   DataType::Type value_type = invoke->GetType();
   DCHECK_EQ(value_type, GetDataTypeFromShorty(invoke, arg_index));
@@ -3843,7 +3969,7 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
   if (is_fp) {
     if (get_and_update_op == GetAndUpdateOp::kAdd) {
       // For ADD, do not use ZR for zero bit pattern (+0.0f or +0.0).
-      locations->SetInAt(invoke->GetNumberOfArguments() - 1u, Location::RequiresFpuRegister());
+      locations->SetInAt(arg_index, Location::RequiresFpuRegister());
     } else {
       DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
     }
@@ -4058,6 +4184,9 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
           ftmp, out.AsFpuRegister<FRegister>(), arg.AsFpuRegister<FRegister>(), value_type);
       codegen->MoveLocation(
           Location::RegisterLocation(new_value), Location::FpuRegisterLocation(ftmp), op_type);
+    } else if (arg.IsConstant()) {
+      DCHECK(arg.GetConstant()->IsZeroBitPattern());
+      __ Mv(new_value, out.AsRegister<XRegister>());
     } else if (value_type == DataType::Type::kInt64) {
       __ Add(new_value, out.AsRegister<XRegister>(), arg.AsRegister<XRegister>());
     } else {

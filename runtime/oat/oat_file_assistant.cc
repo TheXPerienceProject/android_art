@@ -987,7 +987,6 @@ bool OatFileAssistant::OatFileInfo::IsUseable() {
     case kOatUpToDate:
       return true;
   }
-  UNREACHABLE();
 }
 
 OatFileAssistant::OatStatus OatFileAssistant::OatFileInfo::Status() {

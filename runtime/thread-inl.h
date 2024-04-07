@@ -279,7 +279,21 @@ inline void Thread::CheckActiveSuspendBarriers() {
   }
 }
 
+inline void Thread::CheckBarrierInactive(WrappedSuspend1Barrier* suspend1_barrier) {
+  for (WrappedSuspend1Barrier* w = tlsPtr_.active_suspend1_barriers; w != nullptr; w = w->next_) {
+    CHECK_EQ(w->magic_, WrappedSuspend1Barrier::kMagic)
+        << "first = " << tlsPtr_.active_suspend1_barriers << " current = " << w
+        << " next = " << w->next_;
+    CHECK_NE(w, suspend1_barrier);
+  }
+}
+
 inline void Thread::AddSuspend1Barrier(WrappedSuspend1Barrier* suspend1_barrier) {
+  if (tlsPtr_.active_suspend1_barriers != nullptr) {
+    CHECK_EQ(tlsPtr_.active_suspend1_barriers->magic_, WrappedSuspend1Barrier::kMagic)
+        << "first = " << tlsPtr_.active_suspend1_barriers;
+  }
+  CHECK_EQ(suspend1_barrier->magic_, WrappedSuspend1Barrier::kMagic);
   suspend1_barrier->next_ = tlsPtr_.active_suspend1_barriers;
   tlsPtr_.active_suspend1_barriers = suspend1_barrier;
 }
@@ -321,7 +335,7 @@ inline void Thread::TransitionFromRunnableToSuspended(ThreadState new_state) {
   CheckActiveSuspendBarriers();
 }
 
-inline ThreadState Thread::TransitionFromSuspendedToRunnable() {
+inline ThreadState Thread::TransitionFromSuspendedToRunnable(bool fail_on_suspend_req) {
   // Note: JNI stubs inline a fast path of this method that transitions to Runnable if
   // there are no flags set and then stores the mutator lock to `held_mutexes[kMutatorLock]`
   // (this comes from a specialized `BaseMutex::RegisterAsUnlockedImpl(., kMutatorLock)`
@@ -333,6 +347,7 @@ inline ThreadState Thread::TransitionFromSuspendedToRunnable() {
   ThreadState old_state = old_state_and_flags.GetState();
   DCHECK_NE(old_state, ThreadState::kRunnable);
   while (true) {
+    DCHECK(!old_state_and_flags.IsFlagSet(ThreadFlag::kSuspensionImmune));
     GetMutatorLock()->AssertNotHeld(this);  // Otherwise we starve GC.
     // Optimize for the return from native code case - this is the fast path.
     // Atomically change from suspended to runnable if no suspend request pending.
@@ -360,6 +375,13 @@ inline ThreadState Thread::TransitionFromSuspendedToRunnable() {
                  << " flags=" << old_state_and_flags.WithState(ThreadState::kRunnable).GetValue()
                  << " state=" << old_state_and_flags.GetState();
     } else if (old_state_and_flags.IsFlagSet(ThreadFlag::kSuspendRequest)) {
+      auto fake_mutator_locker = []() SHARED_LOCK_FUNCTION(Locks::mutator_lock_)
+                                     NO_THREAD_SAFETY_ANALYSIS {};
+      if (fail_on_suspend_req) {
+        // Should get here EXTREMELY rarely.
+        fake_mutator_locker();  // We lie to make thread-safety analysis mostly work. See thread.h.
+        return ThreadState::kInvalidState;
+      }
       // Wait while our suspend count is non-zero.
 
       // We pass null to the MutexLock as we may be in a situation where the

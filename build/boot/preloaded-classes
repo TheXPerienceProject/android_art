@@ -71,6 +71,7 @@ com.android.okhttp.ConfigAwareConnectionPool
 com.android.okhttp.Connection
 com.android.okhttp.ConnectionPool$1
 com.android.okhttp.ConnectionPool
+com.android.okhttp.ConnectionSpec$1
 com.android.okhttp.ConnectionSpec$Builder
 com.android.okhttp.ConnectionSpec
 com.android.okhttp.ConnectionSpecs
@@ -78,6 +79,7 @@ com.android.okhttp.Dispatcher
 com.android.okhttp.Dns$1
 com.android.okhttp.Dns
 com.android.okhttp.Handshake
+com.android.okhttp.Headers$1
 com.android.okhttp.Headers$Builder
 com.android.okhttp.Headers
 com.android.okhttp.HttpHandler$CleartextURLFilter
@@ -95,10 +97,12 @@ com.android.okhttp.OkHttpClient
 com.android.okhttp.OkUrlFactories
 com.android.okhttp.OkUrlFactory
 com.android.okhttp.Protocol
+com.android.okhttp.Request$1
 com.android.okhttp.Request$Builder
 com.android.okhttp.Request
 com.android.okhttp.RequestBody$2
 com.android.okhttp.RequestBody
+com.android.okhttp.Response$1
 com.android.okhttp.Response$Builder
 com.android.okhttp.Response
 com.android.okhttp.ResponseBody
@@ -113,6 +117,7 @@ com.android.okhttp.internal.DiskLruCache
 com.android.okhttp.internal.FaultHidingSink
 com.android.okhttp.internal.Internal
 com.android.okhttp.internal.InternalCache
+com.android.okhttp.internal.NamedRunnable
 com.android.okhttp.internal.OptionalMethod
 com.android.okhttp.internal.Platform
 com.android.okhttp.internal.RouteDatabase
@@ -121,6 +126,7 @@ com.android.okhttp.internal.Util$1
 com.android.okhttp.internal.Util
 com.android.okhttp.internal.Version
 com.android.okhttp.internal.framed.FrameWriter
+com.android.okhttp.internal.framed.FramedConnection$1
 com.android.okhttp.internal.framed.FramedConnection$Builder
 com.android.okhttp.internal.framed.FramedConnection$Listener$1
 com.android.okhttp.internal.framed.FramedConnection$Listener
@@ -131,9 +137,11 @@ com.android.okhttp.internal.framed.PushObserver
 com.android.okhttp.internal.framed.Settings
 com.android.okhttp.internal.http.AuthenticatorAdapter
 com.android.okhttp.internal.http.CacheRequest
+com.android.okhttp.internal.http.CacheStrategy$1
 com.android.okhttp.internal.http.CacheStrategy$Factory
 com.android.okhttp.internal.http.CacheStrategy
 com.android.okhttp.internal.http.HeaderParser
+com.android.okhttp.internal.http.Http1xStream$1
 com.android.okhttp.internal.http.Http1xStream$AbstractSource
 com.android.okhttp.internal.http.Http1xStream$ChunkedSink
 com.android.okhttp.internal.http.Http1xStream$ChunkedSource
@@ -578,6 +586,7 @@ java.io.ObjectStreamClass$ClassDataSlot
 java.io.ObjectStreamClass$DefaultSUIDCompatibilityListener
 java.io.ObjectStreamClass$DeserializationConstructorsCache
 java.io.ObjectStreamClass$EntryFuture$1
+java.io.ObjectStreamClass$EntryFuture-IA
 java.io.ObjectStreamClass$EntryFuture
 java.io.ObjectStreamClass$ExceptionInfo
 java.io.ObjectStreamClass$FieldReflector
@@ -768,6 +777,7 @@ java.lang.ThreadLocal$ThreadLocalMap$Entry
 java.lang.ThreadLocal$ThreadLocalMap-IA
 java.lang.ThreadLocal$ThreadLocalMap
 java.lang.ThreadLocal
+java.lang.Throwable$PrintStreamOrWriter-IA
 java.lang.Throwable$PrintStreamOrWriter
 java.lang.Throwable$SentinelHolder
 java.lang.Throwable$WrappedPrintStream
@@ -801,7 +811,6 @@ java.lang.constant.Constable
 java.lang.constant.ConstantDesc
 java.lang.constant.ConstantDescs
 java.lang.constant.ConstantUtils
-java.lang.constant.DirectMethodHandleDesc$1
 java.lang.constant.DirectMethodHandleDesc$Kind
 java.lang.constant.DirectMethodHandleDesc
 java.lang.constant.DirectMethodHandleDescImpl$1
@@ -887,7 +896,6 @@ java.lang.invoke.Transformers$ZeroValue
 java.lang.invoke.TypeDescriptor$OfField
 java.lang.invoke.TypeDescriptor$OfMethod
 java.lang.invoke.TypeDescriptor
-java.lang.invoke.VarHandle$1
 java.lang.invoke.VarHandle$AccessMode
 java.lang.invoke.VarHandle$AccessType
 java.lang.invoke.VarHandle$VarHandleDesc$Kind
@@ -995,6 +1003,7 @@ java.net.HttpURLConnection
 java.net.IDN
 java.net.InMemoryCookieStore
 java.net.Inet4Address
+java.net.Inet6Address$Inet6AddressHolder-IA
 java.net.Inet6Address$Inet6AddressHolder
 java.net.Inet6Address
 java.net.Inet6AddressImpl
@@ -1002,6 +1011,7 @@ java.net.InetAddress$1
 java.net.InetAddress$InetAddressHolder
 java.net.InetAddress
 java.net.InetAddressImpl
+java.net.InetSocketAddress$InetSocketAddressHolder-IA
 java.net.InetSocketAddress$InetSocketAddressHolder
 java.net.InetSocketAddress
 java.net.InterfaceAddress
@@ -1241,7 +1251,9 @@ java.security.PrivilegedActionException
 java.security.PrivilegedExceptionAction
 java.security.ProtectionDomain
 java.security.Provider$EngineDescription
+java.security.Provider$Service-IA
 java.security.Provider$Service
+java.security.Provider$ServiceKey-IA
 java.security.Provider$ServiceKey
 java.security.Provider$UString
 java.security.Provider
@@ -1363,6 +1375,7 @@ java.text.DecimalFormat
 java.text.DecimalFormatSymbols
 java.text.DontCareFieldPosition$1
 java.text.DontCareFieldPosition
+java.text.FieldPosition$Delegate-IA
 java.text.FieldPosition$Delegate
 java.text.FieldPosition
 java.text.Format$Field
@@ -1378,6 +1391,7 @@ java.text.Normalizer$Form$$ExternalSyntheticLambda3
 java.text.Normalizer$Form
 java.text.Normalizer
 java.text.NumberFormat$Field
+java.text.NumberFormat$Style
 java.text.NumberFormat
 java.text.ParseException
 java.text.ParsePosition
@@ -1397,7 +1411,6 @@ java.time.LocalDate
 java.time.LocalDateTime
 java.time.LocalTime$1
 java.time.LocalTime
-java.time.Month$1
 java.time.Month
 java.time.OffsetDateTime
 java.time.Period
@@ -1431,7 +1444,9 @@ java.time.format.DateTimeFormatterBuilder$InstantPrinterParser
 java.time.format.DateTimeFormatterBuilder$NumberPrinterParser
 java.time.format.DateTimeFormatterBuilder$OffsetIdPrinterParser
 java.time.format.DateTimeFormatterBuilder$PadPrinterParserDecorator
+java.time.format.DateTimeFormatterBuilder$PrefixTree$CI-IA
 java.time.format.DateTimeFormatterBuilder$PrefixTree$CI
+java.time.format.DateTimeFormatterBuilder$PrefixTree-IA
 java.time.format.DateTimeFormatterBuilder$PrefixTree
 java.time.format.DateTimeFormatterBuilder$SettingsParser
 java.time.format.DateTimeFormatterBuilder$StringLiteralPrinterParser
@@ -1486,7 +1501,6 @@ java.time.temporal.ValueRange
 java.time.zone.IcuZoneRulesProvider$ZoneRulesCache
 java.time.zone.IcuZoneRulesProvider
 java.time.zone.ZoneOffsetTransition
-java.time.zone.ZoneOffsetTransitionRule$1
 java.time.zone.ZoneOffsetTransitionRule$TimeDefinition
 java.time.zone.ZoneOffsetTransitionRule
 java.time.zone.ZoneRules
@@ -1613,18 +1627,27 @@ java.util.Currency
 java.util.Date
 java.util.Deque
 java.util.Dictionary
+java.util.DualPivotQuicksort$Sorter-IA
 java.util.DualPivotQuicksort$Sorter
 java.util.DualPivotQuicksort
 java.util.DuplicateFormatFlagsException
 java.util.EmptyStackException
 java.util.EnumMap$1
+java.util.EnumMap$EntryIterator$Entry-IA
 java.util.EnumMap$EntryIterator$Entry
+java.util.EnumMap$EntryIterator-IA
 java.util.EnumMap$EntryIterator
+java.util.EnumMap$EntrySet-IA
 java.util.EnumMap$EntrySet
+java.util.EnumMap$EnumMapIterator-IA
 java.util.EnumMap$EnumMapIterator
+java.util.EnumMap$KeyIterator-IA
 java.util.EnumMap$KeyIterator
+java.util.EnumMap$KeySet-IA
 java.util.EnumMap$KeySet
+java.util.EnumMap$ValueIterator-IA
 java.util.EnumMap$ValueIterator
+java.util.EnumMap$Values-IA
 java.util.EnumMap$Values
 java.util.EnumMap
 java.util.EnumSet$SerializationProxy
@@ -1659,19 +1682,30 @@ java.util.HashMap$ValueSpliterator
 java.util.HashMap$Values
 java.util.HashMap
 java.util.HashSet
+java.util.Hashtable$EntrySet-IA
 java.util.Hashtable$EntrySet
 java.util.Hashtable$Enumerator
 java.util.Hashtable$HashtableEntry
+java.util.Hashtable$KeySet-IA
 java.util.Hashtable$KeySet
+java.util.Hashtable$ValueCollection-IA
 java.util.Hashtable$ValueCollection
 java.util.Hashtable
+java.util.IdentityHashMap$EntryIterator$Entry-IA
 java.util.IdentityHashMap$EntryIterator$Entry
+java.util.IdentityHashMap$EntryIterator-IA
 java.util.IdentityHashMap$EntryIterator
+java.util.IdentityHashMap$EntrySet-IA
 java.util.IdentityHashMap$EntrySet
+java.util.IdentityHashMap$IdentityHashMapIterator-IA
 java.util.IdentityHashMap$IdentityHashMapIterator
+java.util.IdentityHashMap$KeyIterator-IA
 java.util.IdentityHashMap$KeyIterator
+java.util.IdentityHashMap$KeySet-IA
 java.util.IdentityHashMap$KeySet
+java.util.IdentityHashMap$ValueIterator-IA
 java.util.IdentityHashMap$ValueIterator
+java.util.IdentityHashMap$Values-IA
 java.util.IdentityHashMap$Values
 java.util.IdentityHashMap
 java.util.IllegalFormatCodePointException
@@ -1687,6 +1721,7 @@ java.util.ImmutableCollections$AbstractImmutableMap
 java.util.ImmutableCollections$AbstractImmutableSet
 java.util.ImmutableCollections$List12
 java.util.ImmutableCollections$ListItr
+java.util.ImmutableCollections$ListN-IA
 java.util.ImmutableCollections$ListN
 java.util.ImmutableCollections$Map1
 java.util.ImmutableCollections$MapN$1
@@ -1709,6 +1744,7 @@ java.util.LinkedHashMap$LinkedValueIterator
 java.util.LinkedHashMap$LinkedValues
 java.util.LinkedHashMap
 java.util.LinkedHashSet
+java.util.LinkedList$DescendingIterator-IA
 java.util.LinkedList$DescendingIterator
 java.util.LinkedList$ListItr
 java.util.LinkedList$Node
@@ -1716,7 +1752,6 @@ java.util.LinkedList
 java.util.List
 java.util.ListIterator
 java.util.ListResourceBundle
-java.util.Locale$1
 java.util.Locale$Builder
 java.util.Locale$Cache
 java.util.Locale$Category
@@ -1726,8 +1761,10 @@ java.util.Locale$IsoCountryCode$2
 java.util.Locale$IsoCountryCode$3
 java.util.Locale$IsoCountryCode
 java.util.Locale$LanguageRange
+java.util.Locale$LocaleKey-IA
 java.util.Locale$LocaleKey
 java.util.Locale$NoImagePreloadHolder
+java.util.Locale-IA
 java.util.Locale
 java.util.Map$Entry
 java.util.Map
@@ -1830,16 +1867,20 @@ java.util.UUID
 java.util.UnknownFormatConversionException
 java.util.UnknownFormatFlagsException
 java.util.Vector$1
+java.util.Vector$Itr-IA
 java.util.Vector$Itr
 java.util.Vector
 java.util.WeakHashMap$Entry
+java.util.WeakHashMap$EntryIterator-IA
 java.util.WeakHashMap$EntryIterator
 java.util.WeakHashMap$EntrySet-IA
 java.util.WeakHashMap$EntrySet
 java.util.WeakHashMap$HashIterator
+java.util.WeakHashMap$KeyIterator-IA
 java.util.WeakHashMap$KeyIterator
 java.util.WeakHashMap$KeySet-IA
 java.util.WeakHashMap$KeySet
+java.util.WeakHashMap$ValueIterator-IA
 java.util.WeakHashMap$ValueIterator
 java.util.WeakHashMap$Values-IA
 java.util.WeakHashMap$Values
@@ -2100,6 +2141,7 @@ java.util.jar.Manifest
 java.util.logging.ConsoleHandler
 java.util.logging.ErrorManager
 java.util.logging.FileHandler$1
+java.util.logging.FileHandler$InitializationErrorManager-IA
 java.util.logging.FileHandler$InitializationErrorManager
 java.util.logging.FileHandler$MeteredStream
 java.util.logging.FileHandler
@@ -2141,6 +2183,7 @@ java.util.prefs.FileSystemPreferences
 java.util.prefs.FileSystemPreferencesFactory
 java.util.prefs.Preferences
 java.util.prefs.PreferencesFactory
+java.util.regex.ASCII
 java.util.regex.MatchResult
 java.util.regex.Matcher
 java.util.regex.Pattern
@@ -2252,8 +2295,11 @@ java.util.stream.Nodes$IntArrayNode
 java.util.stream.Nodes$IntFixedNodeBuilder
 java.util.stream.Nodes$IntSpinedNodeBuilder
 java.util.stream.Nodes$SpinedNodeBuilder
+java.util.stream.Nodes$ToArrayTask$OfInt-IA
 java.util.stream.Nodes$ToArrayTask$OfInt
+java.util.stream.Nodes$ToArrayTask$OfPrimitive-IA
 java.util.stream.Nodes$ToArrayTask$OfPrimitive
+java.util.stream.Nodes$ToArrayTask$OfRef-IA
 java.util.stream.Nodes$ToArrayTask$OfRef
 java.util.stream.Nodes$ToArrayTask
 java.util.stream.Nodes
@@ -2322,6 +2368,7 @@ java.util.stream.StreamSpliterators$WrappingSpliterator
 java.util.stream.StreamSupport
 java.util.stream.Streams$1
 java.util.stream.Streams$2
+java.util.stream.Streams$AbstractStreamBuilderImpl-IA
 java.util.stream.Streams$AbstractStreamBuilderImpl
 java.util.stream.Streams$ConcatSpliterator$OfRef
 java.util.stream.Streams$ConcatSpliterator
@@ -2360,7 +2407,6 @@ java.util.zip.ZipOutputStream
 java.util.zip.ZipUtils
 javax.crypto.AEADBadTagException
 javax.crypto.BadPaddingException
-javax.crypto.Cipher$1
 javax.crypto.Cipher$CipherSpiAndProvider
 javax.crypto.Cipher$InitParams
 javax.crypto.Cipher$InitType
@@ -2486,7 +2532,6 @@ jdk.internal.math.FloatingDecimal$HexFloatPattern
 jdk.internal.math.FloatingDecimal$PreparedASCIIToBinaryBuffer
 jdk.internal.math.FloatingDecimal
 jdk.internal.math.FormattedFloatingDecimal$1
-jdk.internal.math.FormattedFloatingDecimal$2
 jdk.internal.math.FormattedFloatingDecimal$Form
 jdk.internal.math.FormattedFloatingDecimal
 jdk.internal.misc.TerminatingThreadLocal$1
@@ -2504,6 +2549,7 @@ libcore.content.type.MimeMap$$ExternalSyntheticLambda0
 libcore.content.type.MimeMap$Builder$Element
 libcore.content.type.MimeMap$Builder
 libcore.content.type.MimeMap$MemoizingSupplier
+libcore.content.type.MimeMap-IA
 libcore.content.type.MimeMap
 libcore.icu.CollationKeyICU
 libcore.icu.DateIntervalFormat
@@ -2577,7 +2623,9 @@ org.apache.harmony.dalvik.ddmc.DdmServer
 org.apache.harmony.dalvik.ddmc.DdmVmInternal
 org.apache.harmony.xml.ExpatAttributes
 org.apache.harmony.xml.ExpatException
+org.apache.harmony.xml.ExpatParser$CurrentAttributes-IA
 org.apache.harmony.xml.ExpatParser$CurrentAttributes
+org.apache.harmony.xml.ExpatParser$ExpatLocator-IA
 org.apache.harmony.xml.ExpatParser$ExpatLocator
 org.apache.harmony.xml.ExpatParser$ParseException
 org.apache.harmony.xml.ExpatParser
@@ -2695,6 +2743,7 @@ sun.nio.ch.DatagramDispatcher
 sun.nio.ch.DefaultSelectorProvider
 sun.nio.ch.DirectBuffer
 sun.nio.ch.FileChannelImpl$SimpleFileLockTable
+sun.nio.ch.FileChannelImpl$Unmapper-IA
 sun.nio.ch.FileChannelImpl$Unmapper
 sun.nio.ch.FileChannelImpl
 sun.nio.ch.FileDescriptorHolderSocketImpl
@@ -2780,6 +2829,7 @@ sun.reflect.misc.ReflectUtil
 sun.security.action.GetBooleanAction
 sun.security.action.GetIntegerAction
 sun.security.action.GetPropertyAction
+sun.security.jca.GetInstance$Instance-IA
 sun.security.jca.GetInstance$Instance
 sun.security.jca.GetInstance
 sun.security.jca.JCAUtil$CachedSecureRandomHolder
@@ -2817,8 +2867,8 @@ sun.security.provider.certpath.KeyChecker
 sun.security.provider.certpath.OCSP$RevocationStatus$CertStatus
 sun.security.provider.certpath.OCSP$RevocationStatus
 sun.security.provider.certpath.OCSP
-sun.security.provider.certpath.OCSPResponse$1
 sun.security.provider.certpath.OCSPResponse$ResponseStatus
+sun.security.provider.certpath.OCSPResponse$SingleResponse-IA
 sun.security.provider.certpath.OCSPResponse$SingleResponse
 sun.security.provider.certpath.OCSPResponse
 sun.security.provider.certpath.PKIX$ValidatorParams
@@ -2830,6 +2880,7 @@ sun.security.provider.certpath.PolicyNodeImpl
 sun.security.provider.certpath.RevocationChecker$1
 sun.security.provider.certpath.RevocationChecker$2
 sun.security.provider.certpath.RevocationChecker$Mode
+sun.security.provider.certpath.RevocationChecker$RevocationProperties-IA
 sun.security.provider.certpath.RevocationChecker$RevocationProperties
 sun.security.provider.certpath.RevocationChecker
 sun.security.timestamp.TimestampToken
@@ -2851,7 +2902,6 @@ sun.security.util.DerInputBuffer
 sun.security.util.DerInputStream
 sun.security.util.DerOutputStream
 sun.security.util.DerValue
-sun.security.util.DisabledAlgorithmConstraints$1
 sun.security.util.DisabledAlgorithmConstraints$Constraint$Operator
 sun.security.util.DisabledAlgorithmConstraints$Constraint
 sun.security.util.DisabledAlgorithmConstraints$Constraints
@@ -2959,9 +3009,12 @@ sun.util.calendar.JulianCalendar$Date
 sun.util.calendar.JulianCalendar
 sun.util.calendar.LocalGregorianCalendar
 sun.util.locale.BaseLocale$Cache
+sun.util.locale.BaseLocale$Key-IA
 sun.util.locale.BaseLocale$Key
+sun.util.locale.BaseLocale-IA
 sun.util.locale.BaseLocale
 sun.util.locale.Extension
+sun.util.locale.InternalLocaleBuilder$CaseInsensitiveChar-IA
 sun.util.locale.InternalLocaleBuilder$CaseInsensitiveChar
 sun.util.locale.InternalLocaleBuilder
 sun.util.locale.LanguageTag
@@ -3032,6 +3085,7 @@ sun.util.logging.PlatformLogger
 [Ljava.lang.Number;
 [Ljava.lang.Object;
 [Ljava.lang.Package;
+[Ljava.lang.ProcessBuilder$Redirect;
 [Ljava.lang.Runnable;
 [Ljava.lang.Short;
 [Ljava.lang.StackTraceElement;
@@ -3171,6 +3225,7 @@ sun.util.logging.PlatformLogger
 [Lsun.security.provider.certpath.OCSP$RevocationStatus$CertStatus;
 [Lsun.security.provider.certpath.OCSPResponse$ResponseStatus;
 [Lsun.security.provider.certpath.RevocationChecker$Mode;
+[Lsun.security.util.DerEncoder;
 [Lsun.security.util.DerOutputStream;
 [Lsun.security.util.DerValue;
 [Lsun.security.util.DisabledAlgorithmConstraints$Constraint$Operator;

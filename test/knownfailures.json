@@ -58,12 +58,6 @@
                         "loaded systems."]
     },
     {
-        "tests": "569-checker-pattern-replacement",
-        "variant": "target",
-        "description": ["569-checker-pattern-replacement tests behaviour",
-                        "present only on host."]
-    },
-    {
         "tests": ["116-nodex2oat",
                   "118-noimage-dex2oat"],
         "variant": "prebuild",
@@ -1238,6 +1232,7 @@
                   "2238-checker-polymorphic-recursive-inlining",
                   "2240-tracing-non-invokable-method",
                   "2246-trace-stream",
+                  "2246-trace-v2",
                   "2254-class-value-before-and-after-u",
                   "2261-badcleaner-in-systemcleaner",
                   "2263-method-trace-jit",
@@ -1575,5 +1570,27 @@
       "description": ["Test relies on profiling done by baseline compiled code. Meanwhile, it",
                       "can't use --baseline because it has a test case checking the behavior when",
                       "a method is optimized compiled."]
+    },
+    {
+      "tests": ["004-ThreadStress",
+                "050-sync-test",
+                "083-compiler-regressions",
+                "137-cfi",
+                "913-heaps",
+                "989-method-trace-throw",
+                "2029-contended-monitors",
+                "2043-reference-pauses",
+                "2239-varhandle-perf"],
+      "bug": "b/328023607",
+      "description": ["Fails on QEMU"],
+      "env_vars": {"ART_TEST_ON_VM": "true"}
+    },
+    {
+        "tests": ["169-threadgroup-jni"],
+        "variant": "jvm",
+        "description": ["ThreadGroup.isDestroyed() has been deprecated since Java 16: ",
+                        "The ability to destroy a thread group and the concept of a destroyed ",
+                        "thread group no longer exists. A thread group is eligible to be GC'ed ",
+                        "when there are no live threads in the group and it is otherwise unreachable."]
     }
 ]

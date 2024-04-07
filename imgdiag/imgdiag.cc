@@ -76,7 +76,6 @@ std::ostream& operator<<(std::ostream& os, RemoteProcesses remotes) {
     case RemoteProcesses::kImageOnly: os << "ImageOnly"; break;
     case RemoteProcesses::kZygoteOnly: os << "ZygoteOnly"; break;
     case RemoteProcesses::kImageAndZygote: os << "ImageAndZygote"; break;
-    default: UNREACHABLE();
   }
   return os;
 }
@@ -395,11 +394,13 @@ class ReferenceFieldVisitor {
   [[noreturn]] void VisitRootIfNonNull(
       [[maybe_unused]] mirror::CompressedReference<mirror::Object>* root) const
       REQUIRES_SHARED(Locks::mutator_lock_) {
+    LOG(FATAL) << "Unreachable";
     UNREACHABLE();
   }
 
   [[noreturn]] void VisitRoot([[maybe_unused]] mirror::CompressedReference<mirror::Object>* root)
       const REQUIRES_SHARED(Locks::mutator_lock_) {
+    LOG(FATAL) << "Unreachable";
     UNREACHABLE();
   }
 

@@ -254,13 +254,11 @@ class CompilerDriver::AOTCompilationStats {
 CompilerDriver::CompilerDriver(
     const CompilerOptions* compiler_options,
     const VerificationResults* verification_results,
-    Compiler::Kind compiler_kind,
     size_t thread_count,
     int swap_fd)
     : compiler_options_(compiler_options),
       verification_results_(verification_results),
       compiler_(),
-      compiler_kind_(compiler_kind),
       number_of_soft_verifier_failures_(0),
       had_hard_verifier_failure_(false),
       parallel_thread_count_(thread_count),
@@ -270,7 +268,7 @@ CompilerDriver::CompilerDriver(
   DCHECK(compiler_options_ != nullptr);
 
   compiled_method_storage_.SetDedupeEnabled(compiler_options_->DeduplicateCode());
-  compiler_.reset(Compiler::Create(*compiler_options, &compiled_method_storage_, compiler_kind));
+  compiler_.reset(Compiler::Create(*compiler_options, &compiled_method_storage_));
 }
 
 CompilerDriver::~CompilerDriver() {
@@ -488,10 +486,18 @@ static void CompileMethodQuick(
         // Query any JNI optimization annotations such as @FastNative or @CriticalNative.
         access_flags |= annotations::GetNativeMethodAnnotationAccessFlags(
             dex_file, dex_file.GetClassDef(class_def_idx), method_idx);
-
-        compiled_method = driver->GetCompiler()->JniCompile(
-            access_flags, method_idx, dex_file, dex_cache);
-        CHECK(compiled_method != nullptr);
+        const void* boot_jni_stub = nullptr;
+        if (!Runtime::Current()->GetHeap()->GetBootImageSpaces().empty()) {
+          // Skip the compilation for native method if found an usable boot JNI stub.
+          ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
+          std::string_view shorty = dex_file.GetMethodShortyView(dex_file.GetMethodId(method_idx));
+          boot_jni_stub = class_linker->FindBootJniStub(access_flags, shorty);
+        }
+        if (boot_jni_stub == nullptr) {
+          compiled_method =
+              driver->GetCompiler()->JniCompile(access_flags, method_idx, dex_file, dex_cache);
+          CHECK(compiled_method != nullptr);
+        }
       }
     } else if ((access_flags & kAccAbstract) != 0) {
       // Abstract methods don't have code.
