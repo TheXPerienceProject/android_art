@@ -81,12 +81,16 @@ public class SecondaryDexopterTest {
                     .setFlags(ArtFlags.FLAG_FOR_PRIMARY_DEX | ArtFlags.FLAG_FOR_SECONDARY_DEX)
                     .build();
 
-    private final ProfilePath mDex1RefProfile = AidlUtils.buildProfilePathForSecondaryRef(DEX_1);
+    private final ProfilePath mDex1RefProfile =
+            AidlUtils.buildProfilePathForSecondaryRefAsInput(DEX_1);
     private final ProfilePath mDex1CurProfile = AidlUtils.buildProfilePathForSecondaryCur(DEX_1);
-    private final ProfilePath mDex2RefProfile = AidlUtils.buildProfilePathForSecondaryRef(DEX_2);
-    private final ProfilePath mDex3RefProfile = AidlUtils.buildProfilePathForSecondaryRef(DEX_3);
+    private final ProfilePath mDex2RefProfile =
+            AidlUtils.buildProfilePathForSecondaryRefAsInput(DEX_2);
+    private final ProfilePath mDex3RefProfile =
+            AidlUtils.buildProfilePathForSecondaryRefAsInput(DEX_3);
     private final OutputProfile mDex1PrivateOutputProfile =
-            AidlUtils.buildOutputProfileForSecondary(DEX_1, UID, UID, false /* isOtherReadable */);
+            AidlUtils.buildOutputProfileForSecondary(
+                    DEX_1, UID, UID, false /* isOtherReadable */, false /* isPreReboot */);
 
     private final int mDefaultDexoptTrigger = DexoptTrigger.COMPILER_FILTER_IS_BETTER
             | DexoptTrigger.PRIMARY_BOOT_IMAGE_BECOMES_USABLE | DexoptTrigger.NEED_EXTRACTION;
@@ -322,8 +326,8 @@ public class SecondaryDexopterTest {
     private void checkDexoptWithPrivateProfile(IArtd artd, String dexPath, String isa,
             ProfilePath profile, String classLoaderContext) throws Exception {
         PermissionSettings permissionSettings = buildPermissionSettings(false /* isPublic */);
-        OutputArtifacts outputArtifacts = AidlUtils.buildOutputArtifacts(
-                dexPath, isa, false /* isInDalvikCache */, permissionSettings);
+        OutputArtifacts outputArtifacts = AidlUtils.buildOutputArtifacts(dexPath, isa,
+                false /* isInDalvikCache */, permissionSettings, false /* isPreReboot */);
         artd.dexopt(deepEq(outputArtifacts), eq(dexPath), eq(isa), eq(classLoaderContext),
                 eq("speed-profile"), deepEq(profile), any(), isNull() /* dmFile */, anyInt(),
                 argThat(dexoptOptions -> dexoptOptions.generateAppImage == true), any());
@@ -332,8 +336,8 @@ public class SecondaryDexopterTest {
     private void checkDexoptWithNoProfile(IArtd artd, String dexPath, String isa,
             String compilerFilter, String classLoaderContext, boolean isPublic) throws Exception {
         PermissionSettings permissionSettings = buildPermissionSettings(isPublic);
-        OutputArtifacts outputArtifacts = AidlUtils.buildOutputArtifacts(
-                dexPath, isa, false /* isInDalvikCache */, permissionSettings);
+        OutputArtifacts outputArtifacts = AidlUtils.buildOutputArtifacts(dexPath, isa,
+                false /* isInDalvikCache */, permissionSettings, false /* isPreReboot */);
         artd.dexopt(deepEq(outputArtifacts), eq(dexPath), eq(isa), eq(classLoaderContext),
                 eq(compilerFilter), isNull(), any(), isNull() /* dmFile */, anyInt(),
                 argThat(dexoptOptions -> dexoptOptions.generateAppImage == false), any());

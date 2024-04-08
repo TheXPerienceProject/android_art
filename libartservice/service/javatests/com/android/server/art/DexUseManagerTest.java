@@ -166,6 +166,7 @@ public class DexUseManagerTest {
                 .thenAnswer(invocation -> mMockClock.createScheduledExecutor());
         lenient().when(mInjector.getContext()).thenReturn(mContext);
         lenient().when(mInjector.getAllPackageNames()).thenReturn(mPackageStates.keySet());
+        lenient().when(mInjector.isPreReboot()).thenReturn(false);
 
         mDexUseManager = new DexUseManagerLocal(mInjector);
         mDexUseManager.systemReady();
@@ -772,6 +773,13 @@ public class DexUseManagerTest {
                         "CLC", Set.of("armeabi-v7a"),
                         Set.of(DexLoader.create(LOADING_PKG_NAME, false /* isolatedProcess */)),
                         true /* isUsedByOtherApps */, mDefaultFileVisibility));
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void testPreRebootNoUpdate() throws Exception {
+        when(mInjector.isPreReboot()).thenReturn(true);
+        mDexUseManager.notifyDexContainersLoaded(
+                mSnapshot, OWNING_PKG_NAME, Map.of(BASE_APK, "CLC"));
     }
 
     private AndroidPackage createPackage(String packageName) {

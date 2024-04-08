@@ -92,6 +92,7 @@ public class PrimaryDexopterTestBase {
         lenient().when(mInjector.getArtVersion()).thenReturn(ART_VERSION);
         lenient().when(mInjector.getConfig()).thenReturn(mConfig);
         lenient().when(mInjector.getDexMetadataHelper()).thenReturn(mDexMetadataHelper);
+        lenient().when(mInjector.isPreReboot()).thenReturn(false);
 
         lenient()
                 .when(SystemProperties.get("dalvik.vm.systemuicompilerfilter"))

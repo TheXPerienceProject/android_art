@@ -312,18 +312,20 @@ public class PrimaryDexUtils {
     }
 
     @NonNull
-    public static ProfilePath buildRefProfilePath(
+    public static ProfilePath buildRefProfilePathAsInput(
             @NonNull PackageState pkgState, @NonNull PrimaryDexInfo dexInfo) {
         String profileName = getProfileName(dexInfo.splitName());
-        return AidlUtils.buildProfilePathForPrimaryRef(pkgState.getPackageName(), profileName);
+        return AidlUtils.buildProfilePathForPrimaryRefAsInput(
+                pkgState.getPackageName(), profileName);
     }
 
     @NonNull
     public static OutputProfile buildOutputProfile(@NonNull PackageState pkgState,
-            @NonNull PrimaryDexInfo dexInfo, int uid, int gid, boolean isPublic) {
+            @NonNull PrimaryDexInfo dexInfo, int uid, int gid, boolean isPublic,
+            boolean isPreReboot) {
         String profileName = getProfileName(dexInfo.splitName());
         return AidlUtils.buildOutputProfileForPrimary(
-                pkgState.getPackageName(), profileName, uid, gid, isPublic);
+                pkgState.getPackageName(), profileName, uid, gid, isPublic, isPreReboot);
     }
 
     @NonNull
