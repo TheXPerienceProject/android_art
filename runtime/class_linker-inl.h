@@ -418,7 +418,7 @@ inline ArtMethod* ClassLinker::ResolveMethod(uint32_t method_idx,
     ThrowIncompatibleClassChangeError(type, resolved->GetInvokeType(), resolved, referrer);
   } else {
     // We failed to find the method (using all lookup types), so throw a NoSuchMethodError.
-    const char* name = dex_file.StringDataByIdx(method_id.name_idx_);
+    const char* name = dex_file.GetStringData(method_id.name_idx_);
     const Signature signature = dex_file.GetMethodSignature(method_id);
     ThrowNoSuchMethodError(type, klass, name, signature);
   }

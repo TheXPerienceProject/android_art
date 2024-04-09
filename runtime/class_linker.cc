@@ -3363,7 +3363,7 @@ ObjPtr<mirror::Class> ClassLinker::FindClass(Thread* self,
     // capable class loaders.  (All class loaders are considered parallel capable on Android.)
     ObjPtr<mirror::Class> loader_class = class_loader->GetClass();
     const char* loader_class_name =
-        loader_class->GetDexFile().StringByTypeIdx(loader_class->GetDexTypeIndex());
+        loader_class->GetDexFile().GetTypeDescriptor(loader_class->GetDexTypeIndex());
     LOG(WARNING) << "Initiating class loader of type " << DescriptorToDot(loader_class_name)
         << " is not well-behaved; it returned a different Class for racing loadClass(\""
         << DescriptorToDot(descriptor) << "\").";
@@ -4082,8 +4082,8 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
   const uint32_t dex_method_idx = method.GetIndex();
   const dex::MethodId& method_id = dex_file.GetMethodId(dex_method_idx);
   uint32_t name_utf16_length;
-  const char* method_name = dex_file.StringDataAndUtf16LengthByIdx(method_id.name_idx_,
-                                                                   &name_utf16_length);
+  const char* method_name = dex_file.GetStringDataAndUtf16Length(method_id.name_idx_,
+                                                                 &name_utf16_length);
   std::string_view shorty = dex_file.GetShortyView(dex_file.GetProtoId(method_id.proto_idx_));
 
   dst->SetDexMethodIndex(dex_method_idx);
@@ -6595,7 +6595,7 @@ class MethodNameAndSignatureComparator final : public ValueObject {
 
   ALWAYS_INLINE std::string_view GetNameView() {
     if (name_view_.empty()) {
-      name_view_ = dex_file_->StringViewByIdx(mid_->name_idx_);
+      name_view_ = dex_file_->GetStringView(mid_->name_idx_);
     }
     return name_view_;
   }
@@ -6608,7 +6608,7 @@ class MethodNameAndSignatureComparator final : public ValueObject {
     if (dex_file_ == other_dex_file) {
       return mid_->name_idx_ == other_mid.name_idx_ && mid_->proto_idx_ == other_mid.proto_idx_;
     }
-    return GetNameView() == other_dex_file->StringViewByIdx(other_mid.name_idx_) &&
+    return GetNameView() == other_dex_file->GetStringView(other_mid.name_idx_) &&
            dex_file_->GetMethodSignature(*mid_) == other_dex_file->GetMethodSignature(other_mid);
   }
 
@@ -7310,7 +7310,7 @@ void CheckVTableHasNoDuplicates(Thread* self, Handle<mirror::Class> klass)
           // This call writes `name_len` and it is therefore necessary that the
           // initializer for `name_len` comes before it, otherwise the value
           // from the call would be overwritten by that initializer.
-          name(dex_file->StringDataAndUtf16LengthByIdx(mid.name_idx_, &name_len)),
+          name(dex_file->GetStringDataAndUtf16Length(mid.name_idx_, &name_len)),
           signature(dex_file->GetMethodSignature(mid)) {
       // The `name_len` has been initialized to the UTF16 length. Calculate length in bytes.
       if (name[name_len] != 0) {
@@ -9896,7 +9896,7 @@ ObjPtr<mirror::String> ClassLinker::DoResolveString(dex::StringIndex string_idx,
                                                     Handle<mirror::DexCache> dex_cache) {
   const DexFile& dex_file = *dex_cache->GetDexFile();
   uint32_t utf16_length;
-  const char* utf8_data = dex_file.StringDataAndUtf16LengthByIdx(string_idx, &utf16_length);
+  const char* utf8_data = dex_file.GetStringDataAndUtf16Length(string_idx, &utf16_length);
   ObjPtr<mirror::String> string = intern_table_->InternStrong(utf16_length, utf8_data);
   if (string != nullptr) {
     dex_cache->SetResolvedString(string_idx, string);
@@ -9909,7 +9909,7 @@ ObjPtr<mirror::String> ClassLinker::DoLookupString(dex::StringIndex string_idx,
   DCHECK(dex_cache != nullptr);
   const DexFile& dex_file = *dex_cache->GetDexFile();
   uint32_t utf16_length;
-  const char* utf8_data = dex_file.StringDataAndUtf16LengthByIdx(string_idx, &utf16_length);
+  const char* utf8_data = dex_file.GetStringDataAndUtf16Length(string_idx, &utf16_length);
   ObjPtr<mirror::String> string =
       intern_table_->LookupStrong(Thread::Current(), utf16_length, utf8_data);
   if (string != nullptr) {
@@ -9928,7 +9928,7 @@ ObjPtr<mirror::Class> ClassLinker::DoLookupResolvedType(dex::TypeIndex type_idx,
                                                         ObjPtr<mirror::ClassLoader> class_loader) {
   DCHECK(dex_cache->GetClassLoader() == class_loader);
   const DexFile& dex_file = *dex_cache->GetDexFile();
-  const char* descriptor = dex_file.StringByTypeIdx(type_idx);
+  const char* descriptor = dex_file.GetTypeDescriptor(type_idx);
   ObjPtr<mirror::Class> type = LookupResolvedType(descriptor, class_loader);
   if (type != nullptr) {
     DCHECK(type->IsResolved());
@@ -9976,7 +9976,7 @@ ObjPtr<mirror::Class> ClassLinker::DoResolveType(dex::TypeIndex type_idx,
                                                  Handle<mirror::ClassLoader> class_loader) {
   DCHECK(dex_cache->GetClassLoader() == class_loader.Get());
   Thread* self = Thread::Current();
-  const char* descriptor = dex_cache->GetDexFile()->StringByTypeIdx(type_idx);
+  const char* descriptor = dex_cache->GetDexFile()->GetTypeDescriptor(type_idx);
   ObjPtr<mirror::Class> resolved = FindClass(self, descriptor, class_loader);
   if (resolved != nullptr) {
     // TODO: we used to throw here if resolved's class loader was not the
