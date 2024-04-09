@@ -1334,6 +1334,11 @@ bool ProfileCompilationInfo::AddMethod(const ProfileMethodInfo& pmi,
   DCHECK(inline_cache != nullptr);
 
   for (const ProfileMethodInfo::ProfileInlineCache& cache : pmi.inline_caches) {
+    if (cache.dex_pc >= std::numeric_limits<uint16_t>::max()) {
+      // Discard entries that don't fit the encoding. This should only apply to
+      // inlined inline caches. See also `HInliner::GetInlineCacheAOT`.
+      continue;
+    }
     if (cache.is_missing_types) {
       FindOrAddDexPc(inline_cache, cache.dex_pc)->SetIsMissingTypes();
       continue;
