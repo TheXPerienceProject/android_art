@@ -60,6 +60,13 @@ inline const char* DexFile::GetStringData(const dex::StringId& string_id) const 
 }
 
 ALWAYS_INLINE
+inline std::string_view DexFile::GetStringView(const dex::StringId& string_id) const {
+  uint32_t utf16_length;
+  const char* data = GetStringDataAndUtf16Length(string_id, &utf16_length);
+  return StringViewFromUtf16Length(data, utf16_length);
+}
+
+ALWAYS_INLINE
 inline const char* DexFile::StringDataAndUtf16LengthByIdx(dex::StringIndex idx,
                                                           uint32_t* utf16_length) const {
   if (!idx.IsValid()) {

@@ -75,7 +75,7 @@ enum class OatClassType : uint8_t {
   kAllCompiled = 0,   // OatClass is followed by an OatMethodOffsets for each method.
   kSomeCompiled = 1,  // A bitmap of OatMethodOffsets that are present follows the OatClass.
   kNoneCompiled = 2,  // All methods are interpreted so no OatMethodOffsets are necessary.
-  kOatClassMax = 3,
+  kLast = kNoneCompiled
 };
 
 EXPORT std::ostream& operator<<(std::ostream& os, OatClassType rhs);
