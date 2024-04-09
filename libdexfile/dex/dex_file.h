@@ -350,6 +350,8 @@ class DexFile {
 
   const char* GetStringData(const dex::StringId& string_id) const;
 
+  std::string_view GetStringView(const dex::StringId& string_id) const;
+
   // Index version of GetStringDataAndUtf16Length.
   const char* StringDataAndUtf16LengthByIdx(dex::StringIndex idx, uint32_t* utf16_length) const;
 
