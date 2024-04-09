@@ -67,6 +67,7 @@ class ScopedObjectAccessAlreadyRunnable;
 class SdkChecker;
 template<size_t kNumReferences> class PACKED(4) StackHandleScope;
 class Thread;
+class VariableSizedHandleScope;
 
 enum VisitRootFlags : uint8_t;
 
@@ -784,6 +785,10 @@ class EXPORT ClassLinker {
 
   // Get the class loader holding class for a copied method.
   ObjPtr<mirror::ClassLoader> GetHoldingClassLoaderOfCopiedMethod(Thread* self, ArtMethod* method)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      REQUIRES(!Locks::classlinker_classes_lock_);
+
+  void GetClassLoaders(Thread* self, VariableSizedHandleScope* handles)
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::classlinker_classes_lock_);
 
