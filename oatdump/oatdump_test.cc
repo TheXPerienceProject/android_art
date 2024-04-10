@@ -99,4 +99,14 @@ TEST_P(OatDumpTest, TestExportDex) {
   }
 }
 
+TEST_P(OatDumpTest, TestMethodAndOffsetOnly) {
+  TEST_DISABLED_FOR_RISCV64();
+  TEST_DISABLED_FOR_ARM_AND_ARM64();
+  std::string error_msg;
+  ASSERT_TRUE(Exec(GetParam(),
+                   kArgOatBcp | kArgDexBcp | kArgMethodAndOffsetAsJson,
+                   {},
+                   kExpectMethodAndOffsetAsJson));
+}
+
 }  // namespace art
