@@ -118,6 +118,9 @@ class FdFile : public RandomAccessFile {
   // descriptors following the rename.
   bool Rename(const std::string& new_path);
   // Copy data from another file.
+  // On Linux, we only support copies that will append regions to the file, and we require the file
+  // offset of the output file descriptor to be aligned with the filesystem blocksize (see comments
+  // in implementation).
   bool Copy(FdFile* input_file, int64_t offset, int64_t size);
   // Clears the file content and resets the file offset to 0.
   // Returns true upon success, false otherwise.
@@ -179,6 +182,30 @@ class FdFile : public RandomAccessFile {
   // the file path (if it is set) returns the expected up-to-date file descriptor. This is still
   // racy, though, and it is up to the caller to ensure correctness in a multi-process setup.
   bool FilePathMatchesFd();
+
+#ifdef __linux__
+  // Sparse copy of 'size' bytes from an input file, starting at 'off'. Both this file's offset and
+  // the input file's offset will be incremented by 'size' bytes.
+  //
+  // Note: in order to preserve the same sparsity, the input and output files must be on mounted
+  // filesystems that use the same blocksize, and the offsets used for the copy must be aligned to
+  // it. Otherwise, the copied region's sparsity within the output file may differ from its original
+  // sparsity in the input file.
+  bool UserspaceSparseCopy(const FdFile* input_file, off_t off, size_t size, size_t fs_blocksize);
+
+  // Write 'size' bytes from 'data' to the file if any are non-zero. Otherwise, just update the file
+  // offset and skip the write. For efficiency, the function expects a vector of zeroed uint8_t
+  // values to check the data array against. This vector 'zeroes' must have length greater than or
+  // equal to 'size'.
+  //
+  // As filesystems which support sparse files only allocate physical space to blocks that have been
+  // written, any whole filesystem blocks in the output file which are skipped in this way will save
+  // storage space. Subsequent reads of bytes in non-allocated blocks will simply return zeros
+  // without accessing the underlying storage.
+  bool SparseWrite(const uint8_t* data,
+                   size_t size,
+                   const std::vector<uint8_t>& zeroes);
+#endif
 
   void Destroy();  // For ~FdFile and operator=(&&).
 
