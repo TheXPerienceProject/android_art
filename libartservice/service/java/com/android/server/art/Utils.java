@@ -469,6 +469,14 @@ public final class Utils {
         return uid == Process.SYSTEM_UID || uid == Process.ROOT_UID || uid == Process.SHELL_UID;
     }
 
+    public static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Slog.wtf(TAG, "Sleep interrupted", e);
+        }
+    }
+
     @AutoValue
     public abstract static class Abi {
         static @NonNull Abi create(

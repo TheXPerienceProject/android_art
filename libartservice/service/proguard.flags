@@ -8,3 +8,6 @@
 
 # A job service is referenced by the framework through reflection.
 -keep class * extends android.app.job.JobService { *; }
+
+# PreRebootManager is called through reflection.
+-keep class com.android.server.art.prereboot.PreRebootManager { *; }

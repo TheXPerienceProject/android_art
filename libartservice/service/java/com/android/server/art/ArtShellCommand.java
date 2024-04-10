@@ -31,6 +31,7 @@ import static com.android.server.art.model.DexoptStatus.DexContainerFileDexoptSt
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.content.Context;
 import android.os.Binder;
 import android.os.Build;
 import android.os.CancellationSignal;
@@ -45,12 +46,14 @@ import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.modules.utils.BasicShellCommandHandler;
+import com.android.modules.utils.build.SdkLevel;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.DeleteResult;
 import com.android.server.art.model.DexoptParams;
 import com.android.server.art.model.DexoptResult;
 import com.android.server.art.model.DexoptStatus;
 import com.android.server.art.model.OperationProgress;
+import com.android.server.art.prereboot.PreRebootDriver;
 import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.PackageState;
@@ -92,15 +95,17 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
 
     private final ArtManagerLocal mArtManagerLocal;
     private final PackageManagerLocal mPackageManagerLocal;
+    private final Context mContext;
 
     @GuardedBy("sCancellationSignalMap")
     @NonNull
     private static final Map<String, CancellationSignal> sCancellationSignalMap = new HashMap<>();
 
     public ArtShellCommand(@NonNull ArtManagerLocal artManagerLocal,
-            @NonNull PackageManagerLocal packageManagerLocal) {
+            @NonNull PackageManagerLocal packageManagerLocal, @NonNull Context context) {
         mArtManagerLocal = artManagerLocal;
         mPackageManagerLocal = packageManagerLocal;
+        mContext = context;
     }
 
     @Override
@@ -180,6 +185,10 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
                 mArtManagerLocal.clearAppProfiles(snapshot, getNextArgRequired());
                 pw.println("Profiles cleared");
                 return 0;
+            }
+            case "pre-reboot-dexopt": {
+                // TODO(b/311377497): Remove this command once the development is done.
+                return handlePreRebootDexopt(pw);
             }
             default:
                 pw.printf("Error: Unknown 'art' sub-command '%s'\n", subcmd);
@@ -629,6 +638,33 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         }
 
         return 0;
+    }
+
+    private int handlePreRebootDexopt(@NonNull PrintWriter pw) {
+        if (!SdkLevel.isAtLeastV()) {
+            pw.println("Error: Unsupported command 'pre-reboot-dexopt'");
+            return 1;
+        }
+
+        String otaSlot = null;
+
+        String opt = getNextOption();
+        if ("--slot".equals(opt)) {
+            otaSlot = getNextArgRequired();
+        } else if (opt != null) {
+            pw.println("Error: Unknown option: " + opt);
+            return 1;
+        }
+
+        try (var signal = new WithCancellationSignal(pw, true /* verbose */)) {
+            if (new PreRebootDriver(mContext).run(otaSlot, signal.get())) {
+                pw.println("Job finished. See logs for details");
+                return 0;
+            } else {
+                pw.println("Job failed. See logs for details");
+                return 1;
+            }
+        }
     }
 
     @Override
