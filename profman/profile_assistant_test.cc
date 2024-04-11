@@ -399,7 +399,8 @@ class ProfileAssistantTest : public CommonRuntimeTest, public ProfileTestHelper 
         }
       } else {
         // Match by descriptor.
-        const char* expected_descriptor = type_ref.dex_file->StringByTypeIdx(type_ref.TypeIndex());
+        const char* expected_descriptor =
+            type_ref.dex_file->GetTypeDescriptor(type_ref.TypeIndex());
         for (dex::TypeIndex type_index : dex_pc_data.classes) {
           ASSERT_TRUE(type_index.IsValid());
           const char* descriptor = info.GetTypeDescriptor(dex_file, type_index);

@@ -31,7 +31,7 @@ TEST_F(ClassAccessorTest, TestVisiting) {
     ASSERT_GT(dex_file->NumClassDefs(), 0u);
     for (ClassAccessor accessor : dex_file->GetClasses()) {
       const dex::ClassDef& class_def = dex_file->GetClassDef(accessor.GetClassDefIndex());
-      EXPECT_EQ(accessor.GetDescriptor(), dex_file->StringByTypeIdx(class_def.class_idx_));
+      EXPECT_EQ(accessor.GetDescriptor(), dex_file->GetTypeDescriptor(class_def.class_idx_));
       EXPECT_EQ(class_def_idx, accessor.GetClassDefIndex());
       ++class_def_idx;
       // Check iterators against visitors.

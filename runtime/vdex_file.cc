@@ -410,7 +410,7 @@ static const char* GetStringFromId(const DexFile& dex_file,
                                    const uint8_t* verifier_deps) {
   uint32_t num_ids_in_dex = dex_file.NumStringIds();
   if (string_id.index_ < num_ids_in_dex) {
-    return dex_file.StringDataByIdx(string_id);
+    return dex_file.GetStringData(string_id);
   } else {
     CHECK_LT(string_id.index_ - num_ids_in_dex, number_of_extra_strings);
     uint32_t offset = extra_strings_offsets[string_id.index_ - num_ids_in_dex];

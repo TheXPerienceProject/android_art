@@ -48,8 +48,8 @@ static std::vector<const char*> GetParamNames(const MethodDebugInfo* mi) {
   DCHECK(mi->dex_file != nullptr);
   CodeItemDebugInfoAccessor accessor(*mi->dex_file, mi->code_item, mi->dex_method_index);
   if (accessor.HasCodeItem()) {
-    accessor.VisitParameterNames([&](const dex::StringIndex& id) {
-      names.push_back(mi->dex_file->StringDataByIdx(id));
+    accessor.VisitParameterNames([&](dex::StringIndex string_idx) {
+      names.push_back(string_idx.IsValid() ? mi->dex_file->GetStringData(string_idx) : nullptr);
     });
   }
   return names;
@@ -225,7 +225,7 @@ class ElfCompilationUnitWriter {
             WriteName(param_names[i]);
           }
           // Write the type.
-          const char* type_desc = dex->StringByTypeIdx(dex_params->GetTypeItem(i).type_idx_);
+          const char* type_desc = dex->GetTypeDescriptor(dex_params->GetTypeItem(i).type_idx_);
           WriteLazyType(type_desc);
           const bool is64bitValue = type_desc[0] == 'D' || type_desc[0] == 'J';
           if (accessor.HasCodeItem()) {

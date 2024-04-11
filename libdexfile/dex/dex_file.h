@@ -340,23 +340,21 @@ class DexFile {
     return dex::StringIndex(&string_id - string_ids_);
   }
 
-  int32_t GetStringLength(const dex::StringId& string_id) const;
-
   // Returns a pointer to the UTF-8 string data referred to by the given string_id as well as the
   // length of the string when decoded as a UTF-16 string. Note the UTF-16 length is not the same
   // as the string length of the string data.
   const char* GetStringDataAndUtf16Length(const dex::StringId& string_id,
                                           uint32_t* utf16_length) const;
+  const char* GetStringDataAndUtf16Length(dex::StringIndex string_idx,
+                                          uint32_t* utf16_length) const;
+
+  uint32_t GetStringUtf16Length(const dex::StringId& string_id) const;
 
   const char* GetStringData(const dex::StringId& string_id) const;
+  const char* GetStringData(dex::StringIndex string_idx) const;
 
   std::string_view GetStringView(const dex::StringId& string_id) const;
-
-  // Index version of GetStringDataAndUtf16Length.
-  const char* StringDataAndUtf16LengthByIdx(dex::StringIndex idx, uint32_t* utf16_length) const;
-
-  const char* StringDataByIdx(dex::StringIndex idx) const;
-  std::string_view StringViewByIdx(dex::StringIndex idx) const;
+  std::string_view GetStringView(dex::StringIndex string_idx) const;
 
   // Looks up a string id for a given modified utf8 string.
   const dex::StringId* FindStringId(const char* string) const;
@@ -390,14 +388,11 @@ class DexFile {
     return dex::TypeIndex(static_cast<uint16_t>(result));
   }
 
-  // Get the descriptor string associated with a given type index.
-  const char* StringByTypeIdx(dex::TypeIndex idx, uint32_t* unicode_length) const;
-
-  const char* StringByTypeIdx(dex::TypeIndex idx) const;
-
   // Returns the type descriptor string of a type id.
   const char* GetTypeDescriptor(const dex::TypeId& type_id) const;
+  const char* GetTypeDescriptor(dex::TypeIndex type_idx) const;
   std::string_view GetTypeDescriptorView(const dex::TypeId& type_id) const;
+  std::string_view GetTypeDescriptorView(dex::TypeIndex type_idx) const;
 
   // Looks up a type for the given string index
   const dex::TypeId* FindTypeId(dex::StringIndex string_idx) const;
@@ -799,7 +794,7 @@ class DexFile {
     if (!class_def.source_file_idx_.IsValid()) {
       return nullptr;
     } else {
-      return StringDataByIdx(class_def.source_file_idx_);
+      return GetStringData(class_def.source_file_idx_);
     }
   }
 
@@ -1041,7 +1036,7 @@ class DexFileParameterIterator {
     return type_list_->GetTypeItem(pos_).type_idx_;
   }
   const char* GetDescriptor() {
-    return dex_file_.StringByTypeIdx(dex::TypeIndex(GetTypeIdx()));
+    return dex_file_.GetTypeDescriptor(dex::TypeIndex(GetTypeIdx()));
   }
  private:
   const DexFile& dex_file_;

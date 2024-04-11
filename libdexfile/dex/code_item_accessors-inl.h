@@ -239,7 +239,7 @@ inline bool CodeItemDebugInfoAccessor::DecodeDebugPositionInfo(Visitor&& visitor
   return dex_file_->DecodeDebugPositionInfo(
       dex_file_->GetDebugInfoStream(DebugInfoOffset()),
       [this](uint32_t idx) {
-        return dex_file_->StringDataByIdx(dex::StringIndex(idx));
+        return dex_file_->GetStringData(dex::StringIndex(idx));
       },
       std::forward<Visitor>(visitor));
 }

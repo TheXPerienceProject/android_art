@@ -77,7 +77,7 @@ class RegisterValue {
   std::string ToString() const {
     switch (source_) {
       case RegisterSource::kString: {
-        const char* str = reference_.dex_file->StringDataByIdx(dex::StringIndex(reference_.index));
+        const char* str = reference_.dex_file->GetStringData(dex::StringIndex(reference_.index));
         if (type_ == VeriClass::class_) {
           // Class names at the Java level are of the form x.y.z, but the list encodes
           // them of the form Lx/y/z;. Inner classes have '$' for both Java level class
@@ -88,7 +88,7 @@ class RegisterValue {
         }
       }
       case RegisterSource::kClass:
-        return reference_.dex_file->StringByTypeIdx(dex::TypeIndex(reference_.index));
+        return reference_.dex_file->GetTypeDescriptor(dex::TypeIndex(reference_.index));
       case RegisterSource::kParameter:
         return std::string("Parameter of ") + reference_.dex_file->PrettyMethod(reference_.index);
       default:

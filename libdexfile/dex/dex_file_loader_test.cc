@@ -608,13 +608,6 @@ TEST_F(DexFileLoaderTest, OpenDexBadMapOffset) {
   EXPECT_EQ(raw, nullptr);
 }
 
-TEST_F(DexFileLoaderTest, GetStringWithNoIndex) {
-  std::vector<uint8_t> dex_bytes;
-  std::unique_ptr<const DexFile> raw(OpenDexFileBase64(kRawDex, kLocationString, &dex_bytes));
-  dex::TypeIndex idx;
-  EXPECT_EQ(raw->StringByTypeIdx(idx), nullptr);
-}
-
 TEST_F(DexFileLoaderTest, OpenDexDebugInfoLocalNullType) {
   std::vector<uint8_t> dex_bytes;
   std::unique_ptr<const DexFile> raw = OpenDexFileInMemoryBase64(kRawDexDebugInfoLocalNullType,
