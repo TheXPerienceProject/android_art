@@ -543,6 +543,9 @@ class CodeGeneratorX86_64 : public CodeGenerator {
   Label* NewJitRootClassPatch(const DexFile& dex_file,
                               dex::TypeIndex type_index,
                               Handle<mirror::Class> handle);
+  Label* NewJitRootMethodTypePatch(const DexFile& dex_file,
+                                   dex::ProtoIndex proto_index,
+                                   Handle<mirror::MethodType> method_type);
 
   void LoadBootImageAddress(CpuRegister reg, uint32_t boot_image_reference);
   void LoadIntrinsicDeclaringClass(CpuRegister reg, HInvoke* invoke);
@@ -760,6 +763,8 @@ class CodeGeneratorX86_64 : public CodeGenerator {
   ArenaDeque<PatchInfo<Label>> jit_string_patches_;
   // Patches for class literals in JIT compiled code.
   ArenaDeque<PatchInfo<Label>> jit_class_patches_;
+  // Patches for method type in JIT compiled code.
+  ArenaDeque<PatchInfo<Label>> jit_method_type_patches_;
 
   // Fixups for jump tables need to be handled specially.
   ArenaVector<JumpTableRIPFixup*> fixups_to_jump_tables_;
