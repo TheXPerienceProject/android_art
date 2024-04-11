@@ -4249,9 +4249,6 @@
       "name": "art_standalone_dexlist_tests"
     },
     {
-      "name": "art_standalone_dexopt_chroot_setup_tests"
-    },
-    {
       "name": "art_standalone_dexoptanalyzer_tests"
     },
     {
