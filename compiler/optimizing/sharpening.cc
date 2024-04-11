@@ -468,45 +468,4 @@ void HSharpening::ProcessLoadString(
   load_string->SetLoadKind(load_kind);
 }
 
-void HSharpening::ProcessLoadMethodType(
-    HLoadMethodType* load_method_type,
-    CodeGenerator* codegen,
-    const DexCompilationUnit& dex_compilation_unit,
-    VariableSizedHandleScope* handles) {
-  const CompilerOptions& compiler_options = codegen->GetCompilerOptions();
-
-  HLoadMethodType::LoadKind desired_load_kind = static_cast<HLoadMethodType::LoadKind>(-1);
-
-  if (compiler_options.IsJitCompiler()) {
-    DCHECK(!compiler_options.GetCompilePic());
-    Runtime* runtime = Runtime::Current();
-    ClassLinker* class_linker = runtime->GetClassLinker();
-    ScopedObjectAccess soa(Thread::Current());
-    ObjPtr<mirror::MethodType> method_type =
-        class_linker->ResolveMethodType(Thread::Current(),
-                                        load_method_type->GetProtoIndex(),
-                                        dex_compilation_unit.GetDexCache(),
-                                        dex_compilation_unit.GetClassLoader());
-
-    if (method_type != nullptr) {
-      load_method_type->SetMethodType(handles->NewHandle(method_type));
-      desired_load_kind = HLoadMethodType::LoadKind::kJitTableAddress;
-    } else {
-      DCHECK_EQ(load_method_type->GetLoadKind(), HLoadMethodType::LoadKind::kRuntimeCall);
-      desired_load_kind = HLoadMethodType::LoadKind::kRuntimeCall;
-      Thread::Current()->ClearException();
-    }
-  } else {
-    if (compiler_options.GetCompilePic()) {
-      desired_load_kind = HLoadMethodType::LoadKind::kBssEntry;
-    } else {
-      // Test configuration, do not sharpen.
-      desired_load_kind = HLoadMethodType::LoadKind::kRuntimeCall;
-    }
-  }
-
-  DCHECK_NE(desired_load_kind, static_cast<HLoadMethodType::LoadKind>(-1));
-  load_method_type->SetLoadKind(desired_load_kind);
-}
-
 }  // namespace art
