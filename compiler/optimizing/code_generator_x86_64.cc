@@ -35,7 +35,6 @@
 #include "lock_word.h"
 #include "mirror/array-inl.h"
 #include "mirror/class-inl.h"
-#include "mirror/method_type.h"
 #include "mirror/object_reference.h"
 #include "mirror/var_handle.h"
 #include "optimizing/nodes.h"
@@ -1618,7 +1617,6 @@ CodeGeneratorX86_64::CodeGeneratorX86_64(HGraph* graph,
       boot_image_other_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       jit_string_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       jit_class_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
-      jit_method_type_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       fixups_to_jump_tables_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)) {
   AddAllocatedRegister(Location::RegisterLocation(kFakeReturnRegister));
 }
@@ -6804,31 +6802,20 @@ void InstructionCodeGeneratorX86_64::VisitLoadMethodHandle(HLoadMethodHandle* lo
   codegen_->GenerateLoadMethodHandleRuntimeCall(load);
 }
 
-Label* CodeGeneratorX86_64::NewJitRootMethodTypePatch(const DexFile& dex_file,
-                                                      dex::ProtoIndex proto_index,
-                                                      Handle<mirror::MethodType> handle) {
-  ReserveJitMethodTypeRoot(ProtoReference(&dex_file, proto_index), handle);
-  // Add a patch entry and return the label.
-  jit_method_type_patches_.emplace_back(&dex_file, proto_index.index_);
-  PatchInfo<Label>* info = &jit_method_type_patches_.back();
-  return &info->label;
-}
-
 void LocationsBuilderX86_64::VisitLoadMethodType(HLoadMethodType* load) {
   LocationSummary* locations =
       new (GetGraph()->GetAllocator()) LocationSummary(load, LocationSummary::kCallOnSlowPath);
   if (load->GetLoadKind() == HLoadMethodType::LoadKind::kRuntimeCall) {
-    Location location = Location::RegisterLocation(RAX);
-    CodeGenerator::CreateLoadMethodTypeRuntimeCallLocationSummary(load, location, location);
+      Location location = Location::RegisterLocation(RAX);
+      CodeGenerator::CreateLoadMethodTypeRuntimeCallLocationSummary(load, location, location);
   } else {
+    DCHECK_EQ(load->GetLoadKind(), HLoadMethodType::LoadKind::kBssEntry);
     locations->SetOut(Location::RequiresRegister());
-    if (load->GetLoadKind() == HLoadMethodType::LoadKind::kBssEntry) {
-      if (codegen_->EmitNonBakerReadBarrier()) {
-        // For non-Baker read barrier we have a temp-clobbering call.
-      } else {
-        // Rely on the pResolveMethodType to save everything.
-        locations->SetCustomSlowPathCallerSaves(OneRegInReferenceOutSaveEverythingCallerSaves());
-      }
+    if (codegen_->EmitNonBakerReadBarrier()) {
+      // For non-Baker read barrier we have a temp-clobbering call.
+    } else {
+      // Rely on the pResolveMethodType to save everything.
+      locations->SetCustomSlowPathCallerSaves(OneRegInReferenceOutSaveEverythingCallerSaves());
     }
   }
 }
@@ -6853,17 +6840,6 @@ void InstructionCodeGeneratorX86_64::VisitLoadMethodType(HLoadMethodType* load) 
       __ testl(out, out);
       __ j(kEqual, slow_path->GetEntryLabel());
       __ Bind(slow_path->GetExitLabel());
-      return;
-    }
-    case HLoadMethodType::LoadKind::kJitTableAddress: {
-      Address address = Address::Absolute(CodeGeneratorX86_64::kPlaceholder32BitOffset,
-                                          /* no_rip= */ true);
-      Handle<mirror::MethodType> method_type = load->GetMethodType();
-      DCHECK(method_type != nullptr);
-      Label* fixup_label = codegen_->NewJitRootMethodTypePatch(
-          load->GetDexFile(), load->GetProtoIndex(), method_type);
-      GenerateGcRootFieldLoad(
-          load, out_loc, address, fixup_label, codegen_->GetCompilerReadBarrierOption());
       return;
     }
     default:
@@ -8480,12 +8456,6 @@ void CodeGeneratorX86_64::EmitJitRootPatches(uint8_t* code, const uint8_t* roots
   for (const PatchInfo<Label>& info : jit_class_patches_) {
     TypeReference type_reference(info.target_dex_file, dex::TypeIndex(info.offset_or_index));
     uint64_t index_in_table = GetJitClassRootIndex(type_reference);
-    PatchJitRootUse(code, roots_data, info, index_in_table);
-  }
-
-  for (const PatchInfo<Label>& info : jit_method_type_patches_) {
-    ProtoReference proto_reference(info.target_dex_file, dex::ProtoIndex(info.offset_or_index));
-    uint64_t index_in_table = GetJitMethodTypeRootIndex(proto_reference);
     PatchJitRootUse(code, roots_data, info, index_in_table);
   }
 }

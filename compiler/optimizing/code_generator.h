@@ -29,12 +29,10 @@
 #include "base/memory_region.h"
 #include "base/pointer_size.h"
 #include "class_root.h"
-#include "dex/proto_reference.h"
 #include "dex/string_reference.h"
 #include "dex/type_reference.h"
 #include "graph_visualizer.h"
 #include "locations.h"
-#include "mirror/method_type.h"
 #include "nodes.h"
 #include "oat/oat_quick_method_header.h"
 #include "optimizing_compiler_stats.h"
@@ -834,9 +832,6 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
   uint64_t GetJitStringRootIndex(StringReference string_reference);
   void ReserveJitClassRoot(TypeReference type_reference, Handle<mirror::Class> klass);
   uint64_t GetJitClassRootIndex(TypeReference type_reference);
-  void ReserveJitMethodTypeRoot(ProtoReference proto_reference,
-                                Handle<mirror::MethodType> method_type);
-  uint64_t GetJitMethodTypeRootIndex(ProtoReference proto_reference);
 
   // Emit the patches assocatied with JIT roots. Only applies to JIT compiled code.
   virtual void EmitJitRootPatches(uint8_t* code, const uint8_t* roots_data);

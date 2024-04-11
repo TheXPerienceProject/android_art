@@ -7208,8 +7208,6 @@ class HLoadMethodType final : public HInstruction {
   enum class LoadKind {
     // Load from an entry in the .bss section using a PC-relative load.
     kBssEntry,
-    // Load from the root table associated with the JIT compiled method.
-    kJitTableAddress,
     // Load using a single runtime call.
     kRuntimeCall,
 
@@ -7246,10 +7244,6 @@ class HLoadMethodType final : public HInstruction {
 
   dex::ProtoIndex GetProtoIndex() const { return proto_index_; }
 
-  Handle<mirror::MethodType> GetMethodType() const { return method_type_; }
-
-  void SetMethodType(Handle<mirror::MethodType> method_type) { method_type_ = method_type; }
-
   const DexFile& GetDexFile() const { return dex_file_; }
 
   static SideEffects SideEffectsForArchRuntimeCalls() {
@@ -7279,8 +7273,6 @@ class HLoadMethodType final : public HInstruction {
 
   const dex::ProtoIndex proto_index_;
   const DexFile& dex_file_;
-
-  Handle<mirror::MethodType> method_type_;
 };
 
 std::ostream& operator<<(std::ostream& os, HLoadMethodType::LoadKind rhs);
@@ -7291,7 +7283,6 @@ inline void HLoadMethodType::SetLoadKind(LoadKind load_kind) {
   DCHECK(GetBlock() == nullptr);
   DCHECK(GetEnvironment() == nullptr);
   DCHECK_EQ(GetLoadKind(), LoadKind::kRuntimeCall);
-  DCHECK_IMPLIES(GetLoadKind() == LoadKind::kJitTableAddress, GetMethodType() != nullptr);
   SetPackedField<LoadKindField>(load_kind);
 }
 

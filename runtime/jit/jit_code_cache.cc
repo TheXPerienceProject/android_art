@@ -59,7 +59,6 @@
 #include "thread-current-inl.h"
 #include "thread-inl.h"
 #include "thread_list.h"
-#include "well_known_classes-inl.h"
 
 namespace art HIDDEN {
 namespace jit {
@@ -304,8 +303,10 @@ bool JitCodeCache::ContainsMethod(ArtMethod* method) {
       return true;
     }
   } else {
-    if (method_code_map_reversed_.find(method) != method_code_map_reversed_.end()) {
-      return true;
+    for (const auto& it : method_code_map_) {
+      if (it.second == method) {
+        return true;
+      }
     }
     if (zygote_map_.ContainsMethod(method)) {
       return true;
@@ -397,6 +398,16 @@ static void DCheckRootsAreValid(const std::vector<Handle<mirror::Object>>& roots
   }
 }
 
+static const uint8_t* GetRootTable(const void* code_ptr, uint32_t* number_of_roots = nullptr) {
+  OatQuickMethodHeader* method_header = OatQuickMethodHeader::FromCodePointer(code_ptr);
+  uint8_t* data = method_header->GetOptimizedCodeInfoPtr();
+  uint32_t roots = GetNumberOfRoots(data);
+  if (number_of_roots != nullptr) {
+    *number_of_roots = roots;
+  }
+  return data - ComputeRootTableSize(roots);
+}
+
 void JitCodeCache::SweepRootTables(IsMarkedVisitor* visitor) {
   Thread* self = Thread::Current();
   ScopedDebugDisallowReadBarriers sddrb(self);
@@ -423,26 +434,12 @@ void JitCodeCache::SweepRootTables(IsMarkedVisitor* visitor) {
         if (new_object != object) {
           roots[i] = GcRoot<mirror::Object>(new_object);
         }
-      } else if (object->IsClass<kDefaultVerifyFlags>()) {
+      } else {
         mirror::Object* new_klass = visitor->IsMarked(object);
         if (new_klass == nullptr) {
           roots[i] = GcRoot<mirror::Object>(Runtime::GetWeakClassSentinel());
         } else if (new_klass != object) {
           roots[i] = GcRoot<mirror::Object>(new_klass);
-        }
-      } else {
-        mirror::Object* new_method_type = visitor->IsMarked(object);
-        if (new_method_type != nullptr) {
-          ObjPtr<mirror::Class> method_type_class =
-              WellKnownClasses::java_lang_invoke_MethodType.Get<kWithoutReadBarrier>();
-          DCHECK_EQ((new_method_type->GetClass<kVerifyNone, kWithoutReadBarrier>()),
-                     method_type_class.Ptr());
-
-          if (new_method_type != object) {
-            roots[i] = GcRoot<mirror::Object>(new_method_type);
-          }
-        } else {
-          roots[i] = nullptr;
         }
       }
     }
@@ -549,16 +546,11 @@ void JitCodeCache::RemoveMethodsIn(Thread* self, const LinearAlloc& alloc) {
           ++it;
         }
       }
-      for (auto it = method_code_map_reversed_.begin(); it != method_code_map_reversed_.end();) {
-        const void* code_ptr = it->second;
-        ArtMethod* method = it->first;
-        if (alloc.ContainsUnsafe(method)) {
-          method_headers.insert(OatQuickMethodHeader::FromCodePointer(code_ptr));
-          VLOG(jit) << "JIT removed " << method->PrettyMethod() << ": " << code_ptr;
-
-          DCHECK_EQ(method_code_map_.count(code_ptr), 1u);
-          method_code_map_.erase(code_ptr);
-          it = method_code_map_reversed_.erase(it);
+      for (auto it = method_code_map_.begin(); it != method_code_map_.end();) {
+        if (alloc.ContainsUnsafe(it->second)) {
+          method_headers.insert(OatQuickMethodHeader::FromCodePointer(it->first));
+          VLOG(jit) << "JIT removed " << it->second->PrettyMethod() << ": " << it->first;
+          it = method_code_map_.erase(it);
         } else {
           ++it;
         }
@@ -601,16 +593,6 @@ void JitCodeCache::WaitUntilInlineCacheAccessible(Thread* self) {
   while (!IsWeakAccessEnabled(self)) {
     inline_cache_cond_.Wait(self);
   }
-}
-
-const uint8_t* JitCodeCache::GetRootTable(const void* code_ptr, uint32_t* number_of_roots) {
-  OatQuickMethodHeader* method_header = OatQuickMethodHeader::FromCodePointer(code_ptr);
-  uint8_t* data = method_header->GetOptimizedCodeInfoPtr();
-  uint32_t num_roots = GetNumberOfRoots(data);
-  if (number_of_roots != nullptr) {
-    *number_of_roots = num_roots;
-  }
-  return data - ComputeRootTableSize(num_roots);
 }
 
 void JitCodeCache::BroadcastForInlineCacheAccess() {
@@ -781,7 +763,6 @@ bool JitCodeCache::Commit(Thread* self,
       } else {
         ScopedDebugDisallowReadBarriers sddrb(self);
         method_code_map_.Put(code_ptr, method);
-        method_code_map_reversed_.emplace(method, code_ptr);
       }
       if (compilation_kind == CompilationKind::kOsr) {
         ScopedDebugDisallowReadBarriers sddrb(self);
@@ -879,16 +860,17 @@ bool JitCodeCache::RemoveMethodLocked(ArtMethod* method, bool release_memory) {
       }
     }
   } else {
-    auto range = method_code_map_reversed_.equal_range(method);
-    for (auto it = range.first; it != range.second;) {
-      in_cache = true;
-      if (release_memory) {
-        FreeCodeAndData(it->second);
+    for (auto it = method_code_map_.begin(); it != method_code_map_.end();) {
+      if (it->second == method) {
+        in_cache = true;
+        if (release_memory) {
+          FreeCodeAndData(it->first);
+        }
+        VLOG(jit) << "JIT removed " << it->second->PrettyMethod() << ": " << it->first;
+        it = method_code_map_.erase(it);
+      } else {
+        ++it;
       }
-      VLOG(jit) << "JIT removed " << it->first->PrettyMethod() << ": " << it->second;
-      DCHECK_EQ(method_code_map_.Get(it->second), it->first);
-      method_code_map_.erase(it->second);
-      it = method_code_map_reversed_.erase(it);
     }
 
     auto osr_it = osr_code_map_.find(method);
@@ -928,26 +910,12 @@ void JitCodeCache::MoveObsoleteMethod(ArtMethod* old_method, ArtMethod* new_meth
     }
     return;
   }
-  // Update method_code_map_ and method_code_map_reversed_ to point to the new method.
-  auto range = method_code_map_reversed_.equal_range(old_method);
-  std::multimap<ArtMethod*, const void*> remapped_code_ptrs;
-  for (auto it = range.first; it != range.second;) {
-    const void* code_ptr = it->second;
-
-    auto next = std::next(it);
-    auto node = method_code_map_reversed_.extract(it);
-    node.key() = new_method;
-    remapped_code_ptrs.insert(std::move(node));
-
-    DCHECK_EQ(method_code_map_.count(code_ptr), 1u);
-    method_code_map_.find(code_ptr)->second = new_method;
-
-    it = next;
+  // Update method_code_map_ to point to the new method.
+  for (auto& it : method_code_map_) {
+    if (it.second == old_method) {
+      it.second = new_method;
+    }
   }
-
-  DCHECK_EQ(method_code_map_reversed_.count(old_method), 0u);
-  method_code_map_reversed_.merge(remapped_code_ptrs);
-
   // Update osr_code_map_ to point to the new method.
   auto code_map = osr_code_map_.find(old_method);
   if (code_map != osr_code_map_.end()) {
@@ -1202,19 +1170,16 @@ void JitCodeCache::RemoveUnmarkedCode(Thread* self) {
         it = jni_stubs_map_.erase(it);
       }
     }
-    for (auto it = method_code_map_reversed_.begin(); it != method_code_map_reversed_.end();) {
-      const void* code_ptr = it->second;
+    for (auto it = method_code_map_.begin(); it != method_code_map_.end();) {
+      const void* code_ptr = it->first;
       uintptr_t allocation = FromCodeToAllocation(code_ptr);
       if (IsInZygoteExecSpace(code_ptr) || GetLiveBitmap()->Test(allocation)) {
         ++it;
       } else {
         OatQuickMethodHeader* header = OatQuickMethodHeader::FromCodePointer(code_ptr);
         method_headers.insert(header);
-        VLOG(jit) << "JIT removed " << it->first->PrettyMethod() << ": " << code_ptr;
-
-        DCHECK_EQ(method_code_map_.count(code_ptr), 1u);
-        method_code_map_.erase(code_ptr);
-        it = method_code_map_reversed_.erase(it);
+        VLOG(jit) << "JIT removed " << it->second->PrettyMethod() << ": " << it->first;
+        it = method_code_map_.erase(it);
       }
     }
     FreeAllMethodHeaders(method_headers);

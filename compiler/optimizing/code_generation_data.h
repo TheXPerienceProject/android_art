@@ -23,12 +23,10 @@
 #include "base/scoped_arena_allocator.h"
 #include "base/scoped_arena_containers.h"
 #include "code_generator.h"
-#include "dex/proto_reference.h"
 #include "dex/string_reference.h"
 #include "dex/type_reference.h"
 #include "handle.h"
 #include "mirror/class.h"
-#include "mirror/method_type.h"
 #include "mirror/object.h"
 #include "mirror/string.h"
 #include "stack_map_stream.h"
@@ -84,24 +82,8 @@ class CodeGenerationData : public DeletableArenaObject<kArenaAllocCodeGenerator>
     return jit_class_roots_.size();
   }
 
-  void ReserveJitMethodTypeRoot(ProtoReference proto_reference,
-                                Handle<mirror::MethodType> method_type) {
-    jit_method_type_roots_.Overwrite(proto_reference,
-                                     reinterpret_cast64<uint64_t>(method_type.GetReference()));
-  }
-
-  uint64_t GetJitMethodTypeRootIndex(ProtoReference proto_reference) const {
-    return jit_method_type_roots_.Get(proto_reference);
-  }
-
-  size_t GetNumberOfJitMethodTypeRoots() const {
-    return jit_method_type_roots_.size();
-  }
-
   size_t GetNumberOfJitRoots() const {
-    return GetNumberOfJitStringRoots() +
-           GetNumberOfJitClassRoots() +
-           GetNumberOfJitMethodTypeRoots();
+    return GetNumberOfJitStringRoots() + GetNumberOfJitClassRoots();
   }
 
   void EmitJitRoots(/*out*/std::vector<Handle<mirror::Object>>* roots)
@@ -115,9 +97,7 @@ class CodeGenerationData : public DeletableArenaObject<kArenaAllocCodeGenerator>
         jit_string_roots_(StringReferenceValueComparator(),
                           allocator_.Adapter(kArenaAllocCodeGenerator)),
         jit_class_roots_(TypeReferenceValueComparator(),
-                         allocator_.Adapter(kArenaAllocCodeGenerator)),
-        jit_method_type_roots_(ProtoReferenceValueComparator(),
-                               allocator_.Adapter(kArenaAllocCodeGenerator)) {
+                         allocator_.Adapter(kArenaAllocCodeGenerator)) {
     slow_paths_.reserve(kDefaultSlowPathsCapacity);
   }
 
@@ -136,12 +116,6 @@ class CodeGenerationData : public DeletableArenaObject<kArenaAllocCodeGenerator>
   // Entries are initially added with a pointer in the handle zone, and `EmitJitRoots`
   // will compute all the indices.
   ScopedArenaSafeMap<TypeReference, uint64_t, TypeReferenceValueComparator> jit_class_roots_;
-
-  // Maps a ProtoReference (dex_file, proto_index) to the index in the literal table.
-  // Entries are initially added with a pointer in the handle zone, and `EmitJitRoots`
-  // will compute all the indices.
-  ScopedArenaSafeMap<ProtoReference, uint64_t, ProtoReferenceValueComparator>
-      jit_method_type_roots_;
 };
 
 }  // namespace art
