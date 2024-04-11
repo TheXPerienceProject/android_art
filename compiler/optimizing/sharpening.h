@@ -27,7 +27,7 @@ class CodeGenerator;
 class DexCompilationUnit;
 
 // Utility methods that try to improve the way we dispatch methods, and access
-// types, strings and method types.
+// types and strings.
 class HSharpening {
  public:
   // Used by the builder and InstructionSimplifier.
@@ -54,12 +54,6 @@ class HSharpening {
                                 CodeGenerator* codegen,
                                 const DexCompilationUnit& dex_compilation_unit,
                                 VariableSizedHandleScope* handles);
-
-  // Used by the builder.
-  static void ProcessLoadMethodType(HLoadMethodType* load_method_type,
-                                    CodeGenerator* codegen,
-                                    const DexCompilationUnit& dex_compilation_unit,
-                                    VariableSizedHandleScope* handles);
 };
 
 }  // namespace art

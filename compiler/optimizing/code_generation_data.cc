@@ -20,7 +20,6 @@
 #include "intern_table.h"
 #include "mirror/object-inl.h"
 #include "runtime.h"
-#include "well_known_classes-inl.h"
 
 namespace art HIDDEN {
 
@@ -50,16 +49,6 @@ void CodeGenerationData::EmitJitRoots(
     roots->emplace_back(reinterpret_cast<StackReference<mirror::Object>*>(address));
     DCHECK(roots->back() != nullptr);
     DCHECK(roots->back()->IsClass());
-    entry.second = index;
-    ++index;
-  }
-  for (auto& entry : jit_method_type_roots_) {
-    // Update the `roots` with the MethodType, and replace the address temporarily
-    // stored to the index in the table.
-    uint64_t address = entry.second;
-    roots->emplace_back(reinterpret_cast<StackReference<mirror::Object>*>(address));
-    DCHECK(roots->back() != nullptr);
-    DCHECK(roots->back()->InstanceOf(WellKnownClasses::java_lang_invoke_MethodType.Get()));
     entry.second = index;
     ++index;
   }
