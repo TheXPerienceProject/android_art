@@ -133,14 +133,14 @@ class DexClass : public ClassAccessor {
   bool HasSuperclass() const { return dex_file_.IsTypeIndexValid(GetSuperclassIndex()); }
 
   std::string_view GetSuperclassDescriptor() const {
-    return HasSuperclass() ? dex_file_.StringByTypeIdx(GetSuperclassIndex()) : "";
+    return HasSuperclass() ? dex_file_.GetTypeDescriptorView(GetSuperclassIndex()) : "";
   }
 
   std::set<std::string_view> GetInterfaceDescriptors() const {
     std::set<std::string_view> list;
     const dex::TypeList* ifaces = dex_file_.GetInterfacesList(GetClassDef());
     for (uint32_t i = 0; ifaces != nullptr && i < ifaces->Size(); ++i) {
-      list.insert(dex_file_.StringByTypeIdx(ifaces->GetTypeItem(i).type_idx_));
+      list.insert(dex_file_.GetTypeDescriptorView(ifaces->GetTypeItem(i).type_idx_));
     }
     return list;
   }

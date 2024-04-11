@@ -596,7 +596,8 @@ void HConstantFoldingVisitor::VisitArrayLength(HArrayLength* inst) {
     HLoadString* load_string = input->AsLoadString();
     const DexFile& dex_file = load_string->GetDexFile();
     const dex::StringId& string_id = dex_file.GetStringId(load_string->GetStringIndex());
-    inst->ReplaceWith(GetGraph()->GetIntConstant(dex_file.GetStringLength(string_id)));
+    inst->ReplaceWith(GetGraph()->GetIntConstant(
+        dchecked_integral_cast<int32_t>(dex_file.GetStringUtf16Length(string_id))));
   }
 }
 

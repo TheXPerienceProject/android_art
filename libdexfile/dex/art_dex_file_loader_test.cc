@@ -175,7 +175,7 @@ TEST_F(ArtDexFileLoaderTest, GetMethodSignature) {
   {
     ASSERT_EQ(1U, accessor.NumDirectMethods());
     const dex::MethodId& method_id = raw->GetMethodId(cur_method->GetIndex());
-    const char* name = raw->StringDataByIdx(method_id.name_idx_);
+    const char* name = raw->GetStringData(method_id.name_idx_);
     ASSERT_STREQ("<init>", name);
     std::string signature(raw->GetMethodSignature(method_id).ToString());
     ASSERT_EQ("()V", signature);
@@ -250,7 +250,7 @@ TEST_F(ArtDexFileLoaderTest, GetMethodSignature) {
     ASSERT_TRUE(cur_method != methods.end());
     const dex::MethodId& method_id = raw->GetMethodId(cur_method->GetIndex());
 
-    const char* name = raw->StringDataByIdx(method_id.name_idx_);
+    const char* name = raw->GetStringData(method_id.name_idx_);
     ASSERT_STREQ(r.name, name);
 
     std::string signature(raw->GetMethodSignature(method_id).ToString());
@@ -281,7 +281,7 @@ TEST_F(ArtDexFileLoaderTest, FindStringId) {
 
 TEST_F(ArtDexFileLoaderTest, FindTypeId) {
   for (size_t i = 0; i < java_lang_dex_file_->NumTypeIds(); i++) {
-    const char* type_str = java_lang_dex_file_->StringByTypeIdx(dex::TypeIndex(i));
+    const char* type_str = java_lang_dex_file_->GetTypeDescriptor(dex::TypeIndex(i));
     const dex::StringId* type_str_id = java_lang_dex_file_->FindStringId(type_str);
     ASSERT_TRUE(type_str_id != nullptr);
     dex::StringIndex type_str_idx = java_lang_dex_file_->GetIndexForStringId(*type_str_id);
@@ -317,7 +317,7 @@ TEST_F(ArtDexFileLoaderTest, FindMethodId) {
     const dex::ProtoId& signature = java_lang_dex_file_->GetProtoId(to_find.proto_idx_);
     const dex::MethodId* found = java_lang_dex_file_->FindMethodId(klass, name, signature);
     ASSERT_TRUE(found != nullptr) << "Didn't find method " << i << ": "
-        << java_lang_dex_file_->StringByTypeIdx(to_find.class_idx_) << "."
+        << java_lang_dex_file_->GetTypeDescriptor(to_find.class_idx_) << "."
         << java_lang_dex_file_->GetStringData(name)
         << java_lang_dex_file_->GetMethodSignature(to_find);
     EXPECT_EQ(java_lang_dex_file_->GetIndexForMethodId(*found), i);
@@ -332,8 +332,8 @@ TEST_F(ArtDexFileLoaderTest, FindFieldId) {
     const dex::TypeId& type = java_lang_dex_file_->GetTypeId(to_find.type_idx_);
     const dex::FieldId* found = java_lang_dex_file_->FindFieldId(klass, name, type);
     ASSERT_TRUE(found != nullptr) << "Didn't find field " << i << ": "
-        << java_lang_dex_file_->StringByTypeIdx(to_find.type_idx_) << " "
-        << java_lang_dex_file_->StringByTypeIdx(to_find.class_idx_) << "."
+        << java_lang_dex_file_->GetTypeDescriptor(to_find.type_idx_) << " "
+        << java_lang_dex_file_->GetTypeDescriptor(to_find.class_idx_) << "."
         << java_lang_dex_file_->GetStringData(name);
     EXPECT_EQ(java_lang_dex_file_->GetIndexForFieldId(*found), i);
   }

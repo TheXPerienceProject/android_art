@@ -694,7 +694,7 @@ dex::TypeIndex ProfileCompilationInfo::FindOrCreateTypeIndex(const DexFile& dex_
     return class_ref.TypeIndex();
   }
   // Try to find a `TypeId` in the method's dex file.
-  const char* descriptor = class_ref.dex_file->StringByTypeIdx(class_ref.TypeIndex());
+  const char* descriptor = class_ref.dex_file->GetTypeDescriptor(class_ref.TypeIndex());
   return FindOrCreateTypeIndex(dex_file, descriptor);
 }
 

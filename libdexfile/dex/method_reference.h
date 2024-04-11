@@ -56,8 +56,11 @@ struct MethodReferenceValueComparator {
     // Compare the class descriptors first.
     const dex::MethodId& mid1 = mr1.GetMethodId();
     const dex::MethodId& mid2 = mr2.GetMethodId();
-    int descriptor_diff = strcmp(mr1.dex_file->StringByTypeIdx(mid1.class_idx_),
-                                 mr2.dex_file->StringByTypeIdx(mid2.class_idx_));
+    // Note: `std::string_view::compare()` uses lexicographical comparison and treats the `char`
+    // as unsigned; for Modified-UTF-8 without embedded nulls this is consistent with the
+    // `CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues()` ordering.
+    int descriptor_diff = mr1.dex_file->GetTypeDescriptorView(mid1.class_idx_).compare(
+                              mr2.dex_file->GetTypeDescriptorView(mid2.class_idx_));
     if (descriptor_diff != 0) {
       return descriptor_diff < 0;
     }

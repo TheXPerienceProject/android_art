@@ -684,7 +684,7 @@ class ProfileCompilationInfo {
     DCHECK(type_index.IsValid());
     uint32_t num_type_ids = dex_file->NumTypeIds();
     if (type_index.index_ < num_type_ids) {
-      return dex_file->StringByTypeIdx(type_index);
+      return dex_file->GetTypeDescriptor(type_index);
     } else {
       return extra_descriptors_[type_index.index_ - num_type_ids].c_str();
     }

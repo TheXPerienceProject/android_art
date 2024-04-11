@@ -97,8 +97,8 @@ static void dumpMethod(const DexFile* pDexFile,
 
   // Method information.
   const dex::MethodId& pMethodId = pDexFile->GetMethodId(idx);
-  const char* methodName = pDexFile->StringDataByIdx(pMethodId.name_idx_);
-  const char* classDescriptor = pDexFile->StringByTypeIdx(pMethodId.class_idx_);
+  const char* methodName = pDexFile->GetStringData(pMethodId.name_idx_);
+  const char* classDescriptor = pDexFile->GetTypeDescriptor(pMethodId.class_idx_);
   std::unique_ptr<char[]> className(descriptorToDot(classDescriptor));
   const u4 insnsOff = codeOffset + 0x10;
 
@@ -142,7 +142,7 @@ void dumpClass(const DexFile* pDexFile, u4 idx) {
 
   const char* fileName = nullptr;
   if (class_def.source_file_idx_.IsValid()) {
-    fileName = pDexFile->StringDataByIdx(class_def.source_file_idx_);
+    fileName = pDexFile->GetStringData(class_def.source_file_idx_);
   }
 
   ClassAccessor accessor(*pDexFile, class_def);
