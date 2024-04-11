@@ -43,9 +43,7 @@ class GraphChecker final : public HGraphDelegateVisitor {
         uses_per_instruction_(allocator_.Adapter(kArenaAllocGraphChecker)),
         instructions_per_block_(allocator_.Adapter(kArenaAllocGraphChecker)),
         phis_per_block_(allocator_.Adapter(kArenaAllocGraphChecker)),
-        codegen_(codegen) {
-    seen_ids_.ClearAllBits();
-  }
+        codegen_(codegen) {}
 
   // Check the whole graph. The pass_change parameter indicates whether changes
   // may have occurred during the just executed pass. The default value is

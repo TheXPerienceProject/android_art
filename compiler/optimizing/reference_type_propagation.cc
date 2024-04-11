@@ -19,7 +19,7 @@
 #include "art_field-inl.h"
 #include "art_method-inl.h"
 #include "base/arena_allocator.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "base/scoped_arena_allocator.h"
 #include "base/scoped_arena_containers.h"
 #include "class_linker-inl.h"

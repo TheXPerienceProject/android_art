@@ -1175,7 +1175,6 @@ void GraphChecker::VisitPhi(HPhi* phi) {
                                  GetGraph()->GetCurrentInstructionId(),
                                  /* expandable= */ false,
                                  kArenaAllocGraphChecker);
-          visited.ClearAllBits();
           if (!IsConstantEquivalent(phi, other_phi, &visited)) {
             AddError(StringPrintf("Two phis (%d and %d) found for VReg %d but they "
                                   "are not equivalents of constants.",

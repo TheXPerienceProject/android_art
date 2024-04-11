@@ -25,10 +25,10 @@
 #include "art_method.h"
 #include "base/arena_allocator.h"
 #include "base/arena_containers.h"
-#include "base/enums.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/macros.h"
 #include "base/memory_region.h"
+#include "base/pointer_size.h"
 #include "base/utils.h"
 #include "calling_convention.h"
 #include "class_linker.h"

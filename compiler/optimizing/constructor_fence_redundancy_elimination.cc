@@ -52,7 +52,6 @@ class CFREVisitor final : public HGraphVisitor {
       size_t number_of_instructions = GetGraph()->GetCurrentInstructionId();
       candidate_fence_targets_.emplace(
           &scoped_allocator_, number_of_instructions, /*expandable=*/ false, kArenaAllocCFRE);
-      candidate_fence_targets_->ClearAllBits();
     }
 
     for (HInstruction* input : constructor_fence->GetInputs()) {

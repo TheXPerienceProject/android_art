@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,14 @@
  * limitations under the License.
  */
 
-#include "enums.h"
+syntax = "proto2";
 
-#include <ostream>
+package com.android.server.art.proto;
+option java_multiple_files = true;
 
-namespace art {
-
-std::ostream& operator<<(std::ostream& os, const PointerSize& rhs) {
-  switch (rhs) {
-    case PointerSize::k32: os << "k32"; break;
-    case PointerSize::k64: os << "k64"; break;
-    default: os << "PointerSize[" << static_cast<int>(rhs) << "]"; break;
-  }
-  return os;
+// The definition of `config.pb` in a dm file.
+message DexMetadataConfig {
+  // Whether to enable using the embedded profile
+  // (`assets/art-profile/baseline.prof` in the APK/JAR file), if it exists.
+  optional bool enable_embedded_profile = 1 [default = true];
 }
-
-}  // namespace art

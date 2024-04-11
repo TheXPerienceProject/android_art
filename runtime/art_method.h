@@ -26,9 +26,9 @@
 #include "base/array_ref.h"
 #include "base/bit_utils.h"
 #include "base/casts.h"
-#include "base/enums.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "base/runtime_debug.h"
 #include "dex/dex_file_structs.h"
 #include "dex/modifiers.h"
@@ -1017,9 +1017,6 @@ class EXPORT ArtMethod final {
   // Get compiled code for the method, return null if no code exists.
   const void* GetOatMethodQuickCode(PointerSize pointer_size)
       REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Returns whether the method has any compiled code, JIT or AOT.
-  bool HasAnyCompiledCode() REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Returns a human-readable signature for 'm'. Something like "a.b.C.m" or
   // "a.b.C.m(II)V" (depending on the value of 'with_signature').

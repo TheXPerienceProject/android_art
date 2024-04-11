@@ -18,8 +18,8 @@
 #define ART_COMPILER_OPTIMIZING_CODE_GENERATOR_X86_H_
 
 #include "arch/x86/instruction_set_features_x86.h"
-#include "base/enums.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "code_generator.h"
 #include "dex/dex_file_types.h"
 #include "driver/compiler_options.h"

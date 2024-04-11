@@ -265,7 +265,6 @@ class OatSymbolizer final {
           break;
 
         case OatClassType::kNoneCompiled:
-        case OatClassType::kOatClassMax:
           // Ignore.
           break;
       }

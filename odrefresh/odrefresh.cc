@@ -85,6 +85,7 @@
 #include "odr_fs_utils.h"
 #include "odr_metrics.h"
 #include "odrefresh/odrefresh.h"
+#include "selinux/android.h"
 #include "selinux/selinux.h"
 #include "tools/cmdline_builder.h"
 
@@ -152,43 +153,68 @@ bool MoveOrEraseFiles(const std::vector<std::unique_ptr<File>>& files,
     std::string output_file_path = ART_FORMAT("{}/{}", output_directory_path, file_basename);
     std::string input_file_path = file->GetPath();
 
-    output_files.emplace_back(OS::CreateEmptyFileWriteOnly(output_file_path.c_str()));
-    if (output_files.back() == nullptr) {
-      PLOG(ERROR) << "Failed to open " << QuotePath(output_file_path);
-      output_files.pop_back();
-      EraseFiles(output_files);
-      EraseFiles(files);
-      return false;
-    }
+    if (IsAtLeastV()) {
+      // Simply rename the existing file. Requires at least V as odrefresh does not have
+      // `selinux_android_restorecon` permissions on U and lower.
+      if (!file->Rename(output_file_path)) {
+        PLOG(ERROR) << "Failed to rename " << QuotePath(input_file_path) << " to "
+                    << QuotePath(output_file_path);
+        EraseFiles(files);
+        return false;
+      }
 
-    if (fchmod(output_files.back()->Fd(), kFileMode) != 0) {
-      PLOG(ERROR) << "Could not set file mode on " << QuotePath(output_file_path);
-      EraseFiles(output_files);
-      EraseFiles(files);
-      return false;
-    }
+      if (file->FlushCloseOrErase() != 0) {
+        PLOG(ERROR) << "Failed to flush and close file " << QuotePath(output_file_path);
+        EraseFiles(files);
+        return false;
+      }
 
-    size_t file_bytes = file->GetLength();
-    if (!output_files.back()->Copy(file.get(), /*offset=*/0, file_bytes)) {
-      PLOG(ERROR) << "Failed to copy " << QuotePath(file->GetPath()) << " to "
-                  << QuotePath(output_file_path);
-      EraseFiles(output_files);
-      EraseFiles(files);
-      return false;
-    }
+      if (selinux_android_restorecon(output_file_path.c_str(), 0) < 0) {
+        LOG(ERROR) << "Failed to set security context for file " << QuotePath(output_file_path);
+        EraseFiles(files);
+        return false;
+      }
+    } else {
+      // Create a new file in the output directory, copy the input file's data across, then delete
+      // the input file.
+      output_files.emplace_back(OS::CreateEmptyFileWriteOnly(output_file_path.c_str()));
+      if (output_files.back() == nullptr) {
+        PLOG(ERROR) << "Failed to open " << QuotePath(output_file_path);
+        output_files.pop_back();
+        EraseFiles(output_files);
+        EraseFiles(files);
+        return false;
+      }
 
-    if (!file->Erase(/*unlink=*/true)) {
-      PLOG(ERROR) << "Failed to erase " << QuotePath(file->GetPath());
-      EraseFiles(output_files);
-      EraseFiles(files);
-      return false;
-    }
+      if (fchmod(output_files.back()->Fd(), kFileMode) != 0) {
+        PLOG(ERROR) << "Could not set file mode on " << QuotePath(output_file_path);
+        EraseFiles(output_files);
+        EraseFiles(files);
+        return false;
+      }
 
-    if (output_files.back()->FlushCloseOrErase() != 0) {
-      PLOG(ERROR) << "Failed to flush and close file " << QuotePath(output_file_path);
-      EraseFiles(output_files);
-      EraseFiles(files);
-      return false;
+      size_t file_bytes = file->GetLength();
+      if (!output_files.back()->Copy(file.get(), /*offset=*/0, file_bytes)) {
+        PLOG(ERROR) << "Failed to copy " << QuotePath(file->GetPath()) << " to "
+                    << QuotePath(output_file_path);
+        EraseFiles(output_files);
+        EraseFiles(files);
+        return false;
+      }
+
+      if (!file->Erase(/*unlink=*/true)) {
+        PLOG(ERROR) << "Failed to erase " << QuotePath(file->GetPath());
+        EraseFiles(output_files);
+        EraseFiles(files);
+        return false;
+      }
+
+      if (output_files.back()->FlushCloseOrErase() != 0) {
+        PLOG(ERROR) << "Failed to flush and close file " << QuotePath(output_file_path);
+        EraseFiles(output_files);
+        EraseFiles(files);
+        return false;
+      }
     }
   }
   return true;
@@ -772,7 +798,9 @@ Result<art_apex::CacheInfo> OnDeviceRefresh::ReadCacheInfo() const {
   return cache_info.value();
 }
 
-Result<void> OnDeviceRefresh::WriteCacheInfo() const {
+// This function has a large stack frame, so avoid inlining it because doing so
+// could push its caller's stack frame over the limit. See b/330851312.
+NO_INLINE Result<void> OnDeviceRefresh::WriteCacheInfo() const {
   if (OS::FileExists(cache_info_filename_.c_str())) {
     if (unlink(cache_info_filename_.c_str()) != 0) {
       return ErrnoErrorf("Failed to unlink file {}", QuotePath(cache_info_filename_));

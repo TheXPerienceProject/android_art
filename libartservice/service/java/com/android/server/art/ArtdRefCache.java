@@ -49,7 +49,10 @@ public class ArtdRefCache {
     // TODO(jiakaiz): Revisit this based on real CUJs.
     @VisibleForTesting public static final long CACHE_TIMEOUT_MS = 15_000;
 
-    @Nullable private static ArtdRefCache sInstance = null;
+    // The static field is associated with the class and the class loader that loads it. In the
+    // Pre-reboot Dexopt case, this class is loaded by a separate class loader, so it doesn't share
+    // the same static field with the class outside of the class loader.
+    @GuardedBy("ArtdRefCache.class") @Nullable private static ArtdRefCache sInstance = null;
 
     @NonNull private final Injector mInjector;
     @NonNull private final Debouncer mDebouncer;

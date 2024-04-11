@@ -20,7 +20,7 @@
 
 #include "art_field-inl.h"
 #include "art_method-alloc-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "class_linker-inl.h"
 #include "class_root-inl.h"
 #include "common_throws.h"

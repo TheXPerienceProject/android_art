@@ -44,7 +44,6 @@
         <option name="mainline-module-package-name" value="com.android.art" />
     </object>
 
-    <!-- Only run tests if the device under test is SDK version 31 (Android 12) or above. -->
-    <!-- TODO(jiakaiz): Change this to U once `ro.build.version.sdk` is bumped. -->
-    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.Sdk31ModuleController" />
+    <!-- Only run tests if the device under test is SDK version 34 (Android 14) or above. -->
+    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.Sdk34ModuleController" />
 </configuration>

@@ -27,12 +27,12 @@
 #include "art_method-inl.h"
 #include "base/allocator.h"
 #include "base/bit_vector-inl.h"
-#include "base/enums.h"
 #include "base/file_magic.h"
 #include "base/file_utils.h"
 #include "base/indenter.h"
 #include "base/logging.h"  // For VLOG
 #include "base/os.h"
+#include "base/pointer_size.h"
 #include "base/safe_map.h"
 #include "base/stl_util.h"
 #include "base/unix_file/fd_file.h"
@@ -779,8 +779,7 @@ class OatWriter::InitBssLayoutMethodVisitor : public DexMethodVisitor {
     if (refs_it == references->end()) {
       refs_it = references->Put(
           ref.dex_file,
-          BitVector(number_of_indexes, /* expandable */ false, Allocator::GetMallocAllocator()));
-      refs_it->second.ClearAllBits();
+          BitVector(number_of_indexes, /* expandable */ false, Allocator::GetCallocAllocator()));
     }
     refs_it->second.SetBit(ref.index);
   }
@@ -3202,7 +3201,7 @@ bool OatWriter::WriteDexFiles(File* file,
     extract_dex_files_into_vdex_ = false;
     for (OatDexFile& oat_dex_file : oat_dex_files_) {
       const DexFileContainer* container = oat_dex_file.GetDexFile()->GetContainer().get();
-      if (!(container->IsZip() && container->IsFileMap())) {
+      if (!container->IsFileMap()) {
         extract_dex_files_into_vdex_ = true;
         break;
       }
@@ -4055,7 +4054,7 @@ OatWriter::OatClass::OatClass(const dchecked_vector<CompiledMethod*>& compiled_m
     num_methods_ = num_methods;
     oat_method_offsets_offset_from_oat_class += sizeof(num_methods_);
     if (oat_class_type == enum_cast<uint16_t>(OatClassType::kSomeCompiled)) {
-      method_bitmap_.reset(new BitVector(num_methods, false, Allocator::GetMallocAllocator()));
+      method_bitmap_.reset(new BitVector(num_methods, false, Allocator::GetCallocAllocator()));
       uint32_t bitmap_size = BitVector::BitsToWords(num_methods) * BitVector::kWordBytes;
       DCHECK_EQ(bitmap_size, method_bitmap_->GetSizeOf());
       oat_method_offsets_offset_from_oat_class += bitmap_size;

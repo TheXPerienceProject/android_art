@@ -16,7 +16,7 @@
 
 #include "art_method-inl.h"
 #include "base/callee_save_type.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "callee_save_frame.h"
 #include "common_throws.h"
 #include "class_root-inl.h"

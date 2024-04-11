@@ -80,7 +80,8 @@
   result: EXEC_FAILED,
   bug: 205007075,
   names: ["jsr166.CompletableFutureTest#testCompleteOnTimeout_completed",
-          "jsr166.CompletableFutureTest#testDelayedExecutor"
+          "jsr166.CompletableFutureTest#testDelayedExecutor",
+          "org.apache.harmony.tests.java.util.TimerTest#testThrowingTaskKillsTimerThread"
          ]
 },
 {

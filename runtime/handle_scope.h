@@ -21,9 +21,9 @@
 
 #include <android-base/logging.h>
 
-#include "base/enums.h"
 #include "base/locks.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "stack_reference.h"
 
 namespace art HIDDEN {

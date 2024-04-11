@@ -65,19 +65,9 @@ RegisterAllocator::RegisterAllocator(ScopedArenaAllocator* allocator,
 
 std::unique_ptr<RegisterAllocator> RegisterAllocator::Create(ScopedArenaAllocator* allocator,
                                                              CodeGenerator* codegen,
-                                                             const SsaLivenessAnalysis& analysis,
-                                                             Strategy strategy) {
-  switch (strategy) {
-    case kRegisterAllocatorLinearScan:
-      return std::unique_ptr<RegisterAllocator>(
-          new (allocator) RegisterAllocatorLinearScan(allocator, codegen, analysis));
-    case kRegisterAllocatorGraphColor:
-      LOG(FATAL) << "Graph coloring register allocator has been removed.";
-      UNREACHABLE();
-    default:
-      LOG(FATAL) << "Invalid register allocation strategy: " << strategy;
-      UNREACHABLE();
-  }
+                                                             const SsaLivenessAnalysis& analysis) {
+  return std::unique_ptr<RegisterAllocator>(
+      new (allocator) RegisterAllocatorLinearScan(allocator, codegen, analysis));
 }
 
 RegisterAllocator::~RegisterAllocator() {
@@ -214,7 +204,6 @@ bool RegisterAllocator::ValidateIntervals(ArrayRef<LiveInterval* const> interval
   for (size_t i = 0; i < number_of_registers + number_of_spill_slots; ++i) {
     liveness_of_values.push_back(
         ArenaBitVector::Create(&allocator, max_end, false, kArenaAllocRegisterAllocatorValidate));
-    liveness_of_values.back()->ClearAllBits();
   }
 
   for (LiveInterval* start_interval : intervals) {

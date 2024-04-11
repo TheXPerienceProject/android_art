@@ -1195,6 +1195,15 @@ inline void Class::SetHasDefaultMethods() {
   SetAccessFlagsDuringLinking(flags | kAccHasDefaultMethod);
 }
 
+inline void Class::ClearFinalizable() {
+  // We're clearing the finalizable flag only for `Object` and `Enum`
+  // during early setup without the boot image.
+  DCHECK(IsObjectClass() ||
+         (IsBootStrapClassLoaded() && DescriptorEquals("Ljava/lang/Enum;")));
+  uint32_t flags = GetField32(OFFSET_OF_OBJECT_MEMBER(Class, access_flags_));
+  SetAccessFlagsDuringLinking(flags & ~kAccClassIsFinalizable);
+}
+
 inline ImTable* Class::FindSuperImt(PointerSize pointer_size) {
   ObjPtr<mirror::Class> klass = this;
   while (klass->HasSuperClass()) {
