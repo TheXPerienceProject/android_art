@@ -11164,6 +11164,28 @@ void ClassLinker::RemoveDexFromCaches(const DexFile& dex_file) {
   }
 }
 
+// GetClassLoadersVisitor collects visited class loaders.
+class GetClassLoadersVisitor : public ClassLoaderVisitor {
+ public:
+  explicit GetClassLoadersVisitor(VariableSizedHandleScope* class_loaders)
+      : class_loaders_(class_loaders) {}
+
+  void Visit(ObjPtr<mirror::ClassLoader> class_loader)
+      REQUIRES_SHARED(Locks::classlinker_classes_lock_, Locks::mutator_lock_) override {
+    DCHECK(class_loader != nullptr);
+    class_loaders_->NewHandle(class_loader);
+  }
+
+ private:
+  VariableSizedHandleScope* const class_loaders_;
+};
+
+void ClassLinker::GetClassLoaders(Thread* self, VariableSizedHandleScope* handles) {
+  GetClassLoadersVisitor class_loader_visitor(handles);
+  ReaderMutexLock mu(self, *Locks::classlinker_classes_lock_);
+  VisitClassLoaders(&class_loader_visitor);
+}
+
 // Instantiate ClassLinker::AllocClass.
 template ObjPtr<mirror::Class> ClassLinker::AllocClass</* kMovable= */ true>(
     Thread* self,
