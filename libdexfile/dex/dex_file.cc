@@ -666,7 +666,7 @@ void DexFile::AppendPrettyMethod(uint32_t method_idx,
   const MethodId& method_id = GetMethodId(method_idx);
   const ProtoId* proto_id = with_signature ? &GetProtoId(method_id.proto_idx_) : nullptr;
   if (with_signature) {
-    AppendPrettyDescriptor(StringByTypeIdx(proto_id->return_type_idx_), result);
+    AppendPrettyDescriptor(GetTypeDescriptor(proto_id->return_type_idx_), result);
     result->push_back(' ');
   }
   AppendPrettyDescriptor(GetMethodDeclaringClassDescriptor(method_id), result);
@@ -680,7 +680,7 @@ void DexFile::AppendPrettyMethod(uint32_t method_idx,
       for (uint32_t i = 0u, size = params->Size(); i != size; ++i) {
         result->append(separator);
         separator = ", ";
-        AppendPrettyDescriptor(StringByTypeIdx(params->GetTypeItem(i).type_idx_), result);
+        AppendPrettyDescriptor(GetTypeDescriptor(params->GetTypeItem(i).type_idx_), result);
       }
     }
     result->push_back(')');

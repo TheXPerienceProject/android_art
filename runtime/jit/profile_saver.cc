@@ -660,7 +660,7 @@ void ProfileSaver::GetClassesAndMethodsHelper::UpdateProfile(const std::set<std:
         DCHECK(ShouldCollectClasses(startup));
         DCHECK(class_record.methods == nullptr);  // No methods to process.
         array_class_descriptor.assign(class_record.array_dimension, '[');
-        array_class_descriptor += dex_file->StringByTypeIdx(class_record.type_index);
+        array_class_descriptor += dex_file->GetTypeDescriptorView(class_record.type_index);
         dex::TypeIndex type_index =
             profile_info->FindOrCreateTypeIndex(*dex_file, array_class_descriptor.c_str());
         if (type_index.IsValid()) {

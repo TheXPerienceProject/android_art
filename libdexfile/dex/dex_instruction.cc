@@ -207,7 +207,7 @@ std::string Instruction::DumpString(const DexFile* file) const {
               os << StringPrintf(
                   "const-string v%d, %s // string@%d",
                   VRegA_21c(),
-                  PrintableString(file->StringDataByIdx(dex::StringIndex(string_idx))).c_str(),
+                  PrintableString(file->GetStringData(dex::StringIndex(string_idx))).c_str(),
                   string_idx);
             } else {
               os << StringPrintf("const-string v%d, <<invalid-string-idx-%d>> // string@%d",
@@ -333,7 +333,7 @@ std::string Instruction::DumpString(const DexFile* file) const {
                 "%s v%d, %s // string@%d",
                 opcode,
                 VRegA_31c(),
-                PrintableString(file->StringDataByIdx(dex::StringIndex(string_idx))).c_str(),
+                PrintableString(file->GetStringData(dex::StringIndex(string_idx))).c_str(),
                 string_idx);
           } else {
             os << StringPrintf("%s v%d, <<invalid-string-idx-%d>> // string@%d",

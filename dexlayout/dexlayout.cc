@@ -1119,7 +1119,7 @@ void DexLayout::DumpBytecodes(uint32_t idx, const dex_ir::CodeItem* code, uint32
 /*
  * Lookup functions.
  */
-static const char* StringDataByIdx(uint32_t idx, dex_ir::Header* header) {
+static const char* GetStringData(uint32_t idx, dex_ir::Header* header) {
   dex_ir::StringId* string_id = header->GetStringIdOrNullPtr(idx);
   if (string_id == nullptr) {
     return nullptr;
@@ -1170,7 +1170,7 @@ void DexLayout::DumpCode(uint32_t idx,
   if (debug_info != nullptr) {
     DexFile::DecodeDebugPositionInfo(debug_info->GetDebugInfo(),
                                      [this](uint32_t idx) {
-                                       return StringDataByIdx(idx, this->header_);
+                                       return GetStringData(idx, this->header_);
                                      },
                                      [&](const DexFile::PositionInfo& entry) {
                                        fprintf(out_file_,
@@ -1202,7 +1202,7 @@ void DexLayout::DumpCode(uint32_t idx,
                                   code->InsSize(),
                                   code->InsnsSize(),
                                   [this](uint32_t idx) {
-                                    return StringDataByIdx(idx, this->header_);
+                                    return GetStringData(idx, this->header_);
                                   },
                                   [this](uint32_t idx) {
                                     return

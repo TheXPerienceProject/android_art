@@ -481,14 +481,14 @@ bool DexFileVerifier::VerifyTypeDescriptor(dex::TypeIndex idx,
   char cached_char = verified_type_descriptors_[idx.index_];
   if (cached_char != 0) {
     if (!extra_check(cached_char)) {
-      const char* descriptor = dex_file_->StringByTypeIdx(idx);
+      const char* descriptor = dex_file_->GetTypeDescriptor(idx);
       ErrorStringPrintf("%s: '%s'", error_msg, descriptor);
       return false;
     }
     return true;
   }
 
-  const char* descriptor = dex_file_->StringByTypeIdx(idx);
+  const char* descriptor = dex_file_->GetTypeDescriptor(idx);
   if (UNLIKELY(!IsValidDescriptor(descriptor))) {
     ErrorStringPrintf("%s: '%s'", error_msg, descriptor);
     return false;
@@ -2698,7 +2698,7 @@ bool DexFileVerifier::CheckInterTypeIdItem() {
 bool DexFileVerifier::CheckInterProtoIdItem() {
   const dex::ProtoId* item = reinterpret_cast<const dex::ProtoId*>(ptr_);
 
-  const char* shorty = dex_file_->StringDataByIdx(item->shorty_idx_);
+  const char* shorty = dex_file_->GetStringData(item->shorty_idx_);
 
   if (item->parameters_off_ != 0 &&
       !CheckOffsetToTypeMap(item->parameters_off_, DexFile::kDexTypeTypeList)) {
@@ -2712,7 +2712,7 @@ bool DexFileVerifier::CheckInterProtoIdItem() {
     return false;
   }
   // Check the return type and advance the shorty.
-  const char* return_type = dex_file_->StringByTypeIdx(item->return_type_idx_);
+  const char* return_type = dex_file_->GetTypeDescriptor(item->return_type_idx_);
   if (!CheckShortyDescriptorMatch(*shorty, return_type, true)) {
     return false;
   }
@@ -2794,7 +2794,7 @@ bool DexFileVerifier::CheckInterFieldIdItem() {
   }
 
   // Check that the name is valid.
-  const char* field_name = dex_file_->StringDataByIdx(item->name_idx_);
+  const char* field_name = dex_file_->GetStringData(item->name_idx_);
   if (UNLIKELY(!IsValidMemberName(field_name))) {
     ErrorStringPrintf("Invalid field name: '%s'", field_name);
     return false;
@@ -2834,7 +2834,7 @@ bool DexFileVerifier::CheckInterMethodIdItem() {
   }
 
   // Check that the name is valid.
-  const char* method_name = dex_file_->StringDataByIdx(item->name_idx_);
+  const char* method_name = dex_file_->GetStringData(item->name_idx_);
   if (UNLIKELY(!IsValidMemberName(method_name))) {
     ErrorStringPrintf("Invalid method name: '%s'", method_name);
     return false;
@@ -2997,7 +2997,7 @@ bool DexFileVerifier::CheckInterClassDefItem() {
       for (uint32_t j =0; j < i; j++) {
         dex::TypeIndex idx2 = interfaces->GetTypeItem(j).type_idx_;
         if (UNLIKELY(idx1 == idx2)) {
-          ErrorStringPrintf("Duplicate interface: '%s'", dex_file_->StringByTypeIdx(idx1));
+          ErrorStringPrintf("Duplicate interface: '%s'", dex_file_->GetTypeDescriptor(idx1));
           return false;
         }
       }

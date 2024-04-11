@@ -302,7 +302,7 @@ uint32_t ArtMethod::FindDexMethodIndexInOtherDexFile(const DexFile& other_dexfil
   if (dexfile == &other_dexfile) {
     return dex_method_idx;
   }
-  const char* mid_declaring_class_descriptor = dexfile->StringByTypeIdx(mid.class_idx_);
+  const char* mid_declaring_class_descriptor = dexfile->GetTypeDescriptor(mid.class_idx_);
   const dex::TypeId* other_type_id = other_dexfile.FindTypeId(mid_declaring_class_descriptor);
   if (other_type_id != nullptr) {
     const dex::MethodId* other_mid = other_dexfile.FindMethodId(

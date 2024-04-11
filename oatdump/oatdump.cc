@@ -1772,7 +1772,7 @@ class OatDumper {
         string_bss_mapping,
         dex_file->NumStringIds(),
         sizeof(GcRoot<mirror::Class>),
-        [=](uint32_t index) { return dex_file->StringDataByIdx(dex::StringIndex(index)); });
+        [=](uint32_t index) { return dex_file->GetStringData(dex::StringIndex(index)); });
   }
 
   void DumpBssOffsets(std::ostream& os, const char* slot_type, const IndexBssMapping* mapping) {

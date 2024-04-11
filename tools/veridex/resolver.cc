@@ -76,7 +76,7 @@ VeriClass* VeridexResolver::GetVeriClass(dex::TypeIndex index) {
   VeriClass* cls = &type_infos_[index.index_];
   if (cls->IsUninitialized()) {
     // Class is defined in another dex file. Lookup in the global cache.
-    std::string name(dex_file_.StringByTypeIdx(index));
+    std::string name(dex_file_.GetTypeDescriptorView(index));
     auto existing = type_map_.find(name);
     if (existing == type_map_.end()) {
       // Class hasn't been defined, so check if it's an array class.
