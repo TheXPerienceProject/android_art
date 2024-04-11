@@ -17,8 +17,12 @@
 #ifndef ART_DEXOPT_CHROOT_SETUP_DEXOPT_CHROOT_SETUP_H_
 #define ART_DEXOPT_CHROOT_SETUP_DEXOPT_CHROOT_SETUP_H_
 
+#include <optional>
+#include <string>
+
 #include "aidl/com/android/server/art/BnDexoptChrootSetup.h"
 #include "android-base/result.h"
+#include "android-base/thread_annotations.h"
 
 namespace art {
 namespace dexopt_chroot_setup {
@@ -26,8 +30,22 @@ namespace dexopt_chroot_setup {
 // A service that sets up the chroot environment for Pre-reboot Dexopt.
 class DexoptChrootSetup : public aidl::com::android::server::art::BnDexoptChrootSetup {
  public:
+  ndk::ScopedAStatus setUp(const std::optional<std::string>& in_otaSlot) override;
+
+  ndk::ScopedAStatus tearDown() override;
+
   android::base::Result<void> Start();
+
+ private:
+  android::base::Result<void> SetUpChroot(const std::optional<std::string>& ota_slot) const
+      REQUIRES(mu_);
+
+  android::base::Result<void> TearDownChroot() const REQUIRES(mu_);
+
+  std::mutex mu_;
 };
+
+std::string PathInChroot(std::string_view path);
 
 }  // namespace dexopt_chroot_setup
 }  // namespace art
