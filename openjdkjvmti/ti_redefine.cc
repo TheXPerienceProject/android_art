@@ -879,8 +879,12 @@ template <typename T> struct NameAndSignature {
 
   NameAndSignature(const std::string_view& name, const SigType& sig) : name_(name), sig_(sig) {}
 
-  bool operator==(const NameAndSignature<T>& o) {
+  bool operator==(const NameAndSignature<T>& o) const {
     return name_ == o.name_ && sig_ == o.sig_;
+  }
+
+  bool operator!=(const NameAndSignature<T>& o) const {
+    return !(*this == o);
   }
 
   std::ostream& dump(std::ostream& os) const {
