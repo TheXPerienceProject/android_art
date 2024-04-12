@@ -57,6 +57,7 @@
 #include "base/unix_file/fd_file.h"
 #include "base/utils.h"
 #include "base/zip_archive.h"
+#include "dex/code_item_accessors-inl.h"
 #include "dex/descriptors_names.h"
 #include "dex/dex_file_loader.h"
 
@@ -676,9 +677,10 @@ ProfileCompilationInfo::ProfileSampleAnnotation ProfileCompilationInfo::GetAnnot
 
 bool ProfileCompilationInfo::AddMethods(const std::vector<ProfileMethodInfo>& methods,
                                         MethodHotness::Flag flags,
-                                        const ProfileSampleAnnotation& annotation) {
+                                        const ProfileSampleAnnotation& annotation,
+                                        bool is_test) {
   for (const ProfileMethodInfo& method : methods) {
-    if (!AddMethod(method, flags, annotation)) {
+    if (!AddMethod(method, flags, annotation, is_test)) {
       return false;
     }
   }
@@ -1316,7 +1318,8 @@ ProfileCompilationInfo::ExtraDescriptorIndex ProfileCompilationInfo::AddExtraDes
 
 bool ProfileCompilationInfo::AddMethod(const ProfileMethodInfo& pmi,
                                        MethodHotness::Flag flags,
-                                       const ProfileSampleAnnotation& annotation) {
+                                       const ProfileSampleAnnotation& annotation,
+                                       bool is_test) {
   DexFileData* const data = GetOrAddDexFileData(pmi.ref.dex_file, annotation);
   if (data == nullptr) {  // checksum mismatch
     return false;
@@ -1333,10 +1336,35 @@ bool ProfileCompilationInfo::AddMethod(const ProfileMethodInfo& pmi,
   InlineCacheMap* inline_cache = data->FindOrAddHotMethod(pmi.ref.index);
   DCHECK(inline_cache != nullptr);
 
+  const dex::MethodId& mid = pmi.ref.GetMethodId();
+  const DexFile& dex_file = *pmi.ref.dex_file;
+  const dex::ClassDef* class_def = dex_file.FindClassDef(mid.class_idx_);
+  // If `is_test` is true, we don't try to look at whether dex_pc fit in the
+  // code item of that method.
+  uint32_t dex_pc_max = 0u;
+  if (is_test) {
+    dex_pc_max = std::numeric_limits<uint32_t>::max();
+  } else {
+    if (class_def == nullptr || dex_file.GetClassData(*class_def) == nullptr) {
+      return true;
+    }
+    std::optional<uint32_t> offset = dex_file.GetCodeItemOffset(*class_def, pmi.ref.index);
+    if (!offset.has_value()) {
+      return true;
+    }
+    CodeItemInstructionAccessor accessor(dex_file, dex_file.GetCodeItem(offset.value()));
+    dex_pc_max = accessor.InsnsSizeInCodeUnits();
+  }
+
   for (const ProfileMethodInfo::ProfileInlineCache& cache : pmi.inline_caches) {
     if (cache.dex_pc >= std::numeric_limits<uint16_t>::max()) {
       // Discard entries that don't fit the encoding. This should only apply to
       // inlined inline caches. See also `HInliner::GetInlineCacheAOT`.
+      continue;
+    }
+    if (cache.dex_pc >= dex_pc_max) {
+      // Discard entries for inlined inline caches. We don't support them in
+      // profiles yet.
       continue;
     }
     if (cache.is_missing_types) {
