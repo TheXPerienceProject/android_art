@@ -36,6 +36,7 @@ art_cc_binary {
         "com.android.art.debug",
         "test_broken_com.android.art",
     ],
+    sdclang: false,
 }
 
 art_cc_binary {

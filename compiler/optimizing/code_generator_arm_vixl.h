@@ -17,8 +17,8 @@
 #ifndef ART_COMPILER_OPTIMIZING_CODE_GENERATOR_ARM_VIXL_H_
 #define ART_COMPILER_OPTIMIZING_CODE_GENERATOR_ARM_VIXL_H_
 
-#include "base/enums.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "class_root.h"
 #include "code_generator.h"
 #include "common_arm.h"

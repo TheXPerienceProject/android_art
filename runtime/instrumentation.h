@@ -27,9 +27,9 @@
 #include <unordered_set>
 
 #include "arch/instruction_set.h"
-#include "base/enums.h"
 #include "base/locks.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "base/safe_map.h"
 #include "gc_root.h"
 #include "jvalue.h"

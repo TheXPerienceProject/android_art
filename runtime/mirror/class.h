@@ -292,6 +292,8 @@ class EXPORT MANAGED Class final : public Object {
     SetAccessFlagsDuringLinking(flags | kAccClassIsFinalizable);
   }
 
+  ALWAYS_INLINE void ClearFinalizable() REQUIRES_SHARED(Locks::mutator_lock_);
+
   template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
   ALWAYS_INLINE bool IsStringClass() REQUIRES_SHARED(Locks::mutator_lock_) {
     return (GetClassFlags<kVerifyFlags>() & kClassFlagString) != 0;

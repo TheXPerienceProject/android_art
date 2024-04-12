@@ -20,7 +20,7 @@
 #include <limits.h>
 
 #include "art_method-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "common_runtime_test.h"
 #include "dex/descriptors_names.h"
 #include "jni/java_vm_ext.h"

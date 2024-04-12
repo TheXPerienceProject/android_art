@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "art_field-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "common_runtime_test.h"
 #include "mirror/field.h"
 #include "proxy_test.h"

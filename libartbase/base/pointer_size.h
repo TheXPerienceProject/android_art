@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_LIBARTBASE_BASE_ENUMS_H_
-#define ART_LIBARTBASE_BASE_ENUMS_H_
+#ifndef ART_LIBARTBASE_BASE_POINTER_SIZE_H_
+#define ART_LIBARTBASE_BASE_POINTER_SIZE_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -36,4 +36,4 @@ static constexpr PointerSize kRuntimePointerSize = sizeof(void*) == 8U
 
 }  // namespace art
 
-#endif  // ART_LIBARTBASE_BASE_ENUMS_H_
+#endif  // ART_LIBARTBASE_BASE_POINTER_SIZE_H_

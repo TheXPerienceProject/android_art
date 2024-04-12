@@ -70,7 +70,6 @@ extern "C" JNIEXPORT jboolean JNICALL Java_Main_hasOatCompiledCode(JNIEnv* env,
       return true;
 
     case OatClassType::kNoneCompiled:
-    case OatClassType::kOatClassMax:
       return false;
   }
 

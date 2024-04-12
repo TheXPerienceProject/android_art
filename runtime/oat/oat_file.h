@@ -41,6 +41,7 @@
 namespace art HIDDEN {
 
 class BitVector;
+class ClassLinker;
 class ClassLoaderContext;
 class ElfFile;
 class DexLayoutSections;
@@ -74,7 +75,7 @@ enum class OatClassType : uint8_t {
   kAllCompiled = 0,   // OatClass is followed by an OatMethodOffsets for each method.
   kSomeCompiled = 1,  // A bitmap of OatMethodOffsets that are present follows the OatClass.
   kNoneCompiled = 2,  // All methods are interpreted so no OatMethodOffsets are necessary.
-  kOatClassMax = 3,
+  kLast = kNoneCompiled
 };
 
 EXPORT std::ostream& operator<<(std::ostream& os, OatClassType rhs);
@@ -299,7 +300,8 @@ class OatFile {
     const uint32_t* const bitmap_;
     const OatMethodOffsets* const methods_pointer_;
 
-    friend class art::OatDexFile;
+    friend class ClassLinker;
+    friend class OatDexFile;
   };
 
   // Get the OatDexFile for the given dex_location within this oat file.

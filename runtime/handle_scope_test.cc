@@ -16,7 +16,7 @@
 
 #include <type_traits>
 
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "class_linker-inl.h"
 #include "common_runtime_test.h"
 #include "gtest/gtest.h"

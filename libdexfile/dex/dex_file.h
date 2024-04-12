@@ -350,6 +350,8 @@ class DexFile {
 
   const char* GetStringData(const dex::StringId& string_id) const;
 
+  std::string_view GetStringView(const dex::StringId& string_id) const;
+
   // Index version of GetStringDataAndUtf16Length.
   const char* StringDataAndUtf16LengthByIdx(dex::StringIndex idx, uint32_t* utf16_length) const;
 
@@ -704,12 +706,14 @@ class DexFile {
 
   const dex::AnnotationSetItem* GetFieldAnnotationSetItem(
       const dex::FieldAnnotationsItem& anno_item) const {
-    return DataPointer<dex::AnnotationSetItem>(anno_item.annotations_off_);
+    // `DexFileVerifier` checks that the offset is not zero.
+    return NonNullDataPointer<dex::AnnotationSetItem>(anno_item.annotations_off_);
   }
 
   const dex::AnnotationSetItem* GetMethodAnnotationSetItem(
       const dex::MethodAnnotationsItem& anno_item) const {
-    return DataPointer<dex::AnnotationSetItem>(anno_item.annotations_off_);
+    // `DexFileVerifier` checks that the offset is not zero.
+    return NonNullDataPointer<dex::AnnotationSetItem>(anno_item.annotations_off_);
   }
 
   const dex::AnnotationSetRefList* GetParameterAnnotationSetRefList(
@@ -821,8 +825,14 @@ class DexFile {
 
   template <typename T>
   const T* DataPointer(size_t offset) const {
+    return (offset != 0u) ? NonNullDataPointer<T>(offset) : nullptr;
+  }
+
+  template <typename T>
+  const T* NonNullDataPointer(size_t offset) const {
+    DCHECK_NE(offset, 0u);
     DCHECK_LT(offset, DataSize()) << "Offset past end of data section";
-    return (offset != 0u) ? reinterpret_cast<const T*>(DataBegin() + offset) : nullptr;
+    return reinterpret_cast<const T*>(DataBegin() + offset);
   }
 
   const OatDexFile* GetOatDexFile() const {

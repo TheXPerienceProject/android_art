@@ -72,7 +72,6 @@ void HGraph::FindBackEdges(ArenaBitVector* visited) {
   // Nodes that we're currently visiting, indexed by block id.
   ArenaBitVector visiting(
       &allocator, blocks_.size(), /* expandable= */ false, kArenaAllocGraphBuilder);
-  visiting.ClearAllBits();
   // Number of successors visited from a given node, indexed by block id.
   ScopedArenaVector<size_t> successors_visited(blocks_.size(),
                                                0u,
@@ -219,7 +218,6 @@ GraphAnalysisResult HGraph::BuildDominatorTree() {
   ScopedArenaAllocator allocator(GetArenaStack());
 
   ArenaBitVector visited(&allocator, blocks_.size(), false, kArenaAllocGraphBuilder);
-  visited.ClearAllBits();
 
   // (1) Find the back edges in the graph doing a DFS traversal.
   FindBackEdges(&visited);
@@ -890,7 +888,6 @@ void HLoopInformation::Populate() {
                            graph->GetBlocks().size(),
                            /* expandable= */ false,
                            kArenaAllocGraphBuilder);
-    visited.ClearAllBits();
     // Stop marking blocks at the loop header.
     visited.SetBit(header_->GetBlockId());
 
@@ -1221,7 +1218,6 @@ std::ostream& HInstruction::Dump(std::ostream& os, bool dump_args) {
                            (graph != nullptr) ? graph->GetCurrentInstructionId() : 0u,
                            /* expandable= */ (graph == nullptr),
                            kArenaAllocMisc);
-    visited.ClearAllBits();
     visited.SetBit(GetId());
     // Keep a queue of instructions with their indentations.
     ScopedArenaDeque<std::pair<HInstruction*, size_t>> queue(allocator.Adapter(kArenaAllocMisc));
@@ -1424,7 +1420,6 @@ void HInstruction::ReplaceUsesDominatedBy(HInstruction* dominator,
                            graph->GetBlocks().size(),
                            /* expandable= */ false,
                            kArenaAllocMisc);
-    visited_blocks->ClearAllBits();
     ScopedArenaAllocator allocator(graph->GetArenaStack());
     ScopedArenaQueue<const HBasicBlock*> worklist(allocator.Adapter(kArenaAllocMisc));
     worklist.push(dominator_block);

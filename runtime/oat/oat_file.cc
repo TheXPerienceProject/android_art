@@ -41,11 +41,11 @@
 #include "arch/instruction_set_features.h"
 #include "art_method.h"
 #include "base/bit_vector.h"
-#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/logging.h"  // For VLOG_IS_ON.
 #include "base/mem_map.h"
 #include "base/os.h"
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "base/string_view_cpp20.h"
 #include "base/systrace.h"
@@ -2328,7 +2328,7 @@ OatFile::OatClass OatDexFile::GetOatClass(uint16_t class_def_index) const {
   current_pointer += sizeof(uint16_t);
   CHECK_LE(status_value, enum_cast<uint8_t>(ClassStatus::kLast))
       << static_cast<uint32_t>(status_value) << " at " << oat_file_->GetLocation();
-  CHECK_LT(type_value, enum_cast<uint8_t>(OatClassType::kOatClassMax)) << oat_file_->GetLocation();
+  CHECK_LE(type_value, enum_cast<uint8_t>(OatClassType::kLast)) << oat_file_->GetLocation();
   ClassStatus status = enum_cast<ClassStatus>(status_value);
   OatClassType type = enum_cast<OatClassType>(type_value);
 

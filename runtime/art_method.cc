@@ -23,7 +23,7 @@
 
 #include "arch/context.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "class_linker-inl.h"
 #include "class_root-inl.h"
@@ -715,22 +715,6 @@ const void* ArtMethod::GetOatMethodQuickCode(PointerSize pointer_size) {
     return oat_method.GetQuickCode();
   }
   return nullptr;
-}
-
-bool ArtMethod::HasAnyCompiledCode() {
-  if (IsNative() || !IsInvokable() || IsProxyMethod()) {
-    return false;
-  }
-
-  // Check whether the JIT has compiled it.
-  Runtime* runtime = Runtime::Current();
-  jit::Jit* jit = runtime->GetJit();
-  if (jit != nullptr && jit->GetCodeCache()->ContainsMethod(this)) {
-    return true;
-  }
-
-  // Check whether we have AOT code.
-  return GetOatMethodQuickCode(runtime->GetClassLinker()->GetImagePointerSize()) != nullptr;
 }
 
 void ArtMethod::SetIntrinsic(uint32_t intrinsic) {

@@ -24,9 +24,9 @@
 
 #include "arch/riscv64/instruction_set_features_riscv64.h"
 #include "base/arena_containers.h"
-#include "base/enums.h"
 #include "base/globals.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "managed_register_riscv64.h"
 #include "utils/assembler.h"
 #include "utils/label.h"

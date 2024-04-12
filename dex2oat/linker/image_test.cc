@@ -19,7 +19,7 @@
 
 #include "image_test.h"
 
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "oat/image.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread.h"

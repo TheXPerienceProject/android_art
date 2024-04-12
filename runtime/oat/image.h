@@ -19,10 +19,10 @@
 
 #include <string.h>
 
-#include "base/enums.h"
 #include "base/iteration_range.h"
 #include "base/macros.h"
 #include "base/os.h"
+#include "base/pointer_size.h"
 #include "base/unix_file/fd_file.h"
 #include "mirror/object.h"
 #include "runtime_globals.h"

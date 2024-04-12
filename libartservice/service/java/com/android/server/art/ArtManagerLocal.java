@@ -19,6 +19,7 @@ package com.android.server.art;
 import static com.android.server.art.ArtFileManager.ProfileLists;
 import static com.android.server.art.ArtFileManager.UsableArtifactLists;
 import static com.android.server.art.ArtFileManager.WritableArtifactLists;
+import static com.android.server.art.DexMetadataHelper.DexMetadataInfo;
 import static com.android.server.art.PrimaryDexUtils.DetailedPrimaryDexInfo;
 import static com.android.server.art.PrimaryDexUtils.PrimaryDexInfo;
 import static com.android.server.art.ReasonMapping.BatchDexoptReason;
@@ -728,12 +729,15 @@ public final class ArtManagerLocal {
             PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
             AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
             PrimaryDexInfo dexInfo = PrimaryDexUtils.getDexInfoBySplitName(pkg, splitName);
+            DexMetadataPath dmPath = AidlUtils.buildDexMetadataPath(dexInfo.dexPath());
+            DexMetadataInfo dmInfo = mInjector.getDexMetadataHelper().getDexMetadataInfo(dmPath);
 
             List<ProfilePath> profiles = new ArrayList<>();
 
             InitProfileResult result = Utils.getOrInitReferenceProfile(mInjector.getArtd(),
                     dexInfo.dexPath(), PrimaryDexUtils.buildRefProfilePath(pkgState, dexInfo),
                     PrimaryDexUtils.getExternalProfiles(dexInfo),
+                    dmInfo.config().getEnableEmbeddedProfile(),
                     PrimaryDexUtils.buildOutputProfile(pkgState, dexInfo, Process.SYSTEM_UID,
                             Process.SYSTEM_UID, false /* isPublic */));
             if (!result.externalProfileErrors().isEmpty()) {
@@ -865,7 +869,7 @@ public final class ArtManagerLocal {
      *         names</b>, e.g., {@code com.google.android.art}).
      */
     @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void onApexStaged(@NonNull String[] stagedApexModuleNames) {
         // TODO(b/311377497): Check system requirements.
         mInjector.getPreRebootDexoptJob().schedule();
@@ -1048,7 +1052,7 @@ public final class ArtManagerLocal {
      *
      * @hide
      */
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @NonNull
     PreRebootDexoptJob getPreRebootDexoptJob() {
         return mInjector.getPreRebootDexoptJob();
@@ -1472,7 +1476,7 @@ public final class ArtManagerLocal {
             return mBgDexoptJob;
         }
 
-        @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
         @NonNull
         public synchronized PreRebootDexoptJob getPreRebootDexoptJob() {
             if (mPrDexoptJob == null) {
@@ -1525,6 +1529,12 @@ public final class ArtManagerLocal {
         @NonNull
         public ArtFileManager getArtFileManager() {
             return new ArtFileManager(getContext());
+        }
+
+        @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        @NonNull
+        public DexMetadataHelper getDexMetadataHelper() {
+            return new DexMetadataHelper();
         }
     }
 }
