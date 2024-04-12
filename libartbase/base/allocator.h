@@ -102,26 +102,19 @@ inline void RegisterFree(AllocatorTag tag, size_t bytes) {
 }  // namespace TrackedAllocators
 
 // Tracking allocator for use with STL types, tracks how much memory is used.
-template<class T, AllocatorTag kTag>
-class TrackingAllocatorImpl : public std::allocator<T> {
+template <class T, AllocatorTag kTag>
+class TrackingAllocatorImpl {
+  static_assert(kTag < kAllocatorTagCount, "kTag must be less than kAllocatorTagCount");
+
  public:
-  using value_type      = typename std::allocator<T>::value_type;
-  using size_type       = typename std::allocator<T>::size_type;
-  using difference_type = typename std::allocator<T>::difference_type;
-  using pointer         = typename std::allocator<T>::pointer;
-  using const_pointer   = typename std::allocator<T>::const_pointer;
-  using reference       = typename std::allocator<T>::reference;
-  using const_reference = typename std::allocator<T>::const_reference;
+  using value_type = T;
 
-  // Used internally by STL data structures.
+  // Used internally by STL data structures. This copy constructor needs to be implicit. Don't wrap
+  // the line because that would break cpplint's detection of the implicit constructor.
   template <class U>
-  explicit TrackingAllocatorImpl(
-      [[maybe_unused]] const TrackingAllocatorImpl<U, kTag>& alloc) noexcept {}
-
+  TrackingAllocatorImpl([[maybe_unused]] const TrackingAllocatorImpl<U, kTag>& alloc) noexcept {}  // NOLINT [runtime/explicit]
   // Used internally by STL data structures.
-  TrackingAllocatorImpl() noexcept {
-    static_assert(kTag < kAllocatorTagCount, "kTag must be less than kAllocatorTagCount");
-  }
+  TrackingAllocatorImpl() noexcept {}
 
   // Enables an allocator for objects of one type to allocate storage for objects of another type.
   // Used internally by STL data structures.
@@ -130,14 +123,13 @@ class TrackingAllocatorImpl : public std::allocator<T> {
     using other = TrackingAllocatorImpl<U, kTag>;
   };
 
-  pointer allocate(size_type n, [[maybe_unused]] const_pointer hint = 0) {
+  T* allocate(size_t n) {
     const size_t size = n * sizeof(T);
     TrackedAllocators::RegisterAllocation(GetTag(), size);
-    return reinterpret_cast<pointer>(malloc(size));
+    return reinterpret_cast<T*>(malloc(size));
   }
 
-  template <typename PT>
-  void deallocate(PT p, size_type n) {
+  void deallocate(T* p, size_t n) {
     const size_t size = n * sizeof(T);
     TrackedAllocators::RegisterFree(GetTag(), size);
     free(p);

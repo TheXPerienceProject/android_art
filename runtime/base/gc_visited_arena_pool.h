@@ -291,22 +291,18 @@ class GcVisitedArenaPool final : public ArenaPool {
 // Allocator for class-table and intern-table hash-sets. It enables updating the
 // roots concurrently page-by-page.
 template <class T, AllocatorTag kTag>
-class GcRootArenaAllocator : public TrackingAllocator<T, kTag> {
- public:
-  using value_type = typename TrackingAllocator<T, kTag>::value_type;
-  using size_type = typename TrackingAllocator<T, kTag>::size_type;
-  using difference_type = typename TrackingAllocator<T, kTag>::difference_type;
-  using pointer = typename TrackingAllocator<T, kTag>::pointer;
-  using const_pointer = typename TrackingAllocator<T, kTag>::const_pointer;
-  using reference = typename TrackingAllocator<T, kTag>::reference;
-  using const_reference = typename TrackingAllocator<T, kTag>::const_reference;
+class GcRootArenaAllocator {
+  TrackingAllocator<T, kTag> tracking_alloc_;
 
-  // Used internally by STL data structures.
+ public:
+  using value_type = T;
+
+  // Used internally by STL data structures. This copy constructor needs to be implicit. Don't wrap
+  // the line because that would break cpplint's detection of the implicit constructor.
   template <class U>
-  explicit GcRootArenaAllocator(
-      [[maybe_unused]] const GcRootArenaAllocator<U, kTag>& alloc) noexcept {}
+  GcRootArenaAllocator([[maybe_unused]] const GcRootArenaAllocator<U, kTag>& alloc) noexcept {}  // NOLINT [runtime/explicit]
   // Used internally by STL data structures.
-  GcRootArenaAllocator() noexcept : TrackingAllocator<T, kTag>() {}
+  GcRootArenaAllocator() noexcept {}
 
   // Enables an allocator for objects of one type to allocate storage for objects of another type.
   // Used internally by STL data structures.
@@ -315,20 +311,19 @@ class GcRootArenaAllocator : public TrackingAllocator<T, kTag> {
     using other = GcRootArenaAllocator<U, kTag>;
   };
 
-  pointer allocate(size_type n, [[maybe_unused]] const_pointer hint = nullptr) {
+  T* allocate(size_t n) {
     if (!gUseUserfaultfd) {
-      return TrackingAllocator<T, kTag>::allocate(n);
+      return tracking_alloc_.allocate(n);
     }
     size_t size = n * sizeof(T);
     GcVisitedArenaPool* pool =
         down_cast<GcVisitedArenaPool*>(Runtime::Current()->GetLinearAllocArenaPool());
-    return reinterpret_cast<pointer>(pool->AllocSingleObjArena(size));
+    return reinterpret_cast<T*>(pool->AllocSingleObjArena(size));
   }
 
-  template <typename PT>
-  void deallocate(PT p, size_type n) {
+  void deallocate(T* p, size_t n) {
     if (!gUseUserfaultfd) {
-      TrackingAllocator<T, kTag>::deallocate(p, n);
+      tracking_alloc_.deallocate(p, n);
       return;
     }
     GcVisitedArenaPool* pool =
