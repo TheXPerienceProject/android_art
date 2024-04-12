@@ -2280,47 +2280,89 @@ TEST_F(AssemblerRISCV64Test, Auipc) {
 }
 
 TEST_F(AssemblerRISCV64Test, Jal) {
+  DriverStr(RepeatRIbS(&Riscv64Assembler::Jal, /*imm_bits=*/-20, /*shift=*/1, "jal {reg}, {imm}\n"),
+            "Jal");
+}
+
+TEST_F(AssemblerRISCV64Test, Jal_WithoutC) {
   ScopedCSuppression scs(this);
-  // TODO(riscv64): Change "-19, 2" to "-20, 1" for "C" Standard Extension.
-  DriverStr(RepeatRIbS(&Riscv64Assembler::Jal, -19, 2, "jal {reg}, {imm}\n"), "Jal");
+  DriverStr(RepeatRIbS(&Riscv64Assembler::Jal, /*imm_bits=*/-19, /*shift=*/2, "jal {reg}, {imm}\n"),
+            "Jal_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, Jalr) {
-  ScopedCSuppression scs(this);
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIb(&Riscv64Assembler::Jalr, -12, "jalr {reg1}, {reg2}, {imm}\n"), "Jalr");
+  DriverStr(RepeatRRIb(&Riscv64Assembler::Jalr, /*imm_bits=*/-12, "jalr {reg1}, {reg2}, {imm}\n"),
+            "Jalr");
 }
 
-TEST_F(AssemblerRISCV64Test, Beq) {
+TEST_F(AssemblerRISCV64Test, Jalr_WithoutC) {
   ScopedCSuppression scs(this);
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Beq, -11, 2, "beq {reg1}, {reg2}, {imm}\n"), "Beq");
+  DriverStr(RepeatRRIb(&Riscv64Assembler::Jalr, /*imm_bits=*/-12, "jalr {reg1}, {reg2}, {imm}\n"),
+            "Jalr_WithoutC");
 }
 
-TEST_F(AssemblerRISCV64Test, Bne) {
+// The clang assembler we're currently using for testing (clang 18.0.0) does not auto-forward
+// `beq zero, rs2, offset` to `c.beqz` but newer clang assembler versions (clang 18.0.1) do.
+// TODO (riscv64): Enable this test when we're using a clang assembler that auto-forwards.
+TEST_F(AssemblerRISCV64Test, DISABLED_Beq) {
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Beq, /*imm_bits=*/-12, /*shift=*/1, "beq {reg1}, {reg2}, {imm}\n"),
+       "Beq");
+}
+
+TEST_F(AssemblerRISCV64Test, Beq_WithoutC) {
   ScopedCSuppression scs(this);
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Bne, -11, 2, "bne {reg1}, {reg2}, {imm}\n"), "Bne");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Beq, /*imm_bits=*/-11, /*shift=*/2, "beq {reg1}, {reg2}, {imm}\n"),
+      "Beq_WithoutC");
+}
+
+// The clang assembler we're currently using for testing (clang 18.0.0) does not auto-forward
+// `bne zero, rs2, offset` to `c.bnez` but newer clang assembler versions (clang 18.0.1) do.
+// TODO (riscv64): Enable this test when we're using a clang assembler that auto-forwards.
+TEST_F(AssemblerRISCV64Test, DISABLED_Bne) {
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Bne, /*imm_bits=*/-12, /*shift=*/1, "bne {reg1}, {reg2}, {imm}\n"),
+      "Bne");
+}
+
+TEST_F(AssemblerRISCV64Test, Bne_WithoutC) {
+  ScopedCSuppression scs(this);
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Bne, /*imm_bits=*/-11, /*shift=*/2, "bne {reg1}, {reg2}, {imm}\n"),
+      "Bne_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, Blt) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Blt, -11, 2, "blt {reg1}, {reg2}, {imm}\n"), "Blt");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Blt, /*imm_bits=*/-12, /*shift=*/1, "blt {reg1}, {reg2}, {imm}\n"),
+      "Blt");
 }
 
 TEST_F(AssemblerRISCV64Test, Bge) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Bge, -11, 2, "bge {reg1}, {reg2}, {imm}\n"), "Bge");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Bge, /*imm_bits=*/-12, /*shift=*/1, "bge {reg1}, {reg2}, {imm}\n"),
+      "Bge");
 }
 
 TEST_F(AssemblerRISCV64Test, Bltu) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Bltu, -11, 2, "bltu {reg1}, {reg2}, {imm}\n"), "Bltu");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Bltu, /*imm_bits=*/-12, /*shift=*/1, "bltu {reg1}, {reg2}, {imm}\n"),
+      "Bltu");
 }
 
 TEST_F(AssemblerRISCV64Test, Bgeu) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Bgeu, -11, 2, "bgeu {reg1}, {reg2}, {imm}\n"), "Bgeu");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Bgeu, /*imm_bits=*/-12, /*shift=*/1, "bgeu {reg1}, {reg2}, {imm}\n"),
+      "Bgeu");
 }
 
 TEST_F(AssemblerRISCV64Test, Lb) {
@@ -8219,81 +8261,141 @@ TEST_F(AssemblerRISCV64Test, FNegD) {
 }
 
 TEST_F(AssemblerRISCV64Test, Beqz) {
+  DriverStr(
+      RepeatRIbS(
+          &Riscv64Assembler::Beqz, /*imm_bits=*/-12, /*shift=*/1, "beq {reg}, zero, {imm}\n"),
+      "Beqz");
+}
+
+TEST_F(AssemblerRISCV64Test, Beqz_WithoutC) {
   ScopedCSuppression scs(this);
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRIbS(&Riscv64Assembler::Beqz, -11, 2, "beq {reg}, zero, {imm}\n"), "Beqz");
+  DriverStr(
+      RepeatRIbS(
+          &Riscv64Assembler::Beqz, /*imm_bits=*/-11, /*shift=*/2, "beq {reg}, zero, {imm}\n"),
+      "Beqz_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, Bnez) {
+  DriverStr(
+      RepeatRIbS(
+          &Riscv64Assembler::Bnez, /*imm_bits=*/-12, /*shift=*/1, "bne {reg}, zero, {imm}\n"),
+      "Bnez");
+}
+
+TEST_F(AssemblerRISCV64Test, Bnez_WithoutC) {
   ScopedCSuppression scs(this);
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRIbS(&Riscv64Assembler::Bnez, -11, 2, "bne {reg}, zero, {imm}\n"), "Bnez");
+  DriverStr(
+      RepeatRIbS(
+          &Riscv64Assembler::Bnez, /*imm_bits=*/-11, /*shift=*/2, "bne {reg}, zero, {imm}\n"),
+      "Bnez_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, Blez) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRIbS(&Riscv64Assembler::Blez, -11, 2, "bge zero, {reg}, {imm}\n"), "Blez");
+  DriverStr(
+      RepeatRIbS(
+          &Riscv64Assembler::Blez, /*imm_bits=*/-12, /*shift=*/1, "bge zero, {reg}, {imm}\n"),
+      "Blez");
 }
 
 TEST_F(AssemblerRISCV64Test, Bgez) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRIbS(&Riscv64Assembler::Bgez, -11, 2, "bge {reg}, zero, {imm}\n"), "Bgez");
+  DriverStr(
+      RepeatRIbS(
+          &Riscv64Assembler::Bgez, /*imm_bits=*/-12, /*shift=*/1, "bge {reg}, zero, {imm}\n"),
+      "Bgez");
 }
 
 TEST_F(AssemblerRISCV64Test, Bltz) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRIbS(&Riscv64Assembler::Bltz, -11, 2, "blt {reg}, zero, {imm}\n"), "Bltz");
+  DriverStr(
+      RepeatRIbS(
+          &Riscv64Assembler::Bltz, /*imm_bits=*/-12, /*shift=*/1, "blt {reg}, zero, {imm}\n"),
+      "Bltz");
 }
 
 TEST_F(AssemblerRISCV64Test, Bgtz) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRIbS(&Riscv64Assembler::Bgtz, -11, 2, "blt zero, {reg}, {imm}\n"), "Bgtz");
+  DriverStr(
+      RepeatRIbS(
+          &Riscv64Assembler::Bgtz, /*imm_bits=*/-12, /*shift=*/1, "blt zero, {reg}, {imm}\n"),
+      "Bgtz");
 }
 
 TEST_F(AssemblerRISCV64Test, Bgt) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Bgt, -11, 2, "blt {reg2}, {reg1}, {imm}\n"), "Bgt");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Bgt, /*imm_bits=*/-12, /*shift=*/1, "blt {reg2}, {reg1}, {imm}\n"),
+      "Bgt");
 }
 
 TEST_F(AssemblerRISCV64Test, Ble) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Ble, -11, 2, "bge {reg2}, {reg1}, {imm}\n"), "Bge");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Ble, /*imm_bits=*/-12, /*shift=*/1, "bge {reg2}, {reg1}, {imm}\n"),
+       "Bge");
 }
 
 TEST_F(AssemblerRISCV64Test, Bgtu) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Bgtu, -11, 2, "bltu {reg2}, {reg1}, {imm}\n"), "Bgtu");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Bgtu, /*imm_bits=*/-12, /*shift=*/1, "bltu {reg2}, {reg1}, {imm}\n"),
+      "Bgtu");
 }
 
 TEST_F(AssemblerRISCV64Test, Bleu) {
-  // TODO(riscv64): Change "-11, 2" to "-12, 1" for "C" Standard Extension.
-  DriverStr(RepeatRRIbS(&Riscv64Assembler::Bleu, -11, 2, "bgeu {reg2}, {reg1}, {imm}\n"), "Bgeu");
+  DriverStr(
+      RepeatRRIbS(
+          &Riscv64Assembler::Bleu, /*imm_bits=*/-12, /*shift=*/1, "bgeu {reg2}, {reg1}, {imm}\n"),
+      "Bgeu");
 }
 
 TEST_F(AssemblerRISCV64Test, J) {
+  DriverStr(RepeatIbS<int32_t>(&Riscv64Assembler::J, /*imm_bits=*/-20, /*shift=*/1, "j {imm}\n"),
+            "J");
+}
+
+TEST_F(AssemblerRISCV64Test, J_WithoutC) {
   ScopedCSuppression scs(this);
-  // TODO(riscv64): Change "-19, 2" to "-20, 1" for "C" Standard Extension.
-  DriverStr(RepeatIbS<int32_t>(&Riscv64Assembler::J, -19, 2, "j {imm}\n"), "J");
+  DriverStr(RepeatIbS<int32_t>(&Riscv64Assembler::J, /*imm_bits=*/-19, /*shift=*/2, "j {imm}\n"),
+            "J_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, JalRA) {
-  // TODO(riscv64): Change "-19, 2" to "-20, 1" for "C" Standard Extension.
-  DriverStr(RepeatIbS<int32_t>(&Riscv64Assembler::Jal, -19, 2, "jal {imm}\n"), "JalRA");
+  DriverStr(
+      RepeatIbS<int32_t>(&Riscv64Assembler::Jal, /*imm_bits=*/-20, /*shift=*/1, "jal {imm}\n"),
+      "JalRA");
+}
+
+TEST_F(AssemblerRISCV64Test, JalRA_WithoutC) {
+  ScopedCSuppression scs(this);
+  DriverStr(
+      RepeatIbS<int32_t>(&Riscv64Assembler::Jal, /*imm_bits=*/-19, /*shift=*/2, "jal {imm}\n"),
+      "JalRA_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, Jr) {
-  ScopedCSuppression scs(this);
   DriverStr(RepeatR(&Riscv64Assembler::Jr, "jr {reg}\n"), "Jr");
 }
 
-TEST_F(AssemblerRISCV64Test, JalrRA) {
+TEST_F(AssemblerRISCV64Test, Jr_WithoutC) {
   ScopedCSuppression scs(this);
+  DriverStr(RepeatR(&Riscv64Assembler::Jr, "jr {reg}\n"), "Jr_WithoutC");
+}
+
+TEST_F(AssemblerRISCV64Test, JalrRA) {
   DriverStr(RepeatR(&Riscv64Assembler::Jalr, "jalr {reg}\n"), "JalrRA");
 }
 
-TEST_F(AssemblerRISCV64Test, Jalr0) {
+// Note: `c.jal` is RV32-only but we test `Jalr(XRegister)` with and without "C" anyway.
+TEST_F(AssemblerRISCV64Test, JalrRA_WithoutC) {
   ScopedCSuppression scs(this);
+  DriverStr(RepeatR(&Riscv64Assembler::Jalr, "jalr {reg}\n"), "JalrRA_WithoutC");
+}
+
+TEST_F(AssemblerRISCV64Test, Jalr0) {
   DriverStr(RepeatRR(&Riscv64Assembler::Jalr, "jalr {reg1}, {reg2}\n"), "Jalr0");
+}
+
+TEST_F(AssemblerRISCV64Test, Jalr0_WithoutC) {
+  ScopedCSuppression scs(this);
+  DriverStr(RepeatRR(&Riscv64Assembler::Jalr, "jalr {reg1}, {reg2}\n"), "Jalr0_WithoutC");
 }
 
 TEST_F(AssemblerRISCV64Test, Ret) {
