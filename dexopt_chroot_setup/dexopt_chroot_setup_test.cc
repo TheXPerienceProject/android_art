@@ -24,6 +24,7 @@
 #include <string_view>
 
 #include "aidl/com/android/server/art/BnDexoptChrootSetup.h"
+#include "android-base/properties.h"
 #include "android-base/scopeguard.h"
 #include "android/binder_auto_utils.h"
 #include "base/common_art_test.h"
@@ -40,6 +41,7 @@ namespace dexopt_chroot_setup {
 namespace {
 
 using ::android::base::ScopeGuard;
+using ::android::base::WaitForProperty;
 using ::art::tools::CmdlineBuilder;
 
 class DexoptChrootSetupTest : public CommonArtTest {
@@ -71,6 +73,8 @@ class DexoptChrootSetupTest : public CommonArtTest {
     if (std::filesystem::exists(DexoptChrootSetup::CHROOT_DIR)) {
       GTEST_SKIP() << "A real Pre-reboot Dexopt is running";
     }
+
+    ASSERT_TRUE(WaitForProperty("dev.bootcomplete", "1", /*timeout=*/std::chrono::minutes(3)));
 
     test_skipped = false;
 
