@@ -53,7 +53,7 @@ void HiddenApiFinder::CollectAccesses(VeridexResolver* resolver,
   // Look at all types referenced in this dex file. Any of these
   // types can lead to being used through reflection.
   for (uint32_t i = 0; i < dex_file.NumTypeIds(); ++i) {
-    std::string name(dex_file.StringByTypeIdx(dex::TypeIndex(i)));
+    std::string name(dex_file.GetTypeDescriptorView(dex::TypeIndex(i)));
     classes_.insert(name);
   }
   // Note: we collect strings constants only referenced in code items as the string table
@@ -72,7 +72,7 @@ void HiddenApiFinder::CollectAccesses(VeridexResolver* resolver,
           switch (inst->Opcode()) {
             case Instruction::CONST_STRING: {
               dex::StringIndex string_index(inst->VRegB_21c());
-              const auto& name = std::string(dex_file.StringDataByIdx(string_index));
+              const std::string name(dex_file.GetStringView(string_index));
               // Cheap filtering on the string literal. We know it cannot be a field/method/class
               // if it contains a space.
               if (name.find(' ') == std::string::npos) {

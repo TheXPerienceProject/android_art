@@ -159,17 +159,17 @@ TEST_F(ExceptionTest, FindCatchHandler) {
   EXPECT_LE(t0.start_addr_, t1.start_addr_);
   {
     CatchHandlerIterator iter(accessor, 4 /* Dex PC in the first try block */);
-    EXPECT_STREQ("Ljava/io/IOException;", dex_->StringByTypeIdx(iter.GetHandlerTypeIndex()));
+    EXPECT_STREQ("Ljava/io/IOException;", dex_->GetTypeDescriptor(iter.GetHandlerTypeIndex()));
     ASSERT_TRUE(iter.HasNext());
     iter.Next();
-    EXPECT_STREQ("Ljava/lang/Exception;", dex_->StringByTypeIdx(iter.GetHandlerTypeIndex()));
+    EXPECT_STREQ("Ljava/lang/Exception;", dex_->GetTypeDescriptor(iter.GetHandlerTypeIndex()));
     ASSERT_TRUE(iter.HasNext());
     iter.Next();
     EXPECT_FALSE(iter.HasNext());
   }
   {
     CatchHandlerIterator iter(accessor, 8 /* Dex PC in the second try block */);
-    EXPECT_STREQ("Ljava/io/IOException;", dex_->StringByTypeIdx(iter.GetHandlerTypeIndex()));
+    EXPECT_STREQ("Ljava/io/IOException;", dex_->GetTypeDescriptor(iter.GetHandlerTypeIndex()));
     ASSERT_TRUE(iter.HasNext());
     iter.Next();
     EXPECT_FALSE(iter.HasNext());

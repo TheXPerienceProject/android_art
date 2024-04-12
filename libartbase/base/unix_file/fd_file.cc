@@ -37,11 +37,13 @@
 #include <android-base/logging.h>
 
 // Includes needed for FdFile::Copy().
+#include "base/globals.h"
 #ifdef __linux__
-#include <sys/sendfile.h>
+#include "base/bit_utils.h"
+#include "base/mem_map.h"
+#include "sys/mman.h"
 #else
 #include <algorithm>
-#include "base/globals.h"
 #include "base/stl_util.h"
 #endif
 
@@ -527,6 +529,70 @@ bool FdFile::Rename(const std::string& new_path) {
   return true;
 }
 
+#ifdef __linux__
+bool FdFile::SparseWrite(const uint8_t* data,
+                         size_t size,
+                         const std::vector<uint8_t>& zeroes) {
+  DCHECK_GE(zeroes.size(), size);
+  if (memcmp(zeroes.data(), data, size) == 0) {
+    // These bytes are all zeroes, skip them by moving the file offset via lseek SEEK_CUR (available
+    // since linux kernel 3.1).
+    if (TEMP_FAILURE_RETRY(lseek(Fd(), size, SEEK_CUR)) < 0) {
+      return false;
+    }
+  } else {
+    if (!WriteFully(data, size)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool FdFile::UserspaceSparseCopy(const FdFile* input_file,
+                                 off_t off,
+                                 size_t size,
+                                 size_t fs_blocksize) {
+  // Map the input file. We will begin the copy 'off' bytes into the map.
+  art::MemMap::Init();
+  std::string error_msg;
+  art::MemMap mmap = art::MemMap::MapFile(off + size,
+                                          PROT_READ,
+                                          MAP_PRIVATE,
+                                          input_file->Fd(),
+                                          /*start=*/0,
+                                          /*low_4gb=*/false,
+                                          input_file->GetPath().c_str(),
+                                          &error_msg);
+  if (!mmap.IsValid()) {
+    LOG(ERROR) << "Failed to mmap " << input_file->GetPath() << " for copying: " << error_msg;
+    return false;
+  }
+
+  std::vector<uint8_t> zeroes(/*n=*/fs_blocksize, /*val=*/0);
+
+  // Iterate through each fs_blocksize of the copy region.
+  uint8_t* input_ptr = mmap.Begin() + off;
+  for (; (input_ptr + fs_blocksize) <= mmap.End(); input_ptr += fs_blocksize) {
+    if (!SparseWrite(input_ptr, fs_blocksize, zeroes)) {
+      return false;
+    }
+  }
+  // Finish copying any remaining bytes.
+  const size_t remaining_bytes = size % fs_blocksize;
+  if (remaining_bytes > 0) {
+    if (!SparseWrite(input_ptr, remaining_bytes, zeroes)) {
+      return false;
+    }
+  }
+  // Update the input file FD offset to the end of the copy region.
+  off_t input_offset = TEMP_FAILURE_RETRY(lseek(input_file->Fd(), off + size, SEEK_SET));
+  if (input_offset != (off + static_cast<off_t>(size))) {
+    return false;
+  }
+  return true;
+}
+#endif
+
 bool FdFile::Copy(FdFile* input_file, int64_t offset, int64_t size) {
   DCHECK(!read_only_mode_);
   off_t off = static_cast<off_t>(offset);
@@ -540,16 +606,39 @@ bool FdFile::Copy(FdFile* input_file, int64_t offset, int64_t size) {
   if (size == 0) {
     return true;
   }
+
 #ifdef __linux__
-  // Use sendfile(), available for files since linux kernel 2.6.33.
-  off_t end = off + sz;
-  while (off != end) {
-    int result = TEMP_FAILURE_RETRY(
-        sendfile(Fd(), input_file->Fd(), &off, end - off));
-    if (result == -1) {
-      return false;
-    }
-    // Ignore the number of bytes in `result`, sendfile() already updated `off`.
+  off_t current_offset = TEMP_FAILURE_RETRY(lseek(Fd(), 0, SEEK_CUR));
+  if (GetLength() > current_offset) {
+    // Copying to an existing region of the destination file is not supported. The current
+    // implementation would incorrectly preserve all existing data regions within the output file
+    // which match the locations of holes within the input file.
+    LOG(ERROR) << "Cannot copy into an existing region of the destination file.";
+    errno = EINVAL;
+    return false;
+  }
+  struct stat output_stat;
+  if (TEMP_FAILURE_RETRY(fstat(Fd(), &output_stat)) < 0) {
+    return false;
+  }
+  const off_t fs_blocksize = output_stat.st_blksize;
+  if (!art::IsAlignedParam(current_offset, fs_blocksize)) {
+    // The input region is copied (skipped or written) in chunks of the output file's blocksize. For
+    // those chunks to be represented as holes or data, they should land as aligned blocks in the
+    // output file. Therefore, here we enforce that the current output offset is aligned.
+    LOG(ERROR) << "Copy destination FD offset (" << current_offset << ") must be aligned with"
+               << " blocksize (" << fs_blocksize << ").";
+    errno = EINVAL;
+    return false;
+  }
+  const size_t end_length = GetLength() + sz;
+  if (!UserspaceSparseCopy(input_file, off, sz, fs_blocksize)) {
+    return false;
+  }
+  // In case the last blocks of the input file were a hole, fix the length to what would have been
+  // set if they had been data.
+  if (SetLength(end_length) != 0) {
+    return false;
   }
 #else
   if (lseek(input_file->Fd(), off, SEEK_SET) != off) {

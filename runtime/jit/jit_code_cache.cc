@@ -1428,11 +1428,21 @@ void JitCodeCache::GetProfiledMethods(const std::set<std::string>& dex_base_loca
                                       uint16_t inline_cache_threshold) {
   ScopedTrace trace(__FUNCTION__);
   Thread* self = Thread::Current();
+
+  // Preserve class loaders to prevent unloading while we're processing
+  // ArtMethods.
+  VariableSizedHandleScope handles(self);
+  Runtime::Current()->GetClassLinker()->GetClassLoaders(self, &handles);
+
+  // Wait for any GC to be complete, to prevent looking at ArtMethods whose
+  // class loader is being deleted.
+  Runtime::Current()->GetHeap()->WaitForGcToComplete(gc::kGcCauseProfileSaver, self);
+
+  // We'll be looking at inline caches, so ensure they are accessible.
   WaitUntilInlineCacheAccessible(self);
+
   SafeMap<ArtMethod*, ProfilingInfo*> profiling_infos;
   std::vector<ArtMethod*> copies;
-  // TODO: Avoid read barriers for potentially dead methods.
-  // ScopedDebugDisallowReadBarriers sddrb(self);
   {
     MutexLock mu(self, *Locks::jit_lock_);
     profiling_infos = profiling_infos_;

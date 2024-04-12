@@ -28,13 +28,18 @@ cc_defaults {
     srcs: [
         "dexopt_chroot_setup.cc",
     ],
+    header_libs: [
+        "libarttools_binder_utils",
+    ],
     shared_libs: [
         "libbase",
         "libbinder_ndk",
     ],
     static_libs: [
         "dexopt_chroot_setup-aidl-ndk",
+        "libfstab",
     ],
+    sdclang: false,
 }
 
 art_cc_binary {
@@ -46,6 +51,7 @@ art_cc_binary {
     shared_libs: [
         "libart",
         "libartbase",
+        "libarttools", // Contains "libc++fs".
     ],
     apex_available: [
         "com.android.art",
@@ -53,40 +59,27 @@ art_cc_binary {
     ],
 }
 
-art_cc_defaults {
-    name: "art_dexopt_chroot_setup_tests_defaults",
-    defaults: ["dexopt_chroot_setup_defaults"],
-    static_libs: [
-        "libgmock",
-    ],
-    srcs: [
-        "dexopt_chroot_setup_test.cc",
-    ],
-}
-
-// Version of ART gtest `art_dexopt_chroot_setup_tests` bundled with the ART
-// APEX on target.
-//
-// This test requires the full libbinder_ndk implementation on host, which is
-// not available as a prebuilt on the thin master-art branch. Hence it won't
-// work there, and there's a conditional in Android.gtest.mk to exclude it from
-// test-art-host-gtest.
-art_cc_test {
-    name: "art_dexopt_chroot_setup_tests",
-    defaults: [
-        "art_gtest_defaults",
-        "art_dexopt_chroot_setup_tests_defaults",
-    ],
-}
-
-// Standalone version of ART gtest `art_dexopt_chroot_setup_tests`, not bundled
-// with the ART APEX on target.
+// This test only has the standalone version. A bundled test runs on host and in
+// chroot, neither of which is suitable for this test because this test sets up
+// a real chroot environment. In contrast, a standalone test runs on device by
+// tradefed and atest locally.
 art_cc_test {
     name: "art_standalone_dexopt_chroot_setup_tests",
     defaults: [
         "art_standalone_gtest_defaults",
-        "art_dexopt_chroot_setup_tests_defaults",
+        "dexopt_chroot_setup_defaults",
     ],
+    srcs: [
+        "dexopt_chroot_setup_test.cc",
+    ],
+    data: [
+        ":art-gtest-jars-Main",
+    ],
+    static_libs: [
+        "libarttools", // Contains "libc++fs".
+        "libgmock",
+    ],
+    test_config_template: "art_standalone_dexopt_chroot_setup_tests.xml",
 }
 
 cc_fuzz {
@@ -96,12 +89,12 @@ cc_fuzz {
         "art_module_source_build_defaults",
         "dexopt_chroot_setup_defaults",
     ],
-    host_supported: true,
     srcs: ["dexopt_chroot_setup_fuzzer.cc"],
     shared_libs: [
         "libart",
         "libartbase",
         "liblog",
+        "libarttools", // Contains "libc++fs".
     ],
     fuzz_config: {
         cc: [

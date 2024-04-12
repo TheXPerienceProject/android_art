@@ -134,7 +134,7 @@ class ProfileTestHelper {
                              return type_index == type_ref.TypeIndex();
                            } else {
                              const char* expected_descriptor =
-                                 type_ref.dex_file->StringByTypeIdx(type_ref.TypeIndex());
+                                 type_ref.dex_file->GetTypeDescriptor(type_ref.TypeIndex());
                              const char* descriptor = info.GetTypeDescriptor(dex_file, type_index);
                              return strcmp(expected_descriptor, descriptor) == 0;
                            }
