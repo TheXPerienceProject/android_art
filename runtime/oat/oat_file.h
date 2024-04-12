@@ -181,6 +181,12 @@ class OatFile {
                                ClassLoaderContext* context,
                                std::string* error_msg);
 
+  // Set the start of the app image.
+  // Needed for initializing app image relocations in the .data.img.rel.ro section.
+  void SetAppImageBegin(uint8_t* app_image_begin) const {
+    app_image_begin_ = app_image_begin;
+  }
+
   // Return whether the `OatFile` uses a vdex-only file.
   bool IsBackedByVdexOnly() const;
 
@@ -329,6 +335,10 @@ class OatFile {
     return DataImgRelRoEnd() - DataImgRelRoBegin();
   }
 
+  size_t DataImgRelRoAppImageOffset() const {
+    return DataImgRelRoAppImage() - DataImgRelRoBegin();
+  }
+
   size_t BssSize() const {
     return BssEnd() - BssBegin();
   }
@@ -356,6 +366,7 @@ class OatFile {
 
   const uint8_t* DataImgRelRoBegin() const { return data_img_rel_ro_begin_; }
   const uint8_t* DataImgRelRoEnd() const { return data_img_rel_ro_end_; }
+  const uint8_t* DataImgRelRoAppImage() const { return data_img_rel_ro_app_image_; }
 
   const uint8_t* BssBegin() const { return bss_begin_; }
   const uint8_t* BssEnd() const { return bss_end_; }
@@ -367,6 +378,7 @@ class OatFile {
   EXPORT const uint8_t* DexEnd() const;
 
   EXPORT ArrayRef<const uint32_t> GetBootImageRelocations() const;
+  EXPORT ArrayRef<const uint32_t> GetAppImageRelocations() const;
   EXPORT ArrayRef<ArtMethod*> GetBssMethods() const;
   EXPORT ArrayRef<GcRoot<mirror::Object>> GetBssGcRoots() const;
 
@@ -429,16 +441,20 @@ class OatFile {
   // Pointer to the end of the .data.img.rel.ro section, if present, otherwise null.
   const uint8_t* data_img_rel_ro_end_;
 
+  // Pointer to the beginning of the app image relocations in the .data.img.rel.ro section,
+  // if present, otherwise null.
+  const uint8_t* data_img_rel_ro_app_image_;
+
   // Pointer to the .bss section, if present, otherwise null.
   uint8_t* bss_begin_;
 
   // Pointer to the end of the .bss section, if present, otherwise null.
   uint8_t* bss_end_;
 
-  // Pointer to the beginning of the ArtMethod*s in .bss section, if present, otherwise null.
+  // Pointer to the beginning of the ArtMethod*s in the .bss section, if present, otherwise null.
   uint8_t* bss_methods_;
 
-  // Pointer to the beginning of the GC roots in .bss section, if present, otherwise null.
+  // Pointer to the beginning of the GC roots in the .bss section, if present, otherwise null.
   uint8_t* bss_roots_;
 
   // Was this oat_file loaded executable?
@@ -449,6 +465,9 @@ class OatFile {
 
   // Pointer to the end of the .vdex section, if present, otherwise null.
   uint8_t* vdex_end_;
+
+  // Pointer to the beginning of the app image, if any.
+  mutable uint8_t* app_image_begin_;
 
   // Owning storage for the OatDexFile objects.
   std::vector<const OatDexFile*> oat_dex_files_storage_;
