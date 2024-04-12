@@ -36,7 +36,6 @@ cc_defaults {
         "profman_headers",
     ],
     shared_libs: [
-        "libbase",
         "libbinder_ndk",
         "libselinux",
     ],
@@ -57,6 +56,7 @@ art_cc_binary {
         "libartbase",
         "libartservice",
         "libarttools", // Contains "libc++fs".
+        "libbase",
         "libdexfile",
     ],
     apex_available: [
@@ -97,6 +97,7 @@ art_cc_test {
     shared_libs: [
         "libartservice",
         "libarttools",
+        "libbase",
         "libdexfile",
     ],
 }
@@ -112,6 +113,7 @@ art_cc_test {
     static_libs: [
         "libartservice",
         "libarttools",
+        "libbase",
         "libdexfile",
     ],
     test_config_template: "art_standalone_artd_tests.xml",
@@ -137,6 +139,7 @@ cc_fuzz {
         "libartbase",
         "libartservice",
         "libarttools",
+        "libbase",
         "libdexfile",
         "liblog",
     ],
