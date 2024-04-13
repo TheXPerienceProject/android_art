@@ -35,7 +35,7 @@ static std::atomic<bool> saw_dump_request(false);
 
 static void DumpRequestCallback([[maybe_unused]] jvmtiEnv* jenv) {
   printf("Received dump request.\n");
-  saw_dump_request.store(true, std::memory_order::memory_order_relaxed);
+  saw_dump_request.store(true, std::memory_order_relaxed);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_art_Test933_testSigQuit(
@@ -61,7 +61,7 @@ extern "C" JNIEXPORT void JNICALL Java_art_Test933_testSigQuit(
   // Busy-wait for request.
   for (;;) {
     sleep(1);
-    if (saw_dump_request.load(std::memory_order::memory_order_relaxed)) {
+    if (saw_dump_request.load(std::memory_order_relaxed)) {
       break;
     }
   }
