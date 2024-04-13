@@ -32,7 +32,6 @@ cc_defaults {
         "libarttools_binder_utils",
     ],
     shared_libs: [
-        "libbase",
         "libbinder_ndk",
     ],
     static_libs: [
@@ -51,6 +50,7 @@ art_cc_binary {
         "libart",
         "libartbase",
         "libarttools", // Contains "libc++fs".
+        "libbase",
     ],
     apex_available: [
         "com.android.art",
@@ -76,7 +76,9 @@ art_cc_test {
     ],
     static_libs: [
         "libarttools", // Contains "libc++fs".
+        "libbase",
         "libgmock",
+        "libselinux",
     ],
     test_config_template: "art_standalone_dexopt_chroot_setup_tests.xml",
 }

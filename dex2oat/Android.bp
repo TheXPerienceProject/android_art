@@ -496,9 +496,11 @@ art_cc_defaults {
     },
 
     shared_libs: [
-        "libcrypto",
-        "liblz4", // libart(d)-dex2oat dependency; must be repeated here since it's a static lib.
         "liblog",
+    ],
+    static_libs: [
+        "libcrypto_static", // Must be statically linked in standalone tests
+        "liblz4", // libart(d)-dex2oat dependency; must be repeated here since it's a static lib.
     ],
 }
 
