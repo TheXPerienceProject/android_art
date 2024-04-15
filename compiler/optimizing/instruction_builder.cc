@@ -60,7 +60,7 @@ class SamePackageCompare {
       const DexFile* dex_file = dex_compilation_unit_.GetDexFile();
       uint32_t referrers_method_idx = dex_compilation_unit_.GetDexMethodIndex();
       referrers_descriptor_ =
-          dex_file->StringByTypeIdx(dex_file->GetMethodId(referrers_method_idx).class_idx_);
+          dex_file->GetMethodDeclaringClassDescriptor(dex_file->GetMethodId(referrers_method_idx));
       referrers_package_length_ = PackageLength(referrers_descriptor_);
     }
     std::string temp;
@@ -2439,7 +2439,7 @@ HNewArray* HInstructionBuilder::BuildFilledNewArray(uint32_t dex_pc,
   HInstruction* length = graph_->GetIntConstant(number_of_operands, dex_pc);
 
   HNewArray* new_array = BuildNewArray(dex_pc, type_index, length);
-  const char* descriptor = dex_file_->StringByTypeIdx(type_index);
+  const char* descriptor = dex_file_->GetTypeDescriptor(type_index);
   DCHECK_EQ(descriptor[0], '[') << descriptor;
   char primitive = descriptor[1];
   DCHECK(primitive == 'I'
@@ -2657,14 +2657,11 @@ bool HInstructionBuilder::LoadClassNeedsAccessCheck(dex::TypeIndex type_index,
         return true;
       }
     } else {
-      uint32_t outer_utf16_length;
-      const char* outer_descriptor =
-          outer_dex_file->StringByTypeIdx(outer_class_def.class_idx_, &outer_utf16_length);
-      uint32_t target_utf16_length;
-      const char* target_descriptor =
-          inner_dex_file->StringByTypeIdx(type_index, &target_utf16_length);
-      if (outer_utf16_length != target_utf16_length ||
-          strcmp(outer_descriptor, target_descriptor) != 0) {
+      const std::string_view outer_descriptor =
+          outer_dex_file->GetTypeDescriptorView(outer_class_def.class_idx_);
+      const std::string_view target_descriptor =
+          inner_dex_file->GetTypeDescriptorView(type_index);
+      if (outer_descriptor != target_descriptor) {
         return true;
       }
     }

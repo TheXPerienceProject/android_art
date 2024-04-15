@@ -371,22 +371,6 @@ class ProfileSaver::GetClassesAndMethodsHelper {
   }
 
  private:
-  // GetClassLoadersVisitor collects visited class loaders.
-  class GetClassLoadersVisitor : public ClassLoaderVisitor {
-   public:
-    explicit GetClassLoadersVisitor(VariableSizedHandleScope* class_loaders)
-        : class_loaders_(class_loaders) {}
-
-    void Visit(ObjPtr<mirror::ClassLoader> class_loader)
-        REQUIRES_SHARED(Locks::classlinker_classes_lock_, Locks::mutator_lock_) override {
-      DCHECK(class_loader != nullptr);
-      class_loaders_->NewHandle(class_loader);
-    }
-
-   private:
-    VariableSizedHandleScope* const class_loaders_;
-  };
-
   class CollectInternalVisitor {
    public:
     explicit CollectInternalVisitor(GetClassesAndMethodsHelper* helper)
@@ -568,12 +552,7 @@ void ProfileSaver::GetClassesAndMethodsHelper::CollectClasses(Thread* self) {
   // a member variable to keep them alive and prevent unloading their classes,
   // so that methods referenced in collected `DexFileRecords` remain valid.
   class_loaders_.emplace(self);
-  {
-    GetClassLoadersVisitor class_loader_visitor(&class_loaders_.value());
-    ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
-    ReaderMutexLock mu(self, *Locks::classlinker_classes_lock_);
-    class_linker->VisitClassLoaders(&class_loader_visitor);
-  }
+  Runtime::Current()->GetClassLinker()->GetClassLoaders(self, &class_loaders_.value());
 
   // Collect classes and their method array pointers.
   if (profile_boot_class_path_) {
@@ -681,7 +660,7 @@ void ProfileSaver::GetClassesAndMethodsHelper::UpdateProfile(const std::set<std:
         DCHECK(ShouldCollectClasses(startup));
         DCHECK(class_record.methods == nullptr);  // No methods to process.
         array_class_descriptor.assign(class_record.array_dimension, '[');
-        array_class_descriptor += dex_file->StringByTypeIdx(class_record.type_index);
+        array_class_descriptor += dex_file->GetTypeDescriptorView(class_record.type_index);
         dex::TypeIndex type_index =
             profile_info->FindOrCreateTypeIndex(*dex_file, array_class_descriptor.c_str());
         if (type_index.IsValid()) {

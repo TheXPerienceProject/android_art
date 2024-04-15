@@ -851,9 +851,9 @@ bool MethodVerifier<kVerifierDebug>::Verify() {
   // Some older code doesn't correctly mark constructors as such. Test for this case by looking at
   // the name.
   const dex::MethodId& method_id = dex_file_->GetMethodId(dex_method_idx_);
-  const char* method_name = dex_file_->StringDataByIdx(method_id.name_idx_);
-  bool instance_constructor_by_name = strcmp("<init>", method_name) == 0;
-  bool static_constructor_by_name = strcmp("<clinit>", method_name) == 0;
+  const std::string_view method_name = dex_file_->GetStringView(method_id.name_idx_);
+  bool instance_constructor_by_name = method_name == "<init>";
+  bool static_constructor_by_name = method_name == "<clinit>";
   bool constructor_by_name = instance_constructor_by_name || static_constructor_by_name;
   // Check that only constructors are tagged, and check for bad code that doesn't tag constructors.
   if ((method_access_flags_ & kAccConstructor) != 0) {
@@ -1286,11 +1286,11 @@ inline bool MethodVerifier<kVerifierDebug>::CheckNewInstance(dex::TypeIndex idx)
     return false;
   }
   // We don't need the actual class, just a pointer to the class name.
-  const char* descriptor = dex_file_->StringByTypeIdx(idx);
+  const std::string_view descriptor = dex_file_->GetTypeDescriptorView(idx);
   if (UNLIKELY(descriptor[0] != 'L')) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "can't call new-instance on type '" << descriptor << "'";
     return false;
-  } else if (UNLIKELY(strcmp(descriptor, "Ljava/lang/Class;") == 0)) {
+  } else if (UNLIKELY(descriptor == "Ljava/lang/Class;")) {
     // An unlikely new instance on Class is not allowed. Fall back to interpreter to ensure an
     // exception is thrown when this statement is executed (compiled code would not do that).
     Fail(VERIFY_ERROR_INSTANTIATION);
@@ -1306,7 +1306,7 @@ bool MethodVerifier<kVerifierDebug>::CheckNewArray(dex::TypeIndex idx) {
     return false;
   }
   int bracket_count = 0;
-  const char* descriptor = dex_file_->StringByTypeIdx(idx);
+  const char* descriptor = dex_file_->GetTypeDescriptor(idx);
   const char* cp = descriptor;
   while (*cp++ == '[') {
     bracket_count++;
@@ -2372,7 +2372,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             type_idx, dex_cache_.Get(), class_loader_.Get());
         if (klass != nullptr && klass->IsPrimitive()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "using primitive type "
-              << dex_file_->StringByTypeIdx(type_idx) << " in instanceof in "
+              << dex_file_->GetTypeDescriptorView(type_idx) << " in instanceof in "
               << GetDeclaringClass();
           break;
         }
@@ -2877,7 +2877,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         const dex::MethodId& method_id = dex_file_->GetMethodId(method_idx);
         dex::TypeIndex return_type_idx =
             dex_file_->GetProtoId(method_id.proto_idx_).return_type_idx_;
-        const char* descriptor = dex_file_->StringByTypeIdx(return_type_idx);
+        const char* descriptor = dex_file_->GetTypeDescriptor(return_type_idx);
         return_type = &reg_types_.FromDescriptor(class_loader_.Get(), descriptor, false);
       }
       if (!return_type->IsLowHalf()) {
@@ -2898,10 +2898,10 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       if (called_method == nullptr) {
         uint32_t method_idx = (is_range) ? inst->VRegB_3rc() : inst->VRegB_35c();
         const dex::MethodId& method_id = dex_file_->GetMethodId(method_idx);
-        is_constructor = strcmp("<init>", dex_file_->StringDataByIdx(method_id.name_idx_)) == 0;
+        is_constructor = dex_file_->GetStringView(method_id.name_idx_) == "<init>";
         dex::TypeIndex return_type_idx =
             dex_file_->GetProtoId(method_id.proto_idx_).return_type_idx_;
-        return_type_descriptor =  dex_file_->StringByTypeIdx(return_type_idx);
+        return_type_descriptor =  dex_file_->GetTypeDescriptor(return_type_idx);
       } else {
         is_constructor = called_method->IsConstructor();
         return_type_descriptor = called_method->GetReturnTypeDescriptor();
@@ -2980,7 +2980,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
           const dex::MethodId& method_id = dex_file_->GetMethodId(method_idx);
           dex::TypeIndex return_type_idx =
               dex_file_->GetProtoId(method_id.proto_idx_).return_type_idx_;
-          descriptor = dex_file_->StringByTypeIdx(return_type_idx);
+          descriptor = dex_file_->GetTypeDescriptor(return_type_idx);
         } else {
           descriptor = called_method->GetReturnTypeDescriptor();
         }
@@ -3037,7 +3037,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         const dex::MethodId& method_id = dex_file_->GetMethodId(method_idx);
         dex::TypeIndex return_type_idx =
             dex_file_->GetProtoId(method_id.proto_idx_).return_type_idx_;
-        descriptor = dex_file_->StringByTypeIdx(return_type_idx);
+        descriptor = dex_file_->GetTypeDescriptor(return_type_idx);
       } else {
         descriptor = abs_method->GetReturnTypeDescriptor();
       }
@@ -3607,22 +3607,22 @@ const RegType& MethodVerifier<kVerifierDebug>::ResolveClass(dex::TypeIndex class
   if (klass != nullptr) {
     bool precise = klass->CannotBeAssignedFromOtherTypes();
     if (precise && !IsInstantiableOrPrimitive(klass)) {
-      const char* descriptor = dex_file_->StringByTypeIdx(class_idx);
+      const char* descriptor = dex_file_->GetTypeDescriptor(class_idx);
       UninstantiableError(descriptor);
       precise = false;
     }
     result = reg_types_.FindClass(klass, precise);
     if (result == nullptr) {
-      const char* descriptor = dex_file_->StringByTypeIdx(class_idx);
+      const char* descriptor = dex_file_->GetTypeDescriptor(class_idx);
       result = reg_types_.InsertClass(descriptor, klass, precise);
     }
   } else {
-    const char* descriptor = dex_file_->StringByTypeIdx(class_idx);
+    const char* descriptor = dex_file_->GetTypeDescriptor(class_idx);
     result = &reg_types_.FromDescriptor(class_loader_.Get(), descriptor, false);
   }
   DCHECK(result != nullptr);
   if (result->IsConflict()) {
-    const char* descriptor = dex_file_->StringByTypeIdx(class_idx);
+    const char* descriptor = dex_file_->GetTypeDescriptor(class_idx);
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "accessing broken descriptor '" << descriptor
         << "' in " << GetDeclaringClass();
     return *result;
@@ -3943,7 +3943,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
         const dex::TypeIndex class_idx = dex_file_->GetMethodId(method_idx).class_idx_;
         res_method_class = &reg_types_.FromDescriptor(
             class_loader_.Get(),
-            dex_file_->StringByTypeIdx(class_idx),
+            dex_file_->GetTypeDescriptor(class_idx),
             false);
       }
       if (!res_method_class->IsAssignableFrom(adjusted_type, this)) {
@@ -4141,7 +4141,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
     dex::TypeIndex class_idx = dex_file_->GetMethodId(method_idx).class_idx_;
     const RegType& reference_type = reg_types_.FromDescriptor(
         class_loader_.Get(),
-        dex_file_->StringByTypeIdx(class_idx),
+        dex_file_->GetTypeDescriptor(class_idx),
         false);
     if (reference_type.IsUnresolvedTypes()) {
       // We cannot differentiate on whether this is a class change error or just

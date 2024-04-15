@@ -2716,7 +2716,7 @@ void InstructionSimplifierVisitor::SimplifyStringIndexOf(HInvoke* invoke) {
     const DexFile& dex_file = load_string->GetDexFile();
     uint32_t utf16_length;
     const char* data =
-        dex_file.StringDataAndUtf16LengthByIdx(load_string->GetStringIndex(), &utf16_length);
+        dex_file.GetStringDataAndUtf16Length(load_string->GetStringIndex(), &utf16_length);
     if (utf16_length == 0) {
       invoke->ReplaceWith(GetGraph()->GetIntConstant(-1));
       invoke->GetBlock()->RemoveInstruction(invoke);

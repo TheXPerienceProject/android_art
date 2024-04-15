@@ -82,7 +82,7 @@ void HiddenApi::AddSignatureToApiList(const std::string& signature, hiddenapi::A
 std::string HiddenApi::GetApiMethodName(const DexFile& dex_file, uint32_t method_index) {
   std::stringstream ss;
   const dex::MethodId& method_id = dex_file.GetMethodId(method_index);
-  ss << dex_file.StringByTypeIdx(method_id.class_idx_)
+  ss << dex_file.GetTypeDescriptorView(method_id.class_idx_)
      << "->"
      << dex_file.GetMethodName(method_id)
      << dex_file.GetMethodSignature(method_id).ToString();
@@ -92,7 +92,7 @@ std::string HiddenApi::GetApiMethodName(const DexFile& dex_file, uint32_t method
 std::string HiddenApi::GetApiFieldName(const DexFile& dex_file, uint32_t field_index) {
   std::stringstream ss;
   const dex::FieldId& field_id = dex_file.GetFieldId(field_index);
-  ss << dex_file.StringByTypeIdx(field_id.class_idx_)
+  ss << dex_file.GetTypeDescriptorView(field_id.class_idx_)
      << "->"
      << dex_file.GetFieldName(field_id)
      << ":"

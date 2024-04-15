@@ -2078,8 +2078,8 @@ void ImageWriter::LayoutHelper::ProcessInterns(Thread* self) {
     // Assign bin slots for strings defined in this dex file in StringId (lexicographical) order.
     for (size_t i = 0, count = dex_file->NumStringIds(); i != count; ++i) {
       uint32_t utf16_length;
-      const char* utf8_data = dex_file->StringDataAndUtf16LengthByIdx(dex::StringIndex(i),
-                                                                      &utf16_length);
+      const char* utf8_data = dex_file->GetStringDataAndUtf16Length(dex::StringIndex(i),
+                                                                    &utf16_length);
       uint32_t hash = InternTable::Utf8String::Hash(utf16_length, utf8_data);
       auto intern_it =
           intern_set.FindWithHash(InternTable::Utf8String(utf16_length, utf8_data), hash);

@@ -217,13 +217,13 @@ void CountDexIndices::ProcessDexFiles(
   for (const std::unique_ptr<const DexFile>& dex_file : dex_files) {
     for (size_t i = 0; i < dex_file->NumTypeIds(); ++i) {
       unique_type_names.insert(
-          dex_file->StringDataByIdx(dex_file->GetTypeId(dex::TypeIndex(i)).descriptor_idx_));
+          dex_file->GetStringData(dex_file->GetTypeId(dex::TypeIndex(i)).descriptor_idx_));
     }
     for (size_t i = 0; i < dex_file->NumFieldIds(); ++i) {
-      unique_field_names.insert(dex_file->StringDataByIdx(dex_file->GetFieldId(i).name_idx_));
+      unique_field_names.insert(dex_file->GetStringData(dex_file->GetFieldId(i).name_idx_));
     }
     for (size_t i = 0; i < dex_file->NumMethodIds(); ++i) {
-      unique_method_names.insert(dex_file->StringDataByIdx(dex_file->GetMethodId(i).name_idx_));
+      unique_method_names.insert(dex_file->GetStringData(dex_file->GetMethodId(i).name_idx_));
     }
     ProcessDexFile(*dex_file);
   }
