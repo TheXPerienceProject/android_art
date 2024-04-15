@@ -961,9 +961,6 @@ art_cc_library_static {
 
 art_cc_defaults {
     name: "art_runtime_tests_defaults",
-    defaults: [
-        "art_libunwindstack_static_defaults", // Must be statically linked in standalone tests
-    ],
     target: {
         host: {
             cflags: [
@@ -1112,6 +1109,10 @@ art_cc_defaults {
         "vdex_file_test.cc",
         "verifier/method_verifier_test.cc",
         "verifier/reg_type_test.cc",
+    ],
+    shared_libs: [
+        // TODO(b/247108425): Resolve ODR problems and link statically.
+        "libunwindstack",
     ],
     static_libs: [
         "libgmock",
