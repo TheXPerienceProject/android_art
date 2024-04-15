@@ -4214,7 +4214,7 @@ void ClassLinker::RegisterDexFileLocked(const DexFile& dex_file,
     CHECK_EQ(dex_cache_location, dex_file_suffix);
   }
 
-  // Check if we need to initialize OatFile data (.data.bimg.rel.ro and .bss
+  // Check if we need to initialize OatFile data (.data.img.rel.ro and .bss
   // sections) needed for code execution and register the oat code range.
   const OatFile* oat_file =
       (dex_file.GetOatDexFile() != nullptr) ? dex_file.GetOatDexFile()->GetOatFile() : nullptr;

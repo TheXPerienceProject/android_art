@@ -127,7 +127,7 @@ HInvokeStaticOrDirect::DispatchInfo HSharpening::SharpenLoadMethod(
       code_ptr_location = CodePtrLocation::kCallArtMethod;
     }
   } else if (IsInBootImage(callee)) {
-    // Use PC-relative access to the .data.bimg.rel.ro methods array.
+    // Use PC-relative access to the .data.img.rel.ro boot image methods array.
     method_load_kind = MethodLoadKind::kBootImageRelRo;
     code_ptr_location = CodePtrLocation::kCallArtMethod;
   } else if (!has_method_id) {

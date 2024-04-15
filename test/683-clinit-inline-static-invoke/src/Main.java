@@ -21,7 +21,7 @@ public class Main {
     // When we inline this getter, we're left with HLoadClass+HClinitCheck which cannot
     // be merged back to the InvokeStaticOrDirect for implicit class init check.
     // The declaring class is in the boot image, so the LoadClass can load it using the
-    // .data.bimg.rel.ro section. However, the ClinitCheck entrypoint was previously
+    // .data.img.rel.ro section. However, the ClinitCheck entrypoint was previously
     // taking a type index of the declaring class and since we did not have a valid
     // TypeId in the current DexFile, we erroneously provided the type index from the
     // declaring DexFile and that caused a crash. This was fixed by changing the
