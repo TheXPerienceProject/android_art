@@ -111,7 +111,6 @@ ifeq (true,$(my_art_module_source_build))
 ########################################################################
 # product rules
 
-include $(art_path)/oatdump/Android.mk
 include $(art_path)/tools/ahat/Android.mk
 include $(art_path)/tools/dexfuzz/Android.mk
 
