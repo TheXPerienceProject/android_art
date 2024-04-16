@@ -239,3 +239,8 @@ art_cc_test {
     data: [":generate-boot-image"],
     test_config: "art_standalone_oatdump_tests.xml",
 }
+
+phony_rule {
+    name: "dump-oat",
+    phony_deps: ["dump-oat-boot"],
+}
