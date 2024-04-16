@@ -684,7 +684,7 @@ class CodeGeneratorARMVIXL : public CodeGenerator {
   void MoveFromReturnRegister(Location trg, DataType::Type type) override;
 
   // The PcRelativePatchInfo is used for PC-relative addressing of methods/strings/types,
-  // whether through .data.bimg.rel.ro, .bss, or directly in the boot image.
+  // whether through .data.img.rel.ro, .bss, or directly in the boot image.
   //
   // The PC-relative address is loaded with three instructions,
   // MOVW+MOVT to load the offset to base_reg and then ADD base_reg, PC. The offset
@@ -695,9 +695,9 @@ class CodeGeneratorARMVIXL : public CodeGenerator {
     PcRelativePatchInfo(const DexFile* dex_file, uint32_t off_or_idx)
         : target_dex_file(dex_file), offset_or_index(off_or_idx) { }
 
-    // Target dex file or null for .data.bmig.rel.ro patches.
+    // Target dex file or null for boot image .data.img.rel.ro patches.
     const DexFile* target_dex_file;
-    // Either the boot image offset (to write to .data.bmig.rel.ro) or string/type/method index.
+    // Either the boot image offset (to write to .data.img.rel.ro) or string/type/method index.
     uint32_t offset_or_index;
     vixl::aarch32::Label movw_label;
     vixl::aarch32::Label movt_label;

@@ -463,7 +463,7 @@ class ElfBuilder final {
         rodata_(this, ".rodata", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
         text_(this, ".text", SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, nullptr, 0,
             kElfSegmentAlignment, 0),
-        data_bimg_rel_ro_(this, ".data.bimg.rel.ro", SHT_PROGBITS, SHF_ALLOC, nullptr, 0,
+        data_img_rel_ro_(this, ".data.img.rel.ro", SHT_PROGBITS, SHF_ALLOC, nullptr, 0,
             kElfSegmentAlignment, 0),
         bss_(this, ".bss", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
         dex_(this, ".dex", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
@@ -488,7 +488,7 @@ class ElfBuilder final {
         loaded_size_(0u),
         virtual_address_(0) {
     text_.phdr_flags_ = PF_R | PF_X;
-    data_bimg_rel_ro_.phdr_flags_ = PF_R | PF_W;  // Shall be made read-only at run time.
+    data_img_rel_ro_.phdr_flags_ = PF_R | PF_W;  // Shall be made read-only at run time.
     bss_.phdr_flags_ = PF_R | PF_W;
     dex_.phdr_flags_ = PF_R;
     dynamic_.phdr_flags_ = PF_R | PF_W;
@@ -501,7 +501,7 @@ class ElfBuilder final {
   BuildIdSection* GetBuildId() { return &build_id_; }
   Section* GetRoData() { return &rodata_; }
   Section* GetText() { return &text_; }
-  Section* GetDataBimgRelRo() { return &data_bimg_rel_ro_; }
+  Section* GetDataImgRelRo() { return &data_img_rel_ro_; }
   Section* GetBss() { return &bss_; }
   Section* GetDex() { return &dex_; }
   StringSection* GetStrTab() { return &strtab_; }
@@ -640,7 +640,7 @@ class ElfBuilder final {
   void PrepareDynamicSection(const std::string& elf_file_path,
                              Elf_Word rodata_size,
                              Elf_Word text_size,
-                             Elf_Word data_bimg_rel_ro_size,
+                             Elf_Word data_img_rel_ro_size,
                              Elf_Word bss_size,
                              Elf_Word bss_methods_offset,
                              Elf_Word bss_roots_offset,
@@ -654,8 +654,8 @@ class ElfBuilder final {
     // Allocate all pre-dynamic sections.
     rodata_.AllocateVirtualMemory(rodata_size);
     text_.AllocateVirtualMemory(text_size);
-    if (data_bimg_rel_ro_size != 0) {
-      data_bimg_rel_ro_.AllocateVirtualMemory(data_bimg_rel_ro_size);
+    if (data_img_rel_ro_size != 0) {
+      data_img_rel_ro_.AllocateVirtualMemory(data_img_rel_ro_size);
     }
     if (bss_size != 0) {
       bss_.AllocateVirtualMemory(bss_size);
@@ -682,20 +682,20 @@ class ElfBuilder final {
       Elf_Word oatlastword_address = rodata_.GetAddress() + rodata_size - 4;
       dynsym_.Add(oatlastword, &rodata_, oatlastword_address, 4, STB_GLOBAL, STT_OBJECT);
     }
-    if (data_bimg_rel_ro_size != 0u) {
-      Elf_Word oatdatabimgrelro = dynstr_.Add("oatdatabimgrelro");
-      dynsym_.Add(oatdatabimgrelro,
-                  &data_bimg_rel_ro_,
-                  data_bimg_rel_ro_.GetAddress(),
-                  data_bimg_rel_ro_size,
+    if (data_img_rel_ro_size != 0u) {
+      Elf_Word oatdataimgrelro = dynstr_.Add("oatdataimgrelro");
+      dynsym_.Add(oatdataimgrelro,
+                  &data_img_rel_ro_,
+                  data_img_rel_ro_.GetAddress(),
+                  data_img_rel_ro_size,
                   STB_GLOBAL,
                   STT_OBJECT);
-      Elf_Word oatdatabimgrelrolastword = dynstr_.Add("oatdatabimgrelrolastword");
-      Elf_Word oatdatabimgrelrolastword_address =
-          data_bimg_rel_ro_.GetAddress() + data_bimg_rel_ro_size - 4;
-      dynsym_.Add(oatdatabimgrelrolastword,
-                  &data_bimg_rel_ro_,
-                  oatdatabimgrelrolastword_address,
+      Elf_Word oatdataimgrelrolastword = dynstr_.Add("oatdataimgrelrolastword");
+      Elf_Word oatdataimgrelrolastword_address =
+          data_img_rel_ro_.GetAddress() + data_img_rel_ro_size - 4;
+      dynsym_.Add(oatdataimgrelrolastword,
+                  &data_img_rel_ro_,
+                  oatdataimgrelrolastword_address,
                   4,
                   STB_GLOBAL,
                   STT_OBJECT);
@@ -974,7 +974,7 @@ class ElfBuilder final {
 
   Section rodata_;
   Section text_;
-  Section data_bimg_rel_ro_;
+  Section data_img_rel_ro_;
   Section bss_;
   Section dex_;
   CachedStringSection dynstr_;

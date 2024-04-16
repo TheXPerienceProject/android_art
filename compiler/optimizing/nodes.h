@@ -4703,7 +4703,7 @@ enum class MethodLoadKind {
   // Used for boot image methods referenced by boot image code.
   kBootImageLinkTimePcRelative,
 
-  // Load from an entry in the .data.bimg.rel.ro using a PC-relative load.
+  // Load from a boot image entry in the .data.img.rel.ro using a PC-relative load.
   // Used for app->boot calls with relocatable image.
   kBootImageRelRo,
 
@@ -6739,7 +6739,7 @@ class HLoadClass final : public HInstruction {
     // Used for boot image classes referenced by boot image code.
     kBootImageLinkTimePcRelative,
 
-    // Load from an entry in the .data.bimg.rel.ro using a PC-relative load.
+    // Load from a boot image entry in the .data.img.rel.ro using a PC-relative load.
     // Used for boot image classes referenced by apps in AOT-compiled code.
     kBootImageRelRo,
 
@@ -6994,7 +6994,7 @@ class HLoadString final : public HInstruction {
     // Used for boot image strings referenced by boot image code.
     kBootImageLinkTimePcRelative,
 
-    // Load from an entry in the .data.bimg.rel.ro using a PC-relative load.
+    // Load from a boot image entry in the .data.img.rel.ro using a PC-relative load.
     // Used for boot image strings referenced by apps in AOT-compiled code.
     kBootImageRelRo,
 

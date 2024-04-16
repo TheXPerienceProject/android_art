@@ -45,7 +45,7 @@ class LinkerPatch {
   // Note: Actual patching is instruction_set-dependent.
   enum class Type : uint8_t {
     kIntrinsicReference,      // Boot image reference for an intrinsic, see IntrinsicObjects.
-    kDataBimgRelRo,
+    kBootImageRelRo,
     kMethodRelative,
     kMethodBssEntry,
     kJniEntrypointRelative,
@@ -70,10 +70,10 @@ class LinkerPatch {
     return patch;
   }
 
-  static LinkerPatch DataBimgRelRoPatch(size_t literal_offset,
-                                        uint32_t pc_insn_offset,
-                                        uint32_t boot_image_offset) {
-    LinkerPatch patch(literal_offset, Type::kDataBimgRelRo, /* target_dex_file= */ nullptr);
+  static LinkerPatch BootImageRelRoPatch(size_t literal_offset,
+                                         uint32_t pc_insn_offset,
+                                         uint32_t boot_image_offset) {
+    LinkerPatch patch(literal_offset, Type::kBootImageRelRo, /* target_dex_file= */ nullptr);
     patch.boot_image_offset_ = boot_image_offset;
     patch.pc_insn_offset_ = pc_insn_offset;
     return patch;
@@ -224,7 +224,7 @@ class LinkerPatch {
   }
 
   uint32_t BootImageOffset() const {
-    DCHECK(patch_type_ == Type::kDataBimgRelRo);
+    DCHECK(patch_type_ == Type::kBootImageRelRo);
     return boot_image_offset_;
   }
 
@@ -276,7 +276,7 @@ class LinkerPatch {
 
   uint32_t PcInsnOffset() const {
     DCHECK(patch_type_ == Type::kIntrinsicReference ||
-           patch_type_ == Type::kDataBimgRelRo ||
+           patch_type_ == Type::kBootImageRelRo ||
            patch_type_ == Type::kMethodRelative ||
            patch_type_ == Type::kMethodBssEntry ||
            patch_type_ == Type::kJniEntrypointRelative ||
@@ -322,7 +322,7 @@ class LinkerPatch {
   Type patch_type_ : 8;
   union {
     uint32_t cmp1_;               // Used for relational operators.
-    uint32_t boot_image_offset_;  // Data to write to the .data.bimg.rel.ro entry.
+    uint32_t boot_image_offset_;  // Data to write to the boot image .data.img.rel.ro entry.
     uint32_t method_idx_;         // Method index for Call/Method patches.
     uint32_t type_idx_;           // Type index for Type patches.
     uint32_t string_idx_;         // String index for String patches.

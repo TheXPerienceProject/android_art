@@ -196,7 +196,7 @@ class PCRelativeHandlerVisitor final : public HGraphVisitor {
     HInvokeStaticOrDirect* invoke_static_or_direct = invoke->AsInvokeStaticOrDirectOrNull();
 
     // If this is an invoke-static/-direct with PC-relative addressing (within boot image
-    // or using .bss or .data.bimg.rel.ro), we need the PC-relative address base.
+    // or using .bss or .data.img.rel.ro), we need the PC-relative address base.
     bool base_added = false;
     if (invoke_static_or_direct != nullptr &&
         invoke_static_or_direct->HasPcRelativeMethodLoadKind() &&
@@ -240,7 +240,7 @@ class PCRelativeHandlerVisitor final : public HGraphVisitor {
       case Intrinsics::kCharacterValueOf:
       case Intrinsics::kIntegerValueOf:
         // This intrinsic can be call free if it loads the address of the boot image object.
-        // If we're compiling PIC, we need the address base for loading from .data.bimg.rel.ro.
+        // If we're compiling PIC, we need the address base for loading from .data.img.rel.ro.
         if (!codegen_->GetCompilerOptions().GetCompilePic()) {
           break;
         }
