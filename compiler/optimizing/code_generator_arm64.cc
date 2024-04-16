@@ -5226,10 +5226,10 @@ void CodeGeneratorARM64::EmitLdrOffsetPlaceholder(vixl::aarch64::Label* fixup_la
 void CodeGeneratorARM64::LoadBootImageRelRoEntry(vixl::aarch64::Register reg,
                                                  uint32_t boot_image_offset) {
   DCHECK(reg.IsW());
-  // Add ADRP with its PC-relative .data.bimg.rel.ro patch.
+  // Add ADRP with its PC-relative boot image .data.img.rel.ro patch.
   vixl::aarch64::Label* adrp_label = NewBootImageRelRoPatch(boot_image_offset);
   EmitAdrpPlaceholder(adrp_label, reg.X());
-  // Add LDR with its PC-relative .data.bimg.rel.ro patch.
+  // Add LDR with its PC-relative boot image .data.img.rel.ro patch.
   vixl::aarch64::Label* ldr_label = NewBootImageRelRoPatch(boot_image_offset, adrp_label);
   EmitLdrOffsetPlaceholder(ldr_label, reg.W(), reg.X());
 }
@@ -5346,7 +5346,7 @@ void CodeGeneratorARM64::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* lin
     EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::IntrinsicReferencePatch>>(
         boot_image_other_patches_, linker_patches);
   } else {
-    EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::DataBimgRelRoPatch>>(
+    EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::BootImageRelRoPatch>>(
         boot_image_other_patches_, linker_patches);
   }
   EmitPcRelativeLinkerPatches<linker::LinkerPatch::MethodBssEntryPatch>(

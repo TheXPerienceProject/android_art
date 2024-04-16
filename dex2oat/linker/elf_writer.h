@@ -60,7 +60,7 @@ class ElfWriter {
   // This method must be called before calling GetLoadedSize().
   virtual void PrepareDynamicSection(size_t rodata_size,
                                      size_t text_size,
-                                     size_t data_bimg_rel_ro_size,
+                                     size_t data_img_rel_ro_size,
                                      size_t bss_size,
                                      size_t bss_methods_offset,
                                      size_t bss_roots_offset,
@@ -70,8 +70,8 @@ class ElfWriter {
   virtual void EndRoData(OutputStream* rodata) = 0;
   virtual OutputStream* StartText() = 0;
   virtual void EndText(OutputStream* text) = 0;
-  virtual OutputStream* StartDataBimgRelRo() = 0;
-  virtual void EndDataBimgRelRo(OutputStream* data_bimg_rel_ro) = 0;
+  virtual OutputStream* StartDataImgRelRo() = 0;
+  virtual void EndDataImgRelRo(OutputStream* data_img_rel_ro) = 0;
   virtual void WriteDynamicSection() = 0;
   virtual void WriteDebugInfo(const debug::DebugInfo& debug_info) = 0;
   virtual bool StripDebugInfo() = 0;

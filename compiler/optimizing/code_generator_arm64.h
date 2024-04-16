@@ -1099,7 +1099,7 @@ class CodeGeneratorARM64 : public CodeGenerator {
                                     /*out*/ std::string* debug_name);
 
   // The PcRelativePatchInfo is used for PC-relative addressing of methods/strings/types,
-  // whether through .data.bimg.rel.ro, .bss, or directly in the boot image.
+  // whether through .data.img.rel.ro, .bss, or directly in the boot image.
   struct PcRelativePatchInfo : PatchInfo<vixl::aarch64::Label> {
     PcRelativePatchInfo(const DexFile* dex_file, uint32_t off_or_idx)
         : PatchInfo<vixl::aarch64::Label>(dex_file, off_or_idx), pc_insn_label() { }
