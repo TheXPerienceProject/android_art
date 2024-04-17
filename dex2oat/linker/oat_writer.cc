@@ -755,31 +755,31 @@ class OatWriter::InitBssLayoutMethodVisitor : public DexMethodVisitor {
                           &writer_->bss_method_entry_references_);
           writer_->bss_method_entries_.Overwrite(target_method, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kTypeBssEntry) {
-          TypeReference target_type(patch.TargetTypeDexFile(), patch.TargetTypeIndex());
+          TypeReference target_type = patch.TargetType();
           AddBssReference(target_type,
                           target_type.dex_file->NumTypeIds(),
                           &writer_->bss_type_entry_references_);
           writer_->bss_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kPublicTypeBssEntry) {
-          TypeReference target_type(patch.TargetTypeDexFile(), patch.TargetTypeIndex());
+          TypeReference target_type = patch.TargetType();
           AddBssReference(target_type,
                           target_type.dex_file->NumTypeIds(),
                           &writer_->bss_public_type_entry_references_);
           writer_->bss_public_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kPackageTypeBssEntry) {
-          TypeReference target_type(patch.TargetTypeDexFile(), patch.TargetTypeIndex());
+          TypeReference target_type = patch.TargetType();
           AddBssReference(target_type,
                           target_type.dex_file->NumTypeIds(),
                           &writer_->bss_package_type_entry_references_);
           writer_->bss_package_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kStringBssEntry) {
-          StringReference target_string(patch.TargetStringDexFile(), patch.TargetStringIndex());
+          StringReference target_string = patch.TargetString();
           AddBssReference(target_string,
                           target_string.dex_file->NumStringIds(),
                           &writer_->bss_string_entry_references_);
           writer_->bss_string_entries_.Overwrite(target_string, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kMethodTypeBssEntry) {
-          ProtoReference target_proto(patch.TargetProtoDexFile(), patch.TargetProtoIndex());
+          ProtoReference target_proto = patch.TargetProto();
           AddBssReference(target_proto,
                           target_proto.dex_file->NumProtoIds(),
                           &writer_->bss_method_type_entry_references_);
@@ -1685,9 +1685,8 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
               break;
             }
             case LinkerPatch::Type::kStringBssEntry: {
-              StringReference ref(patch.TargetStringDexFile(), patch.TargetStringIndex());
               uint32_t target_offset =
-                  writer_->bss_start_ + writer_->bss_string_entries_.Get(ref);
+                  writer_->bss_start_ + writer_->bss_string_entries_.Get(patch.TargetString());
               writer_->relative_patcher_->PatchPcRelativeReference(&patched_code_,
                                                                    patch,
                                                                    offset_ + literal_offset,
@@ -1695,9 +1694,8 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
               break;
             }
             case LinkerPatch::Type::kMethodTypeBssEntry: {
-              ProtoReference ref(patch.TargetProtoDexFile(), patch.TargetProtoIndex());
               uint32_t target_offset =
-                  writer_->bss_start_ + writer_->bss_method_type_entries_.Get(ref);
+                  writer_->bss_start_ + writer_->bss_method_type_entries_.Get(patch.TargetProto());
               writer_->relative_patcher_->PatchPcRelativeReference(&patched_code_,
                                                                    patch,
                                                                    offset_ + literal_offset,
@@ -1713,8 +1711,8 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
               break;
             }
             case LinkerPatch::Type::kTypeBssEntry: {
-              TypeReference ref(patch.TargetTypeDexFile(), patch.TargetTypeIndex());
-              uint32_t target_offset = writer_->bss_start_ + writer_->bss_type_entries_.Get(ref);
+              uint32_t target_offset =
+                  writer_->bss_start_ + writer_->bss_type_entries_.Get(patch.TargetType());
               writer_->relative_patcher_->PatchPcRelativeReference(&patched_code_,
                                                                    patch,
                                                                    offset_ + literal_offset,
@@ -1722,9 +1720,8 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
               break;
             }
             case LinkerPatch::Type::kPublicTypeBssEntry: {
-              TypeReference ref(patch.TargetTypeDexFile(), patch.TargetTypeIndex());
               uint32_t target_offset =
-                  writer_->bss_start_ + writer_->bss_public_type_entries_.Get(ref);
+                  writer_->bss_start_ + writer_->bss_public_type_entries_.Get(patch.TargetType());
               writer_->relative_patcher_->PatchPcRelativeReference(&patched_code_,
                                                                    patch,
                                                                    offset_ + literal_offset,
@@ -1732,9 +1729,8 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
               break;
             }
             case LinkerPatch::Type::kPackageTypeBssEntry: {
-              TypeReference ref(patch.TargetTypeDexFile(), patch.TargetTypeIndex());
               uint32_t target_offset =
-                  writer_->bss_start_ + writer_->bss_package_type_entries_.Get(ref);
+                  writer_->bss_start_ + writer_->bss_package_type_entries_.Get(patch.TargetType());
               writer_->relative_patcher_->PatchPcRelativeReference(&patched_code_,
                                                                    patch,
                                                                    offset_ + literal_offset,
@@ -1865,9 +1861,10 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
   ObjPtr<mirror::Class> GetTargetType(const LinkerPatch& patch)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     DCHECK(writer_->HasImage());
-    ObjPtr<mirror::DexCache> dex_cache = GetDexCache(patch.TargetTypeDexFile());
+    TypeReference target_type = patch.TargetType();
+    ObjPtr<mirror::DexCache> dex_cache = GetDexCache(target_type.dex_file);
     ObjPtr<mirror::Class> type =
-        class_linker_->LookupResolvedType(patch.TargetTypeIndex(), dex_cache, class_loader_);
+        class_linker_->LookupResolvedType(target_type.TypeIndex(), dex_cache, class_loader_);
     CHECK(type != nullptr);
     return type;
   }
@@ -1875,8 +1872,9 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
   ObjPtr<mirror::String> GetTargetString(const LinkerPatch& patch)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     ClassLinker* linker = Runtime::Current()->GetClassLinker();
+    StringReference target_string = patch.TargetString();
     ObjPtr<mirror::String> string =
-        linker->LookupString(patch.TargetStringIndex(), GetDexCache(patch.TargetStringDexFile()));
+        linker->LookupString(target_string.StringIndex(), GetDexCache(target_string.dex_file));
     DCHECK(string != nullptr);
     DCHECK(writer_->GetCompilerOptions().IsBootImage() ||
            writer_->GetCompilerOptions().IsBootImageExtension());
