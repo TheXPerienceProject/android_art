@@ -182,7 +182,8 @@ class RelativePatcherTest : public testing::Test {
                                 target_offset);
           } else if (patch.GetType() == LinkerPatch::Type::kStringBssEntry) {
             uint32_t target_offset =
-                bss_begin_ + string_index_to_offset_map_.Get(patch.TargetStringIndex().index_);
+                bss_begin_ +
+                string_index_to_offset_map_.Get(patch.TargetString().StringIndex().index_);
             patcher_->PatchPcRelativeReference(&patched_code_,
                                                patch,
                                                offset + patch.LiteralOffset(),
@@ -196,7 +197,7 @@ class RelativePatcherTest : public testing::Test {
                                                target_offset);
           } else if (patch.GetType() == LinkerPatch::Type::kStringRelative) {
             uint32_t target_offset =
-                string_index_to_offset_map_.Get(patch.TargetStringIndex().index_);
+                string_index_to_offset_map_.Get(patch.TargetString().StringIndex().index_);
             patcher_->PatchPcRelativeReference(&patched_code_,
                                                patch,
                                                offset + patch.LiteralOffset(),
