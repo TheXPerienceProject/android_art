@@ -2089,13 +2089,24 @@ size_t OatWriter::InitIndexBssMappings(size_t offset) {
                                         oat_dex_files_[i].method_type_bss_mapping_offset_);
   }
 
-  if (!(compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension())) {
+  if (!compiler_options_.IsBootImage()) {
     ArrayRef<const DexFile* const> boot_class_path(
         Runtime::Current()->GetClassLinker()->GetBootClassPath());
-    // We initialize bcp_bss_info for single image and purposively leave it empty for the multi
-    // image case.
+    // We initialize bcp_bss_info except for the boot image case.
     // Note that we have an early break at the beginning of the method, so `bcp_bss_info_` will also
     // be empty in the case of having no mappings at all.
+
+    if (compiler_options_.IsBootImageExtension()) {
+      // For boot image extension, the boot_class_path ends with the compiled dex files. In multi
+      // image, we might have several oat writers so we have to get all of the compiled dex files
+      // and not just the one we are compiling right now. Remove them to have the correct number of
+      // references.
+      ArrayRef<const DexFile* const> to_exclude(compiler_options_.GetDexFilesForOatFile());
+      DCHECK_GE(boot_class_path.size(), to_exclude.size());
+      DCHECK(std::equal(to_exclude.rbegin(), to_exclude.rend(), boot_class_path.rbegin()));
+      boot_class_path = boot_class_path.SubArray(0, boot_class_path.size() - to_exclude.size());
+    }
+
     DCHECK(bcp_bss_info_.empty());
     bcp_bss_info_.resize(boot_class_path.size());
     for (size_t i = 0, size = bcp_bss_info_.size(); i != size; ++i) {
@@ -3010,9 +3021,21 @@ size_t OatWriter::WriteIndexBssMappings(OutputStream* out,
     }
   }
 
-  if (!(compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension())) {
+  if (!compiler_options_.IsBootImage()) {
     ArrayRef<const DexFile* const> boot_class_path(
         Runtime::Current()->GetClassLinker()->GetBootClassPath());
+
+    if (compiler_options_.IsBootImageExtension()) {
+      // For boot image extension, the boot_class_path ends with the compiled dex files. In multi
+      // image, we might have several oat writers so we have to get all of the compiled dex files
+      // and not just the one we are compiling right now. Remove them to have the correct number of
+      // references.
+      ArrayRef<const DexFile* const> to_exclude(compiler_options_.GetDexFilesForOatFile());
+      DCHECK_GE(boot_class_path.size(), to_exclude.size());
+      DCHECK(std::equal(to_exclude.rbegin(), to_exclude.rend(), boot_class_path.rbegin()));
+      boot_class_path = boot_class_path.SubArray(0, boot_class_path.size() - to_exclude.size());
+    }
+
     for (size_t i = 0, size = bcp_bss_info_.size(); i != size; ++i) {
       const DexFile* dex_file = boot_class_path[i];
       DCHECK(!ContainsElement(*dex_files_, dex_file));
