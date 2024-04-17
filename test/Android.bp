@@ -154,6 +154,19 @@ filegroup {
     srcs: ["art-gtests-target-standalone-with-boot-image-template.xml"],
 }
 
+// Version script for `art_standalone_test_defaults`.
+filegroup {
+    name: "art-standalone-test-version",
+    srcs: ["art-standalone-test-version.map"],
+}
+
+// Version script for `art_standalone_gtest_defaults`. In particular, it adds
+// libsigchain's libc.so interceptors.
+filegroup {
+    name: "art-standalone-gtest-version",
+    srcs: ["art-standalone-gtest-version.map"],
+}
+
 // When soong builds the tests in a sandbox, the targets of symlinks
 // must be declared as inputs to soong modules that use them, or else
 // it will be a dangling symlink in the sandbox.
@@ -218,6 +231,15 @@ art_cc_defaults {
     },
 
     min_sdk_version: "31", // Same as the ART APEX.
+
+    // Link libc++ statically to avoid needing the system libc++.so, which may
+    // be incompatible. The linker exports symbols from an executable that are
+    // referenced in the .dynsym tables of shared object dependencies, so use a
+    // version script to restrict exports. The version script is needed for
+    // hiding symbols from libc++ (either libc++_static.a or vaguely-linked
+    // symbols in other object files) and from other libraries, such as libbase.
+    stl: "libc++_static",
+    version_script: ":art-standalone-test-version",
 
     // Make standalone tests check their own NEEDED dependencies for disallowed
     // libraries. Add standalone_test_lib_check and its dependencies, except
@@ -347,11 +369,7 @@ art_cc_defaults {
     static_libs: [
         "libart-gtest",
     ],
-    // Reduce test executable size by disabling automatic export of static lib symbols.
-    // Don't use --exclude-libs=ALL, because it breaks tests under ASAN by hiding __asan* symbols.
-    ldflags: [
-        "-Wl,--exclude-libs=libart-gtest.a",
-    ],
+    version_script: ":art-standalone-gtest-version",
     test_for: [
         "com.android.art",
         "com.android.art.debug",
