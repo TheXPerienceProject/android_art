@@ -922,8 +922,6 @@ class EXPORT ArtMethod final {
 
   const dex::CodeItem* GetCodeItem() REQUIRES_SHARED(Locks::mutator_lock_);
 
-  bool IsResolvedTypeIdx(dex::TypeIndex type_idx) REQUIRES_SHARED(Locks::mutator_lock_);
-
   int32_t GetLineNumFromDexPC(uint32_t dex_pc) REQUIRES_SHARED(Locks::mutator_lock_);
 
   const dex::ProtoId& GetPrototype() REQUIRES_SHARED(Locks::mutator_lock_);
