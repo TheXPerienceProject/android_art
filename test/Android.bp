@@ -178,10 +178,26 @@ filegroup {
     ],
 }
 
+cc_library_static {
+    name: "standalone_test_lib_check",
+    srcs: ["standalone_test_lib_check.cc"],
+    static_libs: [
+        "libbase",
+        "libelf",
+        "libgmock",
+        "libgtest",
+    ],
+}
+
+// Defaults for tests that can run using atest against an ART APEX installed on
+// any supported platform. These tests can only depend on NDK libraries from
+// platform and exported module libraries. Any other libraries must be pushed
+// with the test or linked statically.
 art_cc_defaults {
     name: "art_standalone_test_defaults",
     defaults: [
         "art_test_common_defaults",
+        "elfutils_transitive_defaults", // For libelf
     ],
     // Standalone ART gtests are only supported on device for now.
     // TODO: Add support for host standalone ART gtests. Note that they should not differ much
@@ -206,6 +222,18 @@ art_cc_defaults {
             suffix: "64",
         },
     },
+
+    min_sdk_version: "31", // Same as the ART APEX.
+
+    // Make standalone tests check their own NEEDED dependencies for disallowed
+    // libraries. Add standalone_test_lib_check and its dependencies, except
+    // libgtest which is expected to be added by the tests.
+    whole_static_libs: [
+        "libbase",
+        "libelf",
+        "libgmock",
+        "standalone_test_lib_check",
+    ],
 }
 
 // Properties common to `art_gtest_defaults` and `art_standalone_gtest_defaults`.
