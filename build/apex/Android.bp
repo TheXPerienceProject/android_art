@@ -325,6 +325,10 @@ apex {
     name: "com.android.art",
     defaults: ["com.android.art-defaults"],
     certificate: ":com.android.art.certificate",
+    visibility: [
+        "//art/build/sdk",
+        "//packages/modules/common/build",
+    ],
 }
 
 // "Debug" version of the ART APEX module (containing both release and
