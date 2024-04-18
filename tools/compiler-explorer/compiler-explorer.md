@@ -39,8 +39,8 @@ This doc describes how to run a local instance of Compiler Explorer
     lunch aosp_cf_x86_64_phone-trunk_staging-userdebug
     ```
 
-    Note: You may use a different `lunch` target, as long as it can build the host binaries in the
-    later steps.
+    Note: You may use a different `lunch` target, as long as it can build the
+    host binaries in the later steps.
 
 1. Configure Compiler Explorer.
 
@@ -49,6 +49,12 @@ This doc describes how to run a local instance of Compiler Explorer
     # Replace {{compilersDir}} in the config files with the actual path.
     find $COMPILER_EXPLORER_DIR/compiler-explorer/etc/config -type f -name '*local*' | \
       xargs sed -i 's?{{compilersDir}}?'$COMPILER_EXPLORER_DIR/compilers'?'
+    ```
+
+1. Build Compiler Explorer.
+
+    ```
+    (cd $COMPILER_EXPLORER_DIR/compiler-explorer && make prebuild)
     ```
 
 1. Build and copy compilers except dex2oat.
@@ -80,14 +86,44 @@ This doc describes how to run a local instance of Compiler Explorer
     Note: You may choose to do this on `master-art` instead of on a full Android
     source tree if you wish.
 
+1. Generate boot images (optional but recommended).
+
+    ```
+    declare -a instruction_sets=("arm" "arm64" "x86" "x86_64" "riscv64")
+    m generate-boot-image
+    rm -rf $COMPILER_EXPLORER_DIR/compilers/dex2oat-local/app
+    mkdir -p $COMPILER_EXPLORER_DIR/compilers/dex2oat-local/app/apex/com.android.art/javalib
+    cp $COMPILER_EXPLORER_DIR/compilers/dex2oat-local/bootjars/* \
+        $COMPILER_EXPLORER_DIR/compilers/dex2oat-local/app/apex/com.android.art/javalib
+    mkdir -p $COMPILER_EXPLORER_DIR/compilers/dex2oat-local/app/system/framework
+    for instruction_set in "${instruction_sets[@]}"; do
+      $ANDROID_HOST_OUT/bin/generate-boot-image64 \
+          --output-dir=$COMPILER_EXPLORER_DIR/compilers/dex2oat-local/app/system/framework \
+          --compiler-filter=speed \
+          --use-profile=false \
+          --dex2oat-bin=$COMPILER_EXPLORER_DIR/compilers/dex2oat-local/x86_64/bin/dex2oat64 \
+          --android-root=$COMPILER_EXPLORER_DIR/compilers/dex2oat-local/app \
+          --core-only=true \
+          --instruction-set=$instruction_set \
+          -- \
+          --runtime-arg \
+          -Xgc:CMC
+    done
+    ```
+
+    Note: You may change `instruction_sets` on the first line to only include
+    the instruction sets that you need, to speed up boot image generation.
+
+    Note: Although this step is not required, having boot images makes dex2oat generate better code.
+
 1. Start Compiler Explorer server.
 
     ```
-    (cd $COMPILER_EXPLORER_DIR/compiler-explorer && make)
+    (cd $COMPILER_EXPLORER_DIR/compiler-explorer && make run-only)
     ```
 
-    This may take a while. Once you see `Listening on http://localhost:10240/`,
-    you can open a browser with that address to access Compiler Explorer.
+    Once you see `Listening on http://localhost:10240/`, you can open a browser
+    with that address to access Compiler Explorer.
 
 When you iterate, press `Ctrl+C` to stop the server, and then repeat the last
-two steps.
+three steps.
