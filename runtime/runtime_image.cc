@@ -964,7 +964,9 @@ class RuntimeImageHelper {
           entrypoint = boot_jni_stub;
         }
       }
-      copy->SetEntryPointFromQuickCompiledCode(entrypoint);
+      copy->SetNativePointer(ArtMethod::EntryPointFromQuickCompiledCodeOffset(kRuntimePointerSize),
+                             entrypoint,
+                             kRuntimePointerSize);
 
       if (method->IsNative()) {
         StubType stub_type = method->IsCriticalNative()
