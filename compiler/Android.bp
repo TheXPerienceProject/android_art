@@ -347,7 +347,6 @@ cc_defaults {
 }
 
 // libart-compiler_static_defaults for standalone gtests.
-// Uses libart-for-test_static_defaults instead of libart_static_defaults.
 // Uses libart-compiler-for-test instead of libart-compiler.
 cc_defaults {
     name: "libart-compiler-for-test_static_defaults",
@@ -379,22 +378,6 @@ art_cc_library_static {
 
 cc_defaults {
     name: "libartd-compiler_static_defaults",
-    defaults: [
-        "libart-compiler_static_base_defaults",
-        "libartbased_static_defaults",
-        "libartd-disassembler_static_defaults",
-        "libdexfiled_static_defaults",
-        "libprofiled_static_defaults",
-    ],
-    whole_static_libs: ["libartd-compiler"],
-}
-
-// libartd-compiler_static_defaults for gtests.
-// Uses libartd-for-test_static_defaults instead of libart_static_defaults.
-// Note that `libartd-compiler-for-test` is not required here, because `libartd-compiler`
-// doesn't use LTO.
-cc_defaults {
-    name: "libartd-compiler-for-test_static_defaults",
     defaults: [
         "libart-compiler_static_base_defaults",
         "libartbased_static_defaults",
@@ -444,7 +427,9 @@ art_cc_library_static {
         "art_debug_defaults",
         "libart-gtest-defaults",
         "libart-compiler-gtest-common",
-        "libartd-compiler-for-test_static_defaults",
+        // Note that `libartd-compiler-for-test` is not required here, because
+        // `libartd-compiler` doesn't use LTO.
+        "libartd-compiler_static_defaults",
     ],
 }
 
