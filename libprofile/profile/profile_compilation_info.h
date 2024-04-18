@@ -322,9 +322,12 @@ class ProfileCompilationInfo {
   //
   // Note: if an annotation is provided, the methods/classes will be associated with the group
   // (dex_file, sample_annotation). Each group keeps its unique set of methods/classes.
+  // `is_test` should be set to true for unit tests which create artificial dex
+  // files.
   bool AddMethods(const std::vector<ProfileMethodInfo>& methods,
                   MethodHotness::Flag flags,
-                  const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone);
+                  const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone,
+                  bool is_test = false);
 
   // Find a type index in the `dex_file` if there is a `TypeId` for it. Otherwise,
   // find or insert the descriptor in "extra descriptors" and return an artificial
@@ -411,7 +414,8 @@ class ProfileCompilationInfo {
   // Note: see AddMethods docs for the handling of annotations.
   bool AddMethod(const ProfileMethodInfo& pmi,
                  MethodHotness::Flag flags,
-                 const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone);
+                 const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone,
+                 bool is_test = false);
 
   // Bulk add sampled methods and/or hot methods for a single dex, fast since it only has one
   // GetOrAddDexFileData call.
