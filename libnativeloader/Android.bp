@@ -134,8 +134,6 @@ art_cc_test {
     ],
     host_supported: false,
 
-    cflags: ["-DANDROID"],
-
     // Ordinarily, symbols are only exported if they are referenced by some
     // shared object dependency. Instead, export everything using
     // --export-dynamic, then restrict the visibility using the version script.

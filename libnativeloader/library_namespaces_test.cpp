@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#if defined(ART_TARGET_ANDROID)
-
 #include "library_namespaces.h"
 
 #include "android-base/result-gmock.h"
@@ -103,5 +101,3 @@ TEST(LibraryNamespacesTest, TestGetApiDomainFromPathList) {
 }  // namespace
 }  // namespace nativeloader
 }  // namespace android
-
-#endif  // ART_TARGET_ANDROID
