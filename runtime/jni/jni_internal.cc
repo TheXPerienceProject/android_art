@@ -2917,7 +2917,7 @@ class JNI {
   static bool IsClassLoaderNamespaceNativelyBridged(ScopedObjectAccess& soa,
                                                     ObjPtr<mirror::ClassLoader> class_loader)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-#if defined(__ANDROID__)
+#if defined(ART_TARGET_ANDROID)
     ScopedLocalRef<jobject> jclass_loader(soa.Env(), soa.AddLocalReference<jobject>(class_loader));
     android::NativeLoaderNamespace* ns =
         android::FindNativeLoaderNamespaceByClassLoader(soa.Env(), jclass_loader.get());
@@ -2930,7 +2930,7 @@ class JNI {
 
   static const void* GenerateNativeBridgeTrampoline(const void* fn_ptr, ArtMethod* method)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-#if defined(__ANDROID__)
+#if defined(ART_TARGET_ANDROID)
     uint32_t shorty_length;
     const char* shorty = method->GetShorty(&shorty_length);
     android::JNICallType jni_call_type = method->IsCriticalNative() ?
