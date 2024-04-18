@@ -15,6 +15,7 @@
 
 package {
     default_applicable_licenses: ["art_openjdkjvmti_license"],
+    default_team: "trendy_team_art_performance",
 }
 
 // Added automatically by a large-scale-change that took the approach of
