@@ -82,8 +82,6 @@ constexpr const char* kAllowedDynamicLibDeps[] = {
     "libnativeloader.so",
     // TODO(b/333438055): Remove this when we can link libc++.so statically everywhere.
     "libc++.so",
-    // TODO(b/247108425): Fix the ODR problem and go back to static linking for libunwindstack.
-    "libunwindstack.so",
 };
 
 Result<std::string> GetCurrentElfObjectPath() {
