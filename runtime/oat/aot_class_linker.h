@@ -35,8 +35,8 @@ class AotClassLinker : public ClassLinker {
   explicit AotClassLinker(InternTable *intern_table);
   ~AotClassLinker();
 
-  EXPORT static bool CanReferenceInBootImageExtension(ObjPtr<mirror::Class> klass, gc::Heap* heap)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT static bool CanReferenceInBootImageExtensionOrAppImage(
+      ObjPtr<mirror::Class> klass, gc::Heap* heap) REQUIRES_SHARED(Locks::mutator_lock_);
 
   EXPORT void SetSdkChecker(std::unique_ptr<SdkChecker>&& sdk_checker_);
   const SdkChecker* GetSdkChecker() const;
