@@ -18,20 +18,30 @@
 
 #include <unistd.h>
 
+#include <cstring>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 #include "aidl/com/android/server/art/BnDexoptChrootSetup.h"
+#include "android-base/properties.h"
+#include "android-base/scopeguard.h"
+#include "android/binder_auto_utils.h"
 #include "base/common_art_test.h"
+#include "base/macros.h"
 #include "exec_utils.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "selinux/selinux.h"
+#include "tools/binder_utils.h"
 #include "tools/cmdline_builder.h"
 
 namespace art {
 namespace dexopt_chroot_setup {
 namespace {
 
+using ::android::base::ScopeGuard;
+using ::android::base::WaitForProperty;
 using ::art::tools::CmdlineBuilder;
 
 class DexoptChrootSetupTest : public CommonArtTest {
@@ -40,11 +50,31 @@ class DexoptChrootSetupTest : public CommonArtTest {
     CommonArtTest::SetUp();
     dexopt_chroot_setup_ = ndk::SharedRefBase::make<DexoptChrootSetup>();
 
+    // TODO(jiakaiz): Delete this one the SDK version is bumped to 35.
+    char* con;
+    if (getfilecon(DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR, &con) < 0) {
+      ASSERT_EQ(errno, ENOENT) << ART_FORMAT("Failed to getfilecon '{}': {}",
+                                             DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR,
+                                             strerror(errno));
+      GTEST_SKIP() << ART_FORMAT("This platform is too old and doesn't have directory '{}'",
+                                 DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR);
+    }
+    {
+      auto cleanup = ScopeGuard([&]() { freecon(con); });
+      constexpr std::string_view kExpectedCon = "u:object_r:pre_reboot_dexopt_file:s0";
+      if (con != kExpectedCon) {
+        GTEST_SKIP() << ART_FORMAT("This platform is too old and doesn't have SELinux context '{}'",
+                                   kExpectedCon);
+      }
+    }
+
     // Note that if a real Pre-reboot Dexopt is kicked off after this check, the test will still
     // fail, but that should be very rare.
     if (std::filesystem::exists(DexoptChrootSetup::CHROOT_DIR)) {
       GTEST_SKIP() << "A real Pre-reboot Dexopt is running";
     }
+
+    ASSERT_TRUE(WaitForProperty("dev.bootcomplete", "1", /*timeout=*/std::chrono::minutes(3)));
 
     test_skipped = false;
 
@@ -72,7 +102,7 @@ class DexoptChrootSetupTest : public CommonArtTest {
 TEST_F(DexoptChrootSetupTest, Run) {
   // We only test the Mainline update case here. There isn't an easy way to test the OTA update case
   // in such a unit test. The OTA update case is assumed to be covered by the E2E test.
-  ASSERT_TRUE(dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt).isOk());
+  ASSERT_STATUS_OK(dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt));
 
   // Some important dirs that should be the same as outside.
   std::vector<const char*> same_dirs = {
@@ -142,14 +172,14 @@ TEST_F(DexoptChrootSetupTest, Run) {
   // Check that `setUp` can be repetitively called, to simulate the case where an instance of the
   // caller (typically system_server) called `setUp` and crashed later, and a new instance called
   // `setUp` again.
-  ASSERT_TRUE(dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt).isOk());
+  ASSERT_STATUS_OK(dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt));
 
-  ASSERT_TRUE(dexopt_chroot_setup_->tearDown().isOk());
+  ASSERT_STATUS_OK(dexopt_chroot_setup_->tearDown());
 
   EXPECT_FALSE(std::filesystem::exists(DexoptChrootSetup::CHROOT_DIR));
 
   // Check that `tearDown` can be repetitively called too.
-  ASSERT_TRUE(dexopt_chroot_setup_->tearDown().isOk());
+  ASSERT_STATUS_OK(dexopt_chroot_setup_->tearDown());
 }
 
 }  // namespace

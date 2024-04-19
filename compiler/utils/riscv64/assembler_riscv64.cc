@@ -86,20 +86,58 @@ void Riscv64Assembler::Auipc(XRegister rd, uint32_t imm20) {
 // Jump instructions (RV32I), opcode = 0x67, 0x6f
 
 void Riscv64Assembler::Jal(XRegister rd, int32_t offset) {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    if (rd == Zero && IsInt<12>(offset)) {
+      CJ(offset);
+      return;
+    }
+    // Note: `c.jal` is RV32-only.
+  }
+
   EmitJ(offset, rd, 0x6F);
 }
 
 void Riscv64Assembler::Jalr(XRegister rd, XRegister rs1, int32_t offset) {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    if (rd == RA && rs1 != Zero && offset == 0) {
+      CJalr(rs1);
+      return;
+    } else if (rd == Zero && rs1 != Zero && offset == 0) {
+      CJr(rs1);
+      return;
+    }
+  }
+
   EmitI(offset, rs1, 0x0, rd, 0x67);
 }
 
 // Branch instructions, opcode = 0x63 (subfunc from 0x0 ~ 0x7), 0x67, 0x6f
 
 void Riscv64Assembler::Beq(XRegister rs1, XRegister rs2, int32_t offset) {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    if (rs2 == Zero && IsShortReg(rs1) && IsInt<9>(offset)) {
+      CBeqz(rs1, offset);
+      return;
+    } else if (rs1 == Zero && IsShortReg(rs2) && IsInt<9>(offset)) {
+      CBeqz(rs2, offset);
+      return;
+    }
+  }
+
   EmitB(offset, rs2, rs1, 0x0, 0x63);
 }
 
 void Riscv64Assembler::Bne(XRegister rs1, XRegister rs2, int32_t offset) {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    if (rs2 == Zero && IsShortReg(rs1) && IsInt<9>(offset)) {
+      CBnez(rs1, offset);
+      return;
+    } else if (rs1 == Zero && IsShortReg(rs2) && IsInt<9>(offset)) {
+      CBnez(rs2, offset);
+      return;
+    }
+  }
+
   EmitB(offset, rs2, rs1, 0x1, 0x63);
 }
 
@@ -6899,9 +6937,9 @@ void Riscv64Assembler::EmitBranch(Riscv64Assembler::Branch* branch) {
   BranchCondition condition = branch->GetCondition();
   XRegister lhs = branch->GetLeftRegister();
   XRegister rhs = branch->GetRightRegister();
+  ScopedNoCInstructions no_compression(this);
 
   auto emit_auipc_and_next = [&](XRegister reg, auto next) {
-    ScopedNoCInstructions no_compression(this);
     CHECK_EQ(overwrite_location_, branch->GetOffsetLocation());
     auto [imm20, short_offset] = SplitOffset(offset);
     Auipc(reg, imm20);

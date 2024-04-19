@@ -279,6 +279,9 @@ art_cc_library {
 
 art_cc_defaults {
     name: "art_libdexfile_tests_defaults",
+    defaults: [
+        "art_libunwindstack_static_defaults", // Must be statically linked in standalone tests
+    ],
     tidy_timeout_srcs: [
         "dex/dex_file_verifier_test.cc",
     ],
@@ -311,9 +314,6 @@ art_cc_defaults {
         ":art-gtest-jars-VerifierDeps",
     ],
     header_libs: ["jni_headers"],
-    shared_libs: [
-        "libunwindstack",
-    ],
 }
 
 // Version of ART gtest `art_libdexfile_tests` bundled with the ART APEX on target.
@@ -467,11 +467,11 @@ art_cc_defaults {
         "external/dex_file_supp_test.cc",
     ],
     shared_libs: [
-        "libbase",
         "libdexfile",
         "liblog",
     ],
     static_libs: [
+        "libbase", // Must be statically linked in standalone tests
         "libdexfile_support",
     ],
 }
