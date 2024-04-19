@@ -208,6 +208,19 @@ public final class AidlUtils {
     }
 
     @NonNull
+    public static WritableProfilePath toWritableProfilePath(@NonNull ProfilePath profile) {
+        switch (profile.getTag()) {
+            case ProfilePath.primaryRefProfilePath:
+                return WritableProfilePath.forPrimary(profile.getPrimaryRefProfilePath());
+            case ProfilePath.secondaryRefProfilePath:
+                return WritableProfilePath.forSecondary(profile.getSecondaryRefProfilePath());
+            default:
+                throw new IllegalStateException("ProfilePath tag " + profile.getTag()
+                        + " does not represent a writable type");
+        }
+    }
+
+    @NonNull
     public static String toString(@NonNull PrimaryRefProfilePath profile) {
         return String.format(
                 "PrimaryRefProfilePath[packageName = %s, profileName = %s, isPreReboot = %b]",

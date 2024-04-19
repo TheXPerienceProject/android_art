@@ -20,8 +20,10 @@ import static com.android.server.art.ArtFileManager.ProfileLists;
 import static com.android.server.art.ArtFileManager.UsableArtifactLists;
 import static com.android.server.art.ArtFileManager.WritableArtifactLists;
 import static com.android.server.art.DexMetadataHelper.DexMetadataInfo;
+import static com.android.server.art.DexUseManagerLocal.SecondaryDexInfo;
 import static com.android.server.art.PrimaryDexUtils.DetailedPrimaryDexInfo;
 import static com.android.server.art.PrimaryDexUtils.PrimaryDexInfo;
+import static com.android.server.art.ProfilePath.WritableProfilePath;
 import static com.android.server.art.ReasonMapping.BatchDexoptReason;
 import static com.android.server.art.ReasonMapping.BootReason;
 import static com.android.server.art.Utils.Abi;
@@ -39,7 +41,10 @@ import android.annotation.SystemApi;
 import android.annotation.SystemService;
 import android.app.job.JobInfo;
 import android.apphibernation.AppHibernationManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Binder;
 import android.os.Build;
 import android.os.CancellationSignal;
@@ -58,6 +63,7 @@ import android.util.Pair;
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.modules.utils.build.SdkLevel;
 import com.android.server.LocalManagerRegistry;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.ArtManagedFileStats;
@@ -125,6 +131,8 @@ public final class ArtManagerLocal {
     @VisibleForTesting public static final long DOWNGRADE_THRESHOLD_ABOVE_LOW_BYTES = 500_000_000;
 
     @NonNull private final Injector mInjector;
+
+    private boolean mShouldCommitPreRebootStagedFiles = false;
 
     @Deprecated
     public ArtManagerLocal() {
@@ -864,8 +872,45 @@ public final class ArtManagerLocal {
             @Nullable @CallbackExecutor Executor progressCallbackExecutor,
             @Nullable Consumer<OperationProgress> progressCallback) {
         try (var snapshot = mInjector.getPackageManagerLocal().withFilteredSnapshot()) {
+            if ((bootReason.equals(ReasonMapping.REASON_BOOT_AFTER_OTA)
+                        || bootReason.equals(ReasonMapping.REASON_BOOT_AFTER_MAINLINE_UPDATE))
+                    && SdkLevel.isAtLeastV()) {
+                // The staged files have to be committed in two phases, one during boot, for primary
+                // dex files, and another after boot complete, for secondary dex files. We need to
+                // commit files for primary dex files early because apps will start using them as
+                // soon as the package manager is initialized. We need to wait until boot complete
+                // to commit files for secondary dex files because they are not decrypted before
+                // then.
+                mShouldCommitPreRebootStagedFiles = true;
+                commitPreRebootStagedFiles(snapshot, false /* forSecondary */);
+            }
             dexoptPackages(snapshot, bootReason, new CancellationSignal(), progressCallbackExecutor,
                     progressCallback != null ? Map.of(ArtFlags.PASS_MAIN, progressCallback) : null);
+        }
+    }
+
+    /**
+     * Notifies this class that {@link Context#registerReceiver} is ready for use.
+     *
+     * Should be used by {@link DexUseManagerLocal} ONLY.
+     *
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    void systemReady() {
+        if (mShouldCommitPreRebootStagedFiles) {
+            mInjector.getContext().registerReceiver(new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    context.unregisterReceiver(this);
+                    if (!SdkLevel.isAtLeastV()) {
+                        throw new IllegalStateException("Broadcast receiver unexpectedly called");
+                    }
+                    try (var snapshot = mInjector.getPackageManagerLocal().withFilteredSnapshot()) {
+                        commitPreRebootStagedFiles(snapshot, true /* forSecondary */);
+                    }
+                }
+            }, new IntentFilter(Intent.ACTION_BOOT_COMPLETED));
         }
     }
 
@@ -1053,6 +1098,56 @@ public final class ArtManagerLocal {
         } catch (RemoteException e) {
             Utils.logArtdException(e);
             return 0;
+        }
+    }
+
+    /** @param forSecondary true for secondary dex files; false for primary dex files. */
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private void commitPreRebootStagedFiles(
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, boolean forSecondary) {
+        try {
+            // Because we don't know for which packages the Pre-reboot Dexopt job has generated
+            // staged files, we call artd for all dexoptable packages, which is a superset of the
+            // packages that we actually expect to have staged files.
+            for (PackageState pkgState : snapshot.getPackageStates().values()) {
+                if (!Utils.canDexoptPackage(pkgState, null /* appHibernationManager */)) {
+                    continue;
+                }
+                AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
+                var options = ArtFileManager.Options.builder()
+                                      .setForPrimaryDex(!forSecondary)
+                                      .setForSecondaryDex(forSecondary)
+                                      .setExcludeForObsoleteDexesAndLoaders(true)
+                                      .build();
+                List<ArtifactsPath> artifacts =
+                        mInjector.getArtFileManager()
+                                .getWritableArtifacts(pkgState, pkg, options)
+                                .artifacts();
+                List<WritableProfilePath> profiles = mInjector.getArtFileManager()
+                                                             .getProfiles(pkgState, pkg, options)
+                                                             .refProfiles()
+                                                             .stream()
+                                                             .map(AidlUtils::toWritableProfilePath)
+                                                             .collect(Collectors.toList());
+                try {
+                    // The artd method commits all files somewhat transactionally. Here, we are
+                    // committing files transactionally at the package level just for simplicity. In
+                    // fact, we only need transaction on the split level: the artifacts and the
+                    // profile of the same split must be committed transactionally. Consider the
+                    // case where the staged artifacts and profile have less methods than the active
+                    // ones generated by background dexopt, committing the artifacts while failing
+                    // to commit the profile can potentially cause a permanent performance
+                    // regression.
+                    mInjector.getArtd().commitPreRebootStagedFiles(artifacts, profiles);
+                } catch (ServiceSpecificException e) {
+                    Log.e(TAG,
+                            "Failed to commit Pre-reboot staged files for package '"
+                                    + pkgState.getPackageName() + "'",
+                            e);
+                }
+            }
+        } catch (RemoteException e) {
+            Utils.logArtdException(e);
         }
     }
 
