@@ -26,6 +26,10 @@ namespace art {
 TEST_P(OatDumpTest, TestDumpImage) {
   TEST_DISABLED_FOR_RISCV64();
   TEST_DISABLED_FOR_ARM_AND_ARM64();
+  // TODO(b/334200225): Temporarily disable this test case for x86 and x86_64
+  // till the disassembler issue is fixed.
+  TEST_DISABLED_FOR_X86();
+  TEST_DISABLED_FOR_X86_64();
   std::string error_msg;
   ASSERT_TRUE(
       Exec(GetParam(), kArgImage | kArgBcp | kArgIsa, {}, kExpectImage | kExpectOat | kExpectCode));
