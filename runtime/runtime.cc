@@ -768,19 +768,16 @@ static void WaitUntilSingleThreaded() {
   // break atomicity of the read.
   static constexpr size_t kNumTries = 1000;
   static constexpr size_t kNumThreadsIndex = 20;
-  static constexpr ssize_t BUF_SIZE = 500;
-  static constexpr ssize_t BUF_PRINT_SIZE = 150;  // Only log this much on failure to limit length.
+  static constexpr size_t BUF_SIZE = 500;
+  static constexpr size_t BUF_PRINT_SIZE = 150;  // Only log this much on failure to limit length.
   static_assert(BUF_SIZE > BUF_PRINT_SIZE);
   char buf[BUF_SIZE];
-  ssize_t bytes_read = -1;
+  size_t bytes_read = 0;
+
   for (size_t tries = 0; tries < kNumTries; ++tries) {
-    int stat_fd = open("/proc/self/stat", O_RDONLY | O_CLOEXEC);
-    CHECK(stat_fd >= 0) << strerror(errno);
-    bytes_read = TEMP_FAILURE_RETRY(read(stat_fd, buf, BUF_SIZE));
-    CHECK(bytes_read >= 0) << strerror(errno);
-    int ret = close(stat_fd);
-    DCHECK(ret == 0) << strerror(errno);
-    ssize_t pos = 0;
+    bytes_read = GetOsThreadStat(getpid(), buf, BUF_SIZE);
+    CHECK_NE(bytes_read, 0u);
+    size_t pos = 0;
     while (pos < bytes_read && buf[pos++] != ')') {}
     ++pos;
     // We're now positioned at the beginning of the third field. Don't count blanks embedded in
@@ -800,8 +797,14 @@ static void WaitUntilSingleThreaded() {
     usleep(1000);
   }
   buf[std::min(BUF_PRINT_SIZE, bytes_read)] = '\0';  // Truncate buf before printing.
-  LOG(FATAL) << "Failed to reach single-threaded state: bytes_read = " << bytes_read
-             << " stat contents = \"" << buf << "...\"";
+  LOG(ERROR) << "Not single threaded: bytes_read = " << bytes_read << " stat contents = \"" << buf
+             << "...\"";
+  LOG(ERROR) << "Other threads' abbreviated stats: " << GetOtherThreadOsStats();
+  bytes_read = GetOsThreadStat(getpid(), buf, BUF_PRINT_SIZE);
+  CHECK_NE(bytes_read, 0u);
+  LOG(ERROR) << "After re-read: bytes_read = " << bytes_read << " stat contents = \"" << buf
+             << "...\"";
+  LOG(FATAL) << "Failed to reach single-threaded state";
 #else  // Not Linux; shouldn't matter, but this has a high probability of working slowly.
   usleep(20'000);
 #endif

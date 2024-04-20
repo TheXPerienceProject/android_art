@@ -705,29 +705,6 @@ static bool WaitOnceForSuspendBarrier(AtomicInteger* barrier,
 
 #endif  // ART_USE_FUTEXES
 
-// Return a short string describing the scheduling state of the thread with the given tid.
-static std::string GetThreadState(pid_t t) {
-#if defined(__linux__)
-  static constexpr int BUF_SIZE = 90;
-  char file_name_buf[BUF_SIZE];
-  char buf[BUF_SIZE];
-  snprintf(file_name_buf, BUF_SIZE, "/proc/%d/stat", t);
-  int stat_fd = open(file_name_buf, O_RDONLY | O_CLOEXEC);
-  if (stat_fd < 0) {
-    return std::string("failed to get thread state: ") + std::string(strerror(errno));
-  }
-  CHECK(stat_fd >= 0) << strerror(errno);
-  ssize_t bytes_read = TEMP_FAILURE_RETRY(read(stat_fd, buf, BUF_SIZE));
-  CHECK(bytes_read >= 0) << strerror(errno);
-  int ret = close(stat_fd);
-  DCHECK(ret == 0) << strerror(errno);
-  buf[BUF_SIZE - 1] = '\0';
-  return buf;
-#else
-  return "unknown state";
-#endif
-}
-
 std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barrier,
                                                              pid_t t,
                                                              int attempt_of_4) {
@@ -754,7 +731,7 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
   }
 
   // Long wait; gather information in case of timeout.
-  std::string sampled_state = collect_state ? GetThreadState(t) : "";
+  std::string sampled_state = collect_state ? GetOsThreadStatQuick(t) : "";
   while (i < kSuspendBarrierIters) {
     if (WaitOnceForSuspendBarrier(barrier, cur_val, timeout_ns)) {
       ++i;
@@ -770,7 +747,7 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
       return std::nullopt;
     }
   }
-  return collect_state ? "Target states: [" + sampled_state + ", " + GetThreadState(t) + "]" +
+  return collect_state ? "Target states: [" + sampled_state + ", " + GetOsThreadStatQuick(t) + "]" +
                              std::to_string(cur_val) + "@" + std::to_string((uintptr_t)barrier) +
                              " Final wait time: " + PrettyDuration(NanoTime() - start_time) :
                          "";
