@@ -171,14 +171,6 @@ apex_key {
 art_module_apex_defaults {
     name: "com.android.art-base-defaults",
 
-    // Enable if ART_MODULE_BUILD_FROM_SOURCE is true
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
-
     target: {
         windows: {
             // When the Soong config variable above sets enabled:true, it
@@ -432,14 +424,6 @@ art_module_cc_defaults {
     name: "art-check-apex-gen-fakebin-defaults",
     host_supported: true,
     device_supported: false,
-
-    // Enable if ART_MODULE_BUILD_FROM_SOURCE is true
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
 
     target: {
         darwin: {

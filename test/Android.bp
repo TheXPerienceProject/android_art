@@ -73,18 +73,6 @@ art_module_cc_defaults {
         "art_test_common_defaults",
     ],
     host_supported: true,
-    soong_config_variables: {
-        source_build: {
-            target: {
-                android: {
-                    test_for: [
-                        "com.android.art",
-                        "com.android.art.debug",
-                    ],
-                },
-            },
-        },
-    },
     target: {
         // The following set of relative_install_paths installs the library in a
         // location that will be available as java.library.path in run tests.
@@ -102,6 +90,12 @@ art_module_cc_defaults {
         },
         android_x86_64: {
             relative_install_path: "art/x86_64",
+        },
+        android: {
+            test_for: [
+                "com.android.art",
+                "com.android.art.debug",
+            ],
         },
     },
     // Tests aren't generally included in any APEX, but this is necessary to
