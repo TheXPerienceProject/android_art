@@ -104,9 +104,6 @@ struct CompilationResult {
       dex2oat_result = other.dex2oat_result;
     }
   }
-
- private:
-  CompilationResult() = default;
 };
 
 class PreconditionCheckResult {

@@ -28,26 +28,6 @@ cc_defaults {
     static_libs: ["liblog"],
 }
 
-cc_defaults {
-    name: "signal_dumper_libunwindstack_static_deps",
-    defaults: [
-        "libdexfile_support_static_defaults",
-        "signal_dumper_libbase_static_deps",
-    ],
-    static_libs: [
-        "libbase",
-        "liblog",
-        "liblzma",
-    ],
-    target: {
-        bionic: {
-            whole_static_libs: [
-                "libasync_safe",
-            ],
-        },
-    },
-}
-
 art_cc_binary {
     name: "signal_dumper",
 
@@ -61,15 +41,15 @@ art_cc_binary {
 
     defaults: [
         "art_defaults",
+        "libdexfile_support_static_defaults",
+        "art_libunwindstack_static_defaults",
         "signal_dumper_libbase_static_deps",
-        "signal_dumper_libunwindstack_static_deps",
     ],
 
     srcs: ["signal_dumper.cc"],
 
     static_libs: [
         "libbase",
-        "libunwindstack",
     ],
     sdclang: false,
 }

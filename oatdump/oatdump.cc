@@ -182,7 +182,7 @@ class OatSymbolizer final {
     builder_->PrepareDynamicSection(elf_file->GetPath(),
                                     rodata_size,
                                     text_size,
-                                    oat_file_->DataBimgRelRoSize(),
+                                    oat_file_->DataImgRelRoSize(),
                                     oat_file_->BssSize(),
                                     oat_file_->BssMethodsOffset(),
                                     oat_file_->BssRootsOffset(),
@@ -512,8 +512,8 @@ class OatDumper {
       os << StringPrintf("0x%08x\n\n", resolved_addr2instr_);
     }
 
-    // Dump .data.bimg.rel.ro entries.
-    DumpDataBimgRelRoEntries(os);
+    // Dump .data.img.rel.ro entries.
+    DumpDataImgRelRoEntries(os);
 
     // Dump .bss summary, individual entries are dumped per dex file.
     os << ".bss: ";
@@ -1630,8 +1630,8 @@ class OatDumper {
                           boot_image_live_objects_address + end_offset);
   }
 
-  void DumpDataBimgRelRoEntries(std::ostream& os) {
-    os << ".data.bimg.rel.ro: ";
+  void DumpDataImgRelRoEntries(std::ostream& os) {
+    os << ".data.img.rel.ro: ";
     if (oat_file_.GetBootImageRelocations().empty()) {
       os << "empty.\n\n";
       return;

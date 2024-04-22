@@ -80,7 +80,7 @@ art_cc_defaults {
         "tools_test.cc",
     ],
     shared_libs: [
-        "libbase",
+        "liblog", // libbase dependency
     ],
     static_libs: [
         "libgmock",
@@ -102,6 +102,7 @@ art_cc_test {
     ],
     shared_libs: [
         "libarttools",
+        "libbase",
     ],
 }
 
@@ -124,6 +125,7 @@ art_cc_test {
     ],
     static_libs: [
         "libarttools",
+        "libbase",
         "libfstab",
     ],
 }
