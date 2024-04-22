@@ -210,7 +210,7 @@ static inline DataType::Type GetVarHandleExpectedValueType(HInvoke* invoke,
 static inline ArtField* GetBootImageVarHandleField(HInvoke* invoke)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK_LE(GetExpectedVarHandleCoordinatesCount(invoke), 1u);
-  DCHECK(VarHandleOptimizations(invoke).GetUseKnownBootImageVarHandle());
+  DCHECK(VarHandleOptimizations(invoke).GetUseKnownImageVarHandle());
   HInstruction* var_handle_instruction = invoke->InputAt(0);
   if (var_handle_instruction->IsNullCheck()) {
     var_handle_instruction = var_handle_instruction->InputAt(0);
@@ -219,7 +219,7 @@ static inline ArtField* GetBootImageVarHandleField(HInvoke* invoke)
   ArtField* field = var_handle_instruction->AsStaticFieldGet()->GetFieldInfo().GetField();
   DCHECK(field->IsStatic());
   DCHECK(field->IsFinal());
-  DCHECK(var_handle_instruction->InputAt(0)->AsLoadClass()->IsInBootImage());
+  DCHECK(var_handle_instruction->InputAt(0)->AsLoadClass()->IsInImage());
   ObjPtr<mirror::Object> var_handle = field->GetObject(field->GetDeclaringClass());
   DCHECK(var_handle->GetClass() ==
          (GetExpectedVarHandleCoordinatesCount(invoke) == 0u

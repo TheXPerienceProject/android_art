@@ -1,0 +1,7 @@
+LAppImageClass;
+LAppImageClassWithClinit;
+SHLMain;->$noinline$getAppImageClass()Ljava/lang/Class;
+SHLMain;->$noinline$getNonAppImageClass()Ljava/lang/Class;
+SHLMain;->$noinline$callAppImageClassNop()V
+SHLMain;->$noinline$callAppImageClassWithClinitNop()V
+SHLMain;->$noinline$callNonAppImageClassNop()V

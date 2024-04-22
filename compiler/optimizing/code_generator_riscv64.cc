@@ -4252,7 +4252,7 @@ void LocationsBuilderRISCV64::VisitLoadClass(HLoadClass* instruction) {
             load_kind == HLoadClass::LoadKind::kBssEntryPublic ||
                 load_kind == HLoadClass::LoadKind::kBssEntryPackage);
 
-  const bool requires_read_barrier = !instruction->IsInBootImage() && codegen_->EmitReadBarrier();
+  const bool requires_read_barrier = !instruction->IsInImage() && codegen_->EmitReadBarrier();
   LocationSummary::CallKind call_kind = (instruction->NeedsEnvironment() || requires_read_barrier)
       ? LocationSummary::kCallOnSlowPath
       : LocationSummary::kNoCall;
@@ -4294,7 +4294,7 @@ void InstructionCodeGeneratorRISCV64::VisitLoadClass(HLoadClass* instruction)
   Location out_loc = locations->Out();
   XRegister out = out_loc.AsRegister<XRegister>();
   const ReadBarrierOption read_barrier_option =
-      instruction->IsInBootImage() ? kWithoutReadBarrier : codegen_->GetCompilerReadBarrierOption();
+      instruction->IsInImage() ? kWithoutReadBarrier : codegen_->GetCompilerReadBarrierOption();
   bool generate_null_check = false;
   switch (load_kind) {
     case HLoadClass::LoadKind::kReferrersClass: {
