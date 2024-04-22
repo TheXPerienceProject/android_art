@@ -7687,7 +7687,7 @@ void LocationsBuilderARMVIXL::VisitLoadClass(HLoadClass* cls) {
             load_kind == HLoadClass::LoadKind::kBssEntryPublic ||
                 load_kind == HLoadClass::LoadKind::kBssEntryPackage);
 
-  const bool requires_read_barrier = !cls->IsInBootImage() && codegen_->EmitReadBarrier();
+  const bool requires_read_barrier = !cls->IsInImage() && codegen_->EmitReadBarrier();
   LocationSummary::CallKind call_kind = (cls->NeedsEnvironment() || requires_read_barrier)
       ? LocationSummary::kCallOnSlowPath
       : LocationSummary::kNoCall;
@@ -7730,7 +7730,7 @@ void InstructionCodeGeneratorARMVIXL::VisitLoadClass(HLoadClass* cls) NO_THREAD_
   vixl32::Register out = OutputRegister(cls);
 
   const ReadBarrierOption read_barrier_option =
-      cls->IsInBootImage() ? kWithoutReadBarrier : codegen_->GetCompilerReadBarrierOption();
+      cls->IsInImage() ? kWithoutReadBarrier : codegen_->GetCompilerReadBarrierOption();
   bool generate_null_check = false;
   switch (load_kind) {
     case HLoadClass::LoadKind::kReferrersClass: {

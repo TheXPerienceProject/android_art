@@ -279,7 +279,7 @@ class VarHandleOptimizations : public IntrinsicOptimizations {
   // Note that the object null check is controlled by the above flag `SkipObjectNullCheck`
   // and arrays and byte array views (which always need a range check and sometimes also
   // array type check) are currently unsupported.
-  INTRINSIC_OPTIMIZATION(UseKnownBootImageVarHandle, 2);
+  INTRINSIC_OPTIMIZATION(UseKnownImageVarHandle, 2);
 };
 
 #undef INTRISIC_OPTIMIZATION
