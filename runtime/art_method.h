@@ -766,7 +766,11 @@ class EXPORT ArtMethod final {
   }
   ALWAYS_INLINE void SetEntryPointFromQuickCompiledCodePtrSize(
       const void* entry_point_from_quick_compiled_code, PointerSize pointer_size)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    SetNativePointer(EntryPointFromQuickCompiledCodeOffset(pointer_size),
+                     entry_point_from_quick_compiled_code,
+                     pointer_size);
+  }
 
   static constexpr MemberOffset DataOffset(PointerSize pointer_size) {
     return MemberOffset(PtrSizedFieldsOffset(pointer_size) + OFFSETOF_MEMBER(
@@ -1185,8 +1189,6 @@ class EXPORT ArtMethod final {
 
   // Used by GetName and GetNameView to share common code.
   const char* GetRuntimeMethodName() REQUIRES_SHARED(Locks::mutator_lock_);
-
-  friend class RuntimeImageHelper;  // For SetNativePointer.
 
   DISALLOW_COPY_AND_ASSIGN(ArtMethod);  // Need to use CopyFrom to deal with 32 vs 64 bits.
 };
