@@ -6798,7 +6798,7 @@ class HLoadClass final : public HInstruction {
     SetPackedField<LoadKindField>(
         is_referrers_class ? LoadKind::kReferrersClass : LoadKind::kRuntimeCall);
     SetPackedFlag<kFlagNeedsAccessCheck>(needs_access_check);
-    SetPackedFlag<kFlagIsInBootImage>(false);
+    SetPackedFlag<kFlagIsInImage>(false);
     SetPackedFlag<kFlagGenerateClInitCheck>(false);
     SetPackedFlag<kFlagValidLoadedClassRTI>(false);
   }
@@ -6851,8 +6851,8 @@ class HLoadClass final : public HInstruction {
   bool CanThrow() const override {
     return NeedsAccessCheck() ||
            MustGenerateClinitCheck() ||
-           // If the class is in the boot image, the lookup in the runtime call cannot throw.
-           ((GetLoadKind() == LoadKind::kRuntimeCall || NeedsBss()) && !IsInBootImage());
+           // If the class is in the boot or app image, the lookup in the runtime call cannot throw.
+           ((GetLoadKind() == LoadKind::kRuntimeCall || NeedsBss()) && !IsInImage());
   }
 
   ReferenceTypeInfo GetLoadedClassRTI() {
@@ -6879,7 +6879,7 @@ class HLoadClass final : public HInstruction {
 
   bool IsReferrersClass() const { return GetLoadKind() == LoadKind::kReferrersClass; }
   bool NeedsAccessCheck() const { return GetPackedFlag<kFlagNeedsAccessCheck>(); }
-  bool IsInBootImage() const { return GetPackedFlag<kFlagIsInBootImage>(); }
+  bool IsInImage() const { return GetPackedFlag<kFlagIsInImage>(); }
   bool MustGenerateClinitCheck() const { return GetPackedFlag<kFlagGenerateClInitCheck>(); }
 
   bool MustResolveTypeOnSlowPath() const {
@@ -6894,8 +6894,8 @@ class HLoadClass final : public HInstruction {
     return must_resolve_type_on_slow_path;
   }
 
-  void MarkInBootImage() {
-    SetPackedFlag<kFlagIsInBootImage>(true);
+  void MarkInImage() {
+    SetPackedFlag<kFlagIsInImage>(true);
   }
 
   void AddSpecialInput(HInstruction* special_input);
@@ -6917,10 +6917,11 @@ class HLoadClass final : public HInstruction {
 
  private:
   static constexpr size_t kFlagNeedsAccessCheck    = kNumberOfGenericPackedBits;
-  static constexpr size_t kFlagIsInBootImage       = kFlagNeedsAccessCheck + 1;
+  // Whether the type is in an image (boot image or app image).
+  static constexpr size_t kFlagIsInImage           = kFlagNeedsAccessCheck + 1;
   // Whether this instruction must generate the initialization check.
   // Used for code generation.
-  static constexpr size_t kFlagGenerateClInitCheck = kFlagIsInBootImage + 1;
+  static constexpr size_t kFlagGenerateClInitCheck = kFlagIsInImage + 1;
   static constexpr size_t kFieldLoadKind           = kFlagGenerateClInitCheck + 1;
   static constexpr size_t kFieldLoadKindSize =
       MinimumBitsToStore(static_cast<size_t>(LoadKind::kLast));

@@ -135,12 +135,11 @@ cc_defaults {
 
     cflags: ["-DANDROID"],
 
-    // The tests mock libdl_android and libnativebridge symbols, so export them
-    // to override the ones loaded from their libs.
-    ldflags: [
-        "-Wl,--export-dynamic-symbol=android_*",
-        "-Wl,--export-dynamic-symbol=NativeBridge*",
-    ],
+    // Ordinarily, symbols are only exported if they are referenced by some
+    // shared object dependency. Instead, export everything using
+    // --export-dynamic, then restrict the visibility using the version script.
+    ldflags: ["-Wl,--export-dynamic"],
+    version_script: "libnativeloader_test.map",
 
     header_libs: [
         "libnativebridge-headers",
