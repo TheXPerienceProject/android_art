@@ -22,6 +22,7 @@ package {
     //   SPDX-license-identifier-Apache-2.0
     //   SPDX-license-identifier-BSD
     default_applicable_licenses: ["art_license"],
+    default_team: "trendy_team_art_performance",
 }
 
 cc_library {
