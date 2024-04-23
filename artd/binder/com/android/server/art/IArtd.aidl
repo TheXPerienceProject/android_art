@@ -235,6 +235,20 @@ interface IArtd {
      */
     long getProfileSize(in com.android.server.art.ProfilePath profile);
 
+    // The methods below are only for Pre-reboot Dexopt and only supported in Pre-reboot Dexopt
+    // mode.
+
+    /**
+     * Initializes the environment for Pre-reboot Dexopt. This operation includes initializing
+     * environment variables and boot images.
+     *
+     * Note that this method results in a non-persistent state change, so it must be called every
+     * time a new instance of artd is started for Pre-reboot Dexopt.
+     *
+     * Throws fatal and non-fatal errors.
+     */
+    void preRebootInit();
+
     /** For Pre-reboot Dexopt use. See {@link ArtJni#validateDexPath}. */
     @nullable @utf8InCpp String validateDexPath(@utf8InCpp String dexFile);
 

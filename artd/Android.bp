@@ -34,6 +34,7 @@ cc_defaults {
     header_libs: [
         "art_cmdlineparser_headers",
         "libarttools_binder_utils",
+        "odrefresh_headers_art",
         "profman_headers",
     ],
     shared_libs: [
