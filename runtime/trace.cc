@@ -367,6 +367,17 @@ bool UseWallClock(TraceClockSource clock_source) {
   return (clock_source == TraceClockSource::kWall) || (clock_source == TraceClockSource::kDual);
 }
 
+bool UseFastTraceListeners(TraceClockSource clock_source) {
+  // Thread cpu clocks needs a kernel call, so we don't directly support them in JITed code.
+  bool is_fast_trace = !UseThreadCpuClock(clock_source);
+#if defined(__arm__)
+  // On ARM 32 bit, we don't always have access to the timestamp counters from
+  // user space. See comment in GetTimestamp for more details.
+  is_fast_trace = false;
+#endif
+  return is_fast_trace;
+}
+
 void Trace::MeasureClockOverhead() {
   if (UseThreadCpuClock(clock_source_)) {
     Thread::Current()->GetCpuMicroTime();
@@ -695,14 +706,6 @@ void Trace::Start(std::unique_ptr<File>&& trace_file_in,
           runtime->GetInstrumentation()->UpdateEntrypointsForDebuggable();
           runtime->DeoptimizeBootImage();
         }
-        // For thread cpu clocks, we need to make a kernel call and hence we call into c++ to
-        // support them.
-        bool is_fast_trace = !UseThreadCpuClock(the_trace_->GetClockSource());
-#if defined(__arm__)
-        // On ARM 32 bit, we don't always have access to the timestamp counters from
-        // user space. Seem comment in GetTimestamp for more details.
-        is_fast_trace = false;
-#endif
         // Add ClassLoadCallback to record methods on class load.
         runtime->GetRuntimeCallbacks()->AddClassLoadCallback(the_trace_);
         runtime->GetInstrumentation()->AddListener(
@@ -710,7 +713,7 @@ void Trace::Start(std::unique_ptr<File>&& trace_file_in,
             instrumentation::Instrumentation::kMethodEntered |
                 instrumentation::Instrumentation::kMethodExited |
                 instrumentation::Instrumentation::kMethodUnwind,
-            is_fast_trace);
+            UseFastTraceListeners(the_trace_->GetClockSource()));
         runtime->GetInstrumentation()->EnableMethodTracing(kTracerInstrumentationKey,
                                                            the_trace_,
                                                            /*needs_interpreter=*/false);
@@ -762,21 +765,13 @@ void Trace::StopTracing(bool flush_entries) {
       MutexLock mu(self, *Locks::thread_list_lock_);
       runtime->GetThreadList()->ForEach(ClearThreadStackTraceAndClockBase, nullptr);
     } else {
-      // For thread cpu clocks, we need to make a kernel call and hence we call into c++ to support
-      // them.
-      bool is_fast_trace = !UseThreadCpuClock(the_trace_->GetClockSource());
-#if defined(__arm__)
-        // On ARM 32 bit, we don't always have access to the timestamp counters from
-        // user space. Seem comment in GetTimestamp for more details.
-        is_fast_trace = false;
-#endif
         runtime->GetRuntimeCallbacks()->RemoveClassLoadCallback(the_trace_);
         runtime->GetInstrumentation()->RemoveListener(
             the_trace,
             instrumentation::Instrumentation::kMethodEntered |
                 instrumentation::Instrumentation::kMethodExited |
                 instrumentation::Instrumentation::kMethodUnwind,
-            is_fast_trace);
+            UseFastTraceListeners(the_trace_->GetClockSource()));
         runtime->GetInstrumentation()->DisableMethodTracing(kTracerInstrumentationKey);
     }
 
@@ -814,6 +809,21 @@ void Trace::StopTracing(bool flush_entries) {
     // Can be racy since SetStatsEnabled is not guarded by any locks.
     runtime->SetStatsEnabled(false);
   }
+}
+
+void Trace::RemoveListeners() {
+  Thread* self = Thread::Current();
+  // This is expected to be called in SuspendAll scope.
+  DCHECK(Locks::mutator_lock_->IsExclusiveHeld(self));
+  MutexLock mu(self, *Locks::trace_lock_);
+  Runtime* runtime = Runtime::Current();
+  runtime->GetRuntimeCallbacks()->RemoveClassLoadCallback(the_trace_);
+  runtime->GetInstrumentation()->RemoveListener(
+      the_trace_,
+      instrumentation::Instrumentation::kMethodEntered |
+      instrumentation::Instrumentation::kMethodExited |
+      instrumentation::Instrumentation::kMethodUnwind,
+      UseFastTraceListeners(the_trace_->GetClockSource()));
 }
 
 void Trace::FlushThreadBuffer(Thread* self) {
@@ -1346,16 +1356,19 @@ void TraceWriter::RecordMethodInfo(const std::string& method_info_line, uint64_t
 void TraceWriter::FlushAllThreadBuffers() {
   ScopedThreadStateChange stsc(Thread::Current(), ThreadState::kSuspended);
   ScopedSuspendAll ssa(__FUNCTION__);
-  MutexLock mu(Thread::Current(), *Locks::thread_list_lock_);
-  for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
-    if (thread->GetMethodTraceBuffer() != nullptr) {
-      FlushBuffer(thread, /* is_sync= */ true, /* free_buffer= */ false);
-      // We cannot flush anynore data, so just return.
-      if (overflow_) {
-        return;
+  {
+    MutexLock mu(Thread::Current(), *Locks::thread_list_lock_);
+    for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
+      if (thread->GetMethodTraceBuffer() != nullptr) {
+        FlushBuffer(thread, /* is_sync= */ true, /* free_buffer= */ false);
+        // We cannot flush anynore data, so just break.
+        if (overflow_) {
+          break;
+        }
       }
     }
   }
+  Trace::RemoveListeners();
   return;
 }
 
