@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 
-#if defined(ART_TARGET_ANDROID)
+#include <memory>
+#include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "jni.h"
 #include "native_loader_test.h"
 #include "nativehelper/scoped_utf_chars.h"
 #include "nativeloader/native_loader.h"
@@ -35,7 +38,7 @@ using ::testing::StrEq;
 class NativeLoaderLazyTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    mock = std::make_unique<testing::NiceMock<MockPlatform>>(false);
+    jni_mock = std::make_unique<testing::NiceMock<MockJni>>();
     env = std::make_unique<JNIEnv>();
     env->functions = CreateJNINativeInterface();
   }
@@ -45,11 +48,11 @@ class NativeLoaderLazyTest : public ::testing::Test {
     // reset libnativeloader internal state. Hence be sure to not reuse the same
     // class loader/namespace names.
     delete env->functions;
-    mock.reset();
+    jni_mock.reset();
   }
 
   void CallCreateClassLoaderNamespace(const char* class_loader) {
-    ON_CALL(*mock, JniObject_getParent(StrEq(class_loader))).WillByDefault(Return(nullptr));
+    ON_CALL(*jni_mock, JniObject_getParent(StrEq(class_loader))).WillByDefault(Return(nullptr));
 
     jstring err = CreateClassLoaderNamespace(env.get(),
                                              17,
@@ -123,5 +126,3 @@ TEST_F(NativeLoaderLazyTest, NativeLoaderFreeErrorMessage) {
 
 }  // namespace nativeloader
 }  // namespace android
-
-#endif  // defined(ART_TARGET_ANDROID)
