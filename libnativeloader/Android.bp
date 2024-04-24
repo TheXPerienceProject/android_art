@@ -123,8 +123,8 @@ cc_library {
     shared_libs: ["liblog"],
 }
 
-cc_defaults {
-    name: "libnativeloader-test-defaults",
+art_cc_test {
+    name: "libnativeloader_test",
     defaults: [
         "art_module_source_build_defaults",
         // Cannot use art_standalone_gtest_defaults because it makes us link
@@ -148,24 +148,13 @@ cc_defaults {
     ],
     shared_libs: [
         "liblog", // libbase dependency
+        "libnativeloader",
     ],
     static_libs: [
         "libbase",
         "libgmock",
     ],
 
-    test_for: [
-        "com.android.art",
-        "com.android.art.debug",
-    ],
-    test_suites: ["device-tests"],
-}
-
-art_cc_test {
-    name: "libnativeloader_test",
-    defaults: [
-        "libnativeloader-test-defaults",
-    ],
     tidy_timeout_srcs: [
         "native_loader_test.cpp",
     ],
@@ -174,21 +163,53 @@ art_cc_test {
         "native_loader_api_test.c",
         "native_loader_test.cpp",
     ],
+
+    test_for: [
+        "com.android.art",
+        "com.android.art.debug",
+    ],
+    test_suites: [
+        "general-tests",
+        "mts-art",
+    ],
+}
+
+cc_defaults {
+    name: "libnativeloader_api_test_defaults",
+    defaults: ["art_standalone_test_defaults"],
+
+    srcs: ["native_loader_api_test.cpp"],
+    header_libs: [
+        "libnativebridge-headers",
+        "libnativehelper_header_only",
+    ],
+    static_libs: [
+        "libbase",
+        "libgmock",
+    ],
+}
+
+art_cc_test {
+    name: "art_libnativeloader_cts_test",
+    defaults: ["libnativeloader_api_test_defaults"],
     shared_libs: [
         "libnativeloader",
     ],
+    test_config_template: ":art-gtests-target-standalone-cts-template",
     test_suites: [
-        "mts-art",
+        "cts",
+        "mcts-art",
     ],
 }
 
 art_cc_test {
     name: "libnativeloader_lazy_test",
-    defaults: ["libnativeloader-test-defaults"],
-    srcs: [
-        "native_loader_lazy_test.cpp",
-    ],
+    defaults: ["libnativeloader_api_test_defaults"],
     static_libs: [
         "libnativeloader_lazy",
+    ],
+    test_suites: [
+        "general-tests",
+        "mts-art",
     ],
 }

@@ -16,8 +16,7 @@
 
 #if defined(ART_TARGET_ANDROID)
 
-#include <gtest/gtest.h>
-
+#include "gtest/gtest.h"
 #include "native_loader_test.h"
 #include "nativehelper/scoped_utf_chars.h"
 #include "nativeloader/native_loader.h"
@@ -25,11 +24,13 @@
 namespace android {
 namespace nativeloader {
 
+using ::testing::Return;
 using ::testing::StrEq;
 
-// Only need to test that the trivial lazy lib wrappers call through to the real
-// functions, but still have to mock things well enough to avoid null pointer
-// dereferences.
+// Test the exported API in libnativeloader and libnativeloader_lazy. The
+// testing we can do here outside a full VM is limited, but this is only to
+// complement other tests and ensure coverage of the APIs that aren't in the
+// common call paths.
 
 class NativeLoaderLazyTest : public ::testing::Test {
  protected:
@@ -49,9 +50,6 @@ class NativeLoaderLazyTest : public ::testing::Test {
 
   void CallCreateClassLoaderNamespace(const char* class_loader) {
     ON_CALL(*mock, JniObject_getParent(StrEq(class_loader))).WillByDefault(Return(nullptr));
-    EXPECT_CALL(*mock, mock_create_namespace)
-        .WillOnce(Return(TO_MOCK_NAMESPACE(TO_ANDROID_NAMESPACE(class_loader))));
-    ON_CALL(*mock, mock_link_namespaces).WillByDefault(Return(true));
 
     jstring err = CreateClassLoaderNamespace(env.get(),
                                              17,
@@ -69,6 +67,8 @@ class NativeLoaderLazyTest : public ::testing::Test {
 
 TEST_F(NativeLoaderLazyTest, CreateClassLoaderNamespace) {
   CallCreateClassLoaderNamespace("my_classloader_1");
+  EXPECT_NE(FindNamespaceByClassLoader(env.get(), env.get()->NewStringUTF("my_classloader_1")),
+            nullptr);
 }
 
 TEST_F(NativeLoaderLazyTest, OpenNativeLibrary) {
