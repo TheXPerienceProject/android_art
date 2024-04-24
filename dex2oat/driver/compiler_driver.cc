@@ -854,9 +854,15 @@ void CompilerDriver::PreCompile(jobject class_loader,
       }
     }
 
-    // Resolve eagerly as both verification and compilation benefit from this.
-    Resolve(class_loader, dex_files, timings);
-    VLOG(compiler) << "Resolve: " << GetMemoryUsageString(false);
+    // Resolve eagerly for compilations always, and for verifications only if we are running with
+    // multiple threads.
+    const bool should_resolve_eagerly =
+        compiler_options_->IsAnyCompilationEnabled() ||
+        (!GetCompilerOptions().IsForceDeterminism() && parallel_thread_count_ > 1);
+    if (should_resolve_eagerly) {
+      Resolve(class_loader, dex_files, timings);
+      VLOG(compiler) << "Resolve: " << GetMemoryUsageString(false);
+    }
 
     Verify(class_loader, dex_files, timings);
     VLOG(compiler) << "Verify: " << GetMemoryUsageString(false);
