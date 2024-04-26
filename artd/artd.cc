@@ -117,6 +117,7 @@ using ::android::base::ReadFileToString;
 using ::android::base::Result;
 using ::android::base::Split;
 using ::android::base::StringReplace;
+using ::android::base::Tokenize;
 using ::android::base::WriteStringToFd;
 using ::android::base::WriteStringToFile;
 using ::android::fs_mgr::FstabEntry;
@@ -1645,6 +1646,11 @@ void Artd::AddPerfConfigFlags(PriorityClass priority_class,
   // It takes longer but reduces the memory footprint.
   dex2oat_args.AddIf(props_->GetBool("ro.config.low_ram", /*default_value=*/false),
                      "--compile-individually");
+
+  for (const std::string& flag :
+       Tokenize(props_->GetOrEmpty("dalvik.vm.dex2oat-flags"), /*delimiters=*/" ")) {
+    dex2oat_args.AddIfNonEmpty("%s", flag);
+  }
 }
 
 Result<int> Artd::ExecAndReturnCode(const std::vector<std::string>& args,

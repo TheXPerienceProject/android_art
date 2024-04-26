@@ -943,6 +943,8 @@ TEST_F(ArtdTest, dexoptFlagsFromSystemProps) {
   EXPECT_CALL(*mock_props_, GetProperty("ro.config.low_ram")).WillOnce(Return("1"));
   EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.appimageformat")).WillOnce(Return("imgfmt"));
   EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.boot-image")).WillOnce(Return("boot-image"));
+  EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.dex2oat-flags"))
+      .WillOnce(Return("--flag1 --flag2  --flag3"));
 
   EXPECT_CALL(*mock_exec_utils_,
               DoExecAndReturnCode(
@@ -962,7 +964,10 @@ TEST_F(ArtdTest, dexoptFlagsFromSystemProps) {
                                     Contains("--compile-individually"),
                                     Contains(Flag("--image-format=", "imgfmt")),
                                     Not(Contains("--force-jit-zygote")),
-                                    Contains(Flag("--boot-image=", "boot-image")))),
+                                    Contains(Flag("--boot-image=", "boot-image")),
+                                    Contains("--flag1"),
+                                    Contains("--flag2"),
+                                    Contains("--flag3"))),
                   _,
                   _))
       .WillOnce(Return(0));
