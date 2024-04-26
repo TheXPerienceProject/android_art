@@ -1111,10 +1111,6 @@ art_cc_defaults {
         "verifier/method_verifier_test.cc",
         "verifier/reg_type_test.cc",
     ],
-    shared_libs: [
-        // TODO(b/247108425): Resolve ODR problems and link statically.
-        "libunwindstack",
-    ],
     static_libs: [
         "libgmock",
     ],

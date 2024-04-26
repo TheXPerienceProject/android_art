@@ -1084,7 +1084,9 @@ void JitCodeCache::MarkCompiledCodeOnThreadStacks(Thread* self) {
   size_t threads_running_checkpoint = 0;
   MarkCodeClosure closure(this, GetLiveBitmap(), &barrier);
   threads_running_checkpoint = Runtime::Current()->GetThreadList()->RunCheckpoint(&closure);
-  // Now that we have run our checkpoint, wait for other threads to run the checkpoint.
+  // Now that we have run our checkpoint, move to a suspended state and wait
+  // for other threads to run the checkpoint.
+  ScopedThreadSuspension sts(self, ThreadState::kSuspended);
   if (threads_running_checkpoint != 0) {
     barrier.Increment(self, threads_running_checkpoint);
   }
@@ -1102,7 +1104,6 @@ void JitCodeCache::IncreaseCodeCacheCapacity(Thread* self) {
 void JitCodeCache::RemoveUnmarkedCode(Thread* self) {
   ScopedTrace trace(__FUNCTION__);
   std::unordered_set<OatQuickMethodHeader*> method_headers;
-  ScopedObjectAccess soa(self);
   ScopedDebugDisallowReadBarriers sddrb(self);
   {
     MutexLock mu(self, *Locks::jit_lock_);
@@ -1283,11 +1284,14 @@ void JitCodeCache::DoCollection(Thread* self) {
   {
     TimingLogger::ScopedTiming st("Code cache collection", &logger);
 
-    // Run a checkpoint on all threads to mark the JIT compiled code they are running.
-    MarkCompiledCodeOnThreadStacks(self);
+    {
+      ScopedObjectAccess soa(self);
+      // Run a checkpoint on all threads to mark the JIT compiled code they are running.
+      MarkCompiledCodeOnThreadStacks(self);
 
-    // Remove zombie code which hasn't been marked.
-    RemoveUnmarkedCode(self);
+      // Remove zombie code which hasn't been marked.
+      RemoveUnmarkedCode(self);
+    }
 
     MutexLock mu(self, *Locks::jit_lock_);
     live_bitmap_.reset(nullptr);

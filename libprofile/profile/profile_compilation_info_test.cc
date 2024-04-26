@@ -1498,10 +1498,16 @@ TEST_F(ProfileCompilationInfoTest, AddMethodsProfileMethodInfoInlineCaches) {
 
   // Add inline caches with the methods. The profile should record only the one for the hot method.
   std::vector<TypeReference> types = {};
-  ProfileMethodInfo::ProfileInlineCache ic(/*dex_pc*/ 0, /*missing_types*/true, types);
+  ProfileMethodInfo::ProfileInlineCache ic(/*dex_pc=*/ 0, /*missing_types=*/ true, types);
   std::vector<ProfileMethodInfo::ProfileInlineCache> inline_caches = {ic};
-  info.AddMethod(ProfileMethodInfo(hot, inline_caches), Hotness::kFlagHot);
-  info.AddMethod(ProfileMethodInfo(startup, inline_caches), Hotness::kFlagStartup);
+  info.AddMethod(ProfileMethodInfo(hot, inline_caches),
+                 Hotness::kFlagHot,
+                 ProfileSampleAnnotation::kNone,
+                 /*is_test=*/ true);
+  info.AddMethod(ProfileMethodInfo(startup, inline_caches),
+                 Hotness::kFlagStartup,
+                 ProfileSampleAnnotation::kNone,
+                 /*is_test=*/ true);
 
   // Check the hot method's inline cache.
   ProfileCompilationInfo::MethodHotness hot_hotness = GetMethod(info, dex1, hot.index);

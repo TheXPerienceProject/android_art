@@ -2061,7 +2061,7 @@ void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafePutLongRelease(HInvoke* invo
   CreateIntIntIntIntToVoidPlusTempsLocations(allocator_, DataType::Type::kInt64, invoke);
 }
 void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafePutByte(HInvoke* invoke) {
-  CreateIntIntIntIntToVoidPlusTempsLocations(allocator_, DataType::Type::kUint8, invoke);
+  CreateIntIntIntIntToVoidPlusTempsLocations(allocator_, DataType::Type::kInt8, invoke);
 }
 
 // We don't care for ordered: it requires an AnyStore barrier, which is already given by the x86

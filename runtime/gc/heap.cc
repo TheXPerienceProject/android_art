@@ -202,9 +202,17 @@ static constexpr bool kLogAllGCs = false;
 static constexpr size_t kPostForkMaxHeapDurationMS = 2000;
 
 #if defined(__LP64__) || !defined(ADDRESS_SANITIZER)
-// 300 MB (0x12c00000) - (default non-moving space capacity).
-uint8_t* const Heap::kPreferredAllocSpaceBegin =
-    reinterpret_cast<uint8_t*>(300 * MB - kDefaultNonMovingSpaceCapacity);
+// 320 MB (0x14000000) - (default non-moving space capacity).
+// The value is picked to ensure it is aligned to the largest supported PMD
+// size, which is 32mb with a 16k page size on AArch64.
+uint8_t* const Heap::kPreferredAllocSpaceBegin = reinterpret_cast<uint8_t*>(([]() constexpr {
+  constexpr size_t kBegin = 320 * MB - Heap::kDefaultNonMovingSpaceCapacity;
+  constexpr int kMaxPMDSize = (kMaxPageSize / sizeof(uint64_t)) * kMaxPageSize;
+  static_assert(IsAligned<kMaxPMDSize>(kBegin),
+                "kPreferredAllocSpaceBegin should be aligned to the maximum "
+                "supported PMD size.");
+  return kBegin;
+})());
 #else
 #ifdef __ANDROID__
 // For 32-bit Android, use 0x20000000 because asan reserves 0x04000000 - 0x20000000.
