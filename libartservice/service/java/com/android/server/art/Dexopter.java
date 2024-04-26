@@ -293,7 +293,9 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                             profile = null;
                         }
                     }
-                    if (profileMerged) {
+                    // We keep the current profiles in the Pre-reboot Dexopt case, to leave it to
+                    // background dexopt.
+                    if (profileMerged && !mInjector.isPreReboot()) {
                         // Note that this is just an optimization, to reduce the amount of data that
                         // the runtime writes on every profile save. The profile merge result on the
                         // next run won't change regardless of whether the cleanup is done or not
@@ -393,8 +395,8 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
     private InitProfileResult getOrInitReferenceProfile(
             @NonNull DexInfoType dexInfo, boolean enableEmbeddedProfile) throws RemoteException {
         return Utils.getOrInitReferenceProfile(mInjector.getArtd(), dexInfo.dexPath(),
-                buildRefProfilePath(dexInfo), getExternalProfiles(dexInfo), enableEmbeddedProfile,
-                buildOutputProfile(dexInfo, true /* isPublic */));
+                buildRefProfilePathAsInput(dexInfo), getExternalProfiles(dexInfo),
+                enableEmbeddedProfile, buildOutputProfile(dexInfo, true /* isPublic */));
     }
 
     @Nullable
@@ -472,7 +474,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
             dexoptTrigger |= DexoptTrigger.COMPILER_FILTER_IS_SAME;
         }
 
-        ArtifactsPath existingArtifactsPath = AidlUtils.buildArtifactsPath(
+        ArtifactsPath existingArtifactsPath = AidlUtils.buildArtifactsPathAsInput(
                 target.dexInfo().dexPath(), target.isa(), target.isInDalvikCache());
 
         if (options.needsToBePublic()
@@ -493,8 +495,9 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
             @NonNull PermissionSettings permissionSettings, @PriorityClass int priorityClass,
             @NonNull DexoptOptions dexoptOptions, IArtdCancellationSignal artdCancellationSignal)
             throws RemoteException {
-        OutputArtifacts outputArtifacts = AidlUtils.buildOutputArtifacts(target.dexInfo().dexPath(),
-                target.isa(), target.isInDalvikCache(), permissionSettings);
+        OutputArtifacts outputArtifacts =
+                AidlUtils.buildOutputArtifacts(target.dexInfo().dexPath(), target.isa(),
+                        target.isInDalvikCache(), permissionSettings, mInjector.isPreReboot());
 
         VdexPath inputVdex =
                 getInputVdex(getDexoptNeededResult, target.dexInfo().dexPath(), target.isa());
@@ -527,7 +530,9 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         // images are still usable, technically, they can still be used to improve runtime
         // performance; if they are no longer usable, they will be deleted by the file GC during the
         // daily background dexopt job anyway.
-        if (!result.cancelled) {
+        // We keep the runtime artifacts in the Pre-reboot Dexopt case because they are still needed
+        // before the reboot.
+        if (!result.cancelled && !mInjector.isPreReboot()) {
             mInjector.getArtd().deleteRuntimeArtifacts(AidlUtils.buildRuntimeArtifactsPath(
                     mPkgState.getPackageName(), target.dexInfo().dexPath(), target.isa()));
         }
@@ -543,11 +548,11 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         }
         switch (getDexoptNeededResult.artifactsLocation) {
             case ArtifactsLocation.DALVIK_CACHE:
-                return VdexPath.artifactsPath(
-                        AidlUtils.buildArtifactsPath(dexPath, isa, true /* isInDalvikCache */));
+                return VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
+                        dexPath, isa, true /* isInDalvikCache */));
             case ArtifactsLocation.NEXT_TO_DEX:
-                return VdexPath.artifactsPath(
-                        AidlUtils.buildArtifactsPath(dexPath, isa, false /* isInDalvikCache */));
+                return VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
+                        dexPath, isa, false /* isInDalvikCache */));
             case ArtifactsLocation.DM:
                 // The DM file is passed to dex2oat as a separate flag whenever it exists.
                 return null;
@@ -635,7 +640,8 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
     @NonNull protected abstract List<Abi> getAllAbis(@NonNull DexInfoType dexInfo);
 
     /** Returns the path to the reference profile of the given dex file. */
-    @NonNull protected abstract ProfilePath buildRefProfilePath(@NonNull DexInfoType dexInfo);
+    @NonNull
+    protected abstract ProfilePath buildRefProfilePathAsInput(@NonNull DexInfoType dexInfo);
 
     /**
      * Returns the data structure that represents the temporary profile to use during processing.
@@ -772,6 +778,10 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         @NonNull
         public DexMetadataHelper getDexMetadataHelper() {
             return new DexMetadataHelper();
+        }
+
+        public boolean isPreReboot() {
+            return GlobalInjector.getInstance().isPreReboot();
         }
     }
 }

@@ -71,18 +71,20 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
     private final String mDexPath = "/somewhere/app/foo/base.apk";
     private final String mDmPath = "/somewhere/app/foo/base.dm";
     private final ProfilePath mRefProfile =
-            AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME, "primary");
+            AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME, "primary");
     private final ProfilePath mPrebuiltProfile = AidlUtils.buildProfilePathForPrebuilt(mDexPath);
     private final ProfilePath mDmProfile = AidlUtils.buildProfilePathForDm(mDexPath);
     private final DexMetadataPath mDmFile = AidlUtils.buildDexMetadataPath(mDexPath);
-    private final OutputProfile mPublicOutputProfile = AidlUtils.buildOutputProfileForPrimary(
-            PKG_NAME, "primary", Process.SYSTEM_UID, SHARED_GID, true /* isOtherReadable */);
-    private final OutputProfile mPrivateOutputProfile = AidlUtils.buildOutputProfileForPrimary(
-            PKG_NAME, "primary", Process.SYSTEM_UID, SHARED_GID, false /* isOtherReadable */);
+    private final OutputProfile mPublicOutputProfile =
+            AidlUtils.buildOutputProfileForPrimary(PKG_NAME, "primary", Process.SYSTEM_UID,
+                    SHARED_GID, true /* isOtherReadable */, false /* isPreReboot */);
+    private final OutputProfile mPrivateOutputProfile =
+            AidlUtils.buildOutputProfileForPrimary(PKG_NAME, "primary", Process.SYSTEM_UID,
+                    SHARED_GID, false /* isOtherReadable */, false /* isPreReboot */);
 
     private final String mSplit0DexPath = "/somewhere/app/foo/split_0.apk";
     private final ProfilePath mSplit0RefProfile =
-            AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME, "split_0.split");
+            AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME, "split_0.split");
 
     private final int mDefaultDexoptTrigger = DexoptTrigger.COMPILER_FILTER_IS_BETTER
             | DexoptTrigger.PRIMARY_BOOT_IMAGE_BECOMES_USABLE | DexoptTrigger.NEED_EXTRACTION;
@@ -163,7 +165,7 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
         doReturn(mArtdDexoptResult)
                 .when(mArtd)
                 .dexopt(any(), eq(mDexPath), eq("arm"), any(), any(), any(),
-                        deepEq(VdexPath.artifactsPath(AidlUtils.buildArtifactsPath(
+                        deepEq(VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
                                 mDexPath, "arm", true /* isInDalvikCache */))),
                         any(), anyInt(), any(), any());
 
@@ -174,7 +176,7 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
         doReturn(mArtdDexoptResult)
                 .when(mArtd)
                 .dexopt(any(), eq(mSplit0DexPath), eq("arm64"), any(), any(), any(),
-                        deepEq(VdexPath.artifactsPath(AidlUtils.buildArtifactsPath(
+                        deepEq(VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
                                 mSplit0DexPath, "arm64", false /* isInDalvikCache */))),
                         any(), anyInt(), any(), any());
 
@@ -303,8 +305,7 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
         verifyEmbeddedProfileNotUsed(mDexPath);
     }
 
-    @Test
-    public void testDexoptMergesProfiles() throws Exception {
+    private void checkDexoptMergesProfiles() throws Exception {
         setPackageInstalledForUserIds(0, 2);
 
         when(mArtd.mergeProfiles(any(), any(), any(), any(), any())).thenReturn(true);
@@ -340,11 +341,27 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
                 false /* isOtherReadable */);
 
         inOrder.verify(mArtd).commitTmpProfile(deepEq(mPrivateOutputProfile.profilePath));
+    }
 
-        inOrder.verify(mArtd).deleteProfile(deepEq(
+    @Test
+    public void testDexoptMergesProfiles() throws Exception {
+        checkDexoptMergesProfiles();
+
+        verify(mArtd).deleteProfile(deepEq(
                 AidlUtils.buildProfilePathForPrimaryCur(0 /* userId */, PKG_NAME, "primary")));
-        inOrder.verify(mArtd).deleteProfile(deepEq(
+        verify(mArtd).deleteProfile(deepEq(
                 AidlUtils.buildProfilePathForPrimaryCur(2 /* userId */, PKG_NAME, "primary")));
+    }
+
+    @Test
+    public void testDexoptMergesProfilesPreReboot() throws Exception {
+        when(mInjector.isPreReboot()).thenReturn(true);
+        mPublicOutputProfile.profilePath.finalPath.getForPrimary().isPreReboot = true;
+        mPrivateOutputProfile.profilePath.finalPath.getForPrimary().isPreReboot = true;
+
+        checkDexoptMergesProfiles();
+
+        verify(mArtd, never()).deleteProfile(any());
     }
 
     @Test
@@ -397,8 +414,7 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
         mPrimaryDexopter.dexopt();
     }
 
-    @Test
-    public void testDexoptUsesDmProfile() throws Exception {
+    private void checkDexoptUsesDmProfile() throws Exception {
         makeProfileUsable(mDmProfile);
         makeEmbeddedProfileUsable(mDexPath);
 
@@ -418,6 +434,20 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
         verifyProfileNotUsed(mRefProfile);
         verifyProfileNotUsed(mPrebuiltProfile);
         verifyEmbeddedProfileNotUsed(mDexPath);
+    }
+
+    @Test
+    public void testDexoptUsesDmProfile() throws Exception {
+        checkDexoptUsesDmProfile();
+    }
+
+    @Test
+    public void testDexoptUsesDmProfilePreReboot() throws Exception {
+        when(mInjector.isPreReboot()).thenReturn(true);
+        mPublicOutputProfile.profilePath.finalPath.getForPrimary().isPreReboot = true;
+        mPrivateOutputProfile.profilePath.finalPath.getForPrimary().isPreReboot = true;
+
+        checkDexoptUsesDmProfile();
     }
 
     private void checkDexoptUsesEmbeddedProfile() throws Exception {
@@ -498,6 +528,15 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
         checkDexoptWithNoProfile(verify(mArtd), mDexPath, "arm", "verify");
 
         verifyEmbeddedProfileNotUsed(mDexPath);
+    }
+
+    @Test
+    public void testDexoptUsesEmbeddedProfilePreReboot() throws Exception {
+        when(mInjector.isPreReboot()).thenReturn(true);
+        mPublicOutputProfile.profilePath.finalPath.getForPrimary().isPreReboot = true;
+        mPrivateOutputProfile.profilePath.finalPath.getForPrimary().isPreReboot = true;
+
+        checkDexoptUsesEmbeddedProfile();
     }
 
     @Test

@@ -14,3 +14,12 @@ doesn't include options passed to dex2oat and other processes.
 
 - `dalvik.vm.artd-verbose`: Log verbosity of the artd process. The syntax is the
   same as the runtime's `-verbose` flag.
+
+### The `--pre-reboot` flag
+
+artd can be run in Pre-reboot mode through the `--pre-reboot` flag. The
+Pre-reboot mode is for generating outputs for Pre-reboot Dexopt. The flag does
+not change the actual behavior, but only affects the service name, the log tag,
+a few return checks, etc. Note that how artd addresses input files and output
+files is solely determined by AIDL arguments and is **not** affected by the
+`--pre-reboot` flag.

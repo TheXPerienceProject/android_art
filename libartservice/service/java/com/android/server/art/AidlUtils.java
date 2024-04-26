@@ -34,13 +34,22 @@ public final class AidlUtils {
     private AidlUtils() {}
 
     @NonNull
-    public static ArtifactsPath buildArtifactsPath(
-            @NonNull String dexPath, @NonNull String isa, boolean isInDalvikCache) {
+    private static ArtifactsPath buildArtifactsPath(@NonNull String dexPath, @NonNull String isa,
+            boolean isInDalvikCache, boolean isPreReboot) {
         var artifactsPath = new ArtifactsPath();
         artifactsPath.dexPath = dexPath;
         artifactsPath.isa = isa;
         artifactsPath.isInDalvikCache = isInDalvikCache;
+        artifactsPath.isPreReboot = isPreReboot;
         return artifactsPath;
+    }
+
+    @NonNull
+    public static ArtifactsPath buildArtifactsPathAsInput(
+            @NonNull String dexPath, @NonNull String isa, boolean isInDalvikCache) {
+        // The callers expect artifacts to be used as inputs, so we should always pick the
+        // non-Pre-reboot ones.
+        return buildArtifactsPath(dexPath, isa, isInDalvikCache, false /* isPreReboot */);
     }
 
     @NonNull
@@ -78,34 +87,41 @@ public final class AidlUtils {
 
     @NonNull
     public static OutputArtifacts buildOutputArtifacts(@NonNull String dexPath, @NonNull String isa,
-            boolean isInDalvikCache, @NonNull PermissionSettings permissionSettings) {
+            boolean isInDalvikCache, @NonNull PermissionSettings permissionSettings,
+            boolean isPreReboot) {
         var outputArtifacts = new OutputArtifacts();
-        outputArtifacts.artifactsPath = buildArtifactsPath(dexPath, isa, isInDalvikCache);
+        outputArtifacts.artifactsPath =
+                buildArtifactsPath(dexPath, isa, isInDalvikCache, isPreReboot);
         outputArtifacts.permissionSettings = permissionSettings;
         return outputArtifacts;
     }
 
     @NonNull
-    public static PrimaryRefProfilePath buildPrimaryRefProfilePath(
-            @NonNull String packageName, @NonNull String profileName) {
+    private static PrimaryRefProfilePath buildPrimaryRefProfilePath(
+            @NonNull String packageName, @NonNull String profileName, boolean isPreReboot) {
         var primaryRefProfilePath = new PrimaryRefProfilePath();
         primaryRefProfilePath.packageName = packageName;
         primaryRefProfilePath.profileName = profileName;
+        primaryRefProfilePath.isPreReboot = isPreReboot;
         return primaryRefProfilePath;
     }
 
     @NonNull
-    public static SecondaryRefProfilePath buildSecondaryRefProfilePath(@NonNull String dexPath) {
+    private static SecondaryRefProfilePath buildSecondaryRefProfilePath(
+            @NonNull String dexPath, boolean isPreReboot) {
         var secondaryRefProfilePath = new SecondaryRefProfilePath();
         secondaryRefProfilePath.dexPath = dexPath;
+        secondaryRefProfilePath.isPreReboot = isPreReboot;
         return secondaryRefProfilePath;
     }
 
     @NonNull
-    public static ProfilePath buildProfilePathForPrimaryRef(
+    public static ProfilePath buildProfilePathForPrimaryRefAsInput(
             @NonNull String packageName, @NonNull String profileName) {
+        // The callers expect a profile to be used as an input, so we should always pick the
+        // non-Pre-reboot one.
         return ProfilePath.primaryRefProfilePath(
-                buildPrimaryRefProfilePath(packageName, profileName));
+                buildPrimaryRefProfilePath(packageName, profileName, false /* isPreReboot */));
     }
 
     @NonNull
@@ -131,8 +147,11 @@ public final class AidlUtils {
     }
 
     @NonNull
-    public static ProfilePath buildProfilePathForSecondaryRef(@NonNull String dexPath) {
-        return ProfilePath.secondaryRefProfilePath(buildSecondaryRefProfilePath(dexPath));
+    public static ProfilePath buildProfilePathForSecondaryRefAsInput(@NonNull String dexPath) {
+        // The callers expect a profile to be used as an input, so we should always pick the
+        // non-Pre-reboot one.
+        return ProfilePath.secondaryRefProfilePath(
+                buildSecondaryRefProfilePath(dexPath, false /* isPreReboot */));
     }
 
     @NonNull
@@ -156,18 +175,18 @@ public final class AidlUtils {
 
     @NonNull
     public static OutputProfile buildOutputProfileForPrimary(@NonNull String packageName,
-            @NonNull String profileName, int uid, int gid, boolean isPublic) {
-        return buildOutputProfile(WritableProfilePath.forPrimary(
-                                          buildPrimaryRefProfilePath(packageName, profileName)),
+            @NonNull String profileName, int uid, int gid, boolean isPublic, boolean isPreReboot) {
+        return buildOutputProfile(WritableProfilePath.forPrimary(buildPrimaryRefProfilePath(
+                                          packageName, profileName, isPreReboot)),
                 uid, gid, isPublic);
     }
 
     @NonNull
     public static OutputProfile buildOutputProfileForSecondary(
-            @NonNull String dexPath, int uid, int gid, boolean isPublic) {
-        return buildOutputProfile(
-                WritableProfilePath.forSecondary(buildSecondaryRefProfilePath(dexPath)), uid, gid,
-                isPublic);
+            @NonNull String dexPath, int uid, int gid, boolean isPublic, boolean isPreReboot) {
+        return buildOutputProfile(WritableProfilePath.forSecondary(
+                                          buildSecondaryRefProfilePath(dexPath, isPreReboot)),
+                uid, gid, isPublic);
     }
 
     @NonNull
@@ -190,13 +209,15 @@ public final class AidlUtils {
 
     @NonNull
     public static String toString(@NonNull PrimaryRefProfilePath profile) {
-        return String.format("PrimaryRefProfilePath[packageName = %s, profileName = %s]",
-                profile.packageName, profile.profileName);
+        return String.format(
+                "PrimaryRefProfilePath[packageName = %s, profileName = %s, isPreReboot = %b]",
+                profile.packageName, profile.profileName, profile.isPreReboot);
     }
 
     @NonNull
     public static String toString(@NonNull SecondaryRefProfilePath profile) {
-        return String.format("SecondaryRefProfilePath[dexPath = %s]", profile.dexPath);
+        return String.format("SecondaryRefProfilePath[dexPath = %s, isPreReboot = %b]",
+                profile.dexPath, profile.isPreReboot);
     }
 
     @NonNull
