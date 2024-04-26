@@ -1,2 +1,5 @@
 AppImageClass
 NonAppImageClass
+SecondaryAppImageClass
+SecondaryNonAppImageClass
+SecondaryClassWithUnmetDependency

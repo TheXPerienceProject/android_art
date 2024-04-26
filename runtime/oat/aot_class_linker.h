@@ -35,6 +35,8 @@ class AotClassLinker : public ClassLinker {
   explicit AotClassLinker(InternTable *intern_table);
   ~AotClassLinker();
 
+  EXPORT static void SetAppImageDexFiles(const std::vector<const DexFile*>* app_image_dex_files);
+
   EXPORT static bool CanReferenceInBootImageExtensionOrAppImage(
       ObjPtr<mirror::Class> klass, gc::Heap* heap) REQUIRES_SHARED(Locks::mutator_lock_);
 

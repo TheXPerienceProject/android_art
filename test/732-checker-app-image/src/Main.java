@@ -14,14 +14,39 @@
  * limitations under the License.
  */
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+
 public class Main {
-    public static void main(String args[]) {
+    public static String TEST_NAME = "732-checker-app-image";
+
+    public static ClassLoader getSecondaryClassLoader() throws Exception {
+        String location = System.getenv("DEX_LOCATION");
+        try {
+            Class<?> class_loader_class = Class.forName("dalvik.system.PathClassLoader");
+            Constructor<?> ctor =
+                    class_loader_class.getConstructor(String.class, ClassLoader.class);
+            return (ClassLoader) ctor.newInstance(location + "/" + TEST_NAME + "-ex.jar",
+                                                  Main.class.getClassLoader());
+        } catch (ClassNotFoundException e) {
+            // Running on RI. Use URLClassLoader.
+            return new java.net.URLClassLoader(
+                    new java.net.URL[] { new java.net.URL("file://" + location + "/classes-ex/") });
+        }
+    }
+
+    public static void main(String args[]) throws Exception {
         System.out.println($noinline$getAppImageClass().getName());
         System.out.println($noinline$getNonAppImageClass().getName());
 
         $noinline$callAppImageClassNop();
         $noinline$callAppImageClassWithClinitNop();
         $noinline$callNonAppImageClassNop();
+
+        ClassLoader secondaryLoader = getSecondaryClassLoader();
+        Class<?> secondaryClass = Class.forName("Secondary", true, secondaryLoader);
+        Method secondaryMain = secondaryClass.getMethod("main");
+        secondaryMain.invoke(null);
     }
 
     /// CHECK-START: java.lang.Class Main.$noinline$getAppImageClass() builder (after)
