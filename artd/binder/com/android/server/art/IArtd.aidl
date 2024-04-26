@@ -27,12 +27,16 @@ interface IArtd {
      * Note that this method doesn't delete runtime artifacts. To delete them, call
      * `deleteRuntimeArtifacts`.
      *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */
     long deleteArtifacts(in com.android.server.art.ArtifactsPath artifactsPath);
 
     /**
      * Returns the dexopt status of a dex file.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
      *
      * Throws fatal and non-fatal errors.
      */
@@ -177,6 +181,8 @@ interface IArtd {
      * kept. For each entry in `vdexFilesToKeep`, only the VDEX file will be kept. Note that VDEX
      * files included in `artifactsToKeep` don't have to be listed in `vdexFilesToKeep`.
      *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */
     long cleanup(in List<com.android.server.art.ProfilePath> profilesToKeep,
@@ -195,6 +201,8 @@ interface IArtd {
     /**
      * Deletes runtime artifacts and returns the released space, in bytes.
      *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */
     long deleteRuntimeArtifacts(
@@ -204,6 +212,8 @@ interface IArtd {
      * Returns the size of the dexopt artifacts, in bytes, or 0 if they don't exist or a non-fatal
      * error occurred.
      *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */
     long getArtifactsSize(in com.android.server.art.ArtifactsPath artifactsPath);
@@ -212,6 +222,8 @@ interface IArtd {
      * Returns the size of the vdex file, in bytes, or 0 if it doesn't exist or a non-fatal error
      * occurred.
      *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */
     long getVdexFileSize(in com.android.server.art.VdexPath vdexPath);
@@ -219,6 +231,8 @@ interface IArtd {
     /**
      * Returns the size of the runtime artifacts, in bytes, or 0 if they don't exist or a non-fatal
      * error occurred.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
      *
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */
@@ -230,6 +244,8 @@ interface IArtd {
      * occurred.
      *
      * Operates on the whole DM file if given one.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
      *
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */

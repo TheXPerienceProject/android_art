@@ -148,16 +148,16 @@ public class PrimaryDexopter extends Dexopter<DetailedPrimaryDexInfo> {
 
     @Override
     @NonNull
-    protected ProfilePath buildRefProfilePath(@NonNull DetailedPrimaryDexInfo dexInfo) {
-        return PrimaryDexUtils.buildRefProfilePath(mPkgState, dexInfo);
+    protected ProfilePath buildRefProfilePathAsInput(@NonNull DetailedPrimaryDexInfo dexInfo) {
+        return PrimaryDexUtils.buildRefProfilePathAsInput(mPkgState, dexInfo);
     }
 
     @Override
     @NonNull
     protected OutputProfile buildOutputProfile(
             @NonNull DetailedPrimaryDexInfo dexInfo, boolean isPublic) {
-        return PrimaryDexUtils.buildOutputProfile(
-                mPkgState, dexInfo, Process.SYSTEM_UID, mSharedGid, isPublic);
+        return PrimaryDexUtils.buildOutputProfile(mPkgState, dexInfo, Process.SYSTEM_UID,
+                mSharedGid, isPublic, mInjector.isPreReboot());
     }
 
     @Override
