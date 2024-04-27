@@ -743,12 +743,14 @@ public final class ArtManagerLocal {
 
             List<ProfilePath> profiles = new ArrayList<>();
 
+            // Doesn't support Pre-reboot.
             InitProfileResult result = Utils.getOrInitReferenceProfile(mInjector.getArtd(),
-                    dexInfo.dexPath(), PrimaryDexUtils.buildRefProfilePath(pkgState, dexInfo),
+                    dexInfo.dexPath(),
+                    PrimaryDexUtils.buildRefProfilePathAsInput(pkgState, dexInfo),
                     PrimaryDexUtils.getExternalProfiles(dexInfo),
                     dmInfo.config().getEnableEmbeddedProfile(),
                     PrimaryDexUtils.buildOutputProfile(pkgState, dexInfo, Process.SYSTEM_UID,
-                            Process.SYSTEM_UID, false /* isPublic */));
+                            Process.SYSTEM_UID, false /* isPublic */, false /* isPreReboot */));
             if (!result.externalProfileErrors().isEmpty()) {
                 Log.e(TAG,
                         "Error occurred when initializing from external profiles: "
@@ -764,8 +766,10 @@ public final class ArtManagerLocal {
             profiles.addAll(
                     PrimaryDexUtils.getCurProfiles(mInjector.getUserManager(), pkgState, dexInfo));
 
-            OutputProfile output = PrimaryDexUtils.buildOutputProfile(pkgState, dexInfo,
-                    Process.SYSTEM_UID, Process.SYSTEM_UID, false /* isPublic */);
+            // Doesn't support Pre-reboot.
+            OutputProfile output =
+                    PrimaryDexUtils.buildOutputProfile(pkgState, dexInfo, Process.SYSTEM_UID,
+                            Process.SYSTEM_UID, false /* isPublic */, false /* isPreReboot */);
 
             try {
                 return mergeProfilesAndGetFd(profiles, output, List.of(dexInfo.dexPath()), options);
@@ -805,7 +809,7 @@ public final class ArtManagerLocal {
         List<ProfilePath> profiles = new ArrayList<>();
 
         // System server profiles.
-        profiles.add(AidlUtils.buildProfilePathForPrimaryRef(
+        profiles.add(AidlUtils.buildProfilePathForPrimaryRefAsInput(
                 Utils.PLATFORM_PACKAGE_NAME, PrimaryDexUtils.PROFILE_PRIMARY));
         for (UserHandle handle :
                 mInjector.getUserManager().getUserHandles(true /* excludeDying */)) {
@@ -825,9 +829,10 @@ public final class ArtManagerLocal {
             }
         });
 
+        // Doesn't support Pre-reboot.
         OutputProfile output = AidlUtils.buildOutputProfileForPrimary(Utils.PLATFORM_PACKAGE_NAME,
                 PrimaryDexUtils.PROFILE_PRIMARY, Process.SYSTEM_UID, Process.SYSTEM_UID,
-                false /* isPublic */);
+                false /* isPublic */, false /* isPreReboot */);
 
         List<String> dexPaths = Arrays.stream(CLASSPATHS_FOR_BOOT_IMAGE_PROFILE)
                                         .map(envVar -> Constants.getenv(envVar))
