@@ -461,11 +461,13 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
                          DataType::Type type2);
 
   bool InstanceOfNeedsReadBarrier(HInstanceOf* instance_of) {
-    // Used only for kExactCheck, kAbstractClassCheck, kClassHierarchyCheck and kArrayObjectCheck.
+    // Used only for `kExactCheck`, `kAbstractClassCheck`, `kClassHierarchyCheck`,
+    // `kArrayObjectCheck` and `kInterfaceCheck`.
     DCHECK(instance_of->GetTypeCheckKind() == TypeCheckKind::kExactCheck ||
            instance_of->GetTypeCheckKind() == TypeCheckKind::kAbstractClassCheck ||
            instance_of->GetTypeCheckKind() == TypeCheckKind::kClassHierarchyCheck ||
-           instance_of->GetTypeCheckKind() == TypeCheckKind::kArrayObjectCheck)
+           instance_of->GetTypeCheckKind() == TypeCheckKind::kArrayObjectCheck ||
+           instance_of->GetTypeCheckKind() == TypeCheckKind::kInterfaceCheck)
         << instance_of->GetTypeCheckKind();
     // If the target class is in the boot or app image, it's non-moveable and it doesn't matter
     // if we compare it with a from-space or to-space reference, the result is the same.
