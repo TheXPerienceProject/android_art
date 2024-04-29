@@ -975,7 +975,7 @@ bool OatFileBase::Setup(int zip_fd,
     const IndexBssMapping* public_type_bss_mapping;
     const IndexBssMapping* package_type_bss_mapping;
     const IndexBssMapping* string_bss_mapping;
-    const IndexBssMapping* method_type_bss_mapping = nullptr;
+    const IndexBssMapping* method_type_bss_mapping;
     auto read_index_bss_mapping = [&](const char* tag, /*out*/const IndexBssMapping** mapping) {
       return ReadIndexBssMapping(&oat, i, dex_file_location, tag, mapping, error_msg);
     };
@@ -1063,7 +1063,8 @@ bool OatFileBase::Setup(int zip_fd,
           !read_index_bss_mapping("type", &bcp_bss_info_[i].type_bss_mapping) ||
           !read_index_bss_mapping("public type", &bcp_bss_info_[i].public_type_bss_mapping) ||
           !read_index_bss_mapping("package type", &bcp_bss_info_[i].package_type_bss_mapping) ||
-          !read_index_bss_mapping("string", &bcp_bss_info_[i].string_bss_mapping)) {
+          !read_index_bss_mapping("string", &bcp_bss_info_[i].string_bss_mapping) ||
+          !read_index_bss_mapping("method type", &bcp_bss_info_[i].method_type_bss_mapping)) {
         return false;
       }
     }
