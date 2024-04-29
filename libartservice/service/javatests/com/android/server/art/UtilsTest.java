@@ -151,7 +151,7 @@ public class UtilsTest {
         Utils.getAllAbis(pkgState);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testGetAllAbisUnsupportedTranslation() {
         lenient().when(SystemProperties.get(eq("ro.dalvik.vm.isa.x86_64"))).thenReturn("");
 
@@ -159,7 +159,9 @@ public class UtilsTest {
         when(pkgState.getPrimaryCpuAbi()).thenReturn("x86_64");
         when(pkgState.getSecondaryCpuAbi()).thenReturn(null);
 
-        Utils.getAllAbis(pkgState);
+        when(Constants.getPreferredAbi()).thenReturn("armeabi-v7a");
+        assertThat(Utils.getAllAbis(pkgState))
+                .containsExactly(Utils.Abi.create("armeabi-v7a", "arm", true /* isPrimaryAbi */));
     }
 
     @Test
