@@ -195,11 +195,18 @@ class OatFileBase : public OatFile {
  private:
   std::string ErrorPrintf(const char* fmt, ...) __attribute__((__format__(__printf__, 2, 3)));
   bool ReadIndexBssMapping(/*inout*/const uint8_t** oat,
+                           const char* container_tag,
                            size_t dex_file_index,
                            const std::string& dex_file_location,
-                           const char* tag,
+                           const char* entry_tag,
                            /*out*/const IndexBssMapping** mapping,
                            std::string* error_msg);
+  bool ReadBssMappingInfo(/*inout*/const uint8_t** oat,
+                          const char* container_tag,
+                          size_t dex_file_index,
+                          const std::string& dex_file_location,
+                          /*out*/BssMappingInfo* bss_mapping_info,
+                          std::string* error_msg);
 
   DISALLOW_COPY_AND_ASSIGN(OatFileBase);
 };
@@ -434,17 +441,19 @@ std::string OatFileBase::ErrorPrintf(const char* fmt, ...) {
 }
 
 bool OatFileBase::ReadIndexBssMapping(/*inout*/const uint8_t** oat,
+                                      const char* container_tag,
                                       size_t dex_file_index,
                                       const std::string& dex_file_location,
-                                      const char* tag,
+                                      const char* entry_tag,
                                       /*out*/const IndexBssMapping** mapping,
                                       std::string* error_msg) {
   uint32_t index_bss_mapping_offset;
   if (UNLIKELY(!ReadOatDexFileData(*this, oat, &index_bss_mapping_offset))) {
-    *error_msg = ErrorPrintf("OatDexFile #%zd for '%s' truncated after %s bss mapping offset",
+    *error_msg = ErrorPrintf("%s #%zd for '%s' truncated, missing %s bss mapping offset",
+                             container_tag,
                              dex_file_index,
                              dex_file_location.c_str(),
-                             tag);
+                             entry_tag);
     return false;
   }
   const bool readable_index_bss_mapping_size =
@@ -460,11 +469,12 @@ bool OatFileBase::ReadIndexBssMapping(/*inout*/const uint8_t** oat,
           UNLIKELY(index_bss_mapping->size() == 0u) ||
           UNLIKELY(Size() - index_bss_mapping_offset <
                    IndexBssMapping::ComputeSize(index_bss_mapping->size())))) {
-    *error_msg = ErrorPrintf("OatDexFile #%zu for '%s' with unaligned or "
+    *error_msg = ErrorPrintf("%s #%zu for '%s' with unaligned or "
                                  "truncated %s bss mapping, offset %u of %zu, length %zu",
+                             container_tag,
                              dex_file_index,
                              dex_file_location.c_str(),
-                             tag,
+                             entry_tag,
                              index_bss_mapping_offset,
                              Size(),
                              index_bss_mapping != nullptr ? index_bss_mapping->size() : 0u);
@@ -473,6 +483,24 @@ bool OatFileBase::ReadIndexBssMapping(/*inout*/const uint8_t** oat,
 
   *mapping = index_bss_mapping;
   return true;
+}
+
+bool OatFileBase::ReadBssMappingInfo(/*inout*/const uint8_t** oat,
+                                     const char* container_tag,
+                                     size_t dex_file_index,
+                                     const std::string& dex_file_location,
+                                     /*out*/BssMappingInfo* bss_mapping_info,
+                                     std::string* error_msg) {
+  auto read_index_bss_mapping = [&](const char* tag, /*out*/const IndexBssMapping** mapping) {
+    return ReadIndexBssMapping(
+        oat, container_tag, dex_file_index, dex_file_location, tag, mapping, error_msg);
+  };
+  return read_index_bss_mapping("method", &bss_mapping_info->method_bss_mapping) &&
+         read_index_bss_mapping("type", &bss_mapping_info->type_bss_mapping) &&
+         read_index_bss_mapping("public type", &bss_mapping_info->public_type_bss_mapping) &&
+         read_index_bss_mapping("package type", &bss_mapping_info->package_type_bss_mapping) &&
+         read_index_bss_mapping("string", &bss_mapping_info->string_bss_mapping) &&
+         read_index_bss_mapping("method type", &bss_mapping_info->method_type_bss_mapping);
 }
 
 static bool ComputeAndCheckTypeLookupTableData(const DexFile::Header& header,
@@ -970,21 +998,9 @@ bool OatFileBase::Setup(int zip_fd,
         ? reinterpret_cast<const DexLayoutSections*>(Begin() + dex_layout_sections_offset)
         : nullptr;
 
-    const IndexBssMapping* method_bss_mapping;
-    const IndexBssMapping* type_bss_mapping;
-    const IndexBssMapping* public_type_bss_mapping;
-    const IndexBssMapping* package_type_bss_mapping;
-    const IndexBssMapping* string_bss_mapping;
-    const IndexBssMapping* method_type_bss_mapping;
-    auto read_index_bss_mapping = [&](const char* tag, /*out*/const IndexBssMapping** mapping) {
-      return ReadIndexBssMapping(&oat, i, dex_file_location, tag, mapping, error_msg);
-    };
-    if (!read_index_bss_mapping("method", &method_bss_mapping) ||
-        !read_index_bss_mapping("type", &type_bss_mapping) ||
-        !read_index_bss_mapping("public type", &public_type_bss_mapping) ||
-        !read_index_bss_mapping("package type", &package_type_bss_mapping) ||
-        !read_index_bss_mapping("string", &string_bss_mapping) ||
-        !read_index_bss_mapping("method type", &method_type_bss_mapping)) {
+    BssMappingInfo bss_mapping_info;
+    if (!ReadBssMappingInfo(
+            &oat, "OatDexFile", i, dex_file_location, &bss_mapping_info, error_msg)) {
       return false;
     }
 
@@ -999,12 +1015,7 @@ bool OatFileBase::Setup(int zip_fd,
                        dex_file_container,
                        dex_file_pointer,
                        lookup_table_data,
-                       method_bss_mapping,
-                       type_bss_mapping,
-                       public_type_bss_mapping,
-                       package_type_bss_mapping,
-                       string_bss_mapping,
-                       method_type_bss_mapping,
+                       bss_mapping_info,
                        class_offsets_pointer,
                        dex_layout_sections);
     oat_dex_files_storage_.push_back(oat_dex_file);
@@ -1053,18 +1064,11 @@ bool OatFileBase::Setup(int zip_fd,
     // At runtime, there might be more DexFiles added to the BCP that we didn't compile with.
     // We only care about the ones in [0..number_of_bcp_dexfiles).
     for (size_t i = 0, size = number_of_bcp_dexfiles; i != size; ++i) {
-      const std::string& dex_file_location = linker != nullptr ?
-                                                 linker->GetBootClassPath()[i]->GetLocation() :
-                                                 "No runtime/linker therefore no DexFile location";
-      auto read_index_bss_mapping = [&](const char* tag, /*out*/const IndexBssMapping** mapping) {
-        return ReadIndexBssMapping(&bcp_info_begin, i, dex_file_location, tag, mapping, error_msg);
-      };
-      if (!read_index_bss_mapping("method", &bcp_bss_info_[i].method_bss_mapping) ||
-          !read_index_bss_mapping("type", &bcp_bss_info_[i].type_bss_mapping) ||
-          !read_index_bss_mapping("public type", &bcp_bss_info_[i].public_type_bss_mapping) ||
-          !read_index_bss_mapping("package type", &bcp_bss_info_[i].package_type_bss_mapping) ||
-          !read_index_bss_mapping("string", &bcp_bss_info_[i].string_bss_mapping) ||
-          !read_index_bss_mapping("method type", &bcp_bss_info_[i].method_type_bss_mapping)) {
+      const std::string& dex_file_location = linker != nullptr
+          ? linker->GetBootClassPath()[i]->GetLocation()
+          : "No runtime/linker therefore no DexFile location";
+      if (!ReadBssMappingInfo(
+              &bcp_info_begin, "BcpBssInfo", i, dex_file_location, &bcp_bss_info_[i], error_msg)) {
         return false;
       }
     }
@@ -2143,12 +2147,7 @@ OatDexFile::OatDexFile(const OatFile* oat_file,
                        const std::shared_ptr<DexFileContainer>& dex_file_container,
                        const uint8_t* dex_file_pointer,
                        const uint8_t* lookup_table_data,
-                       const IndexBssMapping* method_bss_mapping_data,
-                       const IndexBssMapping* type_bss_mapping_data,
-                       const IndexBssMapping* public_type_bss_mapping_data,
-                       const IndexBssMapping* package_type_bss_mapping_data,
-                       const IndexBssMapping* string_bss_mapping_data,
-                       const IndexBssMapping* method_type_bss_mapping_data,
+                       const OatFile::BssMappingInfo& bss_mapping_info,
                        const uint32_t* oat_class_offsets_pointer,
                        const DexLayoutSections* dex_layout_sections)
     : oat_file_(oat_file),
@@ -2160,12 +2159,7 @@ OatDexFile::OatDexFile(const OatFile* oat_file,
       dex_file_container_(dex_file_container),
       dex_file_pointer_(dex_file_pointer),
       lookup_table_data_(lookup_table_data),
-      method_bss_mapping_(method_bss_mapping_data),
-      type_bss_mapping_(type_bss_mapping_data),
-      public_type_bss_mapping_(public_type_bss_mapping_data),
-      package_type_bss_mapping_(package_type_bss_mapping_data),
-      string_bss_mapping_(string_bss_mapping_data),
-      method_type_bss_mapping_(method_type_bss_mapping_data),
+      bss_mapping_info_(bss_mapping_info),
       oat_class_offsets_pointer_(oat_class_offsets_pointer),
       lookup_table_(),
       dex_layout_sections_(dex_layout_sections) {

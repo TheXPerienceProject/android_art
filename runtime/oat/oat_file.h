@@ -555,27 +555,27 @@ class OatDexFile final {
   }
 
   const IndexBssMapping* GetMethodBssMapping() const {
-    return method_bss_mapping_;
+    return bss_mapping_info_.method_bss_mapping;
   }
 
   const IndexBssMapping* GetTypeBssMapping() const {
-    return type_bss_mapping_;
+    return bss_mapping_info_.type_bss_mapping;
   }
 
   const IndexBssMapping* GetPublicTypeBssMapping() const {
-    return public_type_bss_mapping_;
+    return bss_mapping_info_.public_type_bss_mapping;
   }
 
   const IndexBssMapping* GetPackageTypeBssMapping() const {
-    return package_type_bss_mapping_;
+    return bss_mapping_info_.package_type_bss_mapping;
   }
 
   const IndexBssMapping* GetStringBssMapping() const {
-    return string_bss_mapping_;
+    return bss_mapping_info_.string_bss_mapping;
   }
 
   const IndexBssMapping* GetMethodTypeBssMapping() const {
-    return method_type_bss_mapping_;
+    return bss_mapping_info_.method_type_bss_mapping;
   }
 
   const uint8_t* GetDexFilePointer() const {
@@ -612,12 +612,7 @@ class OatDexFile final {
              const std::shared_ptr<DexFileContainer>& dex_file_container_,
              const uint8_t* dex_file_pointer,
              const uint8_t* lookup_table_data,
-             const IndexBssMapping* method_bss_mapping,
-             const IndexBssMapping* type_bss_mapping,
-             const IndexBssMapping* public_type_bss_mapping,
-             const IndexBssMapping* package_type_bss_mapping,
-             const IndexBssMapping* string_bss_mapping,
-             const IndexBssMapping* method_type_bss_mapping,
+             const OatFile::BssMappingInfo& bss_mapping_info,
              const uint32_t* oat_class_offsets_pointer,
              const DexLayoutSections* dex_layout_sections);
 
@@ -647,12 +642,7 @@ class OatDexFile final {
   const std::shared_ptr<DexFileContainer> dex_file_container_;
   const uint8_t* const dex_file_pointer_ = nullptr;
   const uint8_t* const lookup_table_data_ = nullptr;
-  const IndexBssMapping* const method_bss_mapping_ = nullptr;
-  const IndexBssMapping* const type_bss_mapping_ = nullptr;
-  const IndexBssMapping* const public_type_bss_mapping_ = nullptr;
-  const IndexBssMapping* const package_type_bss_mapping_ = nullptr;
-  const IndexBssMapping* const string_bss_mapping_ = nullptr;
-  const IndexBssMapping* const method_type_bss_mapping_ = nullptr;
+  const OatFile::BssMappingInfo bss_mapping_info_;
   const uint32_t* const oat_class_offsets_pointer_ = nullptr;
   TypeLookupTable lookup_table_;
   const DexLayoutSections* const dex_layout_sections_ = nullptr;
