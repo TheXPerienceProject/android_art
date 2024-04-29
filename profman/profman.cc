@@ -1329,6 +1329,10 @@ class ProfMan final {
       // Class not in dex-file.
       return std::nullopt;
     }
+    if (dex->GetClassData(*def) == nullptr) {
+      // Class has no fields or methods.
+      return std::nullopt;
+    }
     if (LIKELY(dex->GetCodeItemOffset(*def, method_index).has_value())) {
       return ClassMethodReference{class_ref, method_index};
     }

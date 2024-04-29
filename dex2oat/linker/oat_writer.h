@@ -431,7 +431,8 @@ class OatWriter {
   // The offset of the GC roots in .bss section.
   size_t bss_roots_offset_;
 
-  // OatFile's information regarding the bss metadata for BCP DexFiles. Empty for multi-image.
+  // OatFile's information regarding the bss metadata for BCP DexFiles. Empty for boot image
+  // compiles.
   std::vector<BssMappingInfo> bcp_bss_info_;
 
   // Map for allocating boot image .data.img.rel.ro entries. Indexed by the boot image offset

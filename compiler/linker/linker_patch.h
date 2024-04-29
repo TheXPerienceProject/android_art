@@ -25,6 +25,9 @@
 #include "base/bit_utils.h"
 #include "base/macros.h"
 #include "dex/method_reference.h"
+#include "dex/proto_reference.h"
+#include "dex/string_reference.h"
+#include "dex/type_reference.h"
 
 namespace art HIDDEN {
 
@@ -236,42 +239,23 @@ class LinkerPatch {
     return MethodReference(target_dex_file_, method_idx_);
   }
 
-  const DexFile* TargetTypeDexFile() const {
+  TypeReference TargetType() const {
     DCHECK(patch_type_ == Type::kTypeRelative ||
            patch_type_ == Type::kTypeBssEntry ||
            patch_type_ == Type::kPublicTypeBssEntry ||
            patch_type_ == Type::kPackageTypeBssEntry);
-    return target_dex_file_;
+    return TypeReference(target_dex_file_, dex::TypeIndex(type_idx_));
   }
 
-  dex::TypeIndex TargetTypeIndex() const {
-    DCHECK(patch_type_ == Type::kTypeRelative ||
-           patch_type_ == Type::kTypeBssEntry ||
-           patch_type_ == Type::kPublicTypeBssEntry ||
-           patch_type_ == Type::kPackageTypeBssEntry);
-    return dex::TypeIndex(type_idx_);
-  }
-
-  const DexFile* TargetStringDexFile() const {
+  StringReference TargetString() const {
     DCHECK(patch_type_ == Type::kStringRelative ||
            patch_type_ == Type::kStringBssEntry);
-    return target_dex_file_;
+    return StringReference(target_dex_file_, dex::StringIndex(string_idx_));
   }
 
-  dex::StringIndex TargetStringIndex() const {
-    DCHECK(patch_type_ == Type::kStringRelative ||
-           patch_type_ == Type::kStringBssEntry);
-    return dex::StringIndex(string_idx_);
-  }
-
-  const DexFile* TargetProtoDexFile() const {
+  ProtoReference TargetProto() const {
     DCHECK(patch_type_ == Type::kMethodTypeBssEntry);
-    return target_dex_file_;
-  }
-
-  dex::ProtoIndex TargetProtoIndex() const {
-    DCHECK(patch_type_ == Type::kMethodTypeBssEntry);
-    return dex::ProtoIndex(proto_idx_);
+    return ProtoReference(target_dex_file_, dex::ProtoIndex(proto_idx_));
   }
 
   uint32_t PcInsnOffset() const {

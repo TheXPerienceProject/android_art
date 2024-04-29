@@ -426,8 +426,7 @@ class JitCodeCache {
   void AddZombieCode(ArtMethod* method, const void* code_ptr) NO_THREAD_SAFETY_ANALYSIS;
 
   EXPORT void DoCollection(Thread* self)
-      REQUIRES(!Locks::jit_lock_)
-      REQUIRES_SHARED(!Locks::mutator_lock_);
+      REQUIRES(!Locks::jit_lock_);
 
  private:
   JitCodeCache();
@@ -485,11 +484,12 @@ class JitCodeCache {
   bool IsAtMaxCapacity() const REQUIRES(Locks::jit_lock_);
 
   void RemoveUnmarkedCode(Thread* self)
-      REQUIRES(!Locks::jit_lock_);
+      REQUIRES(!Locks::jit_lock_)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   void MarkCompiledCodeOnThreadStacks(Thread* self)
       REQUIRES(!Locks::jit_lock_)
-      REQUIRES_SHARED(!Locks::mutator_lock_);
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   CodeCacheBitmap* GetLiveBitmap() const {
     return live_bitmap_.get();
