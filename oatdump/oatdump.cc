@@ -550,7 +550,8 @@ class OatDumper {
                         oat_dex_file->GetTypeBssMapping(),
                         oat_dex_file->GetPublicTypeBssMapping(),
                         oat_dex_file->GetPackageTypeBssMapping(),
-                        oat_dex_file->GetStringBssMapping());
+                        oat_dex_file->GetStringBssMapping(),
+                        oat_dex_file->GetMethodTypeBssMapping());
       }
     }
 
@@ -574,7 +575,8 @@ class OatDumper {
                           oat_file_.bcp_bss_info_[i].type_bss_mapping,
                           oat_file_.bcp_bss_info_[i].public_type_bss_mapping,
                           oat_file_.bcp_bss_info_[i].package_type_bss_mapping,
-                          oat_file_.bcp_bss_info_[i].string_bss_mapping);
+                          oat_file_.bcp_bss_info_[i].string_bss_mapping,
+                          oat_file_.bcp_bss_info_[i].method_type_bss_mapping);
         }
       } else {
         // We don't have a runtime, just dump the offsets
@@ -585,6 +587,7 @@ class OatDumper {
           DumpBssOffsets(os, "Public Class", oat_file_.bcp_bss_info_[i].public_type_bss_mapping);
           DumpBssOffsets(os, "Package Class", oat_file_.bcp_bss_info_[i].package_type_bss_mapping);
           DumpBssOffsets(os, "String", oat_file_.bcp_bss_info_[i].string_bss_mapping);
+          DumpBssOffsets(os, "MethodType", oat_file_.bcp_bss_info_[i].method_type_bss_mapping);
         }
       }
     }
@@ -1741,7 +1744,8 @@ class OatDumper {
                        const IndexBssMapping* type_bss_mapping,
                        const IndexBssMapping* public_type_bss_mapping,
                        const IndexBssMapping* package_type_bss_mapping,
-                       const IndexBssMapping* string_bss_mapping) {
+                       const IndexBssMapping* string_bss_mapping,
+                       const IndexBssMapping* method_type_bss_mapping) {
     DumpBssEntries(os,
                    "ArtMethod",
                    method_bss_mapping,
@@ -1773,6 +1777,15 @@ class OatDumper {
         dex_file->NumStringIds(),
         sizeof(GcRoot<mirror::Class>),
         [=](uint32_t index) { return dex_file->GetStringData(dex::StringIndex(index)); });
+    DumpBssEntries(os,
+                   "MethodType",
+                   method_type_bss_mapping,
+                   dex_file->NumProtoIds(),
+                   sizeof(GcRoot<mirror::MethodType>),
+                   [=](uint32_t index) {
+                     const dex::ProtoId& proto_id = dex_file->GetProtoId(dex::ProtoIndex(index));
+                     return dex_file->GetProtoSignature(proto_id).ToString();
+                   });
   }
 
   void DumpBssOffsets(std::ostream& os, const char* slot_type, const IndexBssMapping* mapping) {
