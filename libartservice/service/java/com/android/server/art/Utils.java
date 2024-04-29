@@ -196,7 +196,7 @@ public final class Utils {
         throw new IllegalStateException(String.format("Non-native isa '%s'", isa));
     }
 
-    private static boolean isNativeAbi(@NonNull String abiName) {
+    public static boolean isNativeAbi(@NonNull String abiName) {
         return abiName.equals(Constants.getNative64BitAbi())
                 || abiName.equals(Constants.getNative32BitAbi());
     }
