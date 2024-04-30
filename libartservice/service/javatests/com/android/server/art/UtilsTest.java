@@ -154,10 +154,11 @@ public class UtilsTest {
     @Test
     public void testGetAllAbisUnsupportedTranslation() {
         lenient().when(SystemProperties.get(eq("ro.dalvik.vm.isa.x86_64"))).thenReturn("");
+        lenient().when(SystemProperties.get(eq("ro.dalvik.vm.isa.x86"))).thenReturn("");
 
         var pkgState = mock(PackageState.class);
         when(pkgState.getPrimaryCpuAbi()).thenReturn("x86_64");
-        when(pkgState.getSecondaryCpuAbi()).thenReturn(null);
+        when(pkgState.getSecondaryCpuAbi()).thenReturn("x86");
 
         when(Constants.getPreferredAbi()).thenReturn("armeabi-v7a");
         assertThat(Utils.getAllAbis(pkgState))
