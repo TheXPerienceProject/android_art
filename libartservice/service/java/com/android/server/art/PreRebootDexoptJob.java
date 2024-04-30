@@ -29,7 +29,13 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.ArtServiceJobInterface;
 
-/** @hide */
+/**
+ * The Pre-reboot Dexopt job.
+ *
+ * During Pre-reboot Dexopt, the old version of this code is run.
+ *
+ * @hide
+ */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public class PreRebootDexoptJob implements ArtServiceJobInterface {
     private static final String TAG = ArtManagerLocal.TAG;
