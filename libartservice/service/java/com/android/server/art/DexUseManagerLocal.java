@@ -1023,6 +1023,16 @@ public class DexUseManagerLocal {
 
                 var record = new SecondaryDexUseRecord();
                 record.fromProto(recordProto);
+
+                if (!Utils.isNativeAbi(record.mAbiName)) {
+                    // The native ABI set has changed by an OTA since the ABI name was recorded.
+                    Log.i(TAG,
+                            String.format("Ignoring secondary dex use record with non-native ABI "
+                                            + "'%s' for '%s'",
+                                    record.mAbiName, proto.getDexFile()));
+                    continue;
+                }
+
                 mRecordByLoader.put(
                         DexLoader.create(Utils.assertNonEmpty(recordProto.getLoadingPackageName()),
                                 recordProto.getIsolatedProcess()),
