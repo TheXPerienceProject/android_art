@@ -20,8 +20,10 @@ import java.io.FileReader;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.function.Consumer;
+import java.util.Base64;
 
 public class Main {
     static final String DEX_FILE = System.getenv("DEX_LOCATION") + "/141-class-unload-ex.jar";
@@ -61,6 +63,7 @@ public class Main {
             testCopiedAppImageMethodInStackTrace();
             // Test that the runtime uses the right allocator when creating conflict methods.
             testConflictMethod(constructor);
+            testConflictMethod2(constructor);
         } catch (Exception e) {
             e.printStackTrace(System.out);
         }
@@ -330,6 +333,35 @@ public class Main {
         $noinline$callAllMethods(iface);
     }
 
+    private static void $noinline$invokeConflictMethod2(Constructor<?> constructor)
+            throws Exception {
+        // We need three class loaders to expose the issue: the main one with the top super class,
+        // then a second one with the abstract class which we used to wrongly return as an IMT
+        // owner, and the concrete class in a different class loader.
+        Class<?> cls = Class.forName("dalvik.system.InMemoryDexClassLoader");
+        Constructor<?> inMemoryConstructor =
+                cls.getDeclaredConstructor(ByteBuffer.class, ClassLoader.class);
+        ClassLoader inMemoryLoader = (ClassLoader) inMemoryConstructor.newInstance(
+                ByteBuffer.wrap(DEX_BYTES), ClassLoader.getSystemClassLoader());
+        ClassLoader loader = (ClassLoader) constructor.newInstance(
+                DEX_FILE, LIBRARY_SEARCH_PATH, inMemoryLoader);
+        Class<?> impl = loader.loadClass("ConflictImpl2");
+        ConflictIface iface = (ConflictIface) impl.newInstance();
+        $noinline$callAllMethods(iface);
+    }
+
+    private static void testConflictMethod2(Constructor<?> constructor) throws Exception {
+        // Load and unload a few class loaders to force re-use of the native memory where we
+        // used to allocate the conflict table.
+        for (int i = 0; i < 2; i++) {
+            $noinline$invokeConflictMethod2(constructor);
+            doUnloading();
+        }
+        Class<?> impl = Class.forName("ConflictSuper");
+        ConflictIface iface = (ConflictIface) impl.newInstance();
+        $noinline$callAllMethods(iface);
+    }
+
     private static void testCopiedMethodInStackTrace(Constructor<?> constructor) throws Exception {
         Throwable t = $noinline$createStackTraceWithCopiedMethod(constructor);
         doUnloading();
@@ -431,4 +463,23 @@ public class Main {
 
     public static native void stopJit();
     public static native void startJit();
+
+
+    /* Corresponds to:
+     *
+     * public abstract class AbstractClass extends ConflictSuper { }
+     *
+     */
+    private static final byte[] DEX_BYTES = Base64.getDecoder().decode(
+        "ZGV4CjAzNQAOZ0WGvUad/2dEp77oyy9K2tx8txklUZ1wAgAAcAAAAHhWNBIAAAAAAAAAANwBAAAG" +
+        "AAAAcAAAAAMAAACIAAAAAQAAAJQAAAAAAAAAAAAAAAIAAACgAAAAAQAAALAAAACgAQAA0AAAAOwA" +
+        "AAD0AAAACAEAABkBAAAqAQAALQEAAAIAAAADAAAABAAAAAQAAAACAAAAAAAAAAAAAAAAAAAAAQAA" +
+        "AAAAAAAAAAAAAQQAAAEAAAAAAAAAAQAAAAAAAADLAQAAAAAAAAEAAQABAAAA6AAAAAQAAABwEAEA" +
+        "AAAOABEADgAGPGluaXQ+ABJBYnN0cmFjdENsYXNzLmphdmEAD0xBYnN0cmFjdENsYXNzOwAPTENv" +
+        "bmZsaWN0U3VwZXI7AAFWAJsBfn5EOHsiYmFja2VuZCI6ImRleCIsImNvbXBpbGF0aW9uLW1vZGUi" +
+        "OiJkZWJ1ZyIsImhhcy1jaGVja3N1bXMiOmZhbHNlLCJtaW4tYXBpIjoxLCJzaGEtMSI6ImI3MmIx" +
+        "NWJjODQ2N2Y0M2FhNTdlYjk5ZDAyMjU0Nzg5ODYwZjRlOWEiLCJ2ZXJzaW9uIjoiOC41LjEtZGV2" +
+        "In0AAAABAACBgATQAQAAAAAAAAAMAAAAAAAAAAEAAAAAAAAAAQAAAAYAAABwAAAAAgAAAAMAAACI" +
+        "AAAAAwAAAAEAAACUAAAABQAAAAIAAACgAAAABgAAAAEAAACwAAAAASAAAAEAAADQAAAAAyAAAAEA" +
+        "AADoAAAAAiAAAAYAAADsAAAAACAAAAEAAADLAQAAAxAAAAEAAADYAQAAABAAAAEAAADcAQAA");
 }

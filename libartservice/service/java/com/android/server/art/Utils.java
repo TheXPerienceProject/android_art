@@ -196,7 +196,7 @@ public final class Utils {
         throw new IllegalStateException(String.format("Non-native isa '%s'", isa));
     }
 
-    private static boolean isNativeAbi(@NonNull String abiName) {
+    public static boolean isNativeAbi(@NonNull String abiName) {
         return abiName.equals(Constants.getNative64BitAbi())
                 || abiName.equals(Constants.getNative32BitAbi());
     }
@@ -467,6 +467,14 @@ public final class Utils {
     public static boolean isSystemOrRootOrShell() {
         int uid = Binder.getCallingUid();
         return uid == Process.SYSTEM_UID || uid == Process.ROOT_UID || uid == Process.SHELL_UID;
+    }
+
+    public static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Slog.wtf(TAG, "Sleep interrupted", e);
+        }
     }
 
     @AutoValue
