@@ -1641,7 +1641,7 @@ class ParallelCompilationManager {
 static bool SkipClass(jobject class_loader, const DexFile& dex_file, ObjPtr<mirror::Class> klass)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(klass != nullptr);
-  const DexFile& original_dex_file = *klass->GetDexCache()->GetDexFile();
+  const DexFile& original_dex_file = klass->GetDexFile();
   if (&dex_file != &original_dex_file) {
     if (class_loader == nullptr) {
       LOG(WARNING) << "Skipping class " << klass->PrettyDescriptor() << " from "
@@ -2029,10 +2029,10 @@ class VerifyClassVisitor : public CompilationVisitor {
           break;
         }
       }
-    } else if (&klass->GetDexFile() != &dex_file) {
+    } else if (SkipClass(jclass_loader, dex_file, klass.Get())) {
       // Skip a duplicate class (as the resolved class is from another, earlier dex file).
       return;  // Do not update state.
-    } else if (!SkipClass(jclass_loader, dex_file, klass.Get())) {
+    } else {
       CHECK(klass->IsResolved()) << klass->PrettyClass();
       failure_kind = class_linker->VerifyClass(soa.Self(),
                                                soa.Self()->GetVerifierDeps(),
@@ -2092,9 +2092,6 @@ class VerifyClassVisitor : public CompilationVisitor {
           DCHECK_EQ(failure_kind, verifier::FailureKind::kHardFailure);
         }
       }
-    } else {
-      // Make the skip a soft failure, essentially being considered as verify at runtime.
-      failure_kind = verifier::FailureKind::kSoftFailure;
     }
     verifier::VerifierDeps::MaybeRecordVerificationStatus(soa.Self()->GetVerifierDeps(),
                                                           dex_file,
@@ -2708,8 +2705,6 @@ static void CompileDexFile(CompilerDriver* driver,
       soa.Self()->ClearException();
       dex_cache = hs.NewHandle(class_linker->FindDexCache(soa.Self(), dex_file));
     } else if (SkipClass(jclass_loader, dex_file, klass.Get())) {
-      return;
-    } else if (&klass->GetDexFile() != &dex_file) {
       // Skip a duplicate class (as the resolved class is from another, earlier dex file).
       return;  // Do not update state.
     } else {
