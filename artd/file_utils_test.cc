@@ -57,19 +57,19 @@ void CheckContent(const std::string& path, const std::string& expected_content) 
   EXPECT_EQ(actual_content, expected_content);
 }
 
-// A file that will always fail on `Commit`.
-class UncommittableFile : public NewFile {
+// A file that will always fail on `Keep`.
+class UnkeepableFile : public NewFile {
  public:
-  static Result<std::unique_ptr<UncommittableFile>> Create(const std::string& path,
-                                                           const FsPermission& fs_permission) {
+  static Result<std::unique_ptr<UnkeepableFile>> Create(const std::string& path,
+                                                        const FsPermission& fs_permission) {
     std::unique_ptr<NewFile> new_file = OR_RETURN(NewFile::Create(path, fs_permission));
-    return std::unique_ptr<UncommittableFile>(new UncommittableFile(std::move(*new_file)));
+    return std::unique_ptr<UnkeepableFile>(new UnkeepableFile(std::move(*new_file)));
   }
 
-  Result<void> Keep() override { return Error() << "Uncommittable file"; }
+  Result<void> Keep() override { return Error() << "Unkeepable file"; }
 
  private:
-  explicit UncommittableFile(NewFile&& other) : NewFile(std::move(other)) {}
+  explicit UnkeepableFile(NewFile&& other) : NewFile(std::move(other)) {}
 };
 
 class FileUtilsTest : public CommonArtTest {
@@ -247,7 +247,7 @@ TEST_F(FileUtilsTest, NewFileCommitAllReplacesMoreOldFiles) {
   EXPECT_FALSE(std::filesystem::exists(new_file_2->TempPath()));
 }
 
-TEST_F(FileUtilsTest, NewFileCommitAllFailedToCommit) {
+TEST_F(FileUtilsTest, NewFileCommitAllFailedToKeep) {
   std::string file_1_path = scratch_dir_->GetPath() + "/file_1";
   std::string file_2_path = scratch_dir_->GetPath() + "/file_2";
   std::string file_3_path = scratch_dir_->GetPath() + "/file_3";
@@ -257,15 +257,15 @@ TEST_F(FileUtilsTest, NewFileCommitAllFailedToCommit) {
   ASSERT_TRUE(WriteStringToFile("old_file_3", file_3_path));  // Extra file.
 
   std::unique_ptr<NewFile> new_file_1 = OR_FATAL(NewFile::Create(file_1_path, fs_permission_));
-  // Uncommittable file.
+  // Unkeepable file.
   std::unique_ptr<NewFile> new_file_2 =
-      OR_FATAL(UncommittableFile::Create(file_2_path, fs_permission_));
+      OR_FATAL(UnkeepableFile::Create(file_2_path, fs_permission_));
 
   ASSERT_TRUE(WriteStringToFd("new_file_1", new_file_1->Fd()));
   ASSERT_TRUE(WriteStringToFd("new_file_2", new_file_2->Fd()));
 
   EXPECT_THAT(NewFile::CommitAllOrAbandon({new_file_1.get(), new_file_2.get()}, {file_3_path}),
-              HasError(WithMessage("Uncommittable file")));
+              HasError(WithMessage("Unkeepable file")));
 
   // Old files are fine.
   CheckContent(file_1_path, "old_file_1");
@@ -275,6 +275,41 @@ TEST_F(FileUtilsTest, NewFileCommitAllFailedToCommit) {
   // New files are abandoned.
   EXPECT_FALSE(std::filesystem::exists(new_file_1->TempPath()));
   EXPECT_FALSE(std::filesystem::exists(new_file_2->TempPath()));
+}
+
+TEST_F(FileUtilsTest, NewFileCommitAllFailedToCommit) {
+  std::string dir_1_path = scratch_dir_->GetPath() + "/dir_1";
+  std::string dir_2_path = scratch_dir_->GetPath() + "/dir_2";
+
+  ASSERT_TRUE(std::filesystem::create_directory(dir_1_path));
+  ASSERT_TRUE(std::filesystem::create_directory(dir_2_path));
+
+  std::string file_1_path = dir_1_path + "/file_1";
+  std::string file_2_path = dir_2_path + "/file_2";
+
+  std::unique_ptr<NewFile> new_file_1 = OR_FATAL(NewFile::Create(file_1_path, fs_permission_));
+  std::unique_ptr<NewFile> new_file_2 = OR_FATAL(NewFile::Create(file_2_path, fs_permission_));
+
+  ASSERT_TRUE(WriteStringToFd("new_file_1", new_file_1->Fd()));
+  ASSERT_TRUE(WriteStringToFd("new_file_2", new_file_2->Fd()));
+
+  {
+    // Make `new_file_2` fail to commit.
+    auto scoped_inaccessible = ScopedInaccessible(dir_2_path);
+    std::filesystem::permissions(
+        dir_2_path, std::filesystem::perms::owner_exec, std::filesystem::perm_options::add);
+    auto scoped_unroot = ScopedUnroot();
+
+    EXPECT_THAT(NewFile::CommitAllOrAbandon({new_file_1.get(), new_file_2.get()}),
+                HasError(WithMessage(ContainsRegex("Failed to move file .*file_2.*"))));
+  }
+
+  // Files are abandoned at best effort. File 1 is abandoned, but file 2 cannot be abandoned due to
+  // permission denied.
+  EXPECT_FALSE(std::filesystem::exists(new_file_1->TempPath()));
+  EXPECT_FALSE(std::filesystem::exists(new_file_1->FinalPath()));
+  EXPECT_TRUE(std::filesystem::exists(new_file_2->TempPath()));
+  EXPECT_FALSE(std::filesystem::exists(new_file_2->FinalPath()));
 }
 
 TEST_F(FileUtilsTest, NewFileCommitAllFailedToMoveOldFile) {

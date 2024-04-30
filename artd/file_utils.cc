@@ -26,6 +26,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 
 #include "aidl/com/android/server/art/FsPermission.h"
@@ -46,7 +47,7 @@ using ::aidl::com::android::server::art::FsPermission;
 using ::android::base::make_scope_guard;
 using ::android::base::Result;
 
-void UnlinkIfExists(const std::string& path) {
+void UnlinkIfExists(std::string_view path) {
   std::error_code ec;
   std::filesystem::remove(path, ec);
   if (ec) {
@@ -85,7 +86,6 @@ Result<void> NewFile::CommitOrAbandon() {
         "Failed to move new file '{}' to path '{}': {}", temp_path_, final_path_, ec.message());
   }
   cleanup.Disable();
-  committed_ = true;
   return {};
 }
 
@@ -122,15 +122,35 @@ void NewFile::Unlink() {
 
 Result<void> NewFile::CommitAllOrAbandon(const std::vector<NewFile*>& files_to_commit,
                                          const std::vector<std::string_view>& files_to_remove) {
-  std::vector<std::pair<std::string_view, std::string>> moved_files;
+  std::vector<std::pair<std::string_view, std::string_view>> files_to_move;
 
   auto cleanup = make_scope_guard([&]() {
-    // Clean up new files.
-    for (NewFile* new_file : files_to_commit) {
-      if (new_file->committed_) {
-        UnlinkIfExists(new_file->FinalPath());
+    for (NewFile* file : files_to_commit) {
+      file->Unlink();
+    }
+  });
+  for (NewFile* file : files_to_commit) {
+    OR_RETURN(file->Keep());
+    files_to_move.emplace_back(file->TempPath(), file->FinalPath());
+  }
+  cleanup.Disable();
+
+  return MoveAllOrAbandon(files_to_move, files_to_remove);
+}
+
+Result<void> MoveAllOrAbandon(
+    const std::vector<std::pair<std::string_view, std::string_view>>& files_to_move,
+    const std::vector<std::string_view>& files_to_remove) {
+  std::vector<std::pair<std::string_view, std::string>> moved_files;
+  std::unordered_set<std::string_view> committed_files;
+
+  auto cleanup = make_scope_guard([&]() {
+    // Clean up `files_to_move`.
+    for (const auto& [src_path, dst_path] : files_to_move) {
+      if (committed_files.find(dst_path) != committed_files.end()) {
+        UnlinkIfExists(dst_path);
       } else {
-        new_file->Cleanup();
+        UnlinkIfExists(src_path);
       }
     }
 
@@ -151,9 +171,9 @@ Result<void> NewFile::CommitAllOrAbandon(const std::vector<NewFile*>& files_to_c
 
   // Move old files to temporary locations.
   std::vector<std::string_view> all_files_to_remove;
-  all_files_to_remove.reserve(files_to_commit.size() + files_to_remove.size());
-  for (NewFile* file : files_to_commit) {
-    all_files_to_remove.push_back(file->FinalPath());
+  all_files_to_remove.reserve(files_to_move.size() + files_to_remove.size());
+  for (const auto& [src_path, dst_path] : files_to_move) {
+    all_files_to_remove.push_back(dst_path);
   }
   all_files_to_remove.insert(
       all_files_to_remove.end(), files_to_remove.begin(), files_to_remove.end());
@@ -168,7 +188,7 @@ Result<void> NewFile::CommitAllOrAbandon(const std::vector<NewFile*>& files_to_c
       return ErrnoErrorf("Old file '{}' is a directory", original_path);
     }
     if (std::filesystem::exists(status)) {
-      std::string temp_path = BuildTempPath(original_path, "XXXXXX");
+      std::string temp_path = NewFile::BuildTempPath(original_path, "XXXXXX");
       int fd = mkstemps(temp_path.data(), /*suffixlen=*/4);
       if (fd < 0) {
         return ErrnoErrorf("Failed to create temporary path for old file '{}'", original_path);
@@ -188,9 +208,14 @@ Result<void> NewFile::CommitAllOrAbandon(const std::vector<NewFile*>& files_to_c
     }
   }
 
-  // Commit new files.
-  for (NewFile* file : files_to_commit) {
-    OR_RETURN(file->CommitOrAbandon());
+  // Move `files_to_move`.
+  for (const auto& [src_path, dst_path] : files_to_move) {
+    std::error_code ec;
+    std::filesystem::rename(src_path, dst_path, ec);
+    if (ec) {
+      return Errorf("Failed to move file from '{}' to '{}': {}", src_path, dst_path, ec.message());
+    }
+    committed_files.insert(dst_path);
   }
 
   cleanup.Disable();
