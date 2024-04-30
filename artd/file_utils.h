@@ -113,7 +113,6 @@ class NewFile {
   std::string temp_path_;
   std::string temp_id_;
   aidl::com::android::server::art::FsPermission fs_permission_;
-  bool committed_ = false;
 };
 
 // Opens a file for reading.
@@ -128,6 +127,25 @@ mode_t DirFsPermissionToMode(const aidl::com::android::server::art::FsPermission
 // Changes the owner based on FsPermission.
 android::base::Result<void> Chown(
     const std::string& path, const aidl::com::android::server::art::FsPermission& fs_permission);
+
+// Moves every file in `files_to_move` from a given location to another, replacing the existing file
+// at the destination if it exists, and removes files in `files_to_remove` in addition. Or abandons
+// all files in `files_to_move` and restores old files at best effort if any error occurs.
+//
+// This function does not accept duplicate paths. Passing duplicate paths to this function leads to
+// undefined behavior.
+//
+// Note: This function is NOT thread-safe. It is intended to be used in single-threaded code or in
+// cases where some race condition is acceptable.
+//
+// Usage:
+//
+// Move file at `path_1` to `path_2`, move file at `path_3` to `file_4`, and remove the file at
+// "path_5":
+//   MoveAllOrAbandon({{"path_1", "path_2"}, {"path_3", "path_4}}, {"path_5"});
+android::base::Result<void> MoveAllOrAbandon(
+    const std::vector<std::pair<std::string_view, std::string_view>>& files_to_move,
+    const std::vector<std::string_view>& files_to_remove = {});
 
 }  // namespace artd
 }  // namespace art
