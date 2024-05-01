@@ -492,7 +492,6 @@ void JitCodeCache::FreeAllMethodHeaders(
   }
 
   {
-    MutexLock mu(Thread::Current(), *Locks::jit_lock_);
     ScopedCodeCacheWrite scc(private_region_);
     for (const OatQuickMethodHeader* method_header : method_headers) {
       FreeCodeAndData(method_header->GetCode());
@@ -507,21 +506,18 @@ void JitCodeCache::FreeAllMethodHeaders(
   if (kIsDebugBuild && !Runtime::Current()->IsZygote()) {
     std::map<const void*, ArtMethod*> compiled_methods;
     std::set<const void*> debug_info;
-    {
-      MutexLock mu(Thread::Current(), *Locks::jit_lock_);
-      VisitAllMethods([&](const void* addr, ArtMethod* method) {
-        if (!IsInZygoteExecSpace(addr)) {
-          CHECK(addr != nullptr && method != nullptr);
-          compiled_methods.emplace(addr, method);
-        }
-      });
-      ForEachNativeDebugSymbol([&](const void* addr, size_t, const char* name) {
-        addr = AlignDown(addr, GetInstructionSetInstructionAlignment(kRuntimeISA));  // Thumb-bit.
-        bool res = debug_info.emplace(addr).second;
-        CHECK(res) << "Duplicate debug info: " << addr << " " << name;
-        CHECK_EQ(compiled_methods.count(addr), 1u) << "Extra debug info: " << addr << " " << name;
-      });
-    }
+    VisitAllMethods([&](const void* addr, ArtMethod* method) {
+      if (!IsInZygoteExecSpace(addr)) {
+        CHECK(addr != nullptr && method != nullptr);
+        compiled_methods.emplace(addr, method);
+      }
+    });
+    ForEachNativeDebugSymbol([&](const void* addr, size_t, const char* name) {
+      addr = AlignDown(addr, GetInstructionSetInstructionAlignment(kRuntimeISA));  // Thumb-bit.
+      bool res = debug_info.emplace(addr).second;
+      CHECK(res) << "Duplicate debug info: " << addr << " " << name;
+      CHECK_EQ(compiled_methods.count(addr), 1u) << "Extra debug info: " << addr << " " << name;
+    });
     if (!debug_info.empty()) {  // If debug-info generation is enabled.
       for (auto it : compiled_methods) {
         CHECK_EQ(debug_info.count(it.first), 1u) << "Missing debug info";
@@ -539,66 +535,64 @@ void JitCodeCache::RemoveMethodsIn(Thread* self, const LinearAlloc& alloc) {
   // for entries in this set. And it's more efficient to iterate through
   // the CHA dependency map just once with an unordered_set.
   std::unordered_set<OatQuickMethodHeader*> method_headers;
+  MutexLock mu(self, *Locks::jit_lock_);
+  // We do not check if a code cache GC is in progress, as this method comes
+  // with the classlinker_classes_lock_ held, and suspending ourselves could
+  // lead to a deadlock.
   {
-    MutexLock mu(self, *Locks::jit_lock_);
-    // We do not check if a code cache GC is in progress, as this method comes
-    // with the classlinker_classes_lock_ held, and suspending ourselves could
-    // lead to a deadlock.
-    {
-      for (auto it = jni_stubs_map_.begin(); it != jni_stubs_map_.end();) {
-        it->second.RemoveMethodsIn(alloc);
-        if (it->second.GetMethods().empty()) {
-          method_headers.insert(OatQuickMethodHeader::FromCodePointer(it->second.GetCode()));
-          it = jni_stubs_map_.erase(it);
-        } else {
-          it->first.UpdateShorty(it->second.GetMethods().front());
-          ++it;
-        }
-      }
-      for (auto it = zombie_jni_code_.begin(); it != zombie_jni_code_.end();) {
-        if (alloc.ContainsUnsafe(*it)) {
-          it = zombie_jni_code_.erase(it);
-        } else {
-          ++it;
-        }
-      }
-      for (auto it = processed_zombie_jni_code_.begin(); it != processed_zombie_jni_code_.end();) {
-        if (alloc.ContainsUnsafe(*it)) {
-          it = processed_zombie_jni_code_.erase(it);
-        } else {
-          ++it;
-        }
-      }
-      for (auto it = method_code_map_.begin(); it != method_code_map_.end();) {
-        if (alloc.ContainsUnsafe(it->second)) {
-          method_headers.insert(OatQuickMethodHeader::FromCodePointer(it->first));
-          VLOG(jit) << "JIT removed " << it->second->PrettyMethod() << ": " << it->first;
-          it = method_code_map_.erase(it);
-          zombie_code_.erase(it->first);
-          processed_zombie_code_.erase(it->first);
-        } else {
-          ++it;
-        }
+    for (auto it = jni_stubs_map_.begin(); it != jni_stubs_map_.end();) {
+      it->second.RemoveMethodsIn(alloc);
+      if (it->second.GetMethods().empty()) {
+        method_headers.insert(OatQuickMethodHeader::FromCodePointer(it->second.GetCode()));
+        it = jni_stubs_map_.erase(it);
+      } else {
+        it->first.UpdateShorty(it->second.GetMethods().front());
+        ++it;
       }
     }
-    for (auto it = osr_code_map_.begin(); it != osr_code_map_.end();) {
-      DCHECK(!ContainsElement(zombie_code_, it->second));
-      if (alloc.ContainsUnsafe(it->first)) {
-        // Note that the code has already been pushed to method_headers in the loop
-        // above and is going to be removed in FreeCode() below.
-        it = osr_code_map_.erase(it);
+    for (auto it = zombie_jni_code_.begin(); it != zombie_jni_code_.end();) {
+      if (alloc.ContainsUnsafe(*it)) {
+        it = zombie_jni_code_.erase(it);
       } else {
         ++it;
       }
     }
-    for (auto it = profiling_infos_.begin(); it != profiling_infos_.end();) {
-      ProfilingInfo* info = it->second;
-      if (alloc.ContainsUnsafe(info->GetMethod())) {
-        private_region_.FreeWritableData(reinterpret_cast<uint8_t*>(info));
-        it = profiling_infos_.erase(it);
+    for (auto it = processed_zombie_jni_code_.begin(); it != processed_zombie_jni_code_.end();) {
+      if (alloc.ContainsUnsafe(*it)) {
+        it = processed_zombie_jni_code_.erase(it);
       } else {
         ++it;
       }
+    }
+    for (auto it = method_code_map_.begin(); it != method_code_map_.end();) {
+      if (alloc.ContainsUnsafe(it->second)) {
+        method_headers.insert(OatQuickMethodHeader::FromCodePointer(it->first));
+        VLOG(jit) << "JIT removed " << it->second->PrettyMethod() << ": " << it->first;
+        it = method_code_map_.erase(it);
+        zombie_code_.erase(it->first);
+        processed_zombie_code_.erase(it->first);
+      } else {
+        ++it;
+      }
+    }
+  }
+  for (auto it = osr_code_map_.begin(); it != osr_code_map_.end();) {
+    DCHECK(!ContainsElement(zombie_code_, it->second));
+    if (alloc.ContainsUnsafe(it->first)) {
+      // Note that the code has already been pushed to method_headers in the loop
+      // above and is going to be removed in FreeCode() below.
+      it = osr_code_map_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = profiling_infos_.begin(); it != profiling_infos_.end();) {
+    ProfilingInfo* info = it->second;
+    if (alloc.ContainsUnsafe(info->GetMethod())) {
+      private_region_.FreeWritableData(reinterpret_cast<uint8_t*>(info));
+      it = profiling_infos_.erase(it);
+    } else {
+      ++it;
     }
   }
   FreeAllMethodHeaders(method_headers);
@@ -1113,56 +1107,53 @@ void JitCodeCache::RemoveUnmarkedCode(Thread* self) {
   ScopedTrace trace(__FUNCTION__);
   std::unordered_set<OatQuickMethodHeader*> method_headers;
   ScopedDebugDisallowReadBarriers sddrb(self);
-  {
-    MutexLock mu(self, *Locks::jit_lock_);
-    // Iterate over all zombie code and remove entries that are not marked.
-    for (auto it = processed_zombie_code_.begin(); it != processed_zombie_code_.end();) {
-      const void* code_ptr = *it;
-      uintptr_t allocation = FromCodeToAllocation(code_ptr);
-      DCHECK(!IsInZygoteExecSpace(code_ptr));
-      if (GetLiveBitmap()->Test(allocation)) {
-        ++it;
-      } else {
-        OatQuickMethodHeader* header = OatQuickMethodHeader::FromCodePointer(code_ptr);
-        method_headers.insert(header);
-        method_code_map_.erase(header->GetCode());
-        VLOG(jit) << "JIT removed " << *it;
-        it = processed_zombie_code_.erase(it);
-      }
-    }
-    for (auto it = processed_zombie_jni_code_.begin(); it != processed_zombie_jni_code_.end();) {
-      ArtMethod* method = *it;
-      auto stub = jni_stubs_map_.find(JniStubKey(method));
-      if (stub == jni_stubs_map_.end()) {
-        it = processed_zombie_jni_code_.erase(it);
-        continue;
-      }
-      JniStubData& data = stub->second;
-      if (!data.IsCompiled() || !ContainsElement(data.GetMethods(), method)) {
-        it = processed_zombie_jni_code_.erase(it);
-      } else if (method->GetEntryPointFromQuickCompiledCode() ==
-              OatQuickMethodHeader::FromCodePointer(data.GetCode())->GetEntryPoint()) {
-        // The stub got reused for this method, remove ourselves from the zombie
-        // list.
-        it = processed_zombie_jni_code_.erase(it);
-      } else if (!GetLiveBitmap()->Test(FromCodeToAllocation(data.GetCode()))) {
-        data.RemoveMethod(method);
-        if (data.GetMethods().empty()) {
-          OatQuickMethodHeader* header = OatQuickMethodHeader::FromCodePointer(data.GetCode());
-          method_headers.insert(header);
-          CHECK(ContainsPc(header));
-          VLOG(jit) << "JIT removed native code of" << method->PrettyMethod();
-          jni_stubs_map_.erase(stub);
-        } else {
-          stub->first.UpdateShorty(stub->second.GetMethods().front());
-        }
-        it = processed_zombie_jni_code_.erase(it);
-      } else {
-        ++it;
-      }
+  MutexLock mu(self, *Locks::jit_lock_);
+  // Iterate over all zombie code and remove entries that are not marked.
+  for (auto it = processed_zombie_code_.begin(); it != processed_zombie_code_.end();) {
+    const void* code_ptr = *it;
+    uintptr_t allocation = FromCodeToAllocation(code_ptr);
+    DCHECK(!IsInZygoteExecSpace(code_ptr));
+    if (GetLiveBitmap()->Test(allocation)) {
+      ++it;
+    } else {
+      OatQuickMethodHeader* header = OatQuickMethodHeader::FromCodePointer(code_ptr);
+      method_headers.insert(header);
+      method_code_map_.erase(header->GetCode());
+      VLOG(jit) << "JIT removed " << *it;
+      it = processed_zombie_code_.erase(it);
     }
   }
-
+  for (auto it = processed_zombie_jni_code_.begin(); it != processed_zombie_jni_code_.end();) {
+    ArtMethod* method = *it;
+    auto stub = jni_stubs_map_.find(JniStubKey(method));
+    if (stub == jni_stubs_map_.end()) {
+      it = processed_zombie_jni_code_.erase(it);
+      continue;
+    }
+    JniStubData& data = stub->second;
+    if (!data.IsCompiled() || !ContainsElement(data.GetMethods(), method)) {
+      it = processed_zombie_jni_code_.erase(it);
+    } else if (method->GetEntryPointFromQuickCompiledCode() ==
+            OatQuickMethodHeader::FromCodePointer(data.GetCode())->GetEntryPoint()) {
+      // The stub got reused for this method, remove ourselves from the zombie
+      // list.
+      it = processed_zombie_jni_code_.erase(it);
+    } else if (!GetLiveBitmap()->Test(FromCodeToAllocation(data.GetCode()))) {
+      data.RemoveMethod(method);
+      if (data.GetMethods().empty()) {
+        OatQuickMethodHeader* header = OatQuickMethodHeader::FromCodePointer(data.GetCode());
+        method_headers.insert(header);
+        CHECK(ContainsPc(header));
+        VLOG(jit) << "JIT removed native code of" << method->PrettyMethod();
+        jni_stubs_map_.erase(stub);
+      } else {
+        stub->first.UpdateShorty(stub->second.GetMethods().front());
+      }
+      it = processed_zombie_jni_code_.erase(it);
+    } else {
+      ++it;
+    }
+  }
   FreeAllMethodHeaders(method_headers);
 }
 

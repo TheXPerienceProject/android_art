@@ -452,6 +452,7 @@ class JitCodeCache {
 
   // Remove CHA dependents and underlying allocations for entries in `method_headers`.
   void FreeAllMethodHeaders(const std::unordered_set<OatQuickMethodHeader*>& method_headers)
+      REQUIRES(Locks::jit_lock_)
       REQUIRES(!Locks::cha_lock_);
 
   // Removes method from the cache. The caller must ensure that all threads
