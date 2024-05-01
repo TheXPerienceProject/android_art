@@ -3348,9 +3348,6 @@ bool ImageSpace::LoadBootImage(const std::vector<std::string>& boot_class_path,
                          &apex_versions);
   loader.FindImageFiles();
 
-  // Collect all the errors.
-  std::vector<std::string> error_msgs;
-
   std::string error_msg;
   if (loader.LoadFromSystem(extra_reservation_size,
                             allow_in_memory_compilation,
@@ -3359,22 +3356,10 @@ bool ImageSpace::LoadBootImage(const std::vector<std::string>& boot_class_path,
                             &error_msg)) {
     return true;
   }
-  error_msgs.push_back(error_msg);
-
-  std::ostringstream oss;
-  bool first = true;
-  for (const auto& msg : error_msgs) {
-    if (first) {
-      first = false;
-    } else {
-      oss << "\n    ";
-    }
-    oss << msg;
-  }
-
   LOG(ERROR) << "Could not create image space with image file '"
-      << Join(image_locations, kComponentSeparator) << "'. Attempting to fall back to imageless "
-      << "running. Error was: " << oss.str();
+             << Join(image_locations, kComponentSeparator)
+             << "'. Attempting to fall back to imageless running. Error was: "
+             << error_msg;
 
   return false;
 }
