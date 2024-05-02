@@ -86,20 +86,58 @@ void Riscv64Assembler::Auipc(XRegister rd, uint32_t imm20) {
 // Jump instructions (RV32I), opcode = 0x67, 0x6f
 
 void Riscv64Assembler::Jal(XRegister rd, int32_t offset) {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    if (rd == Zero && IsInt<12>(offset)) {
+      CJ(offset);
+      return;
+    }
+    // Note: `c.jal` is RV32-only.
+  }
+
   EmitJ(offset, rd, 0x6F);
 }
 
 void Riscv64Assembler::Jalr(XRegister rd, XRegister rs1, int32_t offset) {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    if (rd == RA && rs1 != Zero && offset == 0) {
+      CJalr(rs1);
+      return;
+    } else if (rd == Zero && rs1 != Zero && offset == 0) {
+      CJr(rs1);
+      return;
+    }
+  }
+
   EmitI(offset, rs1, 0x0, rd, 0x67);
 }
 
 // Branch instructions, opcode = 0x63 (subfunc from 0x0 ~ 0x7), 0x67, 0x6f
 
 void Riscv64Assembler::Beq(XRegister rs1, XRegister rs2, int32_t offset) {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    if (rs2 == Zero && IsShortReg(rs1) && IsInt<9>(offset)) {
+      CBeqz(rs1, offset);
+      return;
+    } else if (rs1 == Zero && IsShortReg(rs2) && IsInt<9>(offset)) {
+      CBeqz(rs2, offset);
+      return;
+    }
+  }
+
   EmitB(offset, rs2, rs1, 0x0, 0x63);
 }
 
 void Riscv64Assembler::Bne(XRegister rs1, XRegister rs2, int32_t offset) {
+  if (IsExtensionEnabled(Riscv64Extension::kZca)) {
+    if (rs2 == Zero && IsShortReg(rs1) && IsInt<9>(offset)) {
+      CBnez(rs1, offset);
+      return;
+    } else if (rs1 == Zero && IsShortReg(rs2) && IsInt<9>(offset)) {
+      CBnez(rs2, offset);
+      return;
+    }
+  }
+
   EmitB(offset, rs2, rs1, 0x1, 0x63);
 }
 
@@ -378,23 +416,32 @@ void Riscv64Assembler::Srai(XRegister rd, XRegister rs1, int32_t shamt) {
 
 void Riscv64Assembler::Add(XRegister rd, XRegister rs1, XRegister rs2) {
   if (IsExtensionEnabled(Riscv64Extension::kZca)) {
-    if (rd != Zero && (rs1 != Zero || rs2 != Zero)) {
-      if (rs1 == Zero) {
-        DCHECK_NE(rs2, Zero);
-        CMv(rd, rs2);
-        return;
-      } else if (rs2 == Zero) {
-        DCHECK_NE(rs1, Zero);
-        CMv(rd, rs1);
-        return;
-      } else if (rd == rs1) {
-        DCHECK_NE(rs2, Zero);
-        CAdd(rd, rs2);
-        return;
-      } else if (rd == rs2) {
-        DCHECK_NE(rs1, Zero);
-        CAdd(rd, rs1);
-        return;
+    if (rd != Zero) {
+      if (rs1 != Zero || rs2 != Zero) {
+        if (rs1 == Zero) {
+          DCHECK_NE(rs2, Zero);
+          CMv(rd, rs2);
+          return;
+        } else if (rs2 == Zero) {
+          DCHECK_NE(rs1, Zero);
+          CMv(rd, rs1);
+          return;
+        } else if (rd == rs1) {
+          DCHECK_NE(rs2, Zero);
+          CAdd(rd, rs2);
+          return;
+        } else if (rd == rs2) {
+          DCHECK_NE(rs1, Zero);
+          CAdd(rd, rs1);
+          return;
+        }
+      } else {
+        // TODO: we use clang for testing assembler and unfortunately it (clang 18.0.1) does not
+        // support conversion from 'add rd, Zero, Zero' into 'c.li. rd, 0' so once clang supports it
+        // the lines below should be uncommented
+
+        // CLi(rd, 0);
+        // return;
       }
     }
   }
@@ -6890,9 +6937,9 @@ void Riscv64Assembler::EmitBranch(Riscv64Assembler::Branch* branch) {
   BranchCondition condition = branch->GetCondition();
   XRegister lhs = branch->GetLeftRegister();
   XRegister rhs = branch->GetRightRegister();
+  ScopedNoCInstructions no_compression(this);
 
   auto emit_auipc_and_next = [&](XRegister reg, auto next) {
-    ScopedNoCInstructions no_compression(this);
     CHECK_EQ(overwrite_location_, branch->GetOffsetLocation());
     auto [imm20, short_offset] = SplitOffset(offset);
     Auipc(reg, imm20);

@@ -30,9 +30,9 @@
 #include "art_field-inl.h"
 #include "art_method-inl.h"
 #include "base/callee_save_type.h"
-#include "base/enums.h"
 #include "base/globals.h"
 #include "base/logging.h"  // For VLOG.
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "base/unix_file/fd_file.h"
 #include "class_linker-inl.h"
@@ -2078,8 +2078,8 @@ void ImageWriter::LayoutHelper::ProcessInterns(Thread* self) {
     // Assign bin slots for strings defined in this dex file in StringId (lexicographical) order.
     for (size_t i = 0, count = dex_file->NumStringIds(); i != count; ++i) {
       uint32_t utf16_length;
-      const char* utf8_data = dex_file->StringDataAndUtf16LengthByIdx(dex::StringIndex(i),
-                                                                      &utf16_length);
+      const char* utf8_data = dex_file->GetStringDataAndUtf16Length(dex::StringIndex(i),
+                                                                    &utf16_length);
       uint32_t hash = InternTable::Utf8String::Hash(utf16_length, utf8_data);
       auto intern_it =
           intern_set.FindWithHash(InternTable::Utf8String(utf16_length, utf8_data), hash);

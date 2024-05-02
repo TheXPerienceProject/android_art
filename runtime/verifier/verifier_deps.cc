@@ -176,7 +176,7 @@ std::string VerifierDeps::GetStringFromId(const DexFile& dex_file,
                                           dex::StringIndex string_id) const {
   uint32_t num_ids_in_dex = dex_file.NumStringIds();
   if (string_id.index_ < num_ids_in_dex) {
-    return std::string(dex_file.StringDataByIdx(string_id));
+    return std::string(dex_file.GetStringView(string_id));
   } else {
     const DexFileDeps* deps = GetDexFileDeps(dex_file);
     DCHECK(deps != nullptr);

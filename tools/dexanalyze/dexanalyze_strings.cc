@@ -425,7 +425,7 @@ void AnalyzeStrings::ProcessDexFiles(const std::vector<std::unique_ptr<const Dex
   for (const std::unique_ptr<const DexFile>& dex_file : dex_files) {
     for (size_t i = 0; i < dex_file->NumStringIds(); ++i) {
       uint32_t length = 0;
-      const char* data = dex_file->StringDataAndUtf16LengthByIdx(dex::StringIndex(i), &length);
+      const char* data = dex_file->GetStringDataAndUtf16Length(dex::StringIndex(i), &length);
       // Analyze if the string has any UTF16 chars.
       bool have_wide_char = false;
       const char* ptr = data;

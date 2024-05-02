@@ -19,8 +19,8 @@
 
 #include "base/atomic.h"
 #include "base/casts.h"
-#include "base/enums.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "dex/primitive.h"
 #include "obj_ptr.h"
 #include "object_reference.h"

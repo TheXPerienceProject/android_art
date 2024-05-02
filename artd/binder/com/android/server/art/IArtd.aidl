@@ -234,4 +234,11 @@ interface IArtd {
      * Throws fatal errors. Logs and ignores non-fatal errors.
      */
     long getProfileSize(in com.android.server.art.ProfilePath profile);
+
+    /** For Pre-reboot Dexopt use. See {@link ArtJni#validateDexPath}. */
+    @nullable @utf8InCpp String validateDexPath(@utf8InCpp String dexFile);
+
+    /** For Pre-reboot Dexopt use. See {@link ArtJni#validateClassLoaderContext}. */
+    @nullable @utf8InCpp String validateClassLoaderContext(
+            @utf8InCpp String dexFile, @utf8InCpp String classLoaderContext);
 }

@@ -179,11 +179,11 @@ template <typename T, size_t size> class DexCachePairArray {
   }
 
   DexCachePair<T> GetPair(uint32_t index) {
-    return entries_[SlotIndex(index)].load(std::memory_order_relaxed);
+    return entries_[SlotIndex(index)].load(std::memory_order_acquire);
   }
 
   void SetPair(uint32_t index, DexCachePair<T> value) {
-    entries_[SlotIndex(index)].store(value, std::memory_order_relaxed);
+    entries_[SlotIndex(index)].store(value, std::memory_order_release);
   }
 
   void Clear(uint32_t index) {

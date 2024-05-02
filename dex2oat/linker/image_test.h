@@ -308,7 +308,7 @@ inline void ImageTest::DoCompile(ImageHeader::StorageMode storage_mode,
         oat_writer->PrepareLayout(&patcher);
         elf_writer->PrepareDynamicSection(oat_writer->GetOatHeader().GetExecutableOffset(),
                                           oat_writer->GetCodeSize(),
-                                          oat_writer->GetDataBimgRelRoSize(),
+                                          oat_writer->GetDataImgRelRoSize(),
                                           oat_writer->GetBssSize(),
                                           oat_writer->GetBssMethodsOffset(),
                                           oat_writer->GetBssRootsOffset(),
@@ -328,11 +328,11 @@ inline void ImageTest::DoCompile(ImageHeader::StorageMode storage_mode,
         ASSERT_TRUE(text_ok);
         elf_writer->EndText(text);
 
-        if (oat_writer->GetDataBimgRelRoSize() != 0u) {
-          OutputStream* data_bimg_rel_ro = elf_writer->StartDataBimgRelRo();
-          bool data_bimg_rel_ro_ok = oat_writer->WriteDataBimgRelRo(data_bimg_rel_ro);
-          ASSERT_TRUE(data_bimg_rel_ro_ok);
-          elf_writer->EndDataBimgRelRo(data_bimg_rel_ro);
+        if (oat_writer->GetDataImgRelRoSize() != 0u) {
+          OutputStream* data_img_rel_ro = elf_writer->StartDataImgRelRo();
+          bool data_img_rel_ro_ok = oat_writer->WriteDataImgRelRo(data_img_rel_ro);
+          ASSERT_TRUE(data_img_rel_ro_ok);
+          elf_writer->EndDataImgRelRo(data_img_rel_ro);
         }
 
         bool header_ok = oat_writer->WriteHeader(elf_writer->GetStream());

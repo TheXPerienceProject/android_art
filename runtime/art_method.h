@@ -26,9 +26,9 @@
 #include "base/array_ref.h"
 #include "base/bit_utils.h"
 #include "base/casts.h"
-#include "base/enums.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "base/runtime_debug.h"
 #include "dex/dex_file_structs.h"
 #include "dex/modifiers.h"
@@ -766,11 +766,7 @@ class EXPORT ArtMethod final {
   }
   ALWAYS_INLINE void SetEntryPointFromQuickCompiledCodePtrSize(
       const void* entry_point_from_quick_compiled_code, PointerSize pointer_size)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    SetNativePointer(EntryPointFromQuickCompiledCodeOffset(pointer_size),
-                     entry_point_from_quick_compiled_code,
-                     pointer_size);
-  }
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   static constexpr MemberOffset DataOffset(PointerSize pointer_size) {
     return MemberOffset(PtrSizedFieldsOffset(pointer_size) + OFFSETOF_MEMBER(
@@ -1018,9 +1014,6 @@ class EXPORT ArtMethod final {
   const void* GetOatMethodQuickCode(PointerSize pointer_size)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Returns whether the method has any compiled code, JIT or AOT.
-  bool HasAnyCompiledCode() REQUIRES_SHARED(Locks::mutator_lock_);
-
   // Returns a human-readable signature for 'm'. Something like "a.b.C.m" or
   // "a.b.C.m(II)V" (depending on the value of 'with_signature').
   static std::string PrettyMethod(ArtMethod* m, bool with_signature = true)
@@ -1194,6 +1187,8 @@ class EXPORT ArtMethod final {
 
   // Used by GetName and GetNameView to share common code.
   const char* GetRuntimeMethodName() REQUIRES_SHARED(Locks::mutator_lock_);
+
+  friend class RuntimeImageHelper;  // For SetNativePointer.
 
   DISALLOW_COPY_AND_ASSIGN(ArtMethod);  // Need to use CopyFrom to deal with 32 vs 64 bits.
 };

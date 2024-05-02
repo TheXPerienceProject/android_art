@@ -73,16 +73,14 @@ class FdFile : public RandomAccessFile {
   int64_t GetLength() const override;
   int64_t Write(const char* buf, int64_t byte_count, int64_t offset) override WARN_UNUSED;
 
-  int Flush() override WARN_UNUSED;
+  int Flush() override WARN_UNUSED { return Flush(/*flush_metadata=*/false); }
 
   // Short for SetLength(0); Flush(); Close();
   // If the file was opened with a path name and unlink = true, also calls Unlink() on the path.
   // Note that it is the the caller's responsibility to avoid races.
   bool Erase(bool unlink = false);
 
-  // Call unlink() if the file was opened with a path, and if open() with the name shows that
-  // the file descriptor of this file is still up-to-date. This is still racy, though, and it
-  // is up to the caller to ensure correctness in a multi-process setup.
+  // Call unlink(), though only if FilePathMatchesFd() returns true.
   bool Unlink();
 
   // Try to Flush(), then try to Close(); If either fails, call Erase().
@@ -110,7 +108,19 @@ class FdFile : public RandomAccessFile {
   bool WriteFully(const void* buffer, size_t byte_count) WARN_UNUSED;
   bool PwriteFully(const void* buffer, size_t byte_count, size_t offset) WARN_UNUSED;
 
+  // Change the file path, though only if FilePathMatchesFd() returns true.
+  //
+  // If a file at new_path already exists, it will be replaced.
+  // On Linux, the rename syscall will fail unless the source and destination are on the same
+  // mounted filesystem.
+  // This function is not expected to modify the file data itself, instead it modifies the inodes of
+  // the source and destination directories, and therefore the function flushes those file
+  // descriptors following the rename.
+  bool Rename(const std::string& new_path);
   // Copy data from another file.
+  // On Linux, we only support copies that will append regions to the file, and we require the file
+  // offset of the output file descriptor to be aligned with the filesystem blocksize (see comments
+  // in implementation).
   bool Copy(FdFile* input_file, int64_t offset, int64_t size);
   // Clears the file content and resets the file offset to 0.
   // Returns true upon success, false otherwise.
@@ -164,6 +174,38 @@ class FdFile : public RandomAccessFile {
  private:
   template <bool kUseOffset>
   bool WriteFullyGeneric(const void* buffer, size_t byte_count, size_t offset);
+
+  int Flush(bool flush_metadata) WARN_UNUSED;
+
+  // The file path we hold for the file descriptor may be invalid, or may not even exist (e.g. if
+  // the FdFile wasn't initialised with a path). This helper function checks if calling open() on
+  // the file path (if it is set) returns the expected up-to-date file descriptor. This is still
+  // racy, though, and it is up to the caller to ensure correctness in a multi-process setup.
+  bool FilePathMatchesFd();
+
+#ifdef __linux__
+  // Sparse copy of 'size' bytes from an input file, starting at 'off'. Both this file's offset and
+  // the input file's offset will be incremented by 'size' bytes.
+  //
+  // Note: in order to preserve the same sparsity, the input and output files must be on mounted
+  // filesystems that use the same blocksize, and the offsets used for the copy must be aligned to
+  // it. Otherwise, the copied region's sparsity within the output file may differ from its original
+  // sparsity in the input file.
+  bool UserspaceSparseCopy(const FdFile* input_file, off_t off, size_t size, size_t fs_blocksize);
+
+  // Write 'size' bytes from 'data' to the file if any are non-zero. Otherwise, just update the file
+  // offset and skip the write. For efficiency, the function expects a vector of zeroed uint8_t
+  // values to check the data array against. This vector 'zeroes' must have length greater than or
+  // equal to 'size'.
+  //
+  // As filesystems which support sparse files only allocate physical space to blocks that have been
+  // written, any whole filesystem blocks in the output file which are skipped in this way will save
+  // storage space. Subsequent reads of bytes in non-allocated blocks will simply return zeros
+  // without accessing the underlying storage.
+  bool SparseWrite(const uint8_t* data,
+                   size_t size,
+                   const std::vector<uint8_t>& zeroes);
+#endif
 
   void Destroy();  // For ~FdFile and operator=(&&).
 

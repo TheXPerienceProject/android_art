@@ -4244,6 +4244,9 @@
       "name": "art_standalone_dexlist_tests"
     },
     {
+      "name": "art_standalone_dexopt_chroot_setup_tests"
+    },
+    {
       "name": "art_standalone_dexoptanalyzer_tests"
     },
     {
@@ -5730,9 +5733,6 @@
     },
     {
       "name": "art-run-test-2273-checker-unreachable-intrinsics"
-    },
-    {
-      "name": "art_standalone_dexopt_chroot_setup_tests"
     }
   ]
 }

@@ -19,7 +19,7 @@
 #include <android-base/logging.h>
 
 #include "asm_support_arm.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 
 namespace art HIDDEN {
 

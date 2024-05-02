@@ -32,7 +32,6 @@ cc_defaults {
     ],
     export_include_dirs: ["native"],
     shared_libs: [
-        "libbase",
         "libnativehelper",
     ],
 }
@@ -48,6 +47,7 @@ cc_library {
         "libart",
         "libartbase",
         "libarttools", // Contains "libc++fs".
+        "libbase",
     ],
     sdclang: false,
 }
@@ -66,6 +66,7 @@ cc_library {
         "libartd",
         "libartbased",
         "libarttools", // Contains "libc++fs".
+        "libbase",
     ],
 }
 
@@ -95,6 +96,7 @@ java_defaults {
         "art-statslog-art-java",
         "artd-aidl-java",
         "dexopt_chroot_setup-aidl-java",
+        "modules-utils-build",
         "modules-utils-package-state",
         "modules-utils-shell-command-handler",
         "service-art-proto-java",
@@ -203,6 +205,7 @@ art_cc_test {
     ],
     shared_libs: [
         "libarttools",
+        "libbase",
     ],
 }
 
@@ -216,6 +219,7 @@ art_cc_test {
     ],
     static_libs: [
         "libarttools",
+        "libbase",
     ],
 }
 

@@ -694,7 +694,7 @@ dex::TypeIndex ProfileCompilationInfo::FindOrCreateTypeIndex(const DexFile& dex_
     return class_ref.TypeIndex();
   }
   // Try to find a `TypeId` in the method's dex file.
-  const char* descriptor = class_ref.dex_file->StringByTypeIdx(class_ref.TypeIndex());
+  const char* descriptor = class_ref.dex_file->GetTypeDescriptor(class_ref.TypeIndex());
   return FindOrCreateTypeIndex(dex_file, descriptor);
 }
 
@@ -1334,6 +1334,11 @@ bool ProfileCompilationInfo::AddMethod(const ProfileMethodInfo& pmi,
   DCHECK(inline_cache != nullptr);
 
   for (const ProfileMethodInfo::ProfileInlineCache& cache : pmi.inline_caches) {
+    if (cache.dex_pc >= std::numeric_limits<uint16_t>::max()) {
+      // Discard entries that don't fit the encoding. This should only apply to
+      // inlined inline caches. See also `HInliner::GetInlineCacheAOT`.
+      continue;
+    }
     if (cache.is_missing_types) {
       FindOrAddDexPc(inline_cache, cache.dex_pc)->SetIsMissingTypes();
       continue;

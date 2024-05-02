@@ -21,9 +21,9 @@
 #include "nativebridge/native_bridge.h"
 
 #include "art_method-inl.h"
-#include "base/enums.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "dex/dex_file-inl.h"
 #include "jni/jni_internal.h"
 #include "mirror/class-inl.h"

@@ -1262,6 +1262,14 @@ void Instrumentation::Deoptimize(ArtMethod* method) {
     CHECK(has_not_been_deoptimized) << "Method " << ArtMethod::PrettyMethod(method)
         << " is already deoptimized";
   }
+
+  if (method->IsObsolete()) {
+    // If method was marked as obsolete it should have `GetInvokeObsoleteMethodStub`
+    // as its quick entry point
+    CHECK_EQ(method->GetEntryPointFromQuickCompiledCode(), GetInvokeObsoleteMethodStub());
+    return;
+  }
+
   if (!InterpreterStubsInstalled()) {
     UpdateEntryPoints(method, GetQuickToInterpreterBridge());
 

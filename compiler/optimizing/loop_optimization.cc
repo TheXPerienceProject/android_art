@@ -875,6 +875,13 @@ static HBasicBlock* GetInnerLoopFiniteSingleExit(HLoopInformation* loop_info) {
   return exit;
 }
 
+// Determines whether predicated loop vectorization should be tried for ALL loops.
+#ifdef ART_FORCE_TRY_PREDICATED_SIMD
+  static constexpr bool kForceTryPredicatedSIMD = true;
+#else
+  static constexpr bool kForceTryPredicatedSIMD = false;
+#endif
+
 bool HLoopOptimization::TryOptimizeInnerLoopFinite(LoopNode* node) {
   HBasicBlock* header = node->loop_info->GetHeader();
   HBasicBlock* preheader = node->loop_info->GetPreHeader();
@@ -931,7 +938,7 @@ bool HLoopOptimization::TryOptimizeInnerLoopFinite(LoopNode* node) {
     return false;
   }
 
-  if (IsInPredicatedVectorizationMode()) {
+  if (kForceTryPredicatedSIMD && IsInPredicatedVectorizationMode()) {
     return TryVectorizePredicated(node, body, exit, main_phi, trip_count);
   } else {
     return TryVectorizedTraditional(node, body, exit, main_phi, trip_count);

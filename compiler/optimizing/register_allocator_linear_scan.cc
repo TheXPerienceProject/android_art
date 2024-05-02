@@ -21,7 +21,7 @@
 
 #include "base/bit_utils_iterator.h"
 #include "base/bit_vector-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "code_generator.h"
 #include "linear_order.h"
 #include "register_allocation_resolver.h"

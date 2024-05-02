@@ -25,8 +25,8 @@
 #include "array-inl.h"
 #include "art_field-inl.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
 #include "base/logging.h"  // For VLOG.
+#include "base/pointer_size.h"
 #include "base/sdk_version.h"
 #include "base/utils.h"
 #include "class-inl.h"
@@ -573,7 +573,7 @@ ArtMethod* Class::FindInterfaceMethod(ObjPtr<DexCache> dex_cache,
   // We always search by name and signature, ignoring the type index in the MethodId.
   const DexFile& dex_file = *dex_cache->GetDexFile();
   const dex::MethodId& method_id = dex_file.GetMethodId(dex_method_idx);
-  std::string_view name = dex_file.StringViewByIdx(method_id.name_idx_);
+  std::string_view name = dex_file.GetStringView(method_id.name_idx_);
   const Signature signature = dex_file.GetMethodSignature(method_id);
   return FindInterfaceMethod(name, signature, pointer_size);
 }
@@ -913,7 +913,7 @@ ArtMethod* Class::FindClassMethod(ObjPtr<DexCache> dex_cache,
   for (klass = this; klass != end_klass; klass = klass->GetSuperClass()) {
     ArraySlice<ArtMethod> copied_methods = klass->GetCopiedMethodsSlice(pointer_size);
     if (!copied_methods.empty() && name.empty()) {
-      name = dex_file.StringDataByIdx(method_id.name_idx_);
+      name = dex_file.GetMethodNameView(method_id);
     }
     for (ArtMethod& method : copied_methods) {
       if (method.GetNameView() == name && method.GetSignature() == signature) {
@@ -1043,9 +1043,9 @@ static std::tuple<bool, ArtField*> FindFieldByNameAndType(const DexFile& dex_fil
 
   // Fields are sorted by class, then name, then type descriptor. This is verified in dex file
   // verifier. There can be multiple fields with the same name in the same class due to proguard.
-  // Note: std::string_view::compare() uses lexicographical comparison and treats the `char` as
-  // unsigned; for Modified-UTF-8 without embedded nulls this is consistent with the
-  // CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues() ordering.
+  // Note: `std::string_view::compare()` uses lexicographical comparison and treats the `char`
+  // as unsigned; for Modified-UTF-8 without embedded nulls this is consistent with the
+  // `CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues()` ordering.
   auto get_field_id = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE
       -> const dex::FieldId& {
     ArtField& field = fields->At(mid);

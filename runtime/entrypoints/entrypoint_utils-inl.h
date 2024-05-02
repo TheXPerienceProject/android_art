@@ -23,7 +23,7 @@
 
 #include "art_field-inl.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "base/sdk_version.h"
 #include "class_linker-inl.h"
 #include "common_throws.h"
@@ -485,15 +485,14 @@ EXPLICIT_FIND_FIELD_FROM_CODE_TEMPLATE_DECL(StaticPrimitiveWrite);
 static inline bool IsStringInit(const DexFile* dex_file, uint32_t method_idx)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   const dex::MethodId& method_id = dex_file->GetMethodId(method_idx);
-  const char* class_name = dex_file->StringByTypeIdx(method_id.class_idx_);
-  const char* method_name = dex_file->GetMethodName(method_id);
+  const std::string_view class_name = dex_file->GetTypeDescriptorView(method_id.class_idx_);
+  const std::string_view method_name = dex_file->GetMethodNameView(method_id);
   // Instead of calling ResolveMethod() which has suspend point and can trigger
   // GC, look up the method symbolically.
   // Compare method's class name and method name against string init.
   // It's ok since it's not allowed to create your own java/lang/String.
   // TODO: verify that assumption.
-  if ((strcmp(class_name, "Ljava/lang/String;") == 0) &&
-      (strcmp(method_name, "<init>") == 0)) {
+  if (class_name == "Ljava/lang/String;" && method_name == "<init>") {
     return true;
   }
   return false;

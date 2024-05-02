@@ -32,6 +32,7 @@
 #include "base/mutex.h"
 #include "base/os.h"
 #include "base/safe_map.h"
+#include "class_linker.h"
 #include "instrumentation.h"
 #include "runtime_globals.h"
 #include "thread_pool.h"
@@ -192,6 +193,9 @@ class TraceWriter {
   // thread.
   void RecordThreadInfo(Thread* thread) REQUIRES(!tracing_lock_);
 
+  // Records information about all methods in the newly loaded class.
+  void RecordMethodInfo(mirror::Class* klass) REQUIRES_SHARED(Locks::mutator_lock_);
+
   bool HasOverflow() { return overflow_; }
   TraceOutputMode GetOutputMode() { return trace_output_mode_; }
   size_t GetBufferSize() { return buffer_size_; }
@@ -212,6 +216,8 @@ class TraceWriter {
   // buffer and assign parts of it for each thread.
   int GetMethodTraceIndex(uintptr_t* current_buffer);
 
+  int GetTraceFormatVersion() { return trace_format_version_; }
+
  private:
   void ReadValuesFromRecord(uintptr_t* method_trace_entries,
                             size_t record_index,
@@ -221,7 +227,6 @@ class TraceWriter {
 
   void FlushEntriesFormatV2(uintptr_t* method_trace_entries,
                             size_t tid,
-                            const std::unordered_map<ArtMethod*, std::string>& method_infos,
                             size_t num_records,
                             size_t* current_index,
                             uint8_t* init_buffer_ptr) REQUIRES(tracing_lock_);
@@ -249,7 +254,7 @@ class TraceWriter {
   // Helper function to record method information when processing the events. These are used by
   // streaming output mode. Non-streaming modes dump the methods and threads list at the end of
   // tracing.
-  void RecordMethodInfo(const std::string& method_line, uint32_t method_id) REQUIRES(tracing_lock_);
+  void RecordMethodInfo(const std::string& method_line, uint64_t method_id) REQUIRES(tracing_lock_);
 
   // Encodes the trace event. This assumes that there is enough space reserved to encode the entry.
   void EncodeEventEntry(uint8_t* ptr,
@@ -263,7 +268,7 @@ class TraceWriter {
   // encode the entry.
   void EncodeEventBlockHeader(uint8_t* ptr,
                               uint32_t thread_id,
-                              uint32_t method_index,
+                              uint64_t method_index,
                               uint32_t init_thread_clock_time,
                               uint32_t init_wall_clock_time,
                               uint16_t num_records) REQUIRES(tracing_lock_);
@@ -351,7 +356,7 @@ class TraceWriter {
 // Class for recording event traces. Trace data is either collected
 // synchronously during execution (TracingMode::kMethodTracingActive),
 // or by a separate sampling thread (TracingMode::kSampleProfilingActive).
-class Trace final : public instrumentation::InstrumentationListener {
+class Trace final : public instrumentation::InstrumentationListener, public ClassLoadCallback {
  public:
   enum TraceFlag {
     kTraceCountAllocs = 0x001,
@@ -456,6 +461,12 @@ class Trace final : public instrumentation::InstrumentationListener {
   void WatchedFramePop(Thread* thread, const ShadowFrame& frame)
       REQUIRES_SHARED(Locks::mutator_lock_) override;
 
+  // ClassLoadCallback implementation
+  void ClassLoad([[maybe_unused]] Handle<mirror::Class> klass)
+      REQUIRES_SHARED(Locks::mutator_lock_) override {}
+  void ClassPrepare(Handle<mirror::Class> temp_klass, Handle<mirror::Class> klass)
+      REQUIRES_SHARED(Locks::mutator_lock_) override;
+
   TraceClockSource GetClockSource() { return clock_source_; }
 
   // Reuse an old stack trace if it exists, otherwise allocate a new one.
@@ -471,6 +482,11 @@ class Trace final : public instrumentation::InstrumentationListener {
 
   // Used by class linker to prevent class unloading.
   static bool IsTracingEnabled() REQUIRES(!Locks::trace_lock_);
+
+  // Callback for each class prepare event to record information about the newly created methods.
+  static void ClassPrepare(Handle<mirror::Class> klass) REQUIRES_SHARED(Locks::mutator_lock_);
+
+  TraceWriter* GetTraceWriter() { return trace_writer_.get(); }
 
  private:
   Trace(File* trace_file,

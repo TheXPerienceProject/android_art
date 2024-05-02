@@ -24,10 +24,10 @@
 #include "base/array_ref.h"
 #include "base/bit_field.h"
 #include "base/bit_utils.h"
-#include "base/enums.h"
 #include "base/globals.h"
 #include "base/macros.h"
 #include "base/memory_region.h"
+#include "base/pointer_size.h"
 #include "class_root.h"
 #include "dex/string_reference.h"
 #include "dex/type_reference.h"
@@ -735,15 +735,15 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
  protected:
   // Patch info used for recording locations of required linker patches and their targets,
   // i.e. target method, string, type or code identified by their dex file and index,
-  // or .data.bimg.rel.ro entries identified by the boot image offset.
+  // or boot image .data.img.rel.ro entries identified by the boot image offset.
   template <typename LabelType>
   struct PatchInfo {
     PatchInfo(const DexFile* dex_file, uint32_t off_or_idx)
         : target_dex_file(dex_file), offset_or_index(off_or_idx), label() { }
 
-    // Target dex file or null for .data.bmig.rel.ro patches.
+    // Target dex file or null for boot image .data.img.rel.ro patches.
     const DexFile* target_dex_file;
-    // Either the boot image offset (to write to .data.bmig.rel.ro) or string/type/method index.
+    // Either the boot image offset (to write to .data.img.rel.ro) or string/type/method index.
     uint32_t offset_or_index;
     // Label for the instruction to patch.
     LabelType label;

@@ -620,8 +620,30 @@ cc_defaults {
     ],
 }
 
+// A defaults to link libunwindstack statically with necessary dependencies,
+// where all non-NDK dependencies are static as well.
+cc_defaults {
+    name: "art_libunwindstack_static_defaults",
+    whole_static_libs: [
+        "libunwindstack",
+        "libbase",
+        "liblzma",
+    ],
+    exclude_static_libs: [
+        // This library comes from the static version of libunwindstack.
+        "libz",
+    ],
+    shared_libs: [
+        "liblog",
+        "libz",
+    ],
+}
+
 cc_defaults {
     name: "libart_static_base_defaults",
+    defaults: [
+        "art_libunwindstack_static_defaults",
+    ],
     whole_static_libs: [
         "libartpalette",
         "libbase",
@@ -630,22 +652,12 @@ cc_defaults {
         "liblzma", // libelffile dependency; must be repeated here since it's a static lib.
         "libnativebridge",
         "libodrstatslog",
-        "libunwindstack",
-    ],
-    exclude_static_libs: [
-        // This library comes from the static version of libunwindstack.
-        "libz",
     ],
     target: {
         host: {
             cflags: [
                 "-fsanitize-address-use-after-return=never",
                 "-Wno-unused-command-line-argument",
-            ],
-        },
-        bionic: {
-            whole_static_libs: [
-                "libasync_safe", // libunwindstack dependency on Bionic.
             ],
         },
     },
@@ -1100,6 +1112,7 @@ art_cc_defaults {
         "verifier/reg_type_test.cc",
     ],
     shared_libs: [
+        // TODO(b/247108425): Resolve ODR problems and link statically.
         "libunwindstack",
     ],
     static_libs: [

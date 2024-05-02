@@ -41,6 +41,7 @@
 namespace art HIDDEN {
 
 class BitVector;
+class ClassLinker;
 class ClassLoaderContext;
 class ElfFile;
 class DexLayoutSections;
@@ -74,7 +75,7 @@ enum class OatClassType : uint8_t {
   kAllCompiled = 0,   // OatClass is followed by an OatMethodOffsets for each method.
   kSomeCompiled = 1,  // A bitmap of OatMethodOffsets that are present follows the OatClass.
   kNoneCompiled = 2,  // All methods are interpreted so no OatMethodOffsets are necessary.
-  kOatClassMax = 3,
+  kLast = kNoneCompiled
 };
 
 EXPORT std::ostream& operator<<(std::ostream& os, OatClassType rhs);
@@ -299,7 +300,8 @@ class OatFile {
     const uint32_t* const bitmap_;
     const OatMethodOffsets* const methods_pointer_;
 
-    friend class art::OatDexFile;
+    friend class ClassLinker;
+    friend class OatDexFile;
   };
 
   // Get the OatDexFile for the given dex_location within this oat file.
@@ -323,8 +325,8 @@ class OatFile {
     return p >= Begin() && p < End();
   }
 
-  size_t DataBimgRelRoSize() const {
-    return DataBimgRelRoEnd() - DataBimgRelRoBegin();
+  size_t DataImgRelRoSize() const {
+    return DataImgRelRoEnd() - DataImgRelRoBegin();
   }
 
   size_t BssSize() const {
@@ -352,8 +354,8 @@ class OatFile {
   EXPORT const uint8_t* Begin() const;
   EXPORT const uint8_t* End() const;
 
-  const uint8_t* DataBimgRelRoBegin() const { return data_bimg_rel_ro_begin_; }
-  const uint8_t* DataBimgRelRoEnd() const { return data_bimg_rel_ro_end_; }
+  const uint8_t* DataImgRelRoBegin() const { return data_img_rel_ro_begin_; }
+  const uint8_t* DataImgRelRoEnd() const { return data_img_rel_ro_end_; }
 
   const uint8_t* BssBegin() const { return bss_begin_; }
   const uint8_t* BssEnd() const { return bss_end_; }
@@ -368,7 +370,7 @@ class OatFile {
   EXPORT ArrayRef<ArtMethod*> GetBssMethods() const;
   EXPORT ArrayRef<GcRoot<mirror::Object>> GetBssGcRoots() const;
 
-  // Initialize relocation sections (.data.bimg.rel.ro and .bss).
+  // Initialize relocation sections (.data.img.rel.ro and .bss).
   void InitializeRelocations() const;
 
   // Finds the associated oat class for a dex_file and descriptor. Returns an invalid OatClass on
@@ -421,11 +423,11 @@ class OatFile {
   // Pointer to end of oat region for bounds checking.
   const uint8_t* end_;
 
-  // Pointer to the .data.bimg.rel.ro section, if present, otherwise null.
-  const uint8_t* data_bimg_rel_ro_begin_;
+  // Pointer to the .data.img.rel.ro section, if present, otherwise null.
+  const uint8_t* data_img_rel_ro_begin_;
 
-  // Pointer to the end of the .data.bimg.rel.ro section, if present, otherwise null.
-  const uint8_t* data_bimg_rel_ro_end_;
+  // Pointer to the end of the .data.img.rel.ro section, if present, otherwise null.
+  const uint8_t* data_img_rel_ro_end_;
 
   // Pointer to the .bss section, if present, otherwise null.
   uint8_t* bss_begin_;

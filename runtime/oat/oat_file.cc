@@ -41,11 +41,11 @@
 #include "arch/instruction_set_features.h"
 #include "art_method.h"
 #include "base/bit_vector.h"
-#include "base/enums.h"
 #include "base/file_utils.h"
 #include "base/logging.h"  // For VLOG_IS_ON.
 #include "base/mem_map.h"
 #include "base/os.h"
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "base/string_view_cpp20.h"
 #include "base/systrace.h"
@@ -346,17 +346,17 @@ bool OatFileBase::ComputeFields(const std::string& file_path, std::string* error
   // Readjust to be non-inclusive upper bound.
   end_ += sizeof(uint32_t);
 
-  data_bimg_rel_ro_begin_ = FindDynamicSymbolAddress("oatdatabimgrelro", &symbol_error_msg);
-  if (data_bimg_rel_ro_begin_ != nullptr) {
-    data_bimg_rel_ro_end_ =
-        FindDynamicSymbolAddress("oatdatabimgrelrolastword", &symbol_error_msg);
-    if (data_bimg_rel_ro_end_ == nullptr) {
+  data_img_rel_ro_begin_ = FindDynamicSymbolAddress("oatdataimgrelro", &symbol_error_msg);
+  if (data_img_rel_ro_begin_ != nullptr) {
+    data_img_rel_ro_end_ =
+        FindDynamicSymbolAddress("oatdataimgrelrolastword", &symbol_error_msg);
+    if (data_img_rel_ro_end_ == nullptr) {
       *error_msg =
-          StringPrintf("Failed to find oatdatabimgrelrolastword symbol in '%s'", file_path.c_str());
+          StringPrintf("Failed to find oatdataimgrelrolastword symbol in '%s'", file_path.c_str());
       return false;
     }
     // Readjust to be non-inclusive upper bound.
-    data_bimg_rel_ro_end_ += sizeof(uint32_t);
+    data_img_rel_ro_end_ += sizeof(uint32_t);
   }
 
   bss_begin_ = const_cast<uint8_t*>(FindDynamicSymbolAddress("oatbss", &symbol_error_msg));
@@ -610,14 +610,14 @@ bool OatFileBase::Setup(int zip_fd,
   }
   const uint8_t* oat = Begin() + oat_dex_files_offset;  // Jump to the OatDexFile records.
 
-  if (!IsAligned<sizeof(uint32_t)>(data_bimg_rel_ro_begin_) ||
-      !IsAligned<sizeof(uint32_t)>(data_bimg_rel_ro_end_) ||
-      data_bimg_rel_ro_begin_ > data_bimg_rel_ro_end_) {
+  if (!IsAligned<sizeof(uint32_t)>(data_img_rel_ro_begin_) ||
+      !IsAligned<sizeof(uint32_t)>(data_img_rel_ro_end_) ||
+      data_img_rel_ro_begin_ > data_img_rel_ro_end_) {
     *error_msg = StringPrintf("In oat file '%s' found unaligned or unordered databimgrelro "
                                   "symbol(s): begin = %p, end = %p",
                               GetLocation().c_str(),
-                              data_bimg_rel_ro_begin_,
-                              data_bimg_rel_ro_end_);
+                              data_img_rel_ro_begin_,
+                              data_img_rel_ro_end_);
     return false;
   }
 
@@ -1122,13 +1122,13 @@ bool OatFileBase::Setup(int zip_fd,
     return false;
   }
 
-  if (DataBimgRelRoBegin() != nullptr) {
-    // Make .data.bimg.rel.ro read only. ClassLinker shall temporarily make it writable for
+  if (DataImgRelRoBegin() != nullptr) {
+    // Make .data.img.rel.ro read only. ClassLinker shall temporarily make it writable for
     // relocation when we register a dex file from this oat file. We do not do the relocation
     // here to avoid dirtying the pages if the code is never actually ready to be executed.
-    uint8_t* reloc_begin = const_cast<uint8_t*>(DataBimgRelRoBegin());
-    CheckedCall(mprotect, "protect relocations", reloc_begin, DataBimgRelRoSize(), PROT_READ);
-    // Make sure the file lists a boot image dependency, otherwise the .data.bimg.rel.ro
+    uint8_t* reloc_begin = const_cast<uint8_t*>(DataImgRelRoBegin());
+    CheckedCall(mprotect, "protect relocations", reloc_begin, DataImgRelRoSize(), PROT_READ);
+    // Make sure the file lists a boot image dependency, otherwise the .data.img.rel.ro
     // section is bogus. The full dependency is checked before the code is executed.
     // We cannot do this check if we do not have a key-value store, i.e. for secondary
     // oat files for boot image extensions.
@@ -1137,7 +1137,7 @@ bool OatFileBase::Setup(int zip_fd,
           GetOatHeader().GetStoreValueByKey(OatHeader::kBootClassPathChecksumsKey);
       if (boot_class_path_checksum == nullptr ||
           boot_class_path_checksum[0] != gc::space::ImageSpace::kImageChecksumPrefix) {
-        *error_msg = StringPrintf("Oat file '%s' contains .data.bimg.rel.ro section "
+        *error_msg = StringPrintf("Oat file '%s' contains .data.img.rel.ro section "
                                       "without boot image dependency.",
                                   GetLocation().c_str());
         return false;
@@ -2056,8 +2056,8 @@ OatFile::OatFile(const std::string& location, bool is_executable)
       vdex_(nullptr),
       begin_(nullptr),
       end_(nullptr),
-      data_bimg_rel_ro_begin_(nullptr),
-      data_bimg_rel_ro_end_(nullptr),
+      data_img_rel_ro_begin_(nullptr),
+      data_img_rel_ro_end_(nullptr),
       bss_begin_(nullptr),
       bss_end_(nullptr),
       bss_methods_(nullptr),
@@ -2096,9 +2096,9 @@ const uint8_t* OatFile::DexEnd() const {
 }
 
 ArrayRef<const uint32_t> OatFile::GetBootImageRelocations() const {
-  if (data_bimg_rel_ro_begin_ != nullptr) {
-    const uint32_t* relocations = reinterpret_cast<const uint32_t*>(data_bimg_rel_ro_begin_);
-    const uint32_t* relocations_end = reinterpret_cast<const uint32_t*>(data_bimg_rel_ro_end_);
+  if (data_img_rel_ro_begin_ != nullptr) {
+    const uint32_t* relocations = reinterpret_cast<const uint32_t*>(data_img_rel_ro_begin_);
+    const uint32_t* relocations_end = reinterpret_cast<const uint32_t*>(data_img_rel_ro_end_);
     return ArrayRef<const uint32_t>(relocations, relocations_end - relocations);
   } else {
     return ArrayRef<const uint32_t>();
@@ -2328,7 +2328,7 @@ OatFile::OatClass OatDexFile::GetOatClass(uint16_t class_def_index) const {
   current_pointer += sizeof(uint16_t);
   CHECK_LE(status_value, enum_cast<uint8_t>(ClassStatus::kLast))
       << static_cast<uint32_t>(status_value) << " at " << oat_file_->GetLocation();
-  CHECK_LT(type_value, enum_cast<uint8_t>(OatClassType::kOatClassMax)) << oat_file_->GetLocation();
+  CHECK_LE(type_value, enum_cast<uint8_t>(OatClassType::kLast)) << oat_file_->GetLocation();
   ClassStatus status = enum_cast<ClassStatus>(status_value);
   OatClassType type = enum_cast<OatClassType>(type_value);
 
@@ -2528,13 +2528,13 @@ static void DCheckIndexToBssMapping(const OatFile* oat_file,
 void OatFile::InitializeRelocations() const {
   DCHECK(IsExecutable());
 
-  // Initialize the .data.bimg.rel.ro section.
+  // Initialize the .data.img.rel.ro section.
   if (!GetBootImageRelocations().empty()) {
-    uint8_t* reloc_begin = const_cast<uint8_t*>(DataBimgRelRoBegin());
+    uint8_t* reloc_begin = const_cast<uint8_t*>(DataImgRelRoBegin());
     CheckedCall(mprotect,
                 "un-protect boot image relocations",
                 reloc_begin,
-                DataBimgRelRoSize(),
+                DataImgRelRoSize(),
                 PROT_READ | PROT_WRITE);
     uint32_t boot_image_begin = Runtime::Current()->GetHeap()->GetBootImagesStartAddress();
     for (const uint32_t& relocation : GetBootImageRelocations()) {
@@ -2543,7 +2543,7 @@ void OatFile::InitializeRelocations() const {
     CheckedCall(mprotect,
                 "protect boot image relocations",
                 reloc_begin,
-                DataBimgRelRoSize(),
+                DataImgRelRoSize(),
                 PROT_READ);
   }
 

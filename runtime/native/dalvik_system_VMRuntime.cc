@@ -32,7 +32,7 @@ extern "C" void android_set_application_target_sdk_version(uint32_t version);
 #include "android-base/properties.h"
 #include "arch/instruction_set.h"
 #include "art_method-inl.h"
-#include "base/enums.h"
+#include "base/pointer_size.h"
 #include "base/sdk_version.h"
 #include "class_linker-inl.h"
 #include "class_loader_context.h"

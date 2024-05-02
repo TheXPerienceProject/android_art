@@ -73,4 +73,10 @@ static std::string EscapeErrorMessage(const std::string& message) {
       },                               \
       expr)
 
+#define ASSERT_STATUS_OK(expr)                                                               \
+  ({                                                                                         \
+    ndk::ScopedAStatus __assert_status_ok_status = (expr);                                   \
+    ASSERT_TRUE(__assert_status_ok_status.isOk()) << __assert_status_ok_status.getMessage(); \
+  })
+
 #endif  // ART_LIBARTTOOLS_INCLUDE_BINDER_UTILS_TOOLS_BINDER_UTILS_H_

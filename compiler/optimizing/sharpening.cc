@@ -18,8 +18,8 @@
 
 #include "art_method-inl.h"
 #include "base/casts.h"
-#include "base/enums.h"
 #include "base/logging.h"
+#include "base/pointer_size.h"
 #include "class_linker.h"
 #include "code_generator.h"
 #include "driver/compiler_options.h"
@@ -54,7 +54,7 @@ static bool BootImageAOTCanEmbedMethod(ArtMethod* method, const CompilerOptions&
   ObjPtr<mirror::Class> klass = method->GetDeclaringClass();
   DCHECK(klass != nullptr);
   const DexFile& dex_file = klass->GetDexFile();
-  return compiler_options.IsImageClass(dex_file.StringByTypeIdx(klass->GetDexTypeIndex()));
+  return compiler_options.IsImageClass(dex_file.GetTypeDescriptor(klass->GetDexTypeIndex()));
 }
 
 HInvokeStaticOrDirect::DispatchInfo HSharpening::SharpenLoadMethod(
@@ -127,7 +127,7 @@ HInvokeStaticOrDirect::DispatchInfo HSharpening::SharpenLoadMethod(
       code_ptr_location = CodePtrLocation::kCallArtMethod;
     }
   } else if (IsInBootImage(callee)) {
-    // Use PC-relative access to the .data.bimg.rel.ro methods array.
+    // Use PC-relative access to the .data.img.rel.ro boot image methods array.
     method_load_kind = MethodLoadKind::kBootImageRelRo;
     code_ptr_location = CodePtrLocation::kCallArtMethod;
   } else if (!has_method_id) {
@@ -173,7 +173,7 @@ HLoadClass::LoadKind HSharpening::ComputeLoadClassKind(
 
   auto is_class_in_current_boot_image = [&]() {
     return (compiler_options.IsBootImage() || compiler_options.IsBootImageExtension()) &&
-           compiler_options.IsImageClass(dex_file.StringByTypeIdx(type_index));
+           compiler_options.IsImageClass(dex_file.GetTypeDescriptor(type_index));
   };
 
   bool is_in_boot_image = false;
@@ -210,12 +210,12 @@ HLoadClass::LoadKind HSharpening::ComputeLoadClassKind(
         const char* slash_pos = strrchr(descriptor, '/');
         return (slash_pos != nullptr) ? static_cast<size_t>(slash_pos - descriptor) : 0u;
       };
-      const char* klass_descriptor = dex_file.StringByTypeIdx(type_index);
+      const char* klass_descriptor = dex_file.GetTypeDescriptor(type_index);
       const uint32_t klass_package_length = package_length(klass_descriptor);
       const DexFile* referrer_dex_file = dex_compilation_unit.GetDexFile();
       const dex::TypeIndex referrer_type_index =
           referrer_dex_file->GetClassDef(dex_compilation_unit.GetClassDefIndex()).class_idx_;
-      const char* referrer_descriptor = referrer_dex_file->StringByTypeIdx(referrer_type_index);
+      const char* referrer_descriptor = referrer_dex_file->GetTypeDescriptor(referrer_type_index);
       const uint32_t referrer_package_length = package_length(referrer_descriptor);
       bool same_package =
           (referrer_package_length == klass_package_length) &&
@@ -240,7 +240,7 @@ HLoadClass::LoadKind HSharpening::ComputeLoadClassKind(
         is_in_boot_image = true;
         desired_load_kind = HLoadClass::LoadKind::kBootImageRelRo;
       } else if ((klass != nullptr) &&
-                 compiler_options.IsImageClass(dex_file.StringByTypeIdx(type_index))) {
+                 compiler_options.IsImageClass(dex_file.GetTypeDescriptor(type_index))) {
         is_in_boot_image = true;
         desired_load_kind = HLoadClass::LoadKind::kBootImageLinkTimePcRelative;
       } else {
@@ -317,7 +317,7 @@ static inline bool CanUseTypeCheckBitstring(ObjPtr<mirror::Class> klass, CodeGen
   if (compiler_options.IsJitCompiler()) {
     // If we're JITting, try to assign a type check bitstring (fall through).
   } else if (codegen->GetCompilerOptions().IsBootImage()) {
-    const char* descriptor = klass->GetDexFile().StringByTypeIdx(klass->GetDexTypeIndex());
+    const char* descriptor = klass->GetDexFile().GetTypeDescriptor(klass->GetDexTypeIndex());
     if (!codegen->GetCompilerOptions().IsImageClass(descriptor)) {
       return false;
     }

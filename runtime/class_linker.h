@@ -27,12 +27,12 @@
 #include <vector>
 
 #include "base/array_ref.h"
-#include "base/enums.h"
 #include "base/hash_map.h"
 #include "base/intrusive_forward_list.h"
 #include "base/locks.h"
 #include "base/macros.h"
 #include "base/mutex.h"
+#include "base/pointer_size.h"
 #include "dex/class_accessor.h"
 #include "dex/dex_file_types.h"
 #include "gc_root.h"
@@ -67,6 +67,7 @@ class ScopedObjectAccessAlreadyRunnable;
 class SdkChecker;
 template<size_t kNumReferences> class PACKED(4) StackHandleScope;
 class Thread;
+class VariableSizedHandleScope;
 
 enum VisitRootFlags : uint8_t;
 
@@ -787,6 +788,10 @@ class EXPORT ClassLinker {
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::classlinker_classes_lock_);
 
+  void GetClassLoaders(Thread* self, VariableSizedHandleScope* handles)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      REQUIRES(!Locks::classlinker_classes_lock_);
+
   // Returns null if not found.
   // This returns a pointer to the class-table, without requiring any locking - including the
   // boot class-table. It is the caller's responsibility to access this under lock, if required.
@@ -924,6 +929,8 @@ class EXPORT ClassLinker {
   class LinkFieldsHelper;
   template <PointerSize kPointerSize>
   class LinkMethodsHelper;
+  class MethodAnnotationsIterator;
+  class OatClassCodeIterator;
   class VisiblyInitializedCallback;
 
   struct ClassLoaderData {
@@ -1043,8 +1050,13 @@ class EXPORT ClassLinker {
   void LoadMethod(const DexFile& dex_file,
                   const ClassAccessor::Method& method,
                   ObjPtr<mirror::Class> klass,
-                  ArtMethod* dst)
+                  /*inout*/ MethodAnnotationsIterator* mai,
+                  /*out*/ ArtMethod* dst)
       REQUIRES_SHARED(Locks::mutator_lock_);
+
+  void LinkCode(ArtMethod* method,
+                uint32_t class_def_method_index,
+                /*inout*/ OatClassCodeIterator* occi) REQUIRES_SHARED(Locks::mutator_lock_);
 
   void FixupStaticTrampolines(Thread* self, ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_);

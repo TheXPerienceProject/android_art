@@ -20,9 +20,9 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "base/enums.h"
 #include "base/locks.h"
 #include "base/macros.h"
+#include "base/pointer_size.h"
 #include "handle.h"
 #include "mirror/class.h"
 #include "oat/oat_quick_method_header.h"

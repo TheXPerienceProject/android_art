@@ -52,11 +52,11 @@
 #include "art_method.h"
 #include "base/array_ref.h"
 #include "base/casts.h"
-#include "base/enums.h"
 #include "base/globals.h"
 #include "base/iteration_range.h"
 #include "base/length_prefixed_array.h"
 #include "base/locks.h"
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "base/utils.h"
 #include "class_linker-inl.h"
@@ -879,8 +879,12 @@ template <typename T> struct NameAndSignature {
 
   NameAndSignature(const std::string_view& name, const SigType& sig) : name_(name), sig_(sig) {}
 
-  bool operator==(const NameAndSignature<T>& o) {
+  bool operator==(const NameAndSignature<T>& o) const {
     return name_ == o.name_ && sig_ == o.sig_;
+  }
+
+  bool operator!=(const NameAndSignature<T>& o) const {
+    return !(*this == o);
   }
 
   std::ostream& dump(std::ostream& os) const {
@@ -1091,7 +1095,7 @@ bool Redefiner::ClassRedefinition::CheckClass() {
   // Check class name.
   // These should have been checked by the dexfile verifier on load.
   DCHECK_NE(def.class_idx_, art::dex::TypeIndex::Invalid()) << "Invalid type index";
-  const char* descriptor = dex_file_->StringByTypeIdx(def.class_idx_);
+  const char* descriptor = dex_file_->GetTypeDescriptor(def.class_idx_);
   DCHECK(descriptor != nullptr) << "Invalid dex file structure!";
   if (!current_class->DescriptorEquals(descriptor)) {
     std::string storage;
@@ -1107,7 +1111,7 @@ bool Redefiner::ClassRedefinition::CheckClass() {
       return false;
     }
   } else {
-    const char* super_descriptor = dex_file_->StringByTypeIdx(def.superclass_idx_);
+    const char* super_descriptor = dex_file_->GetTypeDescriptor(def.superclass_idx_);
     DCHECK(descriptor != nullptr) << "Invalid dex file structure!";
     if (!current_class->GetSuperClass()->DescriptorEquals(super_descriptor)) {
       RecordFailure(ERR(UNSUPPORTED_REDEFINITION_HIERARCHY_CHANGED), "Superclass changed");
@@ -1133,8 +1137,8 @@ bool Redefiner::ClassRedefinition::CheckClass() {
     const art::DexFile& orig_dex_file = current_class->GetDexFile();
     for (uint32_t i = 0; i < interfaces->Size(); i++) {
       if (strcmp(
-            dex_file_->StringByTypeIdx(interfaces->GetTypeItem(i).type_idx_),
-            orig_dex_file.StringByTypeIdx(current_interfaces->GetTypeItem(i).type_idx_)) != 0) {
+            dex_file_->GetTypeDescriptor(interfaces->GetTypeItem(i).type_idx_),
+            orig_dex_file.GetTypeDescriptor(current_interfaces->GetTypeItem(i).type_idx_)) != 0) {
         RecordFailure(ERR(UNSUPPORTED_REDEFINITION_HIERARCHY_CHANGED),
                       "Interfaces changed or re-ordered");
         return false;
@@ -2546,6 +2550,9 @@ void Redefiner::ClassRedefinition::UpdateMethods(art::ObjPtr<art::mirror::Class>
   const art::DexFile& old_dex_file = mclass->GetDexFile();
   // Update methods.
   for (art::ArtMethod& method : mclass->GetDeclaredMethods(image_pointer_size)) {
+    // Reinitialize the method by calling `CopyFrom`. This ensures for example
+    // the entrypoint and the hotness are reset.
+    method.CopyFrom(&method, image_pointer_size);
     const art::dex::StringId* new_name_id = dex_file_->FindStringId(method.GetName());
     art::dex::TypeIndex method_return_idx =
         dex_file_->GetIndexForTypeId(*dex_file_->FindTypeId(method.GetReturnTypeDescriptor()));

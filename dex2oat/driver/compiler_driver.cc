@@ -33,9 +33,9 @@
 #include "base/arena_allocator.h"
 #include "base/array_ref.h"
 #include "base/bit_vector.h"
-#include "base/enums.h"
 #include "base/hash_set.h"
 #include "base/logging.h"  // For VLOG
+#include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "base/string_view_cpp20.h"
 #include "base/systrace.h"
@@ -577,7 +577,6 @@ void CompilerDriver::Resolve(jobject class_loader,
     CHECK(dex_file != nullptr);
     ResolveDexFile(class_loader,
                    *dex_file,
-                   dex_files,
                    resolve_thread_pool,
                    resolve_thread_count,
                    timings);
@@ -688,7 +687,7 @@ static void InitializeTypeCheckBitstrings(CompilerDriver* driver,
       case Instruction::INSTANCE_OF: {
         dex::TypeIndex type_index(
             (inst->Opcode() == Instruction::CHECK_CAST) ? inst->VRegB_21c() : inst->VRegC_22c());
-        const char* descriptor = dex_file.StringByTypeIdx(type_index);
+        const char* descriptor = dex_file.GetTypeDescriptor(type_index);
         // We currently do not use the bitstring type check for array or final (including
         // primitive) classes. We may reconsider this in future if it's deemed to be beneficial.
         // And we cannot use it for classes outside the boot image as we do not know the runtime
@@ -836,24 +835,27 @@ void CompilerDriver::PreCompile(jobject class_loader,
   LoadImageClasses(timings, image_classes);
   VLOG(compiler) << "LoadImageClasses: " << GetMemoryUsageString(false);
 
-  if (compiler_options_->IsAnyCompilationEnabled()) {
-    // Avoid adding the dex files in the case where we aren't going to add compiled methods.
-    // This reduces RAM usage for this case.
-    for (const DexFile* dex_file : dex_files) {
-      // Can be already inserted. This happens for gtests.
-      if (!compiled_methods_.HaveDexFile(dex_file)) {
-        compiled_methods_.AddDexFile(dex_file);
-      }
-    }
-    // Resolve eagerly to prepare for compilation.
-    Resolve(class_loader, dex_files, timings);
-    VLOG(compiler) << "Resolve: " << GetMemoryUsageString(false);
-  }
-
   if (compiler_options_->AssumeClassesAreVerified()) {
     VLOG(compiler) << "Verify none mode specified, skipping verification.";
     SetVerified(class_loader, dex_files, timings);
-  } else if (compiler_options_->IsVerificationEnabled()) {
+  } else {
+    DCHECK(compiler_options_->IsVerificationEnabled());
+
+    if (compiler_options_->IsAnyCompilationEnabled()) {
+      // Avoid adding the dex files in the case where we aren't going to add compiled methods.
+      // This reduces RAM usage for this case.
+      for (const DexFile* dex_file : dex_files) {
+        // Can be already inserted. This happens for gtests.
+        if (!compiled_methods_.HaveDexFile(dex_file)) {
+          compiled_methods_.AddDexFile(dex_file);
+        }
+      }
+    }
+
+    // Resolve eagerly as both verification and compilation benefit from this.
+    Resolve(class_loader, dex_files, timings);
+    VLOG(compiler) << "Resolve: " << GetMemoryUsageString(false);
+
     Verify(class_loader, dex_files, timings);
     VLOG(compiler) << "Verify: " << GetMemoryUsageString(false);
 
@@ -1433,14 +1435,12 @@ class ParallelCompilationManager {
                              jobject class_loader,
                              CompilerDriver* compiler,
                              const DexFile* dex_file,
-                             const std::vector<const DexFile*>& dex_files,
                              ThreadPool* thread_pool)
     : index_(0),
       class_linker_(class_linker),
       class_loader_(class_loader),
       compiler_(compiler),
       dex_file_(dex_file),
-      dex_files_(dex_files),
       thread_pool_(thread_pool) {}
 
   ClassLinker* GetClassLinker() const {
@@ -1460,10 +1460,6 @@ class ParallelCompilationManager {
   const DexFile* GetDexFile() const {
     CHECK(dex_file_ != nullptr);
     return dex_file_;
-  }
-
-  const std::vector<const DexFile*>& GetDexFiles() const {
-    return dex_files_;
   }
 
   void ForAll(size_t begin, size_t end, CompilationVisitor* visitor, size_t work_units)
@@ -1534,7 +1530,6 @@ class ParallelCompilationManager {
   const jobject class_loader_;
   CompilerDriver* const compiler_;
   const DexFile* const dex_file_;
-  const std::vector<const DexFile*>& dex_files_;
   ThreadPool* const thread_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(ParallelCompilationManager);
@@ -1662,7 +1657,6 @@ class ResolveTypeVisitor : public CompilationVisitor {
 
 void CompilerDriver::ResolveDexFile(jobject class_loader,
                                     const DexFile& dex_file,
-                                    const std::vector<const DexFile*>& dex_files,
                                     ThreadPool* thread_pool,
                                     size_t thread_count,
                                     TimingLogger* timings) {
@@ -1673,8 +1667,7 @@ void CompilerDriver::ResolveDexFile(jobject class_loader,
   // TODO: we could resolve strings here, although the string table is largely filled with class
   //       and method names.
 
-  ParallelCompilationManager context(class_linker, class_loader, this, &dex_file, dex_files,
-                                     thread_pool);
+  ParallelCompilationManager context(class_linker, class_loader, this, &dex_file, thread_pool);
   // For boot images we resolve all referenced types, such as arrays,
   // whereas for applications just those with classdefs.
   if (GetCompilerOptions().IsBootImage() || GetCompilerOptions().IsBootImageExtension()) {
@@ -1694,7 +1687,6 @@ void CompilerDriver::SetVerified(jobject class_loader,
     CHECK(dex_file != nullptr);
     SetVerifiedDexFile(class_loader,
                        *dex_file,
-                       dex_files,
                        parallel_thread_pool_.get(),
                        parallel_thread_count_,
                        timings);
@@ -1850,7 +1842,6 @@ void CompilerDriver::Verify(jobject jclass_loader,
     CHECK(dex_file != nullptr);
     VerifyDexFile(jclass_loader,
                   *dex_file,
-                  dex_files,
                   verify_thread_pool,
                   verify_thread_count,
                   timings);
@@ -2019,14 +2010,12 @@ class VerifyClassVisitor : public CompilationVisitor {
 
 void CompilerDriver::VerifyDexFile(jobject class_loader,
                                    const DexFile& dex_file,
-                                   const std::vector<const DexFile*>& dex_files,
                                    ThreadPool* thread_pool,
                                    size_t thread_count,
                                    TimingLogger* timings) {
   TimingLogger::ScopedTiming t("Verify Dex File", timings);
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  ParallelCompilationManager context(class_linker, class_loader, this, &dex_file, dex_files,
-                                     thread_pool);
+  ParallelCompilationManager context(class_linker, class_loader, this, &dex_file, thread_pool);
   bool abort_on_verifier_failures = GetCompilerOptions().AbortOnHardVerifierFailure()
                                     || GetCompilerOptions().AbortOnSoftVerifierFailure();
   verifier::HardFailLogMode log_level = abort_on_verifier_failures
@@ -2088,7 +2077,6 @@ class SetVerifiedClassVisitor : public CompilationVisitor {
 
 void CompilerDriver::SetVerifiedDexFile(jobject class_loader,
                                         const DexFile& dex_file,
-                                        const std::vector<const DexFile*>& dex_files,
                                         ThreadPool* thread_pool,
                                         size_t thread_count,
                                         TimingLogger* timings) {
@@ -2097,8 +2085,7 @@ void CompilerDriver::SetVerifiedDexFile(jobject class_loader,
     compiled_classes_.AddDexFile(&dex_file);
   }
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  ParallelCompilationManager context(class_linker, class_loader, this, &dex_file, dex_files,
-                                     thread_pool);
+  ParallelCompilationManager context(class_linker, class_loader, this, &dex_file, thread_pool);
   SetVerifiedClassVisitor visitor(&context);
   context.ForAll(0, dex_file.NumClassDefs(), &visitor, thread_count);
 }
@@ -2113,7 +2100,7 @@ class InitializeClassVisitor : public CompilationVisitor {
     const DexFile& dex_file = *manager_->GetDexFile();
     const dex::ClassDef& class_def = dex_file.GetClassDef(class_def_index);
     const dex::TypeId& class_type_id = dex_file.GetTypeId(class_def.class_idx_);
-    const char* descriptor = dex_file.StringDataByIdx(class_type_id.descriptor_idx_);
+    const char* descriptor = dex_file.GetStringData(class_type_id.descriptor_idx_);
 
     ScopedObjectAccess soa(Thread::Current());
     StackHandleScope<3> hs(soa.Self());
@@ -2140,7 +2127,7 @@ class InitializeClassVisitor : public CompilationVisitor {
     const DexFile& dex_file = klass->GetDexFile();
     const dex::ClassDef* class_def = klass->GetClassDef();
     const dex::TypeId& class_type_id = dex_file.GetTypeId(class_def->class_idx_);
-    const char* descriptor = dex_file.StringDataByIdx(class_type_id.descriptor_idx_);
+    const char* descriptor = dex_file.GetStringData(class_type_id.descriptor_idx_);
     StackHandleScope<3> hs(self);
     ClassLinker* const class_linker = manager_->GetClassLinker();
     Runtime* const runtime = Runtime::Current();
@@ -2529,7 +2516,6 @@ class InitializeClassVisitor : public CompilationVisitor {
 
 void CompilerDriver::InitializeClasses(jobject jni_class_loader,
                                        const DexFile& dex_file,
-                                       const std::vector<const DexFile*>& dex_files,
                                        TimingLogger* timings) {
   TimingLogger::ScopedTiming t("InitializeNoClinit", timings);
 
@@ -2541,8 +2527,8 @@ void CompilerDriver::InitializeClasses(jobject jni_class_loader,
   size_t init_thread_count = force_determinism ? 1U : parallel_thread_count_;
 
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  ParallelCompilationManager context(class_linker, jni_class_loader, this, &dex_file, dex_files,
-                                     init_thread_pool);
+  ParallelCompilationManager context(
+      class_linker, jni_class_loader, this, &dex_file, init_thread_pool);
 
   if (GetCompilerOptions().IsBootImage() ||
       GetCompilerOptions().IsBootImageExtension() ||
@@ -2562,10 +2548,9 @@ void CompilerDriver::InitializeClasses(jobject jni_class_loader,
 void CompilerDriver::InitializeClasses(jobject class_loader,
                                        const std::vector<const DexFile*>& dex_files,
                                        TimingLogger* timings) {
-  for (size_t i = 0; i != dex_files.size(); ++i) {
-    const DexFile* dex_file = dex_files[i];
+  for (const DexFile* dex_file : dex_files) {
     CHECK(dex_file != nullptr);
-    InitializeClasses(class_loader, *dex_file, dex_files, timings);
+    InitializeClasses(class_loader, *dex_file, timings);
   }
   if (GetCompilerOptions().IsBootImage() || GetCompilerOptions().IsBootImageExtension()) {
     // Prune garbage objects created during aborted transactions.
@@ -2577,7 +2562,6 @@ template <typename CompileFn>
 static void CompileDexFile(CompilerDriver* driver,
                            jobject class_loader,
                            const DexFile& dex_file,
-                           const std::vector<const DexFile*>& dex_files,
                            ThreadPool* thread_pool,
                            size_t thread_count,
                            TimingLogger* timings,
@@ -2588,7 +2572,6 @@ static void CompileDexFile(CompilerDriver* driver,
                                      class_loader,
                                      driver,
                                      &dex_file,
-                                     dex_files,
                                      thread_pool);
   const CompilerOptions& compiler_options = driver->GetCompilerOptions();
   bool have_profile = (compiler_options.GetProfileCompilationInfo() != nullptr);
@@ -2683,7 +2666,6 @@ void CompilerDriver::Compile(jobject class_loader,
     CompileDexFile(this,
                    class_loader,
                    *dex_file,
-                   dex_files,
                    parallel_thread_pool_.get(),
                    parallel_thread_count_,
                    timings,
