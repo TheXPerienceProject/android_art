@@ -251,6 +251,22 @@ interface IArtd {
      */
     long getProfileSize(in com.android.server.art.ProfilePath profile);
 
+    /**
+     * Moves the staged files of the given artifacts and profiles to the permanent locations,
+     * replacing old files if they exist. Removes the staged files and restores the old files at
+     * best effort if any error occurs.
+     *
+     * This is intended to be called for a superset of the packages that we actually expect to have
+     * staged files, so missing files are expected.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
+     * Throws fatal and non-fatal errors.
+     */
+    void commitPreRebootStagedFiles(
+            in List<com.android.server.art.ArtifactsPath> artifacts,
+            in List<com.android.server.art.ProfilePath.WritableProfilePath> profiles);
+
     // The methods below are only for Pre-reboot Dexopt and only supported in Pre-reboot Dexopt
     // mode.
 
