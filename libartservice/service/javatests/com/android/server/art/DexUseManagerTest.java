@@ -28,6 +28,7 @@ import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.content.BroadcastReceiver;
@@ -97,6 +98,7 @@ public class DexUseManagerTest {
     @Mock private DexUseManagerLocal.Injector mInjector;
     @Mock private IArtd mArtd;
     @Mock private Context mContext;
+    @Mock private ArtManagerLocal mArtManagerLocal;
     private DexUseManagerLocal mDexUseManager;
     private String mCeDir;
     private String mDeDir;
@@ -167,6 +169,7 @@ public class DexUseManagerTest {
         lenient().when(mInjector.getContext()).thenReturn(mContext);
         lenient().when(mInjector.getAllPackageNames()).thenReturn(mPackageStates.keySet());
         lenient().when(mInjector.isPreReboot()).thenReturn(false);
+        lenient().when(mInjector.getArtManagerLocal()).thenReturn(mArtManagerLocal);
 
         mDexUseManager = new DexUseManagerLocal(mInjector);
         mDexUseManager.systemReady();
@@ -829,6 +832,11 @@ public class DexUseManagerTest {
                         "CLC", Set.of("armeabi-v7a"),
                         Set.of(DexLoader.create(LOADING_PKG_NAME, false /* isolatedProcess */)),
                         true /* isUsedByOtherApps */, mDefaultFileVisibility));
+    }
+
+    @Test
+    public void testSystemReady() {
+        verify(mArtManagerLocal).systemReady();
     }
 
     @Test(expected = IllegalStateException.class)

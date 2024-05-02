@@ -48,6 +48,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.apphibernation.AppHibernationManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
 import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
@@ -83,6 +86,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
 import java.io.File;
@@ -132,12 +136,14 @@ public class ArtManagerLocalTest {
     @Mock private StorageManager mStorageManager;
     @Mock private ArtdRefCache.Pin mArtdPin;
     @Mock private DexMetadataHelper.Injector mDexMetadataHelperInjector;
+    @Mock private Context mContext;
     private PackageState mPkgState1;
     private AndroidPackage mPkg1;
     private CheckedSecondaryDexInfo mPkg1SecondaryDexInfo1;
     private CheckedSecondaryDexInfo mPkg1SecondaryDexInfoNotFound;
     private Config mConfig;
     private DexMetadataHelper mDexMetadataHelper;
+    private ArgumentCaptor<BroadcastReceiver> mBroadcastReceiverCaptor;
 
     // True if the artifacts should be in dalvik-cache.
     @Parameter(0) public boolean mIsInDalvikCache;
@@ -173,6 +179,7 @@ public class ArtManagerLocalTest {
                 .when(mInjector.getArtFileManager())
                 .thenReturn(new ArtFileManager(mArtFileManagerInjector));
         lenient().when(mInjector.getDexMetadataHelper()).thenReturn(mDexMetadataHelper);
+        lenient().when(mInjector.getContext()).thenReturn(mContext);
 
         lenient().when(mArtFileManagerInjector.getArtd()).thenReturn(mArtd);
         lenient().when(mArtFileManagerInjector.getUserManager()).thenReturn(mUserManager);
@@ -186,6 +193,7 @@ public class ArtManagerLocalTest {
         lenient().when(SystemProperties.get(eq("pm.dexopt.install"))).thenReturn("speed-profile");
         lenient().when(SystemProperties.get(eq("pm.dexopt.bg-dexopt"))).thenReturn("speed-profile");
         lenient().when(SystemProperties.get(eq("pm.dexopt.first-boot"))).thenReturn("verify");
+        lenient().when(SystemProperties.get(eq("pm.dexopt.boot-after-ota"))).thenReturn("verify");
         lenient()
                 .when(SystemProperties.get(eq("pm.dexopt.boot-after-mainline-update")))
                 .thenReturn("verify");
@@ -268,6 +276,11 @@ public class ArtManagerLocalTest {
         lenient()
                 .when(mDexMetadataHelperInjector.openZipFile(any()))
                 .thenThrow(NoSuchFileException.class);
+
+        mBroadcastReceiverCaptor = ArgumentCaptor.forClass(BroadcastReceiver.class);
+        lenient()
+                .when(mContext.registerReceiver(mBroadcastReceiverCaptor.capture(), any()))
+                .thenReturn(mock(Intent.class));
 
         mArtManagerLocal = new ArtManagerLocal(mInjector);
     }
@@ -1328,6 +1341,56 @@ public class ArtManagerLocalTest {
         verify(mArtd, times(expectedGetVdexFileSizeCalls)).getVdexFileSize(any());
         verify(mArtd, times(expectedGetRuntimeArtifactsSizeCalls)).getRuntimeArtifactsSize(any());
         verify(mArtd, times(expectedGetProfileSizeCalls)).getProfileSize(any());
+    }
+
+    @Test
+    public void testCommitPreRebootStagedFiles() throws Exception {
+        when(mSnapshot.getPackageStates()).thenReturn(Map.of(PKG_NAME_1, mPkgState1));
+
+        mArtManagerLocal.onBoot(ReasonMapping.REASON_BOOT_AFTER_OTA,
+                null /* progressCallbackExecutor */, null /* progressCallback */);
+
+        // It should commit files for primary dex files on boot.
+        verify(mArtd).commitPreRebootStagedFiles(
+                inAnyOrderDeepEquals(
+                        AidlUtils.buildArtifactsPathAsInput(
+                                "/somewhere/app/foo/base.apk", "arm64", mIsInDalvikCache),
+                        AidlUtils.buildArtifactsPathAsInput(
+                                "/somewhere/app/foo/base.apk", "arm", mIsInDalvikCache),
+                        AidlUtils.buildArtifactsPathAsInput(
+                                "/somewhere/app/foo/split_0.apk", "arm64", mIsInDalvikCache),
+                        AidlUtils.buildArtifactsPathAsInput(
+                                "/somewhere/app/foo/split_0.apk", "arm", mIsInDalvikCache)),
+                inAnyOrderDeepEquals(AidlUtils.toWritableProfilePath(
+                                             AidlUtils.buildProfilePathForPrimaryRefAsInput(
+                                                     PKG_NAME_1, "primary")),
+                        AidlUtils.toWritableProfilePath(
+                                AidlUtils.buildProfilePathForPrimaryRefAsInput(
+                                        PKG_NAME_1, "split_0.split"))));
+        verify(mArtd, times(1)).commitPreRebootStagedFiles(any(), any());
+
+        mArtManagerLocal.systemReady();
+
+        // It should not commit anything on system ready.
+        verify(mArtd, times(1)).commitPreRebootStagedFiles(any(), any());
+
+        mBroadcastReceiverCaptor.getValue().onReceive(mContext, mock(Intent.class));
+
+        // It should commit files for secondary dex files on boot complete.
+        verify(mArtd).commitPreRebootStagedFiles(
+                inAnyOrderDeepEquals(AidlUtils.buildArtifactsPathAsInput(
+                        "/data/user/0/foo/1.apk", "arm64", false /* isInDalvikCache */)),
+                inAnyOrderDeepEquals(AidlUtils.toWritableProfilePath(
+                        AidlUtils.buildProfilePathForSecondaryRefAsInput(
+                                "/data/user/0/foo/1.apk"))));
+        verify(mArtd, times(2)).commitPreRebootStagedFiles(any(), any());
+    }
+
+    @Test
+    public void testCommitPreRebootStagedFilesOnBootNotCalled() throws Exception {
+        mArtManagerLocal.systemReady();
+
+        verify(mContext, never()).registerReceiver(any(), any());
     }
 
     private AndroidPackage createPackage(boolean multiSplit) {

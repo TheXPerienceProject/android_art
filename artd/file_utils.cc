@@ -230,6 +230,20 @@ Result<void> MoveAllOrAbandon(
   return {};
 }
 
+android::base::Result<void> MoveAllOrAbandon(
+    const std::vector<std::pair<std::string, std::string>>& files_to_move,
+    const std::vector<std::string>& files_to_remove) {
+  std::vector<std::pair<std::string_view, std::string_view>> files_to_move_view;
+  std::vector<std::string_view> files_to_remove_view;
+  for (const auto& [src, dst] : files_to_move) {
+    files_to_move_view.emplace_back(src, dst);
+  }
+  for (const std::string& file : files_to_remove) {
+    files_to_remove_view.emplace_back(file);
+  }
+  return MoveAllOrAbandon(files_to_move_view, files_to_remove_view);
+}
+
 std::string NewFile::BuildTempPath(std::string_view final_path, const std::string& id) {
   return ART_FORMAT("{}.{}.tmp", final_path, id);
 }
