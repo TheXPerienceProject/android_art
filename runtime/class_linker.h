@@ -890,6 +890,15 @@ class EXPORT ClassLinker {
   virtual bool DenyAccessBasedOnPublicSdk(const char* type_descriptor) const;
   // Enable or disable public sdk checks.
   virtual void SetEnablePublicSdkChecks(bool enabled);
+
+  // Transaction constraint checks for AOT compilation.
+  virtual bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  virtual bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  virtual bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   void RemoveDexFromCaches(const DexFile& dex_file);
   ClassTable* GetBootClassTable() REQUIRES_SHARED(Locks::classlinker_classes_lock_) {
     return boot_class_table_.get();

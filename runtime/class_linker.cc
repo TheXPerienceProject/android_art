@@ -11166,6 +11166,27 @@ void ClassLinker::SetEnablePublicSdkChecks([[maybe_unused]] bool enabled) {
   UNREACHABLE();
 }
 
+bool ClassLinker::TransactionWriteConstraint(
+    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Object> obj) const {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+bool ClassLinker::TransactionWriteValueConstraint(
+    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Object> value) const {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+bool ClassLinker::TransactionAllocationConstraint(
+    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Class> klass) const {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
 void ClassLinker::RemoveDexFromCaches(const DexFile& dex_file) {
   ReaderMutexLock mu(Thread::Current(), *Locks::dex_lock_);
 
