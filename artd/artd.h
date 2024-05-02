@@ -221,6 +221,11 @@ class Artd : public aidl::com::android::server::art::BnArtd {
   ndk::ScopedAStatus getProfileSize(const aidl::com::android::server::art::ProfilePath& in_profile,
                                     int64_t* _aidl_return) override;
 
+  ndk::ScopedAStatus commitPreRebootStagedFiles(
+      const std::vector<aidl::com::android::server::art::ArtifactsPath>& in_artifacts,
+      const std::vector<aidl::com::android::server::art::ProfilePath::WritableProfilePath>&
+          in_profiles) override;
+
   ndk::ScopedAStatus preRebootInit() override;
 
   ndk::ScopedAStatus validateDexPath(const std::string& in_dexFile,

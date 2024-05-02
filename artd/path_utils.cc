@@ -240,18 +240,21 @@ Result<std::string> BuildSecondaryCurProfilePath(
       "{}/oat/{}.cur.prof", dex_path.parent_path().string(), dex_path.filename().string());
 }
 
-Result<std::string> BuildFinalProfilePath(const TmpProfilePath& tmp_profile_path) {
-  const WritableProfilePath& final_path = tmp_profile_path.finalPath;
-  switch (final_path.getTag()) {
+Result<std::string> BuildWritableProfilePath(const WritableProfilePath& profile_path) {
+  switch (profile_path.getTag()) {
     case WritableProfilePath::forPrimary:
-      return BuildPrimaryRefProfilePath(final_path.get<WritableProfilePath::forPrimary>());
+      return BuildPrimaryRefProfilePath(profile_path.get<WritableProfilePath::forPrimary>());
     case WritableProfilePath::forSecondary:
-      return BuildSecondaryRefProfilePath(final_path.get<WritableProfilePath::forSecondary>());
+      return BuildSecondaryRefProfilePath(profile_path.get<WritableProfilePath::forSecondary>());
       // No default. All cases should be explicitly handled, or the compilation will fail.
   }
   // This should never happen. Just in case we get a non-enumerator value.
   LOG(FATAL) << ART_FORMAT("Unexpected writable profile path type {}",
-                           fmt::underlying(final_path.getTag()));
+                           fmt::underlying(profile_path.getTag()));
+}
+
+Result<std::string> BuildFinalProfilePath(const TmpProfilePath& tmp_profile_path) {
+  return BuildWritableProfilePath(tmp_profile_path.finalPath);
 }
 
 Result<std::string> BuildTmpProfilePath(const TmpProfilePath& tmp_profile_path) {

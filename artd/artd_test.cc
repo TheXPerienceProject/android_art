@@ -943,6 +943,8 @@ TEST_F(ArtdTest, dexoptFlagsFromSystemProps) {
   EXPECT_CALL(*mock_props_, GetProperty("ro.config.low_ram")).WillOnce(Return("1"));
   EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.appimageformat")).WillOnce(Return("imgfmt"));
   EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.boot-image")).WillOnce(Return("boot-image"));
+  EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.dex2oat-flags"))
+      .WillOnce(Return("--flag1 --flag2  --flag3"));
 
   EXPECT_CALL(*mock_exec_utils_,
               DoExecAndReturnCode(
@@ -962,7 +964,10 @@ TEST_F(ArtdTest, dexoptFlagsFromSystemProps) {
                                     Contains("--compile-individually"),
                                     Contains(Flag("--image-format=", "imgfmt")),
                                     Not(Contains("--force-jit-zygote")),
-                                    Contains(Flag("--boot-image=", "boot-image")))),
+                                    Contains(Flag("--boot-image=", "boot-image")),
+                                    Contains("--flag1"),
+                                    Contains("--flag2"),
+                                    Contains("--flag3"))),
                   _,
                   _))
       .WillOnce(Return(0));
@@ -2444,6 +2449,93 @@ TEST_F(ArtdTest, getProfileSize) {
                       &aidl_return)
                   .isOk());
   EXPECT_EQ(aidl_return, 1);
+}
+
+TEST_F(ArtdTest, commitPreRebootStagedFiles) {
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex.staged",
+             "new_odex_1");
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex.staged",
+             "new_vdex_1");
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art.staged",
+             "new_art_1");
+
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex",
+             "old_odex_1");
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex",
+             "old_vdex_1");
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art", "old_art_1");
+
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.odex", "old_odex_2");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex", "old_vdex_2");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.art", "old_art_2");
+
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.odex.staged", "new_odex_2");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex.staged", "new_vdex_2");
+
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm/base.odex", "old_odex_3");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm/base.vdex", "old_vdex_3");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm/base.art", "old_art_3");
+
+  CreateFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof", "old_prof_1");
+  CreateFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof.staged",
+             "new_prof_1");
+
+  CreateFile(android_data_ + "/misc/profiles/ref/com.android.bar/primary.prof", "old_prof_2");
+
+  ASSERT_STATUS_OK(artd_->commitPreRebootStagedFiles(
+      {
+          // Has all new files. All old files should be replaced.
+          ArtifactsPath{
+              .dexPath = "/system/app/Foo/Foo.apk", .isa = "arm64", .isInDalvikCache = true},
+          // Has new files but not ".art" file. Old ".odex" and ".vdex" files should be replaced,
+          // and old ".art" file should be removed.
+          ArtifactsPath{.dexPath = android_data_ + "/app/com.android.foo/base.apk",
+                        .isa = "arm64",
+                        .isInDalvikCache = false},
+          // Has no new file. All old files should be kept.
+          ArtifactsPath{.dexPath = android_data_ + "/app/com.android.foo/base.apk",
+                        .isa = "arm",
+                        .isInDalvikCache = false},
+      },
+      {
+          // Has new file.
+          PrimaryRefProfilePath{.packageName = "com.android.foo", .profileName = "primary"},
+          // Has no new file.
+          PrimaryRefProfilePath{.packageName = "com.android.bar", .profileName = "primary"},
+      }));
+
+  CheckContent(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex",
+               "new_odex_1");
+  CheckContent(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex",
+               "new_vdex_1");
+  CheckContent(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art",
+               "new_art_1");
+
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.odex", "new_odex_2");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex", "new_vdex_2");
+  EXPECT_FALSE(std::filesystem::exists(android_data_ + "/app/com.android.foo/oat/arm64/base.art"));
+
+  CheckContent(android_data_ + "/app/com.android.foo/oat/arm/base.odex", "old_odex_3");
+  CheckContent(android_data_ + "/app/com.android.foo/oat/arm/base.vdex", "old_vdex_3");
+  CheckContent(android_data_ + "/app/com.android.foo/oat/arm/base.art", "old_art_3");
+
+  CheckContent(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof", "new_prof_1");
+
+  CheckContent(android_data_ + "/misc/profiles/ref/com.android.bar/primary.prof", "old_prof_2");
+
+  // All staged files are gone.
+  EXPECT_FALSE(std::filesystem::exists(
+      android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex.staged"));
+  EXPECT_FALSE(std::filesystem::exists(
+      android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex.staged"));
+  EXPECT_FALSE(std::filesystem::exists(
+      android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art.staged"));
+  EXPECT_FALSE(
+      std::filesystem::exists(android_data_ + "/app/com.android.foo/oat/arm64/base.odex.staged"));
+  EXPECT_FALSE(
+      std::filesystem::exists(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex.staged"));
+  EXPECT_FALSE(std::filesystem::exists(android_data_ +
+                                       "/misc/profiles/ref/com.android.foo/primary.prof.staged"));
 }
 
 class ArtdPreRebootTest : public ArtdTest {

@@ -20,6 +20,7 @@
 #include <sys/types.h>
 
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -146,6 +147,11 @@ android::base::Result<void> Chown(
 android::base::Result<void> MoveAllOrAbandon(
     const std::vector<std::pair<std::string_view, std::string_view>>& files_to_move,
     const std::vector<std::string_view>& files_to_remove = {});
+
+// Same as above, but takes `std::string`s.
+android::base::Result<void> MoveAllOrAbandon(
+    const std::vector<std::pair<std::string, std::string>>& files_to_move,
+    const std::vector<std::string>& files_to_remove = {});
 
 }  // namespace artd
 }  // namespace art

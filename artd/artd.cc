@@ -117,6 +117,7 @@ using ::android::base::ReadFileToString;
 using ::android::base::Result;
 using ::android::base::Split;
 using ::android::base::StringReplace;
+using ::android::base::Tokenize;
 using ::android::base::WriteStringToFd;
 using ::android::base::WriteStringToFile;
 using ::android::fs_mgr::FstabEntry;
@@ -129,6 +130,7 @@ using ::art::tools::NonFatal;
 using ::ndk::ScopedAStatus;
 
 using TmpProfilePath = ProfilePath::TmpProfilePath;
+using WritableProfilePath = ProfilePath::WritableProfilePath;
 
 constexpr const char* kServiceName = "artd";
 constexpr const char* kPreRebootServiceName = "artd_pre_reboot";
@@ -1370,6 +1372,61 @@ ScopedAStatus Artd::getProfileSize(const ProfilePath& in_profile, int64_t* _aidl
   return ScopedAStatus::ok();
 }
 
+ScopedAStatus Artd::commitPreRebootStagedFiles(
+    const std::vector<ArtifactsPath>& in_artifacts,
+    const std::vector<WritableProfilePath>& in_profiles) {
+  RETURN_FATAL_IF_PRE_REBOOT(options_);
+
+  std::vector<std::pair<std::string, std::string>> files_to_move;
+  std::vector<std::string> files_to_remove;
+
+  for (const ArtifactsPath& artifacts : in_artifacts) {
+    RETURN_FATAL_IF_ARG_IS_PRE_REBOOT(artifacts, "artifacts");
+
+    ArtifactsPath pre_reboot_artifacts = artifacts;
+    pre_reboot_artifacts.isPreReboot = true;
+
+    auto src_artifacts = std::make_unique<RawArtifactsPath>(
+        OR_RETURN_FATAL(BuildArtifactsPath(pre_reboot_artifacts)));
+    auto dst_artifacts =
+        std::make_unique<RawArtifactsPath>(OR_RETURN_FATAL(BuildArtifactsPath(artifacts)));
+
+    if (OS::FileExists(src_artifacts->oat_path.c_str())) {
+      files_to_move.emplace_back(src_artifacts->oat_path, dst_artifacts->oat_path);
+      files_to_move.emplace_back(src_artifacts->vdex_path, dst_artifacts->vdex_path);
+      if (OS::FileExists(src_artifacts->art_path.c_str())) {
+        files_to_move.emplace_back(src_artifacts->art_path, dst_artifacts->art_path);
+      } else {
+        files_to_remove.push_back(dst_artifacts->art_path);
+      }
+    }
+  }
+
+  for (const WritableProfilePath& profile : in_profiles) {
+    RETURN_FATAL_IF_ARG_IS_PRE_REBOOT(profile, "profiles");
+
+    WritableProfilePath pre_reboot_profile = profile;
+    PreRebootFlag(pre_reboot_profile) = true;
+
+    auto src_profile = std::make_unique<std::string>(
+        OR_RETURN_FATAL(BuildWritableProfilePath(pre_reboot_profile)));
+    auto dst_profile =
+        std::make_unique<std::string>(OR_RETURN_FATAL(BuildWritableProfilePath(profile)));
+
+    if (OS::FileExists(src_profile->c_str())) {
+      files_to_move.emplace_back(*src_profile, *dst_profile);
+    }
+  }
+
+  OR_RETURN_NON_FATAL(MoveAllOrAbandon(files_to_move, files_to_remove));
+
+  for (const auto& [src_path, dst_path] : files_to_move) {
+    LOG(INFO) << ART_FORMAT("Committed Pre-reboot staged file '{}' to '{}'", src_path, dst_path);
+  }
+
+  return ScopedAStatus::ok();
+}
+
 Result<void> Artd::Start() {
   OR_RETURN(SetLogVerbosity());
   MemMap::Init();
@@ -1538,8 +1595,7 @@ void Artd::AddCompilerConfigFlags(const std::string& instruction_set,
                      props_->GetOrEmpty("dalvik.vm.dex2oat-very-large"))
       .AddIfNonEmpty(
           "--resolve-startup-const-strings=%s",
-          props_->GetOrEmpty("persist.device_config.runtime.dex2oat_resolve_startup_strings",
-                             "dalvik.vm.dex2oat-resolve-startup-strings"));
+          props_->GetOrEmpty("dalvik.vm.dex2oat-resolve-startup-strings"));
 
   args.AddIf(dexopt_options.debuggable, "--debuggable")
       .AddIf(props_->GetBool("debug.generate-debug-info", /*default_value=*/false),
@@ -1589,6 +1645,11 @@ void Artd::AddPerfConfigFlags(PriorityClass priority_class,
   // It takes longer but reduces the memory footprint.
   dex2oat_args.AddIf(props_->GetBool("ro.config.low_ram", /*default_value=*/false),
                      "--compile-individually");
+
+  for (const std::string& flag :
+       Tokenize(props_->GetOrEmpty("dalvik.vm.dex2oat-flags"), /*delimiters=*/" ")) {
+    dex2oat_args.AddIfNonEmpty("%s", flag);
+  }
 }
 
 Result<int> Artd::ExecAndReturnCode(const std::vector<std::string>& args,

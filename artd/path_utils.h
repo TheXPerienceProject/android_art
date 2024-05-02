@@ -78,6 +78,9 @@ android::base::Result<std::string> BuildSecondaryCurProfilePath(
     const aidl::com::android::server::art::ProfilePath::SecondaryCurProfilePath&
         secondary_cur_profile_path);
 
+android::base::Result<std::string> BuildWritableProfilePath(
+    const aidl::com::android::server::art::ProfilePath::WritableProfilePath& profile_path);
+
 android::base::Result<std::string> BuildFinalProfilePath(
     const aidl::com::android::server::art::ProfilePath::TmpProfilePath& tmp_profile_path);
 
