@@ -43,6 +43,7 @@
 #include "base/timing_logger.h"
 #include "class_linker-inl.h"
 #include "class_root-inl.h"
+#include "common_throws.h"
 #include "compiled_method-inl.h"
 #include "compiler.h"
 #include "compiler_callbacks.h"
@@ -82,7 +83,6 @@
 #include "thread_list.h"
 #include "thread_pool.h"
 #include "trampolines/trampoline_compiler.h"
-#include "transaction.h"
 #include "utils/atomic_dex_ref_map-inl.h"
 #include "utils/swap_space.h"
 #include "vdex_file.h"
@@ -2329,10 +2329,8 @@ class InitializeClassVisitor : public CompilationVisitor {
             // the transaction aborts and cannot resolve the type.
             // TransactionAbortError is not initialized ant not in boot image, needed only by
             // compiler and will be pruned by ImageWriter.
-            Handle<mirror::Class> exception_class =
-                hs.NewHandle(class_linker->FindClass(self,
-                                                     Transaction::kAbortExceptionDescriptor,
-                                                     class_loader));
+            Handle<mirror::Class> exception_class = hs.NewHandle(
+                class_linker->FindClass(self, kTransactionAbortErrorDescriptor, class_loader));
             bool exception_initialized =
                 class_linker->EnsureInitialized(self, exception_class, true, true);
             DCHECK(exception_initialized);
