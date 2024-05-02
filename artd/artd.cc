@@ -1595,8 +1595,7 @@ void Artd::AddCompilerConfigFlags(const std::string& instruction_set,
                      props_->GetOrEmpty("dalvik.vm.dex2oat-very-large"))
       .AddIfNonEmpty(
           "--resolve-startup-const-strings=%s",
-          props_->GetOrEmpty("persist.device_config.runtime.dex2oat_resolve_startup_strings",
-                             "dalvik.vm.dex2oat-resolve-startup-strings"));
+          props_->GetOrEmpty("dalvik.vm.dex2oat-resolve-startup-strings"));
 
   args.AddIf(dexopt_options.debuggable, "--debuggable")
       .AddIf(props_->GetBool("debug.generate-debug-info", /*default_value=*/false),
