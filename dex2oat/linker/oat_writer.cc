@@ -1822,11 +1822,12 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
   ArtMethod* GetTargetMethod(const LinkerPatch& patch)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     MethodReference ref = patch.TargetMethod();
-    ObjPtr<mirror::DexCache> dex_cache =
-        (dex_file_ == ref.dex_file) ? dex_cache_ : class_linker_->FindDexCache(
-            Thread::Current(), *ref.dex_file);
-    ArtMethod* method =
-        class_linker_->LookupResolvedMethod(ref.index, dex_cache, class_loader_);
+    StackHandleScope<3> hs(Thread::Current());
+    Handle<mirror::DexCache> h_dex_cache = hs.NewHandle(GetDexCache(ref.dex_file));
+    // We must save both ObjPtr since they might be obsolete after LookupResolvedMethod.
+    HandleWrapperObjPtr<mirror::DexCache> h_original_dex_cache(hs.NewHandleWrapper(&dex_cache_));
+    HandleWrapperObjPtr<mirror::ClassLoader> h_class_loader(hs.NewHandleWrapper(&class_loader_));
+    ArtMethod* method = class_linker_->LookupResolvedMethod(ref.index, h_dex_cache, h_class_loader);
     CHECK(method != nullptr);
     return method;
   }
