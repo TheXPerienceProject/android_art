@@ -141,16 +141,15 @@ bool Transaction::WriteValueConstraint(ObjPtr<mirror::Object> value) const {
   if (value == nullptr) {
     return false;  // We can always store null values.
   }
-  gc::Heap* heap = Runtime::Current()->GetHeap();
   if (IsStrict()) {
     // TODO: Should we restrict writes the same way as for boot image extension?
     return false;
-  } else if (heap->GetBootImageSpaces().empty()) {
+  } else if (heap_->GetBootImageSpaces().empty()) {
     return false;  // No constraints for boot image.
   } else {
     // Boot image extension.
     ObjPtr<mirror::Class> klass = value->IsClass() ? value->AsClass() : value->GetClass();
-    return !AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(klass, heap);
+    return !AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(klass, heap_);
   }
 }
 
