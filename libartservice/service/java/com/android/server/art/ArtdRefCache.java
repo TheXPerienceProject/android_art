@@ -44,7 +44,6 @@ import java.util.concurrent.ScheduledExecutorService;
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class ArtdRefCache {
-    private static final String TAG = ArtManagerLocal.TAG;
     // The 15s timeout is arbitrarily picked.
     // TODO(jiakaiz): Revisit this based on real CUJs.
     @VisibleForTesting public static final long CACHE_TIMEOUT_MS = 15_000;
