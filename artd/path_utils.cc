@@ -23,6 +23,7 @@
 #include "aidl/com/android/server/art/BnArtd.h"
 #include "android-base/errors.h"
 #include "android-base/result.h"
+#include "android-base/strings.h"
 #include "arch/instruction_set.h"
 #include "base/file_utils.h"
 #include "base/macros.h"
@@ -44,6 +45,7 @@ using ::aidl::com::android::server::art::OutputProfile;
 using ::aidl::com::android::server::art::ProfilePath;
 using ::aidl::com::android::server::art::RuntimeArtifactsPath;
 using ::aidl::com::android::server::art::VdexPath;
+using ::android::base::EndsWith;
 using ::android::base::Error;
 using ::android::base::Result;
 using ::art::service::ValidateDexPath;
@@ -111,11 +113,11 @@ std::vector<std::string> ListManagedFiles(const std::string& android_data,
       // Profiles and artifacts for secondary dex files. Those files are in app data directories, so
       // we use more granular patterns to avoid accidentally deleting apps' files.
       std::string secondary_oat_dir = data_dir + "/**/oat";
-      for (const char* maybe_tmp_suffix : {"", ".*.tmp"}) {
-        patterns.push_back(secondary_oat_dir + "/*.prof" + maybe_tmp_suffix);
-        patterns.push_back(secondary_oat_dir + "/*/*.odex" + maybe_tmp_suffix);
-        patterns.push_back(secondary_oat_dir + "/*/*.vdex" + maybe_tmp_suffix);
-        patterns.push_back(secondary_oat_dir + "/*/*.art" + maybe_tmp_suffix);
+      for (const char* suffix : {"", ".*.tmp", kPreRebootSuffix}) {
+        patterns.push_back(secondary_oat_dir + "/*.prof" + suffix);
+        patterns.push_back(secondary_oat_dir + "/*/*.odex" + suffix);
+        patterns.push_back(secondary_oat_dir + "/*/*.vdex" + suffix);
+        patterns.push_back(secondary_oat_dir + "/*/*.art" + suffix);
       }
       // Runtime image files.
       patterns.push_back(RuntimeImage::GetRuntimeImageDir(data_dir) + "**");
@@ -330,6 +332,10 @@ bool PreRebootFlag(const OutputArtifacts& artifacts) {
 
 bool PreRebootFlag(const VdexPath& vdex_path) {
   return PreRebootFlag(vdex_path.get<VdexPath::artifactsPath>());
+}
+
+bool IsPreRebootStagedFile(std::string_view filename) {
+  return EndsWith(filename, kPreRebootSuffix);
 }
 
 void TestOnlySetListRootDir(std::string_view root_dir) { gListRootDir = root_dir; }

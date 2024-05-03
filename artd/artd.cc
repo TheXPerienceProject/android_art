@@ -1250,6 +1250,7 @@ ScopedAStatus Artd::cleanup(const std::vector<ProfilePath>& in_profilesToKeep,
                             const std::vector<ArtifactsPath>& in_artifactsToKeep,
                             const std::vector<VdexPath>& in_vdexFilesToKeep,
                             const std::vector<RuntimeArtifactsPath>& in_runtimeArtifactsToKeep,
+                            bool in_keepPreRebootStagedFiles,
                             int64_t* _aidl_return) {
   RETURN_FATAL_IF_PRE_REBOOT(options_);
   std::unordered_set<std::string> files_to_keep;
@@ -1278,7 +1279,8 @@ ScopedAStatus Artd::cleanup(const std::vector<ProfilePath>& in_profilesToKeep,
   }
   *_aidl_return = 0;
   for (const std::string& file : ListManagedFiles(android_data, android_expand)) {
-    if (files_to_keep.find(file) == files_to_keep.end()) {
+    if (files_to_keep.find(file) == files_to_keep.end() &&
+        (!in_keepPreRebootStagedFiles || !IsPreRebootStagedFile(file))) {
       LOG(INFO) << ART_FORMAT("Cleaning up obsolete file '{}'", file);
       *_aidl_return += GetSizeAndDeleteFile(file);
     }

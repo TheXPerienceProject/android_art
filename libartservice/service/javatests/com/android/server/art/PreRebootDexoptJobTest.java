@@ -150,7 +150,11 @@ public class PreRebootDexoptJobTest {
     public void testStart() {
         when(mPreRebootDriver.run(any(), any())).thenReturn(true);
 
-        Utils.getFuture(mPreRebootDexoptJob.start());
+        assertThat(mPreRebootDexoptJob.hasStarted()).isFalse();
+        Future<Void> future = mPreRebootDexoptJob.start();
+        assertThat(mPreRebootDexoptJob.hasStarted()).isTrue();
+
+        Utils.getFuture(future);
     }
 
     @Test
