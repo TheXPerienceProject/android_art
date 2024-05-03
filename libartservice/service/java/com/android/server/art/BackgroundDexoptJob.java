@@ -32,8 +32,6 @@ import android.os.Build;
 import android.os.CancellationSignal;
 import android.os.SystemClock;
 import android.os.SystemProperties;
-import android.util.Log;
-import android.util.Slog;
 
 import androidx.annotation.RequiresApi;
 
@@ -61,8 +59,6 @@ import java.util.function.Consumer;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class BackgroundDexoptJob implements ArtServiceJobInterface {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     /**
      * "android" is the package name for a <service> declared in
      * frameworks/base/core/res/AndroidManifest.xml
@@ -98,7 +94,7 @@ public class BackgroundDexoptJob implements ArtServiceJobInterface {
                 writeStats(result);
             } catch (RuntimeException e) {
                 // Not expected. Log wtf to surface it.
-                Slog.wtf(TAG, "Failed to write stats", e);
+                AsLog.wtf("Failed to write stats", e);
             }
 
             // This is a periodic job, where the interval is specified in the `JobInfo`. "true"
@@ -132,7 +128,7 @@ public class BackgroundDexoptJob implements ArtServiceJobInterface {
         }
 
         if (SystemProperties.getBoolean("pm.dexopt.disable_bg_dexopt", false /* def */)) {
-            Log.i(TAG, "Job is disabled by system property 'pm.dexopt.disable_bg_dexopt'");
+            AsLog.i("Job is disabled by system property 'pm.dexopt.disable_bg_dexopt'");
             return ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP;
         }
 
@@ -177,17 +173,17 @@ public class BackgroundDexoptJob implements ArtServiceJobInterface {
     @NonNull
     public synchronized CompletableFuture<Result> start() {
         if (mRunningJob != null) {
-            Log.i(TAG, "Job is already running");
+            AsLog.i("Job is already running");
             return mRunningJob;
         }
 
         mCancellationSignal = new CancellationSignal();
         mLastStopReason = Optional.empty();
         mRunningJob = new CompletableFuture().supplyAsync(() -> {
-            try (var tracing = new Utils.TracingWithTimingLogging(TAG, "jobExecution")) {
+            try (var tracing = new Utils.TracingWithTimingLogging(AsLog.getTag(), "jobExecution")) {
                 return run(mCancellationSignal);
             } catch (RuntimeException e) {
-                Log.e(TAG, "Fatal error", e);
+                AsLog.e("Fatal error", e);
                 return new FatalErrorResult();
             } finally {
                 synchronized (this) {
@@ -201,12 +197,12 @@ public class BackgroundDexoptJob implements ArtServiceJobInterface {
 
     public synchronized void cancel() {
         if (mRunningJob == null) {
-            Log.i(TAG, "Job is not running");
+            AsLog.i("Job is not running");
             return;
         }
 
         mCancellationSignal.cancel();
-        Log.i(TAG, "Job cancelled");
+        AsLog.i("Job cancelled");
     }
 
     @Nullable
@@ -247,7 +243,7 @@ public class BackgroundDexoptJob implements ArtServiceJobInterface {
                 // lose some chance to dexopt when the storage is very low, but it's fine because we
                 // can still dexopt in the next run.
                 long freedBytes = mInjector.getArtManagerLocal().cleanup(snapshot);
-                Log.i(TAG, String.format("Freed %d bytes", freedBytes));
+                AsLog.i(String.format("Freed %d bytes", freedBytes));
             }
         }
         return CompletedResult.create(dexoptResultByPass, durationMsByPass);

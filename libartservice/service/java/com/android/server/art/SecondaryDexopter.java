@@ -40,8 +40,6 @@ import java.util.List;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class SecondaryDexopter extends Dexopter<CheckedSecondaryDexInfo> {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     public SecondaryDexopter(@NonNull Context context, @NonNull Config config,
             @NonNull PackageState pkgState, @NonNull AndroidPackage pkg,
             @NonNull DexoptParams params, @NonNull CancellationSignal cancellationSignal) {

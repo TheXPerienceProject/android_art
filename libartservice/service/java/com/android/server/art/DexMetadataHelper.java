@@ -19,7 +19,6 @@ package com.android.server.art;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.os.Build;
-import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
@@ -43,8 +42,6 @@ import java.util.zip.ZipFile;
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class DexMetadataHelper {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     @NonNull private final Injector mInjector;
 
     public DexMetadataHelper() {
@@ -73,7 +70,7 @@ public class DexMetadataHelper {
             }
         } catch (IOException e) {
             if (!(e instanceof FileNotFoundException || e instanceof NoSuchFileException)) {
-                Log.e(TAG, String.format("Failed to read dm file '%s'", realDmPath), e);
+                AsLog.e(String.format("Failed to read dm file '%s'", realDmPath), e);
             }
             return getDefaultDexMetadataInfo();
         }

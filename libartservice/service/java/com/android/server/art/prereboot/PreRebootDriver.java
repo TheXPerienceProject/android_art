@@ -26,14 +26,13 @@ import android.os.Build;
 import android.os.CancellationSignal;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
-import android.util.Log;
-import android.util.Slog;
 
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.server.art.ArtManagerLocal;
 import com.android.server.art.ArtModuleServiceInitializer;
+import com.android.server.art.AsLog;
 import com.android.server.art.GlobalInjector;
 import com.android.server.art.IDexoptChrootSetup;
 import com.android.server.art.Utils;
@@ -49,8 +48,6 @@ import dalvik.system.DelegateLastClassLoader;
  */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public class PreRebootDriver {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     @NonNull private final Injector mInjector;
 
     public PreRebootDriver(@NonNull Context context) {
@@ -76,9 +73,9 @@ public class PreRebootDriver {
         } catch (RemoteException e) {
             Utils.logArtdException(e);
         } catch (ServiceSpecificException e) {
-            Log.e(TAG, "Failed to set up chroot", e);
+            AsLog.e("Failed to set up chroot", e);
         } catch (ReflectiveOperationException e) {
-            Log.e(TAG, "Failed to run pre-reboot dexopt", e);
+            AsLog.e("Failed to run pre-reboot dexopt", e);
         } finally {
             tearDown();
         }
@@ -107,14 +104,14 @@ public class PreRebootDriver {
             } catch (RemoteException e) {
                 Utils.logArtdException(e);
             } catch (ServiceSpecificException e) {
-                Log.e(TAG, "Failed to tear down chroot", e);
+                AsLog.e("Failed to tear down chroot", e);
             } catch (IllegalStateException e) {
                 // Not expected, but we still want retries in such an extreme case.
-                Slog.wtf(TAG, "Unexpected exception", e);
+                AsLog.wtf("Unexpected exception", e);
             }
 
             if (--numRetries > 0) {
-                Log.i(TAG, "Retrying....");
+                AsLog.i("Retrying....");
                 Utils.sleep(30000);
             }
         }
