@@ -40,7 +40,6 @@ import android.os.SystemProperties;
 import android.os.UserManager;
 import android.os.storage.StorageManager;
 import android.text.TextUtils;
-import android.util.Log;
 import android.util.Pair;
 
 import androidx.annotation.RequiresApi;
@@ -69,7 +68,6 @@ import java.util.Objects;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
-    private static final String TAG = ArtManagerLocal.TAG;
     private static final List<String> ART_PACKAGE_NAMES =
             List.of("com.google.android.art", "com.android.art", "com.google.android.go.art");
 
@@ -102,7 +100,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
     @NonNull
     public final List<DexContainerFileDexoptResult> dexopt() throws RemoteException {
         if (SystemProperties.getBoolean("dalvik.vm.disable-art-service-dexopt", false /* def */)) {
-            Log.i(TAG, "Dexopt skipped because it's disabled by system property");
+            AsLog.i("Dexopt skipped because it's disabled by system property");
             return List.of();
         }
 
@@ -135,7 +133,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                     if (!dmInfo.config().getEnableEmbeddedProfile()) {
                         String dmPath = DexMetadataHelper.getDmPath(
                                 Objects.requireNonNull(dmInfo.dmPath()));
-                        Log.i(TAG, "Embedded profile disabled by config in the dm file " + dmPath);
+                        AsLog.i("Embedded profile disabled by config in the dm file " + dmPath);
                     }
 
                     if (needsToBeShared) {
@@ -228,7 +226,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                                 continue;
                             }
                         } catch (IOException e) {
-                            Log.e(TAG, "Failed to check storage. Assuming storage not low", e);
+                            AsLog.e("Failed to check storage. Assuming storage not low", e);
                         }
 
                         IArtdCancellationSignal artdCancellationSignal =
@@ -237,8 +235,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                             try {
                                 artdCancellationSignal.cancel();
                             } catch (RemoteException e) {
-                                Log.e(TAG, "An error occurred when sending a cancellation signal",
-                                        e);
+                                AsLog.e("An error occurred when sending a cancellation signal", e);
                             }
                         });
 
@@ -257,8 +254,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                         }
                     } catch (ServiceSpecificException e) {
                         // Log the error and continue.
-                        Log.e(TAG,
-                                String.format("Failed to dexopt [packageName = %s, dexPath = %s, "
+                        AsLog.e(String.format("Failed to dexopt [packageName = %s, dexPath = %s, "
                                                 + "isa = %s, classLoaderContext = %s]",
                                         mPkgState.getPackageName(), dexInfo.dexPath(), abi.isa(),
                                         dexInfo.classLoaderContext()),
@@ -272,9 +268,8 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                                 abi.isPrimaryAbi(), abi.name(), compilerFilter, status, wallTimeMs,
                                 cpuTimeMs, sizeBytes, sizeBeforeBytes, extendedStatusFlags,
                                 externalProfileErrors);
-                        Log.i(TAG,
-                                String.format("Dexopt result: [packageName = %s] %s",
-                                        mPkgState.getPackageName(), result));
+                        AsLog.i(String.format("Dexopt result: [packageName = %s] %s",
+                                mPkgState.getPackageName(), result));
                         results.add(result);
                         if (status != DexoptResult.DEXOPT_SKIPPED
                                 && status != DexoptResult.DEXOPT_PERFORMED) {
@@ -568,8 +563,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
             mInjector.getArtd().commitTmpProfile(profile);
             return true;
         } catch (ServiceSpecificException e) {
-            Log.e(TAG, "Failed to commit profile changes " + AidlUtils.toString(profile.finalPath),
-                    e);
+            AsLog.e("Failed to commit profile changes " + AidlUtils.toString(profile.finalPath), e);
             return false;
         }
     }
@@ -588,8 +582,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                 return ProfilePath.tmpProfilePath(output.profilePath);
             }
         } catch (ServiceSpecificException e) {
-            Log.e(TAG,
-                    "Failed to merge profiles " + AidlUtils.toString(output.profilePath.finalPath),
+            AsLog.e("Failed to merge profiles " + AidlUtils.toString(output.profilePath.finalPath),
                     e);
         }
 

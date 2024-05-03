@@ -29,7 +29,6 @@ import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.util.Log;
 import android.util.Pair;
 
 import androidx.annotation.RequiresApi;
@@ -57,8 +56,6 @@ import java.util.Objects;
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class ArtFileManager {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     @NonNull private final Injector mInjector;
 
     public ArtFileManager(@NonNull Context context) {
@@ -170,8 +167,7 @@ public class ArtFileManager {
                     }
                 }
             } catch (ServiceSpecificException e) {
-                Log.e(TAG,
-                        String.format(
+                AsLog.e(String.format(
                                 "Failed to get dexopt status [packageName = %s, dexPath = %s, "
                                         + "isa = %s, classLoaderContext = %s]",
                                 pkgState.getPackageName(), dexInfo.dexPath(), abi.isa(),
