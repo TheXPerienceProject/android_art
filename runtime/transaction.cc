@@ -20,6 +20,7 @@
 
 #include "base/mutex-inl.h"
 #include "base/stl_util.h"
+#include "common_throws.h"
 #include "dex/descriptors_names.h"
 #include "gc/accounting/card_table-inl.h"
 #include "gc/heap.h"
@@ -104,17 +105,15 @@ void Transaction::Abort(const std::string& abort_message) {
 void Transaction::ThrowAbortError(Thread* self, const std::string* abort_message) {
   const bool rethrow = (abort_message == nullptr);
   if (kIsDebugBuild && rethrow) {
-    CHECK(IsAborted()) << "Rethrow " << DescriptorToDot(Transaction::kAbortExceptionDescriptor)
+    CHECK(IsAborted()) << "Rethrow " << DescriptorToDot(kTransactionAbortErrorDescriptor)
                        << " while transaction is not aborted";
   }
   if (rethrow) {
     // Rethrow an exception with the earlier abort message stored in the transaction.
-    self->ThrowNewWrappedException(Transaction::kAbortExceptionDescriptor,
-                                   GetAbortMessage().c_str());
+    self->ThrowNewWrappedException(kTransactionAbortErrorDescriptor, GetAbortMessage().c_str());
   } else {
     // Throw an exception with the given abort message.
-    self->ThrowNewWrappedException(Transaction::kAbortExceptionDescriptor,
-                                   abort_message->c_str());
+    self->ThrowNewWrappedException(kTransactionAbortErrorDescriptor, abort_message->c_str());
   }
 }
 

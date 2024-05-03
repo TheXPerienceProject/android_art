@@ -62,7 +62,6 @@
 #include "nth_caller_visitor.h"
 #include "reflection.h"
 #include "thread-inl.h"
-#include "transaction.h"
 #include "unstarted_runtime_list.h"
 #include "well_known_classes-inl.h"
 
@@ -167,8 +166,7 @@ static void CheckExceptionGenerateClassNotFound(Thread* self)
   if (self->IsExceptionPending()) {
     Runtime* runtime = Runtime::Current();
     DCHECK_EQ(runtime->IsTransactionAborted(),
-              self->GetException()->GetClass()->DescriptorEquals(
-                  Transaction::kAbortExceptionDescriptor))
+              self->GetException()->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor))
         << self->GetException()->GetClass()->PrettyDescriptor();
     if (runtime->IsActiveTransaction()) {
       // The boot class path at run time may contain additional dex files with
@@ -764,8 +762,7 @@ void UnstartedRuntime::UnstartedVmClassLoaderFindLoadedClass(
   if (self->IsExceptionPending()) {
     Runtime* runtime = Runtime::Current();
     DCHECK_EQ(runtime->IsTransactionAborted(),
-              self->GetException()->GetClass()->DescriptorEquals(
-                  Transaction::kAbortExceptionDescriptor))
+              self->GetException()->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor))
         << self->GetException()->GetClass()->PrettyDescriptor();
     if (runtime->IsActiveTransaction()) {
       // If we're not aborting the transaction yet, abort now. b/183691501

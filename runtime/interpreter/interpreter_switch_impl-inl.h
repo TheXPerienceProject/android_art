@@ -23,6 +23,7 @@
 #include "base/memory_tool.h"
 #include "base/pointer_size.h"
 #include "base/quasi_atomic.h"
+#include "common_throws.h"
 #include "dex/dex_file_types.h"
 #include "dex/dex_instruction_list.h"
 #include "experimental_flags.h"
@@ -65,7 +66,7 @@ class InstructionHandler {
       StackHandleScope<1u> hs(Self());
       Handle<mirror::Throwable> abort_exception = hs.NewHandle(Self()->GetException());
       DCHECK(abort_exception != nullptr);
-      DCHECK(abort_exception->GetClass()->DescriptorEquals(Transaction::kAbortExceptionDescriptor));
+      DCHECK(abort_exception->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor));
       Self()->ClearException();
       PerformNonStandardReturn(
           Self(), shadow_frame_, ctx_->result, Instrumentation(), Accessor().InsSize());

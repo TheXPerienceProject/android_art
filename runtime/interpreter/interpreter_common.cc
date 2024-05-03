@@ -46,7 +46,6 @@
 #include "shadow_frame-inl.h"
 #include "stack.h"
 #include "thread-inl.h"
-#include "transaction.h"
 #include "var_handles.h"
 #include "well_known_classes.h"
 

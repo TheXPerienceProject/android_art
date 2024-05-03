@@ -20,6 +20,7 @@
 #include "art_method-inl.h"
 #include "class_linker-inl.h"
 #include "common_runtime_test.h"
+#include "common_throws.h"
 #include "dex/dex_file.h"
 #include "mirror/array-alloc-inl.h"
 #include "mirror/class-alloc-inl.h"
@@ -52,8 +53,7 @@ class TransactionTest : public CommonRuntimeTest {
     class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
     ASSERT_TRUE(h_klass->IsInitialized());
 
-    h_klass.Assign(class_linker_->FindSystemClass(soa.Self(),
-                                                  Transaction::kAbortExceptionDescriptor));
+    h_klass.Assign(class_linker_->FindSystemClass(soa.Self(), kTransactionAbortErrorDescriptor));
     ASSERT_TRUE(h_klass != nullptr);
     class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
     ASSERT_TRUE(h_klass->IsInitialized());
