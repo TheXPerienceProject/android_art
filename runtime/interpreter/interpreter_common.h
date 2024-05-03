@@ -20,7 +20,6 @@
 #include "android-base/macros.h"
 #include "instrumentation.h"
 #include "interpreter.h"
-#include "transaction.h"
 
 #include <math.h>
 
@@ -82,6 +81,12 @@ class InactiveTransactionChecker {
 
   ALWAYS_INLINE static bool WriteValueConstraint([[maybe_unused]] Thread* self,
                                                  [[maybe_unused]] ObjPtr<mirror::Object> value)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+
+  ALWAYS_INLINE static bool ReadConstraint([[maybe_unused]] Thread* self,
+                                           [[maybe_unused]] ObjPtr<mirror::Object> value)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     return false;
   }
@@ -397,12 +402,10 @@ ALWAYS_INLINE bool DoFieldGet(Thread* self,
   ObjPtr<mirror::Object> obj;
   if (is_static) {
     obj = field->GetDeclaringClass();
-    if (transaction_active) {
-      if (Runtime::Current()->GetTransaction()->ReadConstraint(obj)) {
-        Runtime::Current()->AbortTransactionAndThrowAbortError(self, "Can't read static fields of "
-            + obj->PrettyTypeOf() + " since it does not belong to clinit's class.");
-        return false;
-      }
+    using TransactionChecker = typename std::conditional_t<
+        transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
+    if (TransactionChecker::ReadConstraint(self, obj)) {
+      return false;
     }
   } else {
     obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
