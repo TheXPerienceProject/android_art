@@ -97,13 +97,17 @@ Result<void> Run(std::string_view log_name, const std::vector<std::string>& args
   return {};
 }
 
-Result<std::string> GetArtExec() {
+Result<CmdlineBuilder> GetArtExecCmdlineBuilder() {
   std::string error_msg;
   std::string art_root = GetArtRootSafe(&error_msg);
   if (!error_msg.empty()) {
     return Error() << error_msg;
   }
-  return art_root + "/bin/art_exec";
+  CmdlineBuilder args;
+  args.Add(art_root + "/bin/art_exec")
+      .Add("--chroot=%s", DexoptChrootSetup::CHROOT_DIR)
+      .Add("--process-name-suffix=Pre-reboot Dexopt chroot");
+  return args;
 }
 
 Result<void> CreateDir(const std::string& path) {
@@ -408,19 +412,15 @@ Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ot
     PLOG(WARNING) << "Failed to generate empty linker config to suppress warnings";
   }
 
-  CmdlineBuilder args;
-  args.Add(OR_RETURN(GetArtExec()))
-      .Add("--chroot=%s", CHROOT_DIR)
-      .Add("--")
+  CmdlineBuilder args = OR_RETURN(GetArtExecCmdlineBuilder());
+  args.Add("--")
       .Add("/system/bin/apexd")
       .Add("--otachroot-bootstrap")
       .AddIf(!IsOtaUpdate(ota_slot), "--also-include-staged-apexes");
   OR_RETURN(Run("apexd", args.Get()));
 
-  args = CmdlineBuilder();
-  args.Add(OR_RETURN(GetArtExec()))
-      .Add("--chroot=%s", CHROOT_DIR)
-      .Add("--drop-capabilities")
+  args = OR_RETURN(GetArtExecCmdlineBuilder());
+  args.Add("--drop-capabilities")
       .Add("--")
       .Add("/apex/com.android.runtime/bin/linkerconfig")
       .Add("--target")
@@ -432,10 +432,8 @@ Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ot
 
 Result<void> DexoptChrootSetup::TearDownChroot() const {
   if (OS::FileExists(PathInChroot("/system/bin/apexd").c_str())) {
-    CmdlineBuilder args;
-    args.Add(OR_RETURN(GetArtExec()))
-        .Add("--chroot=%s", CHROOT_DIR)
-        .Add("--")
+    CmdlineBuilder args = OR_RETURN(GetArtExecCmdlineBuilder());
+    args.Add("--")
         .Add("/system/bin/apexd")
         .Add("--unmount-all")
         .Add("--also-include-staged-apexes");
