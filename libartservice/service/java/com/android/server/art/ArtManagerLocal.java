@@ -930,6 +930,11 @@ public final class ArtManagerLocal {
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void onApexStaged(@NonNull String[] stagedApexModuleNames) {
         // TODO(b/311377497): Check system requirements.
+        mInjector.getPreRebootDexoptJob().unschedule();
+        // Although `unschedule` implies `cancel`, we explicitly call `cancel` here to wait for
+        // the job to exit, if it's running.
+        mInjector.getPreRebootDexoptJob().cancel(true /* blocking */);
+        mInjector.getPreRebootDexoptJob().updateOtaSlot(null);
         mInjector.getPreRebootDexoptJob().schedule();
     }
 
