@@ -19,6 +19,8 @@
 
 #include "interpreter_switch_impl-inl.h"
 
+#include "active_transaction_checker.h"
+
 namespace art HIDDEN {
 namespace interpreter {
 
