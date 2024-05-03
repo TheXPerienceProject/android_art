@@ -263,7 +263,7 @@ class Artd : public aidl::com::android::server::art::BnArtd {
 
   android::base::Result<std::string> GetProfman();
 
-  android::base::Result<std::string> GetArtExec();
+  android::base::Result<tools::CmdlineBuilder> GetArtExecCmdlineBuilder();
 
   bool ShouldUseDex2Oat64();
 

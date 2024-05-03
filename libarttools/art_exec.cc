@@ -67,6 +67,8 @@ Supported options:
   --keep-fds=FILE_DESCRIPTORS: A semicolon-separated list of file descriptors to keep open.
   --env=KEY=VALUE: Set an environment variable. This flag can be passed multiple times to set
       multiple environment variables.
+  --process-name-suffix=SUFFIX: Add a suffix in parentheses to argv[0] when calling `execv`. This
+      suffix will show up as part of the process name in tombstone when the process crashes.
 )";
 
 constexpr int kErrorUsage = 100;
