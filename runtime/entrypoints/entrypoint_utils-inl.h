@@ -131,50 +131,60 @@ inline ArtMethod* GetResolvedMethod(ArtMethod* outer_method,
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   ArtMethod* method = outer_method;
   for (InlineInfo inline_info : inline_infos) {
+    StackHandleScope<2> hs(Thread::Current());
+    Handle<mirror::DexCache> h_dex_cache;
+    Handle<mirror::ClassLoader> h_class_loader;
     DCHECK(!inline_info.EncodesArtMethod());
     DCHECK_NE(inline_info.GetDexPc(), static_cast<uint32_t>(-1));
     MethodInfo method_info = code_info.GetMethodInfoOf(inline_info);
     uint32_t method_index = method_info.GetMethodIndex();
     const uint32_t dex_file_index = method_info.GetDexFileIndex();
     ArtMethod* inlined_method = nullptr;
-    ObjPtr<mirror::DexCache> dex_cache = nullptr;
     if (method_info.HasDexFileIndex()) {
       if (method_info.GetDexFileIndexKind() == MethodInfo::kKindBCP) {
         ArrayRef<const DexFile* const> bcp_dex_files(class_linker->GetBootClassPath());
         DCHECK_LT(dex_file_index, bcp_dex_files.size())
             << "OOB access to bcp_dex_files. Dumping info: "
-            << GetResolvedMethodErrorString(
-                   class_linker, inlined_method, method, outer_method, dex_cache, method_info);
+            << GetResolvedMethodErrorString(class_linker,
+                                            inlined_method,
+                                            method,
+                                            outer_method,
+                                            /*dex_cache=*/ nullptr,
+                                            method_info);
         const DexFile* dex_file = bcp_dex_files[dex_file_index];
         DCHECK_NE(dex_file, nullptr);
-        dex_cache = class_linker->FindDexCache(Thread::Current(), *dex_file);
+        h_dex_cache = hs.NewHandle(class_linker->FindDexCache(Thread::Current(), *dex_file));
       } else {
         ArrayRef<const OatDexFile* const> oat_dex_files(
             outer_method->GetDexFile()->GetOatDexFile()->GetOatFile()->GetOatDexFiles());
         DCHECK_LT(dex_file_index, oat_dex_files.size())
             << "OOB access to oat_dex_files. Dumping info: "
-            << GetResolvedMethodErrorString(
-                   class_linker, inlined_method, method, outer_method, dex_cache, method_info);
+            << GetResolvedMethodErrorString(class_linker,
+                                            inlined_method,
+                                            method,
+                                            outer_method,
+                                            /*dex_cache=*/ nullptr,
+                                            method_info);
         const OatDexFile* odf = oat_dex_files[dex_file_index];
         DCHECK_NE(odf, nullptr);
-        dex_cache = class_linker->FindDexCache(Thread::Current(), *odf);
+        h_dex_cache = hs.NewHandle(class_linker->FindDexCache(Thread::Current(), *odf));
       }
     } else {
-      dex_cache = outer_method->GetDexCache();
+      h_dex_cache = hs.NewHandle(outer_method->GetDexCache());
     }
-    inlined_method =
-        class_linker->LookupResolvedMethod(method_index, dex_cache, dex_cache->GetClassLoader());
+    h_class_loader = hs.NewHandle(h_dex_cache->GetClassLoader());
+    inlined_method = class_linker->LookupResolvedMethod(method_index, h_dex_cache, h_class_loader);
 
     if (UNLIKELY(inlined_method == nullptr)) {
       LOG(FATAL) << GetResolvedMethodErrorString(
-          class_linker, inlined_method, method, outer_method, dex_cache, method_info);
+          class_linker, inlined_method, method, outer_method, h_dex_cache.Get(), method_info);
       UNREACHABLE();
     }
     DCHECK(!inlined_method->IsRuntimeMethod());
     DCHECK_EQ(inlined_method->GetDexFile() == outer_method->GetDexFile(),
               dex_file_index == MethodInfo::kSameDexFile)
         << GetResolvedMethodErrorString(
-               class_linker, inlined_method, method, outer_method, dex_cache, method_info);
+               class_linker, inlined_method, method, outer_method, h_dex_cache.Get(), method_info);
     method = inlined_method;
   }
 

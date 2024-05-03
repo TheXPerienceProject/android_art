@@ -339,8 +339,8 @@ class EXPORT ClassLinker {
 
   // Look up a previously resolved method with the given index.
   ArtMethod* LookupResolvedMethod(uint32_t method_idx,
-                                  ObjPtr<mirror::DexCache> dex_cache,
-                                  ObjPtr<mirror::ClassLoader> class_loader)
+                                  Handle<mirror::DexCache> dex_cache,
+                                  Handle<mirror::ClassLoader> class_loader)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Find a method with the given index from class `klass`, and update the dex cache.
