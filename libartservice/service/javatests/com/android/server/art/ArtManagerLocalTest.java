@@ -137,6 +137,7 @@ public class ArtManagerLocalTest {
     @Mock private ArtdRefCache.Pin mArtdPin;
     @Mock private DexMetadataHelper.Injector mDexMetadataHelperInjector;
     @Mock private Context mContext;
+    @Mock private PreRebootDexoptJob mPreRebootDexoptJob;
     private PackageState mPkgState1;
     private AndroidPackage mPkg1;
     private CheckedSecondaryDexInfo mPkg1SecondaryDexInfo1;
@@ -180,6 +181,7 @@ public class ArtManagerLocalTest {
                 .thenReturn(new ArtFileManager(mArtFileManagerInjector));
         lenient().when(mInjector.getDexMetadataHelper()).thenReturn(mDexMetadataHelper);
         lenient().when(mInjector.getContext()).thenReturn(mContext);
+        lenient().when(mInjector.getPreRebootDexoptJob()).thenReturn(mPreRebootDexoptJob);
 
         lenient().when(mArtFileManagerInjector.getArtd()).thenReturn(mArtd);
         lenient().when(mArtFileManagerInjector.getUserManager()).thenReturn(mUserManager);
@@ -1132,7 +1134,18 @@ public class ArtManagerLocalTest {
     }
 
     @Test
-    public void testCleanup() throws Exception {
+    public void testCleanupKeepPreRebootStagedFiles() throws Exception {
+        when(mPreRebootDexoptJob.hasStarted()).thenReturn(true);
+        testCleanup(true /* keepPreRebootStagedFiles */);
+    }
+
+    @Test
+    public void testCleanupRemovePreRebootStagedFiles() throws Exception {
+        when(mPreRebootDexoptJob.hasStarted()).thenReturn(false);
+        testCleanup(false /* keepPreRebootStagedFiles */);
+    }
+
+    private void testCleanup(boolean keepPreRebootStagedFiles) throws Exception {
         // It should keep all artifacts, but not runtime images.
         doReturn(createGetDexoptStatusResult(
                          "speed-profile", "bg-dexopt", "location", ArtifactsLocation.NEXT_TO_DEX))
@@ -1190,7 +1203,8 @@ public class ArtManagerLocalTest {
                 inAnyOrderDeepEquals(AidlUtils.buildRuntimeArtifactsPath(
                                              PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm64"),
                         AidlUtils.buildRuntimeArtifactsPath(
-                                PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm")));
+                                PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm")),
+                eq(keepPreRebootStagedFiles));
     }
 
     @Test

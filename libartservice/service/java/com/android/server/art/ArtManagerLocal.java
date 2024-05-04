@@ -57,7 +57,6 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.storage.StorageManager;
 import android.text.TextUtils;
-import android.util.Log;
 import android.util.Pair;
 
 import androidx.annotation.RequiresApi;
@@ -121,9 +120,6 @@ import java.util.stream.Stream;
  */
 @SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
 public final class ArtManagerLocal {
-    /** @hide */
-    public static final String TAG = "ArtService";
-
     private static final String[] CLASSPATHS_FOR_BOOT_IMAGE_PROFILE = {
             "BOOTCLASSPATH", "SYSTEMSERVERCLASSPATH", "STANDALONE_SYSTEMSERVER_JARS"};
 
@@ -490,8 +486,7 @@ public final class ArtManagerLocal {
                     dexoptResults.put(ArtFlags.PASS_DOWNGRADE, downgradeResult);
                 }
             }
-            Log.i(TAG,
-                    "Dexopting " + params.getPackages().size() + " packages with reason=" + reason);
+            AsLog.i("Dexopting " + params.getPackages().size() + " packages with reason=" + reason);
             DexoptResult mainResult = mInjector.getDexoptHelper().dexopt(snapshot,
                     params.getPackages(), params.getDexoptParams(), cancellationSignal,
                     dexoptExecutor, progressCallbackExecutor,
@@ -760,9 +755,8 @@ public final class ArtManagerLocal {
                     PrimaryDexUtils.buildOutputProfile(pkgState, dexInfo, Process.SYSTEM_UID,
                             Process.SYSTEM_UID, false /* isPublic */, false /* isPreReboot */));
             if (!result.externalProfileErrors().isEmpty()) {
-                Log.e(TAG,
-                        "Error occurred when initializing from external profiles: "
-                                + result.externalProfileErrors());
+                AsLog.e("Error occurred when initializing from external profiles: "
+                        + result.externalProfileErrors());
             }
 
             ProfilePath refProfile = result.profile();
@@ -930,6 +924,11 @@ public final class ArtManagerLocal {
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void onApexStaged(@NonNull String[] stagedApexModuleNames) {
         // TODO(b/311377497): Check system requirements.
+        mInjector.getPreRebootDexoptJob().unschedule();
+        // Although `unschedule` implies `cancel`, we explicitly call `cancel` here to wait for
+        // the job to exit, if it's running.
+        mInjector.getPreRebootDexoptJob().cancel(true /* blocking */);
+        mInjector.getPreRebootDexoptJob().updateOtaSlot(null);
         mInjector.getPreRebootDexoptJob().schedule();
     }
 
@@ -1093,8 +1092,9 @@ public final class ArtManagerLocal {
                     runtimeArtifactsToKeep.addAll(artifactLists.runtimeArtifacts());
                 }
             }
-            return mInjector.getArtd().cleanup(
-                    profilesToKeep, artifactsToKeep, vdexFilesToKeep, runtimeArtifactsToKeep);
+            return mInjector.getArtd().cleanup(profilesToKeep, artifactsToKeep, vdexFilesToKeep,
+                    runtimeArtifactsToKeep,
+                    SdkLevel.isAtLeastV() && mInjector.getPreRebootDexoptJob().hasStarted());
         } catch (RemoteException e) {
             Utils.logArtdException(e);
             return 0;
@@ -1140,8 +1140,7 @@ public final class ArtManagerLocal {
                     // regression.
                     mInjector.getArtd().commitPreRebootStagedFiles(artifacts, profiles);
                 } catch (ServiceSpecificException e) {
-                    Log.e(TAG,
-                            "Failed to commit Pre-reboot staged files for package '"
+                    AsLog.e("Failed to commit Pre-reboot staged files for package '"
                                     + pkgState.getPackageName() + "'",
                             e);
                 }
@@ -1187,15 +1186,14 @@ public final class ArtManagerLocal {
                                             .filter(pkg -> !excludedPackages.contains(pkg))
                                             .collect(Collectors.toList());
             if (!packages.isEmpty()) {
-                Log.i(TAG, "Storage is low. Downgrading " + packages.size() + " inactive packages");
+                AsLog.i("Storage is low. Downgrading " + packages.size() + " inactive packages");
                 DexoptParams params =
                         new DexoptParams.Builder(ReasonMapping.REASON_INACTIVE).build();
                 return mInjector.getDexoptHelper().dexopt(snapshot, packages, params,
                         cancellationSignal, executor, progressCallbackExecutor, progressCallback);
             } else {
-                Log.i(TAG,
-                        "Storage is low, but downgrading is disabled or there's nothing to "
-                                + "downgrade");
+                AsLog.i("Storage is low, but downgrading is disabled or there's nothing to "
+                        + "downgrade");
             }
         }
         return null;
@@ -1207,7 +1205,7 @@ public final class ArtManagerLocal {
             return mInjector.getStorageManager().getAllocatableBytes(StorageManager.UUID_DEFAULT)
                     < DOWNGRADE_THRESHOLD_ABOVE_LOW_BYTES;
         } catch (IOException e) {
-            Log.e(TAG, "Failed to check storage. Assuming storage not low", e);
+            AsLog.e("Failed to check storage. Assuming storage not low", e);
             return false;
         }
     }
@@ -1247,9 +1245,8 @@ public final class ArtManagerLocal {
                                                     ArtFlags.FLAG_FORCE_MERGE_PROFILE)
                                             .build();
 
-        Log.i(TAG,
-                "Dexopting " + packageNames.size() + " packages with reason="
-                        + dexoptParams.getReason() + " (supplementary pass)");
+        AsLog.i("Dexopting " + packageNames.size()
+                + " packages with reason=" + dexoptParams.getReason() + " (supplementary pass)");
         return mInjector.getDexoptHelper().dexopt(snapshot, packageNames, dexoptParams,
                 cancellationSignal, dexoptExecutor, progressCallbackExecutor, progressCallback);
     }

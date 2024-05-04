@@ -40,7 +40,6 @@ import android.os.Process;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.StructStat;
-import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
@@ -88,8 +87,6 @@ import java.util.stream.Collectors;
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public final class ArtShellCommand extends BasicShellCommandHandler {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     /** The default location for profile dumps. */
     private final static String PROFILE_DEBUG_LOCATION = "/data/misc/profman";
 
@@ -189,6 +186,9 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
             case "pre-reboot-dexopt": {
                 // TODO(b/311377497): Remove this command once the development is done.
                 return handlePreRebootDexopt(pw);
+            }
+            case "on-ota-staged": {
+                return handleOnOtaStaged(pw);
             }
             default:
                 pw.printf("Error: Unknown 'art' sub-command '%s'\n", subcmd);
@@ -667,6 +667,67 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         }
     }
 
+    private int handleOnOtaStaged(@NonNull PrintWriter pw) {
+        if (!SdkLevel.isAtLeastV()) {
+            pw.println("Error: Unsupported command 'on-ota-staged'");
+            return 1;
+        }
+
+        int uid = Binder.getCallingUid();
+        if (uid != Process.ROOT_UID) {
+            throw new SecurityException("Only root can call 'on-ota-staged'");
+        }
+
+        String otaSlot = null;
+
+        String opt;
+        while ((opt = getNextOption()) != null) {
+            switch (opt) {
+                case "--slot":
+                    otaSlot = getNextArgRequired();
+                    break;
+                default:
+                    pw.println("Error: Unknown option: " + opt);
+                    return 1;
+            }
+        }
+
+        if (otaSlot == null) {
+            pw.println("Error: '--slot' must be specified");
+            return 1;
+        }
+
+        int code;
+
+        // This operation requires the uid to be "system" (1000).
+        long identityToken = Binder.clearCallingIdentity();
+        try {
+            mArtManagerLocal.getPreRebootDexoptJob().unschedule();
+            // Although `unschedule` implies `cancel`, we explicitly call `cancel` here to wait for
+            // the job to exit, if it's running.
+            mArtManagerLocal.getPreRebootDexoptJob().cancel(true /* blocking */);
+            mArtManagerLocal.getPreRebootDexoptJob().updateOtaSlot(otaSlot);
+            code = mArtManagerLocal.getPreRebootDexoptJob().schedule();
+        } finally {
+            Binder.restoreCallingIdentity(identityToken);
+        }
+
+        switch (code) {
+            case ArtFlags.SCHEDULE_SUCCESS:
+                pw.println("Job scheduled");
+                return 0;
+            case ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP:
+                pw.println("Job disabled by system property");
+                return 1;
+            case ArtFlags.SCHEDULE_JOB_SCHEDULER_FAILURE:
+                pw.println("Failed to schedule job");
+                return 1;
+            default:
+                // Can't happen.
+                throw new IllegalStateException("Unknown result code: " + code);
+        }
+    }
+
     @Override
     public void onHelp() {
         // No one should call this. The help text should be printed by the `onHelp` handler of `cmd
@@ -816,6 +877,12 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         pw.println("    This command is different from 'pm compile -r REASON -a'. For example, it");
         pw.println("    only dexopts a subset of apps, and it runs dexopt in parallel. See the");
         pw.println("    API documentation for 'ArtManagerLocal.dexoptPackages' for details.");
+        pw.println();
+        pw.println("  on-ota-staged --slot SLOT");
+        pw.println("    Notifies ART Service that an OTA update is staged. A Pre-reboot Dexopt");
+        pw.println("    job is scheduled for it.");
+        pw.println("    Options:");
+        pw.println("      --slot SLOT The slot that contains the OTA update, '_a' or '_b'.");
     }
 
     private void enforceRootOrShell() {

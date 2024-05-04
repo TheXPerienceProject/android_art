@@ -26,7 +26,12 @@ service artd /apex/com.android.art/bin/artd
 # Same as above, but for Pre-reboot Dexopt. It runs in a chroot environment that
 # is set up by dexopt_chroot_setup. It's a lazy service that is started and
 # stopped dynamically as needed.
-service artd_pre_reboot /apex/com.android.art/bin/art_exec --chroot=/mnt/pre_reboot_dexopt/chroot -- /apex/com.android.art/bin/artd --pre-reboot
+service artd_pre_reboot /apex/com.android.art/bin/art_exec \
+        --chroot=/mnt/pre_reboot_dexopt/chroot \
+        --process-name-suffix="Pre-reboot Dexopt chroot" \
+        -- \
+        /apex/com.android.art/bin/artd \
+        --pre-reboot
     interface aidl artd_pre_reboot
     disabled  # Prevents the service from automatically starting at boot.
     oneshot  # Prevents the service from automatically restarting each time it is stopped.

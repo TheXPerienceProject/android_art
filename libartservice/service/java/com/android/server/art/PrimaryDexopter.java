@@ -31,7 +31,6 @@ import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.os.UserHandle;
 import android.text.TextUtils;
-import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
@@ -56,8 +55,6 @@ import java.util.Objects;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class PrimaryDexopter extends Dexopter<DetailedPrimaryDexInfo> {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     private final int mSharedGid;
 
     public PrimaryDexopter(@NonNull Context context, @NonNull Config config,

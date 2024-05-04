@@ -199,6 +199,7 @@ class Artd : public aidl::com::android::server::art::BnArtd {
       const std::vector<aidl::com::android::server::art::VdexPath>& in_vdexFilesToKeep,
       const std::vector<aidl::com::android::server::art::RuntimeArtifactsPath>&
           in_runtimeArtifactsToKeep,
+      bool in_keepPreRebootStagedFiles,
       int64_t* _aidl_return) override;
 
   ndk::ScopedAStatus isInDalvikCache(const std::string& in_dexFile, bool* _aidl_return) override;
@@ -262,7 +263,7 @@ class Artd : public aidl::com::android::server::art::BnArtd {
 
   android::base::Result<std::string> GetProfman();
 
-  android::base::Result<std::string> GetArtExec();
+  android::base::Result<tools::CmdlineBuilder> GetArtExecCmdlineBuilder();
 
   bool ShouldUseDex2Oat64();
 

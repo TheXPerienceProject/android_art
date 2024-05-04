@@ -24,7 +24,6 @@ import android.annotation.NonNull;
 import android.os.Build;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
-import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
@@ -54,8 +53,6 @@ import java.util.stream.Collectors;
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class DumpHelper {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     @NonNull private final Injector mInjector;
 
     public DumpHelper(@NonNull ArtManagerLocal artManagerLocal) {

@@ -21,6 +21,7 @@
 #include "dex/class_reference.h"
 #include "gc/heap.h"
 #include "handle_scope-inl.h"
+#include "interpreter/active_transaction_checker.h"
 #include "mirror/class-inl.h"
 #include "runtime.h"
 #include "verifier/verifier_enums.h"
@@ -226,6 +227,23 @@ void AotClassLinker::SetEnablePublicSdkChecks(bool enabled) {
   if (sdk_checker_ != nullptr) {
     sdk_checker_->SetEnabled(enabled);
   }
+}
+
+bool AotClassLinker::TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const {
+  DCHECK(Runtime::Current()->IsActiveTransaction());
+  return interpreter::ActiveTransactionChecker::WriteConstraint(self, obj);
+}
+
+bool AotClassLinker::TransactionWriteValueConstraint(
+    Thread* self, ObjPtr<mirror::Object> value) const {
+  DCHECK(Runtime::Current()->IsActiveTransaction());
+  return interpreter::ActiveTransactionChecker::WriteValueConstraint(self, value);
+}
+
+bool AotClassLinker::TransactionAllocationConstraint(Thread* self,
+                                                     ObjPtr<mirror::Class> klass) const {
+  DCHECK(Runtime::Current()->IsActiveTransaction());
+  return interpreter::ActiveTransactionChecker::AllocationConstraint(self, klass);
 }
 
 }  // namespace art

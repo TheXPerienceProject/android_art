@@ -2094,138 +2094,165 @@ TEST_F(ArtdTest, mergeProfilesWithOptionsDumpClassesAndMethods) {
   CheckContent(output_profile.profilePath.tmpPath, "dump");
 }
 
-TEST_F(ArtdTest, cleanup) {
-  std::vector<std::string> gc_removed_files;
-  std::vector<std::string> gc_kept_files;
+class ArtdCleanupTest : public ArtdTest {
+ protected:
+  void SetUp() override {
+    ArtdTest::SetUp();
 
-  auto CreateGcRemovedFile = [&](const std::string& path) {
-    CreateFile(path);
-    gc_removed_files.push_back(path);
-  };
+    // Unmanaged files.
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/1.odex");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.odex");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.txt");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.txt");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.tmp");
 
-  auto CreateGcKeptFile = [&](const std::string& path) {
-    CreateFile(path);
-    gc_kept_files.push_back(path);
-  };
+    // Files to keep.
+    CreateGcKeptFile(android_data_ + "/misc/profiles/cur/1/com.android.foo/primary.prof");
+    CreateGcKeptFile(android_data_ + "/misc/profiles/cur/3/com.android.foo/primary.prof");
+    CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex");
+    CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex");
+    CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex");
+    CreateGcKeptFile(
+        android_expand_ +
+        "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex");
+    CreateGcKeptFile(
+        android_expand_ +
+        "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.vdex");
+    CreateGcKeptFile(
+        android_expand_ +
+        "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.art");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.vdex");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.art");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/cache/oat_primary/arm64/base.art");
+    CreateGcKeptFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/arm64/base.art");
+    CreateGcKeptFile(android_data_ + "/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
+    CreateGcKeptFile(android_expand_ +
+                     "/123456-7890/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
+    CreateGcKeptFile(android_data_ +
+                     "/user/0/com.android.foo/cache/not_oat_dir/oat_primary/arm64/base.art");
 
-  // Unmanaged files.
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/1.odex");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.odex");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.txt");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.txt");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.tmp");
-
-  // Files to keep.
-  CreateGcKeptFile(android_data_ + "/misc/profiles/cur/1/com.android.foo/primary.prof");
-  CreateGcKeptFile(android_data_ + "/misc/profiles/cur/3/com.android.foo/primary.prof");
-  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex");
-  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex");
-  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex");
-  CreateGcKeptFile(
-      android_expand_ +
-      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex");
-  CreateGcKeptFile(
-      android_expand_ +
-      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.vdex");
-  CreateGcKeptFile(
-      android_expand_ +
-      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.art");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.vdex");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.art");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/cache/oat_primary/arm64/base.art");
-  CreateGcKeptFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/arm64/base.art");
-  CreateGcKeptFile(android_data_ + "/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
-  CreateGcKeptFile(android_expand_ +
-                   "/123456-7890/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
-  CreateGcKeptFile(android_data_ +
-                   "/user/0/com.android.foo/cache/not_oat_dir/oat_primary/arm64/base.art");
-
-  // Files to remove.
-  CreateGcRemovedFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof");
-  CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/2/com.android.foo/primary.prof");
-  CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/3/com.android.bar/primary.prof");
-  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/extra.odex");
-  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.dex");
-  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.vdex");
-  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.art");
-  CreateGcRemovedFile(
-      android_expand_ +
-      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.odex");
-  CreateGcRemovedFile(
-      android_expand_ +
-      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.vdex");
-  CreateGcRemovedFile(
-      android_expand_ +
-      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.art");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.vdex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.art");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/2.odex.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.odex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.art");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.odex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.vdex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art");
-  CreateGcRemovedFile(android_data_ +
-                      "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.bar/aaa/oat/arm64/1.vdex");
-  CreateGcRemovedFile(android_data_ +
-                      "/user/0/com.android.different_package/cache/oat_primary/arm64/base.art");
-  CreateGcRemovedFile(android_data_ +
-                      "/user/0/com.android.foo/cache/oat_primary/arm64/different_dex.art");
-  CreateGcRemovedFile(android_data_ +
-                      "/user/0/com.android.foo/cache/oat_primary/different_isa/base.art");
-
-  int64_t aidl_return;
-  ASSERT_TRUE(
-      artd_
-          ->cleanup(
-              {
-                  PrimaryCurProfilePath{
-                      .userId = 1, .packageName = "com.android.foo", .profileName = "primary"},
-                  PrimaryCurProfilePath{
-                      .userId = 3, .packageName = "com.android.foo", .profileName = "primary"},
-              },
-              {
-                  ArtifactsPath{.dexPath = "/system/app/Foo/Foo.apk",
-                                .isa = "arm64",
-                                .isInDalvikCache = true},
-                  ArtifactsPath{
-                      .dexPath =
-                          android_expand_ +
-                          "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/base.apk",
-                      .isa = "arm64",
-                      .isInDalvikCache = false},
-                  ArtifactsPath{.dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/2.apk",
-                                .isa = "arm64",
-                                .isInDalvikCache = false},
-              },
-              {
-                  VdexPath{ArtifactsPath{
-                      .dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/1.apk",
-                      .isa = "arm64",
-                      .isInDalvikCache = false}},
-              },
-              {
-                  RuntimeArtifactsPath{
-                      .packageName = "com.android.foo", .dexPath = "/a/b/base.apk", .isa = "arm64"},
-              },
-              &aidl_return)
-          .isOk());
-
-  for (const std::string& path : gc_removed_files) {
-    EXPECT_FALSE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be removed", path);
+    // Files to remove.
+    CreateGcRemovedFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof");
+    CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/2/com.android.foo/primary.prof");
+    CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/3/com.android.bar/primary.prof");
+    CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/extra.odex");
+    CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.dex");
+    CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.vdex");
+    CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.art");
+    CreateGcRemovedFile(
+        android_expand_ +
+        "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.odex");
+    CreateGcRemovedFile(
+        android_expand_ +
+        "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.vdex");
+    CreateGcRemovedFile(
+        android_expand_ +
+        "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.art");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.vdex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.art");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/2.odex.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.odex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.art");
+    CreateGcRemovedFile(android_data_ +
+                        "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.odex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.vdex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art");
+    CreateGcRemovedFile(android_data_ +
+                        "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.bar/aaa/oat/arm64/1.vdex");
+    CreateGcRemovedFile(android_data_ +
+                        "/user/0/com.android.different_package/cache/oat_primary/arm64/base.art");
+    CreateGcRemovedFile(android_data_ +
+                        "/user/0/com.android.foo/cache/oat_primary/arm64/different_dex.art");
+    CreateGcRemovedFile(android_data_ +
+                        "/user/0/com.android.foo/cache/oat_primary/different_isa/base.art");
   }
 
-  for (const std::string& path : gc_kept_files) {
-    EXPECT_TRUE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be kept", path);
+  void CreateGcRemovedFile(const std::string& path) {
+    CreateFile(path);
+    gc_removed_files_.push_back(path);
   }
+
+  void CreateGcKeptFile(const std::string& path) {
+    CreateFile(path);
+    gc_kept_files_.push_back(path);
+  }
+
+  void RunCleanup(bool keepPreRebootStagedFiles) {
+    int64_t aidl_return;
+    ASSERT_STATUS_OK(artd_->cleanup(
+        {
+            PrimaryCurProfilePath{
+                .userId = 1, .packageName = "com.android.foo", .profileName = "primary"},
+            PrimaryCurProfilePath{
+                .userId = 3, .packageName = "com.android.foo", .profileName = "primary"},
+        },
+        {
+            ArtifactsPath{
+                .dexPath = "/system/app/Foo/Foo.apk", .isa = "arm64", .isInDalvikCache = true},
+            ArtifactsPath{
+                .dexPath = android_expand_ +
+                           "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/base.apk",
+                .isa = "arm64",
+                .isInDalvikCache = false},
+            ArtifactsPath{.dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/2.apk",
+                          .isa = "arm64",
+                          .isInDalvikCache = false},
+        },
+        {
+            VdexPath{
+                ArtifactsPath{.dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/1.apk",
+                              .isa = "arm64",
+                              .isInDalvikCache = false}},
+        },
+        {
+            RuntimeArtifactsPath{
+                .packageName = "com.android.foo", .dexPath = "/a/b/base.apk", .isa = "arm64"},
+        },
+        keepPreRebootStagedFiles,
+        &aidl_return));
+  }
+
+  void Verify() {
+    for (const std::string& path : gc_removed_files_) {
+      EXPECT_FALSE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be removed", path);
+    }
+
+    for (const std::string& path : gc_kept_files_) {
+      EXPECT_TRUE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be kept", path);
+    }
+  }
+
+ private:
+  std::vector<std::string> gc_removed_files_;
+  std::vector<std::string> gc_kept_files_;
+};
+
+TEST_F(ArtdCleanupTest, cleanupKeepingPreRebootStagedFiles) {
+  CreateGcKeptFile(
+      android_expand_ +
+      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex.staged");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex.staged");
+
+  ASSERT_NO_FATAL_FAILURE(RunCleanup(/*keepPreRebootStagedFiles=*/true));
+  Verify();
+}
+
+TEST_F(ArtdCleanupTest, cleanupRemovingPreRebootStagedFiles) {
+  CreateGcRemovedFile(
+      android_expand_ +
+      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex.staged");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex.staged");
+
+  ASSERT_NO_FATAL_FAILURE(RunCleanup(/*keepPreRebootStagedFiles=*/false));
+  Verify();
 }
 
 TEST_F(ArtdTest, isInDalvikCache) {

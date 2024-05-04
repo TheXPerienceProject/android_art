@@ -37,7 +37,6 @@ import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
-import android.util.Slog;
 import android.util.SparseArray;
 
 import androidx.annotation.RequiresApi;
@@ -73,7 +72,6 @@ import java.util.stream.Collectors;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public final class Utils {
-    public static final String TAG = ArtManagerLocal.TAG;
     public static final String PLATFORM_PACKAGE_NAME = "android";
 
     /** A copy of {@link android.os.Trace.TRACE_TAG_DALVIK}. */
@@ -217,7 +215,7 @@ public final class Utils {
             // This should never happen. Ignore the error and conservatively use dalvik-cache to
             // minimize the risk.
             // TODO(jiakaiz): Throw the error instead of ignoring it.
-            Log.e(TAG, "Failed to determine the location of the artifacts", e);
+            AsLog.e("Failed to determine the location of the artifacts", e);
             return true;
         }
     }
@@ -343,7 +341,7 @@ public final class Utils {
         try {
             Files.deleteIfExists(path);
         } catch (IOException e) {
-            Log.e(TAG, "Failed to delete file '" + path + "'", e);
+            AsLog.e("Failed to delete file '" + path + "'", e);
         }
     }
 
@@ -390,8 +388,7 @@ public final class Utils {
                         refProfile, isOtherReadable, List.of() /* externalProfileErrors */);
             }
         } catch (ServiceSpecificException e) {
-            Log.e(TAG,
-                    "Failed to use the existing reference profile "
+            AsLog.e("Failed to use the existing reference profile "
                             + AidlUtils.toString(refProfile),
                     e);
         }
@@ -440,7 +437,7 @@ public final class Utils {
                     externalProfileErrors.add(result.errorMsg);
                 }
             } catch (ServiceSpecificException e) {
-                Log.e(TAG, "Failed to initialize profile from " + pair.first, e);
+                AsLog.e("Failed to initialize profile from " + pair.first, e);
             }
         }
 
@@ -457,10 +454,10 @@ public final class Utils {
             //    exception is expected.
             // In either case, we don't need to surface the exception from here.
             // The Java stack trace is intentionally omitted because it's not helpful.
-            Log.e(TAG, message);
+            AsLog.e(message);
         } else {
             // Not expected. Log wtf to surface it.
-            Slog.wtf(TAG, message, e);
+            AsLog.wtf(message, e);
         }
     }
 
@@ -473,7 +470,7 @@ public final class Utils {
         try {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
-            Slog.wtf(TAG, "Sleep interrupted", e);
+            AsLog.wtf("Sleep interrupted", e);
         }
     }
 

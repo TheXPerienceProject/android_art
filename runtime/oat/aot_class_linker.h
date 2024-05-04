@@ -48,6 +48,14 @@ class AotClassLinker : public ClassLinker {
   bool DenyAccessBasedOnPublicSdk([[maybe_unused]] const char* type_descriptor) const override;
   void SetEnablePublicSdkChecks(bool enabled) override;
 
+  // Transaction constraint checks for AOT compilation.
+  bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const override
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) const override
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) const override
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
  protected:
   // Overridden version of PerformClassVerification allows skipping verification if the class was
   // previously verified but unloaded.
