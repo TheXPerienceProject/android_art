@@ -43,14 +43,6 @@ art_module_sdk {
     name: "art-module-sdk",
     host_supported: true,
 
-    // Enable if ART_MODULE_BUILD_FROM_SOURCE is true
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
-
     prebuilt_visibility: prebuilt_visibility,
 
     traits: {
@@ -152,14 +144,6 @@ art_module_exports {
     name: "art-module-host-exports",
     host_supported: true,
 
-    // Enable if ART_MODULE_BUILD_FROM_SOURCE is true
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
-
     prebuilt_visibility: prebuilt_visibility,
 
     target: {
@@ -206,14 +190,6 @@ art_module_exports {
 // Exported tests and supporting libraries
 art_module_exports {
     name: "art-module-test-exports",
-
-    // Enable if ART_MODULE_BUILD_FROM_SOURCE is true
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
 
     prebuilt_visibility: prebuilt_visibility,
 

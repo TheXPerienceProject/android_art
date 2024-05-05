@@ -14,35 +14,249 @@
  * limitations under the License.
  */
 
-#if defined(ART_TARGET_ANDROID)
-
 #include "native_loader_test.h"
 
-#include <android-base/properties.h>
-#include <android-base/strings.h>
-#include <dlfcn.h>
-#include <gtest/gtest.h>
+#include <functional>
+#include <map>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
+#include "android-base/properties.h"
+#include "android-base/result.h"
+#include "android-base/stringprintf.h"
+#include "android-base/strings.h"
+#include "dlfcn.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "jni.h"
+#include "native_loader_namespace.h"
 #include "nativehelper/scoped_utf_chars.h"
+#include "nativeloader/dlext_namespaces.h"
 #include "nativeloader/native_loader.h"
 #include "public_libraries.h"
 
 namespace android {
 namespace nativeloader {
 
-using ::testing::Eq;
-using ::testing::NotNull;
-using ::testing::StartsWith;
-using ::testing::StrEq;
 using internal::ConfigEntry;  // NOLINT - ConfigEntry is actually used
 using internal::ParseApexLibrariesConfig;
 using internal::ParseConfig;
+using ::testing::_;
+using ::testing::Eq;
+using ::testing::NotNull;
+using ::testing::Return;
+using ::testing::StartsWith;
+using ::testing::StrEq;
 
 #if defined(__LP64__)
 #define LIB_DIR "lib64"
 #else
 #define LIB_DIR "lib"
 #endif
+
+// gmock interface that represents interesting platform APIs in libdl_android and libnativebridge
+class Platform {
+ public:
+  virtual ~Platform() {}
+
+  // These mock_* are the APIs semantically the same across libdl_android and libnativebridge.
+  // Instead of having two set of mock APIs for the two, define only one set with an additional
+  // argument 'bool bridged' to identify the context (i.e., called for libdl_android or
+  // libnativebridge).
+  using mock_namespace_handle = char*;
+  virtual bool mock_init_anonymous_namespace(bool bridged,
+                                             const char* sonames,
+                                             const char* search_paths) = 0;
+  virtual mock_namespace_handle mock_create_namespace(bool bridged,
+                                                      const char* name,
+                                                      const char* ld_library_path,
+                                                      const char* default_library_path,
+                                                      uint64_t type,
+                                                      const char* permitted_when_isolated_path,
+                                                      mock_namespace_handle parent) = 0;
+  virtual bool mock_link_namespaces(bool bridged,
+                                    mock_namespace_handle from,
+                                    mock_namespace_handle to,
+                                    const char* sonames) = 0;
+  virtual mock_namespace_handle mock_get_exported_namespace(bool bridged, const char* name) = 0;
+  virtual void* mock_dlopen_ext(bool bridged,
+                                const char* filename,
+                                int flags,
+                                mock_namespace_handle ns) = 0;
+
+  // libnativebridge APIs for which libdl_android has no corresponding APIs
+  virtual bool NativeBridgeInitialized() = 0;
+  virtual const char* NativeBridgeGetError() = 0;
+  virtual bool NativeBridgeIsPathSupported(const char*) = 0;
+  virtual bool NativeBridgeIsSupported(const char*) = 0;
+};
+
+// The mock does not actually create a namespace object. But simply casts the pointer to the
+// string for the namespace name as the handle to the namespace object.
+#define TO_ANDROID_NAMESPACE(str) \
+  reinterpret_cast<struct android_namespace_t*>(const_cast<char*>(str))
+
+#define TO_BRIDGED_NAMESPACE(str) \
+  reinterpret_cast<struct native_bridge_namespace_t*>(const_cast<char*>(str))
+
+#define TO_MOCK_NAMESPACE(ns) reinterpret_cast<Platform::mock_namespace_handle>(ns)
+
+// These represents built-in namespaces created by the linker according to ld.config.txt
+static std::unordered_map<std::string, Platform::mock_namespace_handle> namespaces = {
+#define NAMESPACE_ENTRY(ns) \
+  { ns, TO_MOCK_NAMESPACE(TO_ANDROID_NAMESPACE(ns)) }
+    NAMESPACE_ENTRY("com_android_i18n"),
+    NAMESPACE_ENTRY("com_android_neuralnetworks"),
+    NAMESPACE_ENTRY("com_android_art"),
+
+    // TODO(b/191644631) This can be removed when the test becomes more test-friendly.
+    // This is added so that the test can exercise the JNI lib related behavior.
+    NAMESPACE_ENTRY("com_android_conscrypt"),
+
+    NAMESPACE_ENTRY("default"),
+    NAMESPACE_ENTRY("sphal"),
+    NAMESPACE_ENTRY("product"),
+    NAMESPACE_ENTRY("system"),
+    NAMESPACE_ENTRY("vndk"),
+    NAMESPACE_ENTRY("vndk_product"),
+#undef NAMESPACE_ENTRY
+};
+
+// The actual gmock object
+class MockPlatform : public Platform {
+ public:
+  explicit MockPlatform(bool is_bridged) : is_bridged_(is_bridged) {
+    ON_CALL(*this, NativeBridgeIsSupported(_)).WillByDefault(Return(is_bridged_));
+    ON_CALL(*this, NativeBridgeIsPathSupported(_)).WillByDefault(Return(is_bridged_));
+    ON_CALL(*this, mock_get_exported_namespace(_, _))
+        .WillByDefault(testing::Invoke([](bool, const char* name) -> mock_namespace_handle {
+          if (namespaces.find(name) != namespaces.end()) {
+            return namespaces[name];
+          }
+          std::string msg = android::base::StringPrintf("(namespace %s not found)", name);
+          // The strdup'ed string will leak, but the test is already failing if we get here.
+          return TO_MOCK_NAMESPACE(TO_ANDROID_NAMESPACE(strdup(msg.c_str())));
+        }));
+  }
+
+  // Mocking the common APIs
+  MOCK_METHOD3(mock_init_anonymous_namespace, bool(bool, const char*, const char*));
+  MOCK_METHOD7(mock_create_namespace,
+               mock_namespace_handle(bool,
+                                     const char*,
+                                     const char*,
+                                     const char*,
+                                     uint64_t,
+                                     const char*,
+                                     mock_namespace_handle));
+  MOCK_METHOD4(mock_link_namespaces,
+               bool(bool, mock_namespace_handle, mock_namespace_handle, const char*));
+  MOCK_METHOD2(mock_get_exported_namespace, mock_namespace_handle(bool, const char*));
+  MOCK_METHOD4(mock_dlopen_ext, void*(bool, const char*, int, mock_namespace_handle));
+
+  // Mocking libnativebridge APIs
+  MOCK_METHOD0(NativeBridgeInitialized, bool());
+  MOCK_METHOD0(NativeBridgeGetError, const char*());
+  MOCK_METHOD1(NativeBridgeIsPathSupported, bool(const char*));
+  MOCK_METHOD1(NativeBridgeIsSupported, bool(const char*));
+
+ private:
+  bool is_bridged_;
+};
+
+static std::unique_ptr<MockPlatform> mock;
+
+// Provide C wrappers for the mock object. These symbols must be exported by ld
+// to be able to override the real symbols in the shared libs.
+extern "C" {
+
+// libdl_android APIs
+
+bool android_init_anonymous_namespace(const char* sonames, const char* search_path) {
+  return mock->mock_init_anonymous_namespace(false, sonames, search_path);
+}
+
+struct android_namespace_t* android_create_namespace(const char* name,
+                                                     const char* ld_library_path,
+                                                     const char* default_library_path,
+                                                     uint64_t type,
+                                                     const char* permitted_when_isolated_path,
+                                                     struct android_namespace_t* parent) {
+  return TO_ANDROID_NAMESPACE(mock->mock_create_namespace(false,
+                                                          name,
+                                                          ld_library_path,
+                                                          default_library_path,
+                                                          type,
+                                                          permitted_when_isolated_path,
+                                                          TO_MOCK_NAMESPACE(parent)));
+}
+
+bool android_link_namespaces(struct android_namespace_t* from,
+                             struct android_namespace_t* to,
+                             const char* sonames) {
+  return mock->mock_link_namespaces(false, TO_MOCK_NAMESPACE(from), TO_MOCK_NAMESPACE(to), sonames);
+}
+
+struct android_namespace_t* android_get_exported_namespace(const char* name) {
+  return TO_ANDROID_NAMESPACE(mock->mock_get_exported_namespace(false, name));
+}
+
+void* android_dlopen_ext(const char* filename, int flags, const android_dlextinfo* info) {
+  return mock->mock_dlopen_ext(false, filename, flags, TO_MOCK_NAMESPACE(info->library_namespace));
+}
+
+// libnativebridge APIs
+
+bool NativeBridgeIsSupported(const char* libpath) { return mock->NativeBridgeIsSupported(libpath); }
+
+struct native_bridge_namespace_t* NativeBridgeGetExportedNamespace(const char* name) {
+  return TO_BRIDGED_NAMESPACE(mock->mock_get_exported_namespace(true, name));
+}
+
+struct native_bridge_namespace_t* NativeBridgeCreateNamespace(
+    const char* name,
+    const char* ld_library_path,
+    const char* default_library_path,
+    uint64_t type,
+    const char* permitted_when_isolated_path,
+    struct native_bridge_namespace_t* parent) {
+  return TO_BRIDGED_NAMESPACE(mock->mock_create_namespace(true,
+                                                          name,
+                                                          ld_library_path,
+                                                          default_library_path,
+                                                          type,
+                                                          permitted_when_isolated_path,
+                                                          TO_MOCK_NAMESPACE(parent)));
+}
+
+bool NativeBridgeLinkNamespaces(struct native_bridge_namespace_t* from,
+                                struct native_bridge_namespace_t* to,
+                                const char* sonames) {
+  return mock->mock_link_namespaces(true, TO_MOCK_NAMESPACE(from), TO_MOCK_NAMESPACE(to), sonames);
+}
+
+void* NativeBridgeLoadLibraryExt(const char* libpath,
+                                 int flag,
+                                 struct native_bridge_namespace_t* ns) {
+  return mock->mock_dlopen_ext(true, libpath, flag, TO_MOCK_NAMESPACE(ns));
+}
+
+bool NativeBridgeInitialized() { return mock->NativeBridgeInitialized(); }
+
+bool NativeBridgeInitAnonymousNamespace(const char* public_ns_sonames,
+                                        const char* anon_ns_library_path) {
+  return mock->mock_init_anonymous_namespace(true, public_ns_sonames, anon_ns_library_path);
+}
+
+const char* NativeBridgeGetError() { return mock->NativeBridgeGetError(); }
+
+bool NativeBridgeIsPathSupported(const char* path) {
+  return mock->NativeBridgeIsPathSupported(path);
+}
+
+}  // extern "C"
 
 static void* const any_nonnull = reinterpret_cast<void*>(0x12345678);
 
@@ -61,6 +275,7 @@ class NativeLoaderTest : public ::testing::TestWithParam<bool> {
 
   void SetUp() override {
     mock = std::make_unique<testing::NiceMock<MockPlatform>>(IsBridged());
+    jni_mock = std::make_unique<testing::NiceMock<MockJni>>();
 
     env = std::make_unique<JNIEnv>();
     env->functions = CreateJNINativeInterface();
@@ -222,7 +437,7 @@ class NativeLoaderTest_Create : public NativeLoaderTest {
   void SetExpectations() {
     NativeLoaderTest::SetExpectations();
 
-    ON_CALL(*mock, JniObject_getParent(StrEq(class_loader))).WillByDefault(Return(nullptr));
+    ON_CALL(*jni_mock, JniObject_getParent(StrEq(class_loader))).WillByDefault(Return(nullptr));
 
     EXPECT_CALL(*mock, NativeBridgeIsPathSupported(_)).Times(testing::AnyNumber());
     EXPECT_CALL(*mock, NativeBridgeInitialized()).Times(testing::AnyNumber());
@@ -430,7 +645,7 @@ TEST_P(NativeLoaderTest_Create, TwoApks) {
   // The scenario is that second app is loaded by the first app.
   // So the first app's classloader (`classloader`) is parent of the second
   // app's classloader.
-  ON_CALL(*mock, JniObject_getParent(StrEq(second_app_class_loader)))
+  ON_CALL(*jni_mock, JniObject_getParent(StrEq(second_app_class_loader)))
       .WillByDefault(Return(class_loader.c_str()));
 
   // namespace for the second app is created. Its parent is set to the namespace
@@ -627,5 +842,3 @@ jni com_android_foo lib64/libfoo.so
 
 }  // namespace nativeloader
 }  // namespace android
-
-#endif  // defined(ART_TARGET_ANDROID)

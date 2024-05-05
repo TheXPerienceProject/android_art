@@ -6267,8 +6267,9 @@ void CodeGeneratorX86_64::CheckGCCardIsValid(CpuRegister temp,
   // assert (!clean || !self->is_gc_marking)
   __ cmpb(Address(temp, card, TIMES_1, 0), Immediate(gc::accounting::CardTable::kCardClean));
   __ j(kNotEqual, &done);
-  __ gs()->cmpl(Address::Absolute(Thread::IsGcMarkingOffset<kX86_64PointerSize>(), true),
-                Immediate(0));
+  __ gs()->cmpl(
+      Address::Absolute(Thread::IsGcMarkingOffset<kX86_64PointerSize>(), /* no_rip= */ true),
+      Immediate(0));
   __ j(kEqual, &done);
   __ int3();
   __ Bind(&done);
@@ -6648,7 +6649,7 @@ void LocationsBuilderX86_64::VisitLoadClass(HLoadClass* cls) {
             load_kind == HLoadClass::LoadKind::kBssEntryPublic ||
                 load_kind == HLoadClass::LoadKind::kBssEntryPackage);
 
-  const bool requires_read_barrier = !cls->IsInBootImage() && codegen_->EmitReadBarrier();
+  const bool requires_read_barrier = !cls->IsInImage() && codegen_->EmitReadBarrier();
   LocationSummary::CallKind call_kind = (cls->NeedsEnvironment() || requires_read_barrier)
       ? LocationSummary::kCallOnSlowPath
       : LocationSummary::kNoCall;
@@ -6700,7 +6701,7 @@ void InstructionCodeGeneratorX86_64::VisitLoadClass(HLoadClass* cls) NO_THREAD_S
   CpuRegister out = out_loc.AsRegister<CpuRegister>();
 
   const ReadBarrierOption read_barrier_option =
-      cls->IsInBootImage() ? kWithoutReadBarrier : codegen_->GetCompilerReadBarrierOption();
+      cls->IsInImage() ? kWithoutReadBarrier : codegen_->GetCompilerReadBarrierOption();
   bool generate_null_check = false;
   switch (load_kind) {
     case HLoadClass::LoadKind::kReferrersClass: {
@@ -7007,6 +7008,9 @@ void InstructionCodeGeneratorX86_64::VisitThrow(HThrow* instruction) {
 
 // Temp is used for read barrier.
 static size_t NumberOfInstanceOfTemps(bool emit_read_barrier, TypeCheckKind type_check_kind) {
+  if (type_check_kind == TypeCheckKind::kInterfaceCheck) {
+    return 1;
+  }
   if (emit_read_barrier &&
       !kUseBakerReadBarrier &&
       (type_check_kind == TypeCheckKind::kAbstractClassCheck ||
@@ -7021,9 +7025,6 @@ static size_t NumberOfInstanceOfTemps(bool emit_read_barrier, TypeCheckKind type
 // interface pointer, the current interface is compared in memory.
 // The other checks have one temp for loading the object's class.
 static size_t NumberOfCheckCastTemps(bool emit_read_barrier, TypeCheckKind type_check_kind) {
-  if (type_check_kind == TypeCheckKind::kInterfaceCheck) {
-    return 2;
-  }
   return 1 + NumberOfInstanceOfTemps(emit_read_barrier, type_check_kind);
 }
 
@@ -7035,15 +7036,16 @@ void LocationsBuilderX86_64::VisitInstanceOf(HInstanceOf* instruction) {
     case TypeCheckKind::kExactCheck:
     case TypeCheckKind::kAbstractClassCheck:
     case TypeCheckKind::kClassHierarchyCheck:
-    case TypeCheckKind::kArrayObjectCheck: {
+    case TypeCheckKind::kArrayObjectCheck:
+    case TypeCheckKind::kInterfaceCheck: {
       bool needs_read_barrier = codegen_->InstanceOfNeedsReadBarrier(instruction);
       call_kind = needs_read_barrier ? LocationSummary::kCallOnSlowPath : LocationSummary::kNoCall;
-      baker_read_barrier_slow_path = kUseBakerReadBarrier && needs_read_barrier;
+      baker_read_barrier_slow_path = (kUseBakerReadBarrier && needs_read_barrier) &&
+                                     (type_check_kind == TypeCheckKind::kInterfaceCheck);
       break;
     }
     case TypeCheckKind::kArrayCheck:
     case TypeCheckKind::kUnresolvedCheck:
-    case TypeCheckKind::kInterfaceCheck:
       call_kind = LocationSummary::kCallOnSlowPath;
       break;
     case TypeCheckKind::kBitstringCheck:
@@ -7060,6 +7062,8 @@ void LocationsBuilderX86_64::VisitInstanceOf(HInstanceOf* instruction) {
     locations->SetInAt(1, Location::ConstantLocation(instruction->InputAt(1)));
     locations->SetInAt(2, Location::ConstantLocation(instruction->InputAt(2)));
     locations->SetInAt(3, Location::ConstantLocation(instruction->InputAt(3)));
+  } else if (type_check_kind == TypeCheckKind::kInterfaceCheck) {
+    locations->SetInAt(1, Location::RequiresRegister());
   } else {
     locations->SetInAt(1, Location::Any());
   }
@@ -7080,10 +7084,14 @@ void InstructionCodeGeneratorX86_64::VisitInstanceOf(HInstanceOf* instruction) {
   const size_t num_temps = NumberOfInstanceOfTemps(codegen_->EmitReadBarrier(), type_check_kind);
   DCHECK_LE(num_temps, 1u);
   Location maybe_temp_loc = (num_temps >= 1u) ? locations->GetTemp(0) : Location::NoLocation();
-  uint32_t class_offset = mirror::Object::ClassOffset().Int32Value();
-  uint32_t super_offset = mirror::Class::SuperClassOffset().Int32Value();
-  uint32_t component_offset = mirror::Class::ComponentTypeOffset().Int32Value();
-  uint32_t primitive_offset = mirror::Class::PrimitiveTypeOffset().Int32Value();
+  const uint32_t class_offset = mirror::Object::ClassOffset().Int32Value();
+  const uint32_t super_offset = mirror::Class::SuperClassOffset().Int32Value();
+  const uint32_t component_offset = mirror::Class::ComponentTypeOffset().Int32Value();
+  const uint32_t primitive_offset = mirror::Class::PrimitiveTypeOffset().Int32Value();
+  const uint32_t iftable_offset = mirror::Class::IfTableOffset().Uint32Value();
+  const uint32_t array_length_offset = mirror::Array::LengthOffset().Uint32Value();
+  const uint32_t object_array_data_offset =
+      mirror::Array::DataOffset(kHeapReferenceSize).Uint32Value();
   SlowPathCode* slow_path = nullptr;
   NearLabel done, zero;
 
@@ -7258,11 +7266,70 @@ void InstructionCodeGeneratorX86_64::VisitInstanceOf(HInstanceOf* instruction) {
       break;
     }
 
-    case TypeCheckKind::kUnresolvedCheck:
     case TypeCheckKind::kInterfaceCheck: {
+      if (codegen_->InstanceOfNeedsReadBarrier(instruction)) {
+        DCHECK(locations->OnlyCallsOnSlowPath());
+        slow_path = new (codegen_->GetScopedAllocator()) TypeCheckSlowPathX86_64(
+            instruction, /* is_fatal= */ false);
+        codegen_->AddSlowPath(slow_path);
+        if (codegen_->EmitNonBakerReadBarrier()) {
+          __ jmp(slow_path->GetEntryLabel());
+          break;
+        }
+        // For Baker read barrier, take the slow path while marking.
+        __ gs()->cmpl(
+            Address::Absolute(Thread::IsGcMarkingOffset<kX86_64PointerSize>(), /* no_rip= */ true),
+            Immediate(0));
+        __ j(kNotEqual, slow_path->GetEntryLabel());
+      }
+
+      // Fast-path without read barriers.
+      CpuRegister temp = maybe_temp_loc.AsRegister<CpuRegister>();
+      // /* HeapReference<Class> */ temp = obj->klass_
+      __ movl(temp, Address(obj, class_offset));
+      __ MaybeUnpoisonHeapReference(temp);
+      // /* HeapReference<Class> */ temp = temp->iftable_
+      __ movl(temp, Address(temp, iftable_offset));
+      __ MaybeUnpoisonHeapReference(temp);
+      // Load the size of the `IfTable`. The `Class::iftable_` is never null.
+      __ movl(out, Address(temp, array_length_offset));
+      // Maybe poison the `cls` for direct comparison with memory.
+      __ MaybePoisonHeapReference(cls.AsRegister<CpuRegister>());
+      // Loop through the iftable and check if any class matches.
+      NearLabel loop, end;
+      __ Bind(&loop);
+      // Check if we still have an entry to compare.
+      __ subl(out, Immediate(2));
+      __ j(kNegative, (zero.IsLinked() && !kPoisonHeapReferences) ? &zero : &end);
+      // Go to next interface if the classes do not match.
+      __ cmpl(cls.AsRegister<CpuRegister>(),
+              CodeGeneratorX86_64::ArrayAddress(temp, out_loc, TIMES_4, object_array_data_offset));
+      __ j(kNotEqual, &loop);
+      if (zero.IsLinked()) {
+        __ movl(out, Immediate(1));
+        // If `cls` was poisoned above, unpoison it.
+        __ MaybeUnpoisonHeapReference(cls.AsRegister<CpuRegister>());
+        __ jmp(&done);
+        if (kPoisonHeapReferences) {
+          // The false case needs to unpoison the class before jumping to `zero`.
+          __ Bind(&end);
+          __ UnpoisonHeapReference(cls.AsRegister<CpuRegister>());
+          __ jmp(&zero);
+        }
+      } else {
+        // To reduce branching, use the fact that the false case branches with a `-2` in `out`.
+        __ movl(out, Immediate(-1));
+        __ Bind(&end);
+        __ addl(out, Immediate(2));
+        // If `cls` was poisoned above, unpoison it.
+        __ MaybeUnpoisonHeapReference(cls.AsRegister<CpuRegister>());
+      }
+      break;
+    }
+
+    case TypeCheckKind::kUnresolvedCheck: {
       // Note that we indeed only call on slow path, but we always go
-      // into the slow path for the unresolved and interface check
-      // cases.
+      // into the slow path for the unresolved check case.
       //
       // We cannot directly call the InstanceofNonTrivial runtime
       // entry point without resorting to a type checking slow path
@@ -7283,9 +7350,6 @@ void InstructionCodeGeneratorX86_64::VisitInstanceOf(HInstanceOf* instruction) {
           instruction, /* is_fatal= */ false);
       codegen_->AddSlowPath(slow_path);
       __ jmp(slow_path->GetEntryLabel());
-      if (zero.IsLinked()) {
-        __ jmp(&done);
-      }
       break;
     }
 
@@ -7535,14 +7599,14 @@ void InstructionCodeGeneratorX86_64::VisitCheckCast(HCheckCast* instruction) {
                                        iftable_offset,
                                        maybe_temp2_loc,
                                        kWithoutReadBarrier);
-      // Iftable is never null.
+      // Load the size of the `IfTable`. The `Class::iftable_` is never null.
       __ movl(maybe_temp2_loc.AsRegister<CpuRegister>(), Address(temp, array_length_offset));
       // Maybe poison the `cls` for direct comparison with memory.
       __ MaybePoisonHeapReference(cls.AsRegister<CpuRegister>());
       // Loop through the iftable and check if any class matches.
       NearLabel start_loop;
       __ Bind(&start_loop);
-      // Need to subtract first to handle the empty array case.
+      // Check if we still have an entry to compare.
       __ subl(maybe_temp2_loc.AsRegister<CpuRegister>(), Immediate(2));
       __ j(kNegative, type_check_slow_path->GetEntryLabel());
       // Go to next interface if the classes do not match.

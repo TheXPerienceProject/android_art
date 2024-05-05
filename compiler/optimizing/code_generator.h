@@ -461,16 +461,18 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
                          DataType::Type type2);
 
   bool InstanceOfNeedsReadBarrier(HInstanceOf* instance_of) {
-    // Used only for kExactCheck, kAbstractClassCheck, kClassHierarchyCheck and kArrayObjectCheck.
+    // Used only for `kExactCheck`, `kAbstractClassCheck`, `kClassHierarchyCheck`,
+    // `kArrayObjectCheck` and `kInterfaceCheck`.
     DCHECK(instance_of->GetTypeCheckKind() == TypeCheckKind::kExactCheck ||
            instance_of->GetTypeCheckKind() == TypeCheckKind::kAbstractClassCheck ||
            instance_of->GetTypeCheckKind() == TypeCheckKind::kClassHierarchyCheck ||
-           instance_of->GetTypeCheckKind() == TypeCheckKind::kArrayObjectCheck)
+           instance_of->GetTypeCheckKind() == TypeCheckKind::kArrayObjectCheck ||
+           instance_of->GetTypeCheckKind() == TypeCheckKind::kInterfaceCheck)
         << instance_of->GetTypeCheckKind();
-    // If the target class is in the boot image, it's non-moveable and it doesn't matter
+    // If the target class is in the boot or app image, it's non-moveable and it doesn't matter
     // if we compare it with a from-space or to-space reference, the result is the same.
     // It's OK to traverse a class hierarchy jumping between from-space and to-space.
-    return EmitReadBarrier() && !instance_of->GetTargetClass()->IsInBootImage();
+    return EmitReadBarrier() && !instance_of->GetTargetClass()->IsInImage();
   }
 
   ReadBarrierOption ReadBarrierOptionForInstanceOf(HInstanceOf* instance_of) {
@@ -485,7 +487,7 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
       case TypeCheckKind::kArrayObjectCheck:
       case TypeCheckKind::kInterfaceCheck: {
         bool needs_read_barrier =
-            EmitReadBarrier() && !check_cast->GetTargetClass()->IsInBootImage();
+            EmitReadBarrier() && !check_cast->GetTargetClass()->IsInImage();
         // We do not emit read barriers for HCheckCast, so we can get false negatives
         // and the slow path shall re-check and simply return if the cast is actually OK.
         return !needs_read_barrier;

@@ -25,6 +25,7 @@ package {
     // to get the below license kinds:
     //   SPDX-license-identifier-Apache-2.0
     default_applicable_licenses: ["art_license"],
+    default_team: "trendy_team_art_performance",
 }
 
 JIT_DEBUG_REGISTER_CODE_LDFLAGS = [
@@ -664,14 +665,13 @@ cc_defaults {
 }
 
 cc_defaults {
-    name: "libart_static_defaults",
+    name: "libart-runtime_static_defaults",
     defaults: [
         "libart_static_base_defaults",
         "libartbase_static_defaults",
         "libdexfile_static_defaults",
         "libdexfile_support_static_defaults",
         "libprofile_static_defaults",
-        "libart-compiler_static_defaults",
     ],
     whole_static_libs: [
         "libart-runtime",
@@ -682,14 +682,13 @@ cc_defaults {
 }
 
 cc_defaults {
-    name: "libartd_static_defaults",
+    name: "libartd-runtime_static_defaults",
     defaults: [
         "libart_static_base_defaults",
         "libartbased_static_defaults",
         "libdexfiled_static_defaults",
         "libdexfiled_support_static_defaults",
         "libprofiled_static_defaults",
-        "libartd-compiler_static_defaults",
     ],
     whole_static_libs: [
         "libartd-runtime",
@@ -699,18 +698,34 @@ cc_defaults {
     ],
 }
 
-// libart_static_defaults for standalone gtests.
-// Doesn't link libsigchain_fake.
-// Uses libart-(runtime/compiler)-for-test instead of libart-runtime/compiler.
 cc_defaults {
-    name: "libart-for-test_static_defaults",
+    name: "libart_static_defaults",
+    defaults: [
+        "libart-runtime_static_defaults",
+        "libart-compiler_static_defaults",
+    ],
+}
+
+cc_defaults {
+    name: "libartd_static_defaults",
+    defaults: [
+        "libartd-runtime_static_defaults",
+        "libartd-compiler_static_defaults",
+    ],
+}
+
+// libart-runtime_static_defaults for standalone gtests.
+// Doesn't link libsigchain_fake/libnativeloader (see art_gtest_common_defaults
+// in test/Android.bp for explanation).
+// Uses libart-runtime-for-test instead of libart-runtime.
+cc_defaults {
+    name: "libart-runtime-for-test_static_defaults",
     defaults: [
         "libart_static_base_defaults",
         "libartbase_static_defaults",
         "libdexfile_static_defaults",
         "libdexfile_support_static_defaults",
         "libprofile_static_defaults",
-        "libart-compiler-for-test_static_defaults",
     ],
     whole_static_libs: [
         "libart-runtime-for-test",
@@ -718,19 +733,19 @@ cc_defaults {
     ],
 }
 
-// libartd_static_defaults for gtests.
-// Doesn't link libsigchain_fake.
+// libartd-runtime_static_defaults for gtests.
+// Doesn't link libsigchain_fake/libnativeloader (see art_gtest_common_defaults
+// in test/Android.bp for explanation).
 // Note that `libartd-runtime-for-test` is not required here, because `libartd-runtime`
 // doesn't use LTO.
 cc_defaults {
-    name: "libartd-for-test_static_defaults",
+    name: "libartd-runtime-for-test_static_defaults",
     defaults: [
         "libart_static_base_defaults",
         "libartbased_static_defaults",
         "libdexfiled_static_defaults",
         "libdexfiled_support_static_defaults",
         "libprofiled_static_defaults",
-        "libartd-compiler-for-test_static_defaults",
     ],
     whole_static_libs: [
         "libartd-runtime",
@@ -946,7 +961,7 @@ art_cc_library_static {
     defaults: [
         "libart-runtime-gtest-defaults",
         "libart-gtest-defaults",
-        "libart-for-test_static_defaults",
+        "libart-runtime-for-test_static_defaults",
     ],
 }
 
@@ -956,7 +971,7 @@ art_cc_library_static {
         "art_debug_defaults",
         "libart-runtime-gtest-defaults",
         "libart-gtest-defaults",
-        "libartd-for-test_static_defaults",
+        "libartd-runtime-for-test_static_defaults",
     ],
 }
 

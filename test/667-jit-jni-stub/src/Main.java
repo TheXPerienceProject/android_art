@@ -67,6 +67,9 @@ public class Main {
     assertFalse(hasJitCompiledEntrypoint(Main.class, "callThrough"));
     assertFalse(hasJitCompiledCode(Main.class, "callThrough"));
     callThrough(Main.class, "testMixedFramesOnStackStage2");
+    // We have just returned through the JIT-compiled JNI stub, so it must still
+    // be compiled (though not necessarily with the entrypoint pointing to it).
+    assertTrue(hasJitCompiledCode(Main.class, "callThrough"));
     // Though the callThrough() is on the stack, that frame is using the GenericJNI
     // and does not prevent the collection of the JNI stub.
     testStubCanBeCollected();
@@ -91,6 +94,10 @@ public class Main {
   }
 
   public static void testStubCanBeCollected() {
+    assertTrue(hasJitCompiledCode(Main.class, "callThrough"));
+    doJitGcsUntilFullJitGcIsScheduled();
+    assertFalse(hasJitCompiledEntrypoint(Main.class, "callThrough"));
+    assertTrue(hasJitCompiledCode(Main.class, "callThrough"));
     jitGc();  // JIT GC without callThrough() on the stack should collect the callThrough() stub.
     assertFalse(hasJitCompiledEntrypoint(Main.class, "callThrough"));
     assertFalse(hasJitCompiledCode(Main.class, "callThrough"));

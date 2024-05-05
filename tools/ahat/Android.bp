@@ -31,6 +31,8 @@ java_binary_host {
     srcs: ["src/main/**/*.java"],
     manifest: "etc/ahat.mf",
     java_resources: ["etc/style.css"],
+    // Use a relaxed version to allow distribution against older runtimes.
+    java_version: "11",
     javacflags: ["-Xdoclint:all/protected"],
 }
 

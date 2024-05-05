@@ -17,7 +17,6 @@
 #include "artd.h"
 
 #include <fcntl.h>
-#include <stdlib.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -27,6 +26,7 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <functional>
@@ -36,6 +36,7 @@
 #include <mutex>
 #include <optional>
 #include <ostream>
+#include <regex>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -74,6 +75,7 @@
 #include "fstab/fstab.h"
 #include "oat/oat_file_assistant.h"
 #include "oat/oat_file_assistant_context.h"
+#include "odrefresh/odrefresh.h"
 #include "path_utils.h"
 #include "profman/profman_result.h"
 #include "selinux/android.h"
@@ -116,6 +118,7 @@ using ::android::base::Result;
 using ::android::base::Split;
 using ::android::base::StringReplace;
 using ::android::base::WriteStringToFd;
+using ::android::base::WriteStringToFile;
 using ::android::fs_mgr::FstabEntry;
 using ::art::service::ValidateClassLoaderContext;
 using ::art::service::ValidateDexPath;
@@ -130,6 +133,7 @@ using TmpProfilePath = ProfilePath::TmpProfilePath;
 constexpr const char* kServiceName = "artd";
 constexpr const char* kPreRebootServiceName = "artd_pre_reboot";
 constexpr const char* kArtdCancellationSignalType = "ArtdCancellationSignal";
+constexpr const char* kDefaultPreRebootTmpDir = "/mnt/artd_tmp";
 
 // Timeout for short operations, such as merging profiles.
 constexpr int kShortTimeoutSec = 60;  // 1 minute.
@@ -214,15 +218,21 @@ ArtifactsLocation ArtifactsLocationToAidl(OatFileAssistant::Location location) {
   LOG(FATAL) << "Unexpected Location " << location;
 }
 
-Result<void> PrepareArtifactsDir(const std::string& path, const FsPermission& fs_permission) {
+Result<bool> CreateDir(const std::string& path) {
   std::error_code ec;
   bool created = std::filesystem::create_directory(path, ec);
   if (ec) {
     return Errorf("Failed to create directory '{}': {}", path, ec.message());
   }
+  return created;
+}
+
+Result<void> PrepareArtifactsDir(const std::string& path, const FsPermission& fs_permission) {
+  bool created = OR_RETURN(CreateDir(path));
 
   auto cleanup = make_scope_guard([&] {
     if (created) {
+      std::error_code ec;
       std::filesystem::remove(path, ec);
     }
   });
@@ -250,28 +260,6 @@ Result<void> PrepareArtifactsDirs(const OutputArtifacts& output_artifacts,
   OR_RETURN(PrepareArtifactsDir(oat_dir, output_artifacts.permissionSettings.dirFsPermission));
   OR_RETURN(PrepareArtifactsDir(isa_dir, output_artifacts.permissionSettings.dirFsPermission));
   *oat_dir_path = oat_dir;
-  return {};
-}
-
-Result<void> Restorecon(
-    const std::string& path,
-    const std::optional<OutputArtifacts::PermissionSettings::SeContext>& se_context) {
-  if (!kIsTargetAndroid) {
-    return {};
-  }
-
-  int res = 0;
-  if (se_context.has_value()) {
-    res = selinux_android_restorecon_pkgdir(path.c_str(),
-                                            se_context->seInfo.c_str(),
-                                            se_context->uid,
-                                            SELINUX_ANDROID_RESTORECON_RECURSE);
-  } else {
-    res = selinux_android_restorecon(path.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE);
-  }
-  if (res != 0) {
-    return ErrnoErrorf("Failed to restorecon directory '{}'", path);
-  }
   return {};
 }
 
@@ -492,6 +480,33 @@ std::ostream& operator<<(std::ostream& os, const FdLogger& fd_logger) {
 }
 
 }  // namespace
+
+#define RETURN_FATAL_IF_NOT_PRE_REBOOT(options)                              \
+  if (!options.is_pre_reboot) {                                              \
+    return Fatal("This method is only supported in Pre-reboot Dexopt mode"); \
+  }
+
+Result<void> Restorecon(
+    const std::string& path,
+    const std::optional<OutputArtifacts::PermissionSettings::SeContext>& se_context,
+    bool recurse) {
+  if (!kIsTargetAndroid) {
+    return {};
+  }
+
+  unsigned int flags = recurse ? SELINUX_ANDROID_RESTORECON_RECURSE : 0;
+  int res = 0;
+  if (se_context.has_value()) {
+    res = selinux_android_restorecon_pkgdir(
+        path.c_str(), se_context->seInfo.c_str(), se_context->uid, flags);
+  } else {
+    res = selinux_android_restorecon(path.c_str(), flags);
+  }
+  if (res != 0) {
+    return ErrnoErrorf("Failed to restorecon directory '{}'", path);
+  }
+  return {};
+}
 
 ScopedAStatus Artd::isAlive(bool* _aidl_return) {
   *_aidl_return = true;
@@ -962,7 +977,8 @@ ndk::ScopedAStatus Artd::dexopt(
   // `apk_data_file` label, so we need to restorecon the "oat" directory first so that files will
   // inherit `dalvikcache_data_file` rather than `apk_data_file`.
   if (!in_outputArtifacts.artifactsPath.isInDalvikCache) {
-    OR_RETURN_NON_FATAL(Restorecon(oat_dir_path, in_outputArtifacts.permissionSettings.seContext));
+    OR_RETURN_NON_FATAL(restorecon_(
+        oat_dir_path, in_outputArtifacts.permissionSettings.seContext, /*recurse=*/true));
   }
 
   FdLogger fd_logger;
@@ -1089,7 +1105,8 @@ ndk::ScopedAStatus Artd::dexopt(
   // there's no need to restorecon because they inherits the SELinux context of the dalvik-cache
   // directory and they don't need to have MLS labels.
   if (!in_outputArtifacts.artifactsPath.isInDalvikCache) {
-    OR_RETURN_NON_FATAL(Restorecon(oat_dir_path, in_outputArtifacts.permissionSettings.seContext));
+    OR_RETURN_NON_FATAL(restorecon_(
+        oat_dir_path, in_outputArtifacts.permissionSettings.seContext, /*recurse=*/true));
   }
 
   AddBootImageFlags(args);
@@ -1538,8 +1555,170 @@ Result<struct stat> Artd::Fstat(const File& file) const {
   return st;
 }
 
+Result<void> Artd::BindMountNewDir(const std::string& source, const std::string& target) const {
+  OR_RETURN(CreateDir(source));
+  OR_RETURN(BindMount(source, target));
+  OR_RETURN(restorecon_(target, /*se_context=*/std::nullopt, /*recurse=*/false));
+  return {};
+}
+
+Result<void> Artd::BindMount(const std::string& source, const std::string& target) const {
+  if (mount_(source.c_str(),
+             target.c_str(),
+             /*fs_type=*/nullptr,
+             MS_BIND | MS_PRIVATE,
+             /*data=*/nullptr) != 0) {
+    return ErrnoErrorf("Failed to bind-mount '{}' at '{}'", source, target);
+  }
+  return {};
+}
+
+ScopedAStatus Artd::preRebootInit() {
+  RETURN_FATAL_IF_NOT_PRE_REBOOT(options_);
+
+  std::string tmp_dir = pre_reboot_tmp_dir_.value_or(kDefaultPreRebootTmpDir);
+  std::string preparation_done_file = tmp_dir + "/preparation_done";
+  std::string classpath_file = tmp_dir + "/classpath.txt";
+  std::string art_apex_data_dir = tmp_dir + "/art_apex_data";
+  std::string odrefresh_dir = tmp_dir + "/odrefresh";
+
+  bool preparation_done = OS::FileExists(preparation_done_file.c_str());
+
+  if (!preparation_done) {
+    std::error_code ec;
+    bool is_empty = std::filesystem::is_empty(tmp_dir, ec);
+    if (ec) {
+      return NonFatal(ART_FORMAT("Failed to check dir '{}': {}", tmp_dir, ec.message()));
+    }
+    if (!is_empty) {
+      return Fatal("preRebootInit must not be concurrently called or retried after failure");
+    }
+  }
+
+  OR_RETURN_NON_FATAL(PreRebootInitClearEnvs());
+  OR_RETURN_NON_FATAL(
+      PreRebootInitSetEnvFromFile(init_environ_rc_path_.value_or("/init.environ.rc")));
+  if (!preparation_done) {
+    OR_RETURN_NON_FATAL(PreRebootInitDeriveClasspath(classpath_file));
+  }
+  OR_RETURN_NON_FATAL(PreRebootInitSetEnvFromFile(classpath_file));
+  if (!preparation_done) {
+    OR_RETURN_NON_FATAL(BindMountNewDir(art_apex_data_dir, GetArtApexData()));
+    OR_RETURN_NON_FATAL(BindMountNewDir(odrefresh_dir, "/data/misc/odrefresh"));
+    OR_RETURN_NON_FATAL(PreRebootInitBootImages());
+  }
+
+  if (!preparation_done) {
+    if (!WriteStringToFile(/*content=*/"", preparation_done_file)) {
+      return NonFatal(
+          ART_FORMAT("Failed to write '{}': {}", preparation_done_file, strerror(errno)));
+    }
+  }
+
+  return ScopedAStatus::ok();
+}
+
+Result<void> Artd::PreRebootInitClearEnvs() {
+  if (clearenv() != 0) {
+    return ErrnoErrorf("Failed to clear environment variables");
+  }
+  return {};
+}
+
+Result<void> Artd::PreRebootInitSetEnvFromFile(const std::string& path) {
+  std::regex export_line_pattern("\\s*export\\s+(.+?)\\s+(.+)");
+
+  std::string content;
+  if (!ReadFileToString(path, &content)) {
+    return ErrnoErrorf("Failed to read '{}'", path);
+  }
+  bool found = false;
+  for (const std::string& line : Split(content, "\n")) {
+    if (line.find_first_of("\\\"") != std::string::npos) {
+      return Errorf("Backslashes and quotes in env var file are not supported for now, got '{}'",
+                    line);
+    }
+    std::smatch match;
+    if (!std::regex_match(line, match, export_line_pattern)) {
+      continue;
+    }
+    const std::string& key = match[1].str();
+    const std::string& value = match[2].str();
+    LOG(INFO) << ART_FORMAT("Setting environment variable '{}' to '{}'", key, value);
+    if (setenv(key.c_str(), value.c_str(), /*replace=*/1) != 0) {
+      return ErrnoErrorf("Failed to set environment variable '{}' to '{}'", key, value);
+    }
+    found = true;
+  }
+  if (!found) {
+    return Errorf("Malformed env var file '{}': {}", path, content);
+  }
+  return {};
+}
+
+Result<void> Artd::PreRebootInitDeriveClasspath(const std::string& path) {
+  std::unique_ptr<File> output(OS::CreateEmptyFile(path.c_str()));
+  if (output == nullptr) {
+    return ErrnoErrorf("Failed to create '{}'", path);
+  }
+
+  CmdlineBuilder args;
+  args.Add(OR_RETURN(GetArtExec()))
+      .Add("--drop-capabilities")
+      .Add("--keep-fds=%d", output->Fd())
+      .Add("--")
+      .Add("/apex/com.android.sdkext/bin/derive_classpath")
+      .Add("/proc/self/fd/%d", output->Fd());
+
+  LOG(INFO) << "Running derive_classpath: " << Join(args.Get(), /*separator=*/" ");
+
+  Result<int> result = ExecAndReturnCode(args.Get(), kShortTimeoutSec);
+  if (!result.ok()) {
+    return Errorf("Failed to run derive_classpath: {}", result.error().message());
+  }
+
+  LOG(INFO) << ART_FORMAT("derive_classpath returned code {}", result.value());
+
+  if (result.value() != 0) {
+    return Errorf("derive_classpath returned an unexpected code: {}", result.value());
+  }
+
+  if (output->FlushClose() != 0) {
+    return ErrnoErrorf("Failed to flush and close '{}'", path);
+  }
+
+  return {};
+}
+
+Result<void> Artd::PreRebootInitBootImages() {
+  CmdlineBuilder args;
+  args.Add(OR_RETURN(GetArtExec()))
+      .Add("--drop-capabilities")
+      .Add("--")
+      .Add(OR_RETURN(BuildArtBinPath("odrefresh")))
+      .Add("--only-boot-images")
+      .Add("--compile");
+
+  LOG(INFO) << "Running odrefresh: " << Join(args.Get(), /*separator=*/" ");
+
+  Result<int> result = ExecAndReturnCode(args.Get(), kLongTimeoutSec);
+  if (!result.ok()) {
+    return Errorf("Failed to run odrefresh: {}", result.error().message());
+  }
+
+  LOG(INFO) << ART_FORMAT("odrefresh returned code {}", result.value());
+
+  if (result.value() != odrefresh::ExitCode::kCompilationSuccess &&
+      result.value() != odrefresh::ExitCode::kOkay) {
+    return Errorf("odrefresh returned an unexpected code: {}", result.value());
+  }
+
+  return {};
+}
+
 ScopedAStatus Artd::validateDexPath(const std::string& in_dexFile,
                                     std::optional<std::string>* _aidl_return) {
+  RETURN_FATAL_IF_NOT_PRE_REBOOT(options_);
   if (Result<void> result = ValidateDexPath(in_dexFile); !result.ok()) {
     *_aidl_return = result.error().message();
   } else {
@@ -1551,6 +1730,7 @@ ScopedAStatus Artd::validateDexPath(const std::string& in_dexFile,
 ScopedAStatus Artd::validateClassLoaderContext(const std::string& in_dexFile,
                                                const std::string& in_classLoaderContext,
                                                std::optional<std::string>* _aidl_return) {
+  RETURN_FATAL_IF_NOT_PRE_REBOOT(options_);
   if (Result<void> result = ValidateClassLoaderContext(in_dexFile, in_classLoaderContext);
       !result.ok()) {
     *_aidl_return = result.error().message();

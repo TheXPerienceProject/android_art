@@ -995,24 +995,34 @@ class ImageSpace::Loader {
                               /*out*/std::string* error_msg)
         REQUIRES_SHARED(Locks::mutator_lock_) {
     TimingLogger::ScopedTiming timing("MapImageFile", logger);
-    std::string temp_error_msg;
+
+    // The runtime might not be available at this point if we're running dex2oat or oatdump, in
+    // which case we just truncate the madvise optimization limit completely.
+    Runtime* runtime = Runtime::Current();
+    const size_t madvise_size_limit = runtime ? runtime->GetMadviseWillNeedSizeArt() : 0;
+
     const bool is_compressed = image_header.HasCompressedBlock();
     if (!is_compressed && allow_direct_mapping) {
       uint8_t* address = (image_reservation != nullptr) ? image_reservation->Begin() : nullptr;
       // The reserved memory size is aligned up to kElfSegmentAlignment to ensure
       // that the next reserved area will be aligned to the value.
-      return MemMap::MapFileAtAddress(address,
-                                      CondRoundUp<kPageSizeAgnostic>(image_header.GetImageSize(),
-                                                                     kElfSegmentAlignment),
-                                      PROT_READ | PROT_WRITE,
-                                      MAP_PRIVATE,
-                                      fd,
-                                      /*start=*/ 0,
-                                      /*low_4gb=*/ true,
-                                      image_filename,
-                                      /*reuse=*/ false,
-                                      image_reservation,
-                                      error_msg);
+      MemMap map = MemMap::MapFileAtAddress(
+          address,
+          CondRoundUp<kPageSizeAgnostic>(image_header.GetImageSize(), kElfSegmentAlignment),
+          PROT_READ | PROT_WRITE,
+          MAP_PRIVATE,
+          fd,
+          /*start=*/0,
+          /*low_4gb=*/true,
+          image_filename,
+          /*reuse=*/false,
+          image_reservation,
+          error_msg);
+      if (map.IsValid()) {
+        Runtime::MadviseFileForRange(
+            madvise_size_limit, map.Size(), map.Begin(), map.End(), image_filename);
+      }
+      return map;
     }
 
     // Reserve output and copy/decompress into it.
@@ -1040,17 +1050,8 @@ class ImageSpace::Loader {
         return MemMap::Invalid();
       }
 
-      Runtime* runtime = Runtime::Current();
-      // The runtime might not be available at this point if we're running
-      // dex2oat or oatdump.
-      if (runtime != nullptr) {
-        size_t madvise_size_limit = runtime->GetMadviseWillNeedSizeArt();
-        Runtime::MadviseFileForRange(madvise_size_limit,
-                                     temp_map.Size(),
-                                     temp_map.Begin(),
-                                     temp_map.End(),
-                                     image_filename);
-      }
+      Runtime::MadviseFileForRange(
+          madvise_size_limit, temp_map.Size(), temp_map.Begin(), temp_map.End(), image_filename);
 
       if (is_compressed) {
         memcpy(map.Begin(), &image_header, sizeof(ImageHeader));

@@ -80,8 +80,6 @@ constexpr const char* kAllowedDynamicLibDeps[] = {
     "libnativebridge.so",
     "libnativehelper.so",
     "libnativeloader.so",
-    // TODO(b/333438055): Remove this when we can link libc++.so statically everywhere.
-    "libc++.so",
 };
 
 Result<std::string> GetCurrentElfObjectPath() {

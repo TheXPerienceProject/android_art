@@ -130,11 +130,12 @@ verifier::FailureKind AotClassLinker::PerformClassVerification(
   return ClassLinker::PerformClassVerification(self, verifier_deps, klass, log_level, error_msg);
 }
 
-bool AotClassLinker::CanReferenceInBootImageExtension(ObjPtr<mirror::Class> klass, gc::Heap* heap) {
+bool AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(
+    ObjPtr<mirror::Class> klass, gc::Heap* heap) {
   // Do not allow referencing a class or instance of a class defined in a dex file
   // belonging to the boot image we're compiling against but not itself in the boot image;
   // or a class referencing such classes as component type, superclass or interface.
-  // Allowing this could yield duplicate class objects from multiple extensions.
+  // Allowing this could yield duplicate class objects from multiple images.
 
   if (heap->ObjectIsInBootImageSpace(klass)) {
     return true;  // Already included in the boot image we're compiling against.

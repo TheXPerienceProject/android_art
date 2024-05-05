@@ -17,6 +17,7 @@
 #include "artd.h"
 
 #include <fcntl.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -25,6 +26,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -35,7 +37,6 @@
 #include <string>
 #include <thread>
 #include <type_traits>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -62,9 +63,12 @@
 #include "path_utils.h"
 #include "profman/profman_result.h"
 #include "testing.h"
+#include "tools/binder_utils.h"
 #include "tools/system_properties.h"
 #include "tools/tools.h"
 #include "ziparchive/zip_writer.h"
+
+extern char** environ;
 
 namespace art {
 namespace artd {
@@ -108,14 +112,17 @@ using ::testing::DoAll;
 using ::testing::ElementsAre;
 using ::testing::Field;
 using ::testing::HasSubstr;
+using ::testing::InSequence;
 using ::testing::IsEmpty;
 using ::testing::Matcher;
 using ::testing::MockFunction;
+using ::testing::NiceMock;
 using ::testing::Not;
 using ::testing::Property;
 using ::testing::ResultOf;
 using ::testing::Return;
 using ::testing::SetArgPointee;
+using ::testing::StrEq;
 using ::testing::UnorderedElementsAreArray;
 using ::testing::WithArg;
 
@@ -2437,6 +2444,159 @@ TEST_F(ArtdTest, getProfileSize) {
                       &aidl_return)
                   .isOk());
   EXPECT_EQ(aidl_return, 1);
+}
+
+class ArtdPreRebootTest : public ArtdTest {
+ protected:
+  void SetUp() override {
+    ArtdTest::SetUp();
+
+    pre_reboot_tmp_dir_ = scratch_path_ + "/artd_tmp";
+    std::filesystem::create_directories(pre_reboot_tmp_dir_);
+    init_environ_rc_path_ = scratch_path_ + "/init.environ.rc";
+
+    auto mock_props = std::make_unique<NiceMock<MockSystemProperties>>();
+    mock_props_ = mock_props.get();
+    ON_CALL(*mock_props_, GetProperty).WillByDefault(Return(""));
+    auto mock_exec_utils = std::make_unique<MockExecUtils>();
+    mock_exec_utils_ = mock_exec_utils.get();
+    artd_ = ndk::SharedRefBase::make<Artd>(Options{.is_pre_reboot = true},
+                                           std::move(mock_props),
+                                           std::move(mock_exec_utils),
+                                           mock_kill_.AsStdFunction(),
+                                           mock_fstat_.AsStdFunction(),
+                                           mock_mount_.AsStdFunction(),
+                                           mock_restorecon_.AsStdFunction(),
+                                           pre_reboot_tmp_dir_,
+                                           init_environ_rc_path_);
+
+    ON_CALL(mock_restorecon_, Call).WillByDefault(Return(Result<void>()));
+
+    constexpr const char* kInitEnvironRcTmpl = R"(
+      on early-init
+          export ANDROID_ART_ROOT {}
+          export ANDROID_DATA {}
+    )";
+    ASSERT_TRUE(WriteStringToFile(ART_FORMAT(kInitEnvironRcTmpl, art_root_, android_data_),
+                                  init_environ_rc_path_));
+  }
+
+  std::string pre_reboot_tmp_dir_;
+  std::string init_environ_rc_path_;
+  MockFunction<int(const char*, const char*, const char*, uint32_t, const void*)> mock_mount_;
+  MockFunction<Result<void>(const std::string&,
+                            const std::optional<OutputArtifacts::PermissionSettings::SeContext>&,
+                            bool)>
+      mock_restorecon_;
+};
+
+TEST_F(ArtdPreRebootTest, preRebootInit) {
+  // Color the env vars to make sure that the expected values are not from the parent process but
+  // from "/init.environ.rc".
+  ASSERT_EQ(setenv("ANDROID_ART_ROOT", "old_value", /*replace=*/1), 0);
+  ASSERT_EQ(setenv("ANDROID_DATA", "old_value", /*replace=*/1), 0);
+  ASSERT_EQ(setenv("BOOTCLASSPATH", "old_value", /*replace=*/1), 0);
+
+  // Add an env var that doesn't get overridden, to check that it gets removed.
+  ASSERT_EQ(setenv("FOO", "old_value", /*replace=*/1), 0);
+
+  InSequence seq;
+
+  EXPECT_CALL(*mock_exec_utils_,
+              DoExecAndReturnCode(
+                  AllOf(WhenSplitBy("--",
+                                    AllOf(Contains(art_root_ + "/bin/art_exec"),
+                                          Contains("--drop-capabilities")),
+                                    Contains("/apex/com.android.sdkext/bin/derive_classpath")),
+                        HasKeepFdsFor("/proc/self/fd/")),
+                  _,
+                  _))
+      .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("/proc/self/fd/", "export BOOTCLASSPATH /foo:/bar")),
+                      Return(0)));
+
+  EXPECT_CALL(mock_mount_,
+              Call(StrEq(pre_reboot_tmp_dir_ + "/art_apex_data"),
+                   StrEq("/data/misc/apexdata/com.android.art"),
+                   /*fs_type=*/nullptr,
+                   MS_BIND | MS_PRIVATE,
+                   /*data=*/nullptr))
+      .WillOnce(Return(0));
+
+  EXPECT_CALL(mock_mount_,
+              Call(StrEq(pre_reboot_tmp_dir_ + "/odrefresh"),
+                   StrEq("/data/misc/odrefresh"),
+                   /*fs_type=*/nullptr,
+                   MS_BIND | MS_PRIVATE,
+                   /*data=*/nullptr))
+      .WillOnce(Return(0));
+
+  EXPECT_CALL(*mock_exec_utils_,
+              DoExecAndReturnCode(WhenSplitBy("--",
+                                              AllOf(Contains(art_root_ + "/bin/art_exec"),
+                                                    Contains("--drop-capabilities")),
+                                              AllOf(Contains(art_root_ + "/bin/odrefresh"),
+                                                    Contains("--only-boot-images"),
+                                                    Contains("--compile"))),
+                                  _,
+                                  _))
+      .WillOnce(Return(0));
+
+  ASSERT_STATUS_OK(artd_->preRebootInit());
+
+  auto env_var_count = []() {
+    int count = 0;
+    for (char** it = environ; *it != nullptr; it++) {
+      count++;
+    }
+    return count;
+  };
+
+  EXPECT_EQ(getenv("ANDROID_ART_ROOT"), art_root_);
+  EXPECT_EQ(getenv("ANDROID_DATA"), android_data_);
+  EXPECT_STREQ(getenv("BOOTCLASSPATH"), "/foo:/bar");
+  EXPECT_EQ(env_var_count(), 3);
+  EXPECT_TRUE(std::filesystem::exists(pre_reboot_tmp_dir_ + "/preparation_done"));
+
+  // Color the env vars again to simulate that artd died and restarted.
+  ASSERT_EQ(setenv("ANDROID_ART_ROOT", "old_value", /*replace=*/1), 0);
+  ASSERT_EQ(setenv("ANDROID_DATA", "old_value", /*replace=*/1), 0);
+  ASSERT_EQ(setenv("BOOTCLASSPATH", "old_value", /*replace=*/1), 0);
+
+  // Calling again will not involve `mount`, `derive_classpath`, or `odrefresh` but only restore env
+  // vars.
+  EXPECT_TRUE(artd_->preRebootInit().isOk());
+  EXPECT_EQ(getenv("ANDROID_ART_ROOT"), art_root_);
+  EXPECT_EQ(getenv("ANDROID_DATA"), android_data_);
+  EXPECT_STREQ(getenv("BOOTCLASSPATH"), "/foo:/bar");
+  EXPECT_EQ(env_var_count(), 3);
+}
+
+TEST_F(ArtdPreRebootTest, preRebootInitFailed) {
+  EXPECT_CALL(*mock_exec_utils_,
+              DoExecAndReturnCode(Contains("/apex/com.android.sdkext/bin/derive_classpath"), _, _))
+      .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("/proc/self/fd/", "export BOOTCLASSPATH /foo:/bar")),
+                      Return(0)));
+
+  EXPECT_CALL(mock_mount_, Call).Times(2).WillRepeatedly(Return(0));
+
+  EXPECT_CALL(*mock_exec_utils_, DoExecAndReturnCode(Contains(art_root_ + "/bin/odrefresh"), _, _))
+      .WillOnce(Return(1));
+
+  ndk::ScopedAStatus status = artd_->preRebootInit();
+  EXPECT_FALSE(status.isOk());
+  EXPECT_EQ(status.getExceptionCode(), EX_SERVICE_SPECIFIC);
+  EXPECT_STREQ(status.getMessage(), "odrefresh returned an unexpected code: 1");
+}
+
+TEST_F(ArtdPreRebootTest, preRebootInitNoRetry) {
+  // Simulate that a previous attempt failed halfway.
+  ASSERT_TRUE(WriteStringToFile("", pre_reboot_tmp_dir_ + "/classpath.txt"));
+
+  ndk::ScopedAStatus status = artd_->preRebootInit();
+  EXPECT_FALSE(status.isOk());
+  EXPECT_EQ(status.getExceptionCode(), EX_ILLEGAL_STATE);
+  EXPECT_STREQ(status.getMessage(),
+               "preRebootInit must not be concurrently called or retried after failure");
 }
 
 }  // namespace

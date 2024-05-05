@@ -23,6 +23,7 @@ package {
     // to get the below license kinds:
     //   SPDX-license-identifier-Apache-2.0
     default_applicable_licenses: ["art_license"],
+    default_team: "trendy_team_art_performance",
 }
 
 soong_config_module_type_import {
@@ -73,18 +74,6 @@ art_module_cc_defaults {
         "art_test_common_defaults",
     ],
     host_supported: true,
-    soong_config_variables: {
-        source_build: {
-            target: {
-                android: {
-                    test_for: [
-                        "com.android.art",
-                        "com.android.art.debug",
-                    ],
-                },
-            },
-        },
-    },
     target: {
         // The following set of relative_install_paths installs the library in a
         // location that will be available as java.library.path in run tests.
@@ -102,6 +91,12 @@ art_module_cc_defaults {
         },
         android_x86_64: {
             relative_install_path: "art/x86_64",
+        },
+        android: {
+            test_for: [
+                "com.android.art",
+                "com.android.art.debug",
+            ],
         },
     },
     // Tests aren't generally included in any APEX, but this is necessary to
@@ -158,6 +153,19 @@ filegroup {
 filegroup {
     name: "art-gtests-target-standalone-with-boot-image-template",
     srcs: ["art-gtests-target-standalone-with-boot-image-template.xml"],
+}
+
+// Version script for `art_standalone_test_defaults`.
+filegroup {
+    name: "art-standalone-test-version",
+    srcs: ["art-standalone-test-version.map"],
+}
+
+// Version script for `art_standalone_gtest_defaults`. In particular, it adds
+// libsigchain's libc.so interceptors.
+filegroup {
+    name: "art-standalone-gtest-version",
+    srcs: ["art-standalone-gtest-version.map"],
 }
 
 // When soong builds the tests in a sandbox, the targets of symlinks
@@ -224,6 +232,15 @@ art_cc_defaults {
     },
 
     min_sdk_version: "31", // Same as the ART APEX.
+
+    // Link libc++ statically to avoid needing the system libc++.so, which may
+    // be incompatible. The linker exports symbols from an executable that are
+    // referenced in the .dynsym tables of shared object dependencies, so use a
+    // version script to restrict exports. The version script is needed for
+    // hiding symbols from libc++ (either libc++_static.a or vaguely-linked
+    // symbols in other object files) and from other libraries, such as libbase.
+    stl: "libc++_static",
+    version_script: ":art-standalone-test-version",
 
     // Make standalone tests check their own NEEDED dependencies for disallowed
     // libraries. Add standalone_test_lib_check and its dependencies, except
@@ -353,11 +370,7 @@ art_cc_defaults {
     static_libs: [
         "libart-gtest",
     ],
-    // Reduce test executable size by disabling automatic export of static lib symbols.
-    // Don't use --exclude-libs=ALL, because it breaks tests under ASAN by hiding __asan* symbols.
-    ldflags: [
-        "-Wl,--exclude-libs=libart-gtest.a",
-    ],
+    version_script: ":art-standalone-gtest-version",
     test_for: [
         "com.android.art",
         "com.android.art.debug",
