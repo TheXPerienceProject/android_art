@@ -1025,6 +1025,20 @@ bool ElfFileImpl<ElfTypes>::GetLoadedSize(size_t* size, std::string* error_msg) 
   return GetLoadedAddressRange(&vaddr_begin, size, error_msg);
 }
 
+template <typename ElfTypes>
+size_t ElfFileImpl<ElfTypes>::GetElfSegmentAlignmentFromFile() const {
+  // Return the alignment of the first loadable program segment.
+  for (Elf_Word i = 0; i < GetProgramHeaderNum(); i++) {
+    Elf_Phdr* program_header = GetProgramHeader(i);
+    if (program_header->p_type != PT_LOAD) {
+      continue;
+    }
+    return program_header->p_align;
+  }
+  LOG(ERROR) << "No loadable segment found in ELF file " << file_path_;
+  return 0;
+}
+
 // Base on bionic phdr_table_get_load_size
 template <typename ElfTypes>
 bool ElfFileImpl<ElfTypes>::GetLoadedAddressRange(/*out*/uint8_t** vaddr_begin,
@@ -1669,6 +1683,10 @@ uint64_t ElfFile::FindSymbolAddress(unsigned section_type,
 
 bool ElfFile::GetLoadedSize(size_t* size, std::string* error_msg) const {
   DELEGATE_TO_IMPL(GetLoadedSize, size, error_msg);
+}
+
+size_t ElfFile::GetElfSegmentAlignmentFromFile() const {
+  DELEGATE_TO_IMPL(GetElfSegmentAlignmentFromFile);
 }
 
 bool ElfFile::Strip(File* file, std::string* error_msg) {

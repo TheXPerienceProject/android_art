@@ -82,6 +82,8 @@ class ElfFile {
 
   bool GetLoadedSize(size_t* size, std::string* error_msg) const;
 
+  size_t GetElfSegmentAlignmentFromFile() const;
+
   // Strip an ELF file of unneeded debugging information.
   // Returns true on success, false on failure.
   static bool Strip(File* file, std::string* error_msg);
