@@ -16,5 +16,12 @@
 
 
 def run(ctx, args):
-  # We need a profile to tell dex2oat to include classes in the final app image
-  ctx.default_run(args, profile=True)
+  if args.jvm:
+    ctx.default_run(args)
+  else:
+    ctx.default_run(
+        args,
+        # We need a profile to tell dex2oat to include classes in the final app image
+        profile=True,
+        # Append graphs for checker tests (we run dex2oat twice) with `--dump-cfg-append`.
+        Xcompiler_option=["--dump-cfg-append"])

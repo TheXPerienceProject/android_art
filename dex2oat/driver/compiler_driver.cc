@@ -889,6 +889,12 @@ void CompilerDriver::PreCompile(jobject class_loader,
                                << "Please check the log.";
       _exit(1);
     }
+
+    if (GetCompilerOptions().IsAppImage() && had_hard_verifier_failure_) {
+      // Prune erroneous classes and classes that depend on them.
+      UpdateImageClasses(timings, image_classes);
+      VLOG(compiler) << "verify/UpdateImageClasses: " << GetMemoryUsageString(false);
+    }
   }
 
   if (GetCompilerOptions().IsGeneratingImage()) {
@@ -911,8 +917,10 @@ void CompilerDriver::PreCompile(jobject class_loader,
       visitor.FillAllIMTAndConflictTables();
     }
 
-    UpdateImageClasses(timings, image_classes);
-    VLOG(compiler) << "UpdateImageClasses: " << GetMemoryUsageString(false);
+    if (GetCompilerOptions().IsBootImage() || GetCompilerOptions().IsBootImageExtension()) {
+      UpdateImageClasses(timings, image_classes);
+      VLOG(compiler) << "UpdateImageClasses: " << GetMemoryUsageString(false);
+    }
 
     if (kBitstringSubtypeCheckEnabled &&
         GetCompilerOptions().IsForceDeterminism() && GetCompilerOptions().IsBootImage()) {
@@ -1380,7 +1388,8 @@ class ClinitImageUpdate {
     bool operator()(ObjPtr<mirror::Class> klass) override REQUIRES_SHARED(Locks::mutator_lock_) {
       bool resolved = klass->IsResolved();
       DCHECK(resolved || klass->IsErroneousUnresolved());
-      bool can_include_in_image = LIKELY(resolved) && CanIncludeInCurrentImage(klass);
+      bool can_include_in_image =
+          LIKELY(resolved) && LIKELY(!klass->IsErroneous()) && CanIncludeInCurrentImage(klass);
       std::string temp;
       std::string_view descriptor(klass->GetDescriptor(&temp));
       auto it = data_->image_class_descriptors_->find(descriptor);
@@ -1451,17 +1460,16 @@ class ClinitImageUpdate {
 
 void CompilerDriver::UpdateImageClasses(TimingLogger* timings,
                                         /*inout*/ HashSet<std::string>* image_classes) {
-  if (GetCompilerOptions().IsBootImage() || GetCompilerOptions().IsBootImageExtension()) {
-    TimingLogger::ScopedTiming t("UpdateImageClasses", timings);
+  DCHECK(GetCompilerOptions().IsGeneratingImage());
+  TimingLogger::ScopedTiming t("UpdateImageClasses", timings);
 
-    // Suspend all threads.
-    ScopedSuspendAll ssa(__FUNCTION__);
+  // Suspend all threads.
+  ScopedSuspendAll ssa(__FUNCTION__);
 
-    ClinitImageUpdate update(image_classes, Thread::Current());
+  ClinitImageUpdate update(image_classes, Thread::Current());
 
-    // Do the marking.
-    update.Walk();
-  }
+  // Do the marking.
+  update.Walk();
 }
 
 void CompilerDriver::ProcessedInstanceField(bool resolved) {
@@ -2039,7 +2047,8 @@ class VerifyClassVisitor : public CompilationVisitor {
                                                klass,
                                                log_level_);
 
-      if (klass->IsErroneous()) {
+      DCHECK_EQ(klass->IsErroneous(), failure_kind == verifier::FailureKind::kHardFailure);
+      if (failure_kind == verifier::FailureKind::kHardFailure) {
         // ClassLinker::VerifyClass throws, which isn't useful in the compiler.
         CHECK(soa.Self()->IsExceptionPending());
         soa.Self()->ClearException();
