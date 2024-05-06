@@ -1966,6 +1966,9 @@ class Dex2Oat final {
         }
       }
     }
+    if (IsAppImage()) {
+      AotClassLinker::SetAppImageDexFiles(&compiler_options_->GetDexFilesForOatFile());
+    }
 
     // Register dex caches and key them to the class loader so that they only unload when the
     // class loader unloads.

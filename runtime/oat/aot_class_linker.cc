@@ -16,6 +16,7 @@
 
 #include "aot_class_linker.h"
 
+#include "base/stl_util.h"
 #include "class_status.h"
 #include "compiler_callbacks.h"
 #include "dex/class_reference.h"
@@ -131,6 +132,12 @@ verifier::FailureKind AotClassLinker::PerformClassVerification(
   return ClassLinker::PerformClassVerification(self, verifier_deps, klass, log_level, error_msg);
 }
 
+static const std::vector<const DexFile*>* gAppImageDexFiles = nullptr;
+
+void AotClassLinker::SetAppImageDexFiles(const std::vector<const DexFile*>* app_image_dex_files) {
+  gAppImageDexFiles = app_image_dex_files;
+}
+
 bool AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(
     ObjPtr<mirror::Class> klass, gc::Heap* heap) {
   // Do not allow referencing a class or instance of a class defined in a dex file
@@ -160,8 +167,25 @@ bool AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(
     }
   }
 
+  auto can_reference_dex_cache = [&](ObjPtr<mirror::DexCache> dex_cache)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    // We cannot reference a boot image dex cache for classes
+    // that were not themselves in the boot image.
+    if (heap->ObjectIsInBootImageSpace(dex_cache)) {
+      return false;
+    }
+    // App image compilation can pull in dex files from parent or library class loaders.
+    // Classes from such dex files cannot be included or referenced in the current app image
+    // to avoid conflicts with classes in the parent or library class loader's app image.
+    if (gAppImageDexFiles != nullptr &&
+        !ContainsElement(*gAppImageDexFiles, dex_cache->GetDexFile())) {
+      return false;
+    }
+    return true;
+  };
+
   // Check the class itself.
-  if (heap->ObjectIsInBootImageSpace(klass->GetDexCache())) {
+  if (!can_reference_dex_cache(klass->GetDexCache())) {
     return false;
   }
 
@@ -169,7 +193,7 @@ bool AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(
   ObjPtr<mirror::Class> superclass = klass->GetSuperClass();
   while (!heap->ObjectIsInBootImageSpace(superclass)) {
     DCHECK(superclass != nullptr);  // Cannot skip Object which is in the primary boot image.
-    if (heap->ObjectIsInBootImageSpace(superclass->GetDexCache())) {
+    if (!can_reference_dex_cache(superclass->GetDexCache())) {
       return false;
     }
     superclass = superclass->GetSuperClass();
@@ -181,7 +205,7 @@ bool AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(
     ObjPtr<mirror::Class> interface = if_table->GetInterface(i);
     DCHECK(interface != nullptr);
     if (!heap->ObjectIsInBootImageSpace(interface) &&
-        heap->ObjectIsInBootImageSpace(interface->GetDexCache())) {
+        !can_reference_dex_cache(interface->GetDexCache())) {
       return false;
     }
   }
@@ -194,7 +218,7 @@ bool AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(
       for (auto& m : k->GetVirtualMethods(pointer_size)) {
         ObjPtr<mirror::Class> declaring_class = m.GetDeclaringClass();
         CHECK(heap->ObjectIsInBootImageSpace(declaring_class) ||
-              !heap->ObjectIsInBootImageSpace(declaring_class->GetDexCache()));
+              can_reference_dex_cache(declaring_class->GetDexCache()));
       }
       k = k->GetSuperClass();
     }
