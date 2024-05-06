@@ -19,6 +19,10 @@ public class Main {
   public static String mediumString = generateString(300);
   public static String largeString = generateString(2000);
 
+  public static String smallNonAsciiString = generateNonAsciiString(100);
+  public static String mediumNonAsciiString = generateNonAsciiString(300);
+  public static String largeNonAsciiString = generateNonAsciiString(2000);
+
   public static String generateString(int length) {
     // Generate a string in the ASCII range that will
     // use string compression.
@@ -26,6 +30,14 @@ public class Main {
     for (int i = 0; i < length; i++) {
       // Generate repeating alphabet.
       sb.append(Character.valueOf((char)('a' + (i % 26))));
+    }
+    return sb.toString();
+  }
+
+  public static String generateNonAsciiString(int length) {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < length; i++) {
+      sb.append(Character.valueOf('\uFFFF'));
     }
     return sb.toString();
   }
@@ -101,6 +113,38 @@ public class Main {
     assertStringEquals(smallString.substring(5, 10), stringGetCharsRange(smallString, 5, 10, 17));
     // Substring > 8 characters.
     assertStringEquals(smallString.substring(7, 28), stringGetCharsRange(smallString, 7, 28, 17));
+
+    // Single character.
+    assertStringEquals("\uFFFF", stringGetCharsAndBack("\uFFFF"));
+
+    // Strings < 8 characters.
+    assertStringEquals("\uFFFF\uFFFF\uFFFF\uFFFF\uFFFF",
+                       stringGetCharsAndBack("\uFFFF\uFFFF\uFFFF\uFFFF\uFFFF"));
+
+    // Strings > 8 characters of various lengths.
+    assertStringEquals(smallNonAsciiString, stringGetCharsAndBack(smallNonAsciiString));
+    assertStringEquals(mediumNonAsciiString, stringGetCharsAndBack(mediumNonAsciiString));
+    assertStringEquals(largeNonAsciiString, stringGetCharsAndBack(largeNonAsciiString));
+
+    // Get only a substring:
+    // Substring < 8 characters.
+    assertStringEquals(smallNonAsciiString.substring(5, 10),
+                       stringGetCharsRange(smallNonAsciiString, 5, 10, 0));
+    // Substring > 8 characters.
+    assertStringEquals(smallNonAsciiString.substring(7, 28),
+                       stringGetCharsRange(smallNonAsciiString, 7, 28, 0));
+
+    // Get full string with offset in the char array.
+    assertStringEquals(smallNonAsciiString,
+                       stringGetCharsAndBackOffset(smallNonAsciiString, 17));
+
+    // Get a substring with an offset in the char array.
+    // Substring < 8 characters.
+    assertStringEquals(smallNonAsciiString.substring(5, 10),
+                       stringGetCharsRange(smallNonAsciiString, 5, 10, 17));
+    // Substring > 8 characters.
+    assertStringEquals(smallNonAsciiString.substring(7, 28),
+                       stringGetCharsRange(smallNonAsciiString, 7, 28, 17));
 
     try {
       $opt$noinline$stringCharAt("abc", -1);
