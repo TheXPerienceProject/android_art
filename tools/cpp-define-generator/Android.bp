@@ -44,15 +44,8 @@ cc_object {
     ],
 }
 
-soong_config_module_type_import {
-    from: "art/build/SoongConfig.bp",
-    module_types: [
-        "art_module_cc_genrule",
-    ],
-}
-
 // This extracts the compile-time constants from asm_defines.s and creates the header.
-art_module_cc_genrule {
+cc_genrule {
     name: "cpp-define-generator-asm-support",
     host_supported: true,
     device_supported: true,
