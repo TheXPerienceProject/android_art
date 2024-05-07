@@ -176,6 +176,7 @@ cc_test {
     srcs: ["libnativebridge_api_test.cpp"],
     test_config_template: ":art-gtests-target-standalone-cts-template",
     test_suites: [
+        "cts",
         "general-tests",
         "mts-art",
         "mcts-art",
