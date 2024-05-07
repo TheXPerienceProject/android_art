@@ -23,7 +23,7 @@ TEST_F(NativeBridgeTest, V7_CriticalNative) {
   // Init
   ASSERT_TRUE(LoadNativeBridge(kNativeBridgeLibrary7, nullptr));
   ASSERT_TRUE(NativeBridgeAvailable());
-  ASSERT_TRUE(PreInitializeNativeBridge(".", "isa"));
+  ASSERT_TRUE(PreInitializeNativeBridge(appDataDir(), "isa"));
   ASSERT_TRUE(NativeBridgeAvailable());
   ASSERT_TRUE(InitializeNativeBridge(nullptr, nullptr));
   ASSERT_TRUE(NativeBridgeAvailable());

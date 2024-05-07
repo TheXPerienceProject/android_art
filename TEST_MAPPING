@@ -4305,6 +4305,9 @@
     },
     {
       "name": "art-run-test-2273-checker-unreachable-intrinsics"
+    },
+    {
+      "name": "libnativebridge-tests"
     }
   ]
 }
