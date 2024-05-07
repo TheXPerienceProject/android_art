@@ -532,6 +532,7 @@ class CodeGeneratorX86_64 : public CodeGenerator {
   void RecordBootImageMethodPatch(HInvoke* invoke);
   void RecordMethodBssEntryPatch(HInvoke* invoke);
   void RecordBootImageTypePatch(const DexFile& dex_file, dex::TypeIndex type_index);
+  void RecordAppImageTypePatch(const DexFile& dex_file, dex::TypeIndex type_index);
   Label* NewTypeBssEntryPatch(HLoadClass* load_class);
   void RecordBootImageStringPatch(HLoadString* load_string);
   Label* NewStringBssEntryPatch(HLoadString* load_string);
@@ -738,6 +739,8 @@ class CodeGeneratorX86_64 : public CodeGenerator {
   ArenaDeque<PatchInfo<Label>> method_bss_entry_patches_;
   // PC-relative type patch info for kBootImageLinkTimePcRelative.
   ArenaDeque<PatchInfo<Label>> boot_image_type_patches_;
+  // PC-relative type patch info for kAppImageRelRo.
+  ArenaDeque<PatchInfo<Label>> app_image_type_patches_;
   // PC-relative type patch info for kBssEntry.
   ArenaDeque<PatchInfo<Label>> type_bss_entry_patches_;
   // PC-relative public type patch info for kBssEntryPublic.

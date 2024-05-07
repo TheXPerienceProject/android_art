@@ -22,7 +22,7 @@ public class Secondary {
     }
 
     /// CHECK-START: java.lang.Class Secondary.$noinline$getSecondaryAppImageClass() builder (after)
-    /// CHECK:            LoadClass load_kind:BssEntry in_image:true
+    /// CHECK:            LoadClass load_kind:AppImageRelRo in_image:true
     public static Class<?> $noinline$getSecondaryAppImageClass() {
         return SecondaryAppImageClass.class;
     }

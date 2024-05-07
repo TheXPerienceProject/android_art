@@ -6743,6 +6743,10 @@ class HLoadClass final : public HInstruction {
     // Used for boot image classes referenced by apps in AOT-compiled code.
     kBootImageRelRo,
 
+    // Load from an app image entry in the .data.img.rel.ro using a PC-relative load.
+    // Used for app image classes referenced by apps in AOT-compiled code.
+    kAppImageRelRo,
+
     // Load from an entry in the .bss section using a PC-relative load.
     // Used for classes outside boot image referenced by AOT-compiled app and boot image code.
     kBssEntry,
@@ -6814,6 +6818,7 @@ class HLoadClass final : public HInstruction {
   bool HasPcRelativeLoadKind() const {
     return GetLoadKind() == LoadKind::kBootImageLinkTimePcRelative ||
            GetLoadKind() == LoadKind::kBootImageRelRo ||
+           GetLoadKind() == LoadKind::kAppImageRelRo ||
            GetLoadKind() == LoadKind::kBssEntry ||
            GetLoadKind() == LoadKind::kBssEntryPublic ||
            GetLoadKind() == LoadKind::kBssEntryPackage;
@@ -6933,6 +6938,7 @@ class HLoadClass final : public HInstruction {
   static bool HasTypeReference(LoadKind load_kind) {
     return load_kind == LoadKind::kReferrersClass ||
         load_kind == LoadKind::kBootImageLinkTimePcRelative ||
+        load_kind == LoadKind::kAppImageRelRo ||
         load_kind == LoadKind::kBssEntry ||
         load_kind == LoadKind::kBssEntryPublic ||
         load_kind == LoadKind::kBssEntryPackage ||
@@ -6978,6 +6984,7 @@ inline void HLoadClass::AddSpecialInput(HInstruction* special_input) {
   // including literal pool loads, which are PC-relative too.
   DCHECK(GetLoadKind() == LoadKind::kBootImageLinkTimePcRelative ||
          GetLoadKind() == LoadKind::kBootImageRelRo ||
+         GetLoadKind() == LoadKind::kAppImageRelRo ||
          GetLoadKind() == LoadKind::kBssEntry ||
          GetLoadKind() == LoadKind::kBssEntryPublic ||
          GetLoadKind() == LoadKind::kBssEntryPackage ||
