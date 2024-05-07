@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-#if defined(ART_TARGET_ANDROID)
+#include <memory>
+#include <string>
 
-#include <gtest/gtest.h>
-
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "jni.h"
 #include "native_loader_test.h"
 #include "nativehelper/scoped_utf_chars.h"
 #include "nativeloader/native_loader.h"
@@ -25,16 +27,18 @@
 namespace android {
 namespace nativeloader {
 
+using ::testing::Return;
 using ::testing::StrEq;
 
-// Only need to test that the trivial lazy lib wrappers call through to the real
-// functions, but still have to mock things well enough to avoid null pointer
-// dereferences.
+// Test the exported API in libnativeloader and libnativeloader_lazy. The
+// testing we can do here outside a full VM is limited, but this is only to
+// complement other tests and ensure coverage of the APIs that aren't in the
+// common call paths.
 
 class NativeLoaderLazyTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    mock = std::make_unique<testing::NiceMock<MockPlatform>>(false);
+    jni_mock = std::make_unique<testing::NiceMock<MockJni>>();
     env = std::make_unique<JNIEnv>();
     env->functions = CreateJNINativeInterface();
   }
@@ -44,14 +48,11 @@ class NativeLoaderLazyTest : public ::testing::Test {
     // reset libnativeloader internal state. Hence be sure to not reuse the same
     // class loader/namespace names.
     delete env->functions;
-    mock.reset();
+    jni_mock.reset();
   }
 
   void CallCreateClassLoaderNamespace(const char* class_loader) {
-    ON_CALL(*mock, JniObject_getParent(StrEq(class_loader))).WillByDefault(Return(nullptr));
-    EXPECT_CALL(*mock, mock_create_namespace)
-        .WillOnce(Return(TO_MOCK_NAMESPACE(TO_ANDROID_NAMESPACE(class_loader))));
-    ON_CALL(*mock, mock_link_namespaces).WillByDefault(Return(true));
+    ON_CALL(*jni_mock, JniObject_getParent(StrEq(class_loader))).WillByDefault(Return(nullptr));
 
     jstring err = CreateClassLoaderNamespace(env.get(),
                                              17,
@@ -69,6 +70,8 @@ class NativeLoaderLazyTest : public ::testing::Test {
 
 TEST_F(NativeLoaderLazyTest, CreateClassLoaderNamespace) {
   CallCreateClassLoaderNamespace("my_classloader_1");
+  EXPECT_NE(FindNamespaceByClassLoader(env.get(), env.get()->NewStringUTF("my_classloader_1")),
+            nullptr);
 }
 
 TEST_F(NativeLoaderLazyTest, OpenNativeLibrary) {
@@ -123,5 +126,3 @@ TEST_F(NativeLoaderLazyTest, NativeLoaderFreeErrorMessage) {
 
 }  // namespace nativeloader
 }  // namespace android
-
-#endif  // defined(ART_TARGET_ANDROID)

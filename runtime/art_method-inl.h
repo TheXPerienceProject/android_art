@@ -466,11 +466,6 @@ inline const dex::CodeItem* ArtMethod::GetCodeItem() {
           reinterpret_cast<uintptr_t>(GetDataPtrSize(pointer_size)) & ~1);
 }
 
-inline bool ArtMethod::IsResolvedTypeIdx(dex::TypeIndex type_idx) {
-  DCHECK(!IsProxyMethod());
-  return LookupResolvedClassFromTypeIndex(type_idx) != nullptr;
-}
-
 inline int32_t ArtMethod::GetLineNumFromDexPC(uint32_t dex_pc) {
   DCHECK(!IsProxyMethod());
   if (dex_pc == dex::kDexNoIndex) {

@@ -42,6 +42,7 @@
 #include "base/time_utils.h"
 #include "base/timing_logger.h"
 #include "class_linker-inl.h"
+#include "class_root-inl.h"
 #include "compiled_method-inl.h"
 #include "compiler.h"
 #include "compiler_callbacks.h"
@@ -50,6 +51,7 @@
 #include "dex/descriptors_names.h"
 #include "dex/dex_file-inl.h"
 #include "dex/dex_file_annotations.h"
+#include "dex/dex_file_exception_helpers.h"
 #include "dex/dex_instruction-inl.h"
 #include "dex/verification_results.h"
 #include "driver/compiler_options.h"
@@ -832,7 +834,7 @@ void CompilerDriver::PreCompile(jobject class_loader,
   // 6) Update the set of image classes.
   // 7) For deterministic boot image, initialize bitstrings for type checking.
 
-  LoadImageClasses(timings, image_classes);
+  LoadImageClasses(timings, class_loader, image_classes);
   VLOG(compiler) << "LoadImageClasses: " << GetMemoryUsageString(false);
 
   if (compiler_options_->AssumeClassesAreVerified()) {
@@ -852,9 +854,15 @@ void CompilerDriver::PreCompile(jobject class_loader,
       }
     }
 
-    // Resolve eagerly as both verification and compilation benefit from this.
-    Resolve(class_loader, dex_files, timings);
-    VLOG(compiler) << "Resolve: " << GetMemoryUsageString(false);
+    // Resolve eagerly for compilations always, and for verifications only if we are running with
+    // multiple threads.
+    const bool should_resolve_eagerly =
+        compiler_options_->IsAnyCompilationEnabled() ||
+        (!GetCompilerOptions().IsForceDeterminism() && parallel_thread_count_ > 1);
+    if (should_resolve_eagerly) {
+      Resolve(class_loader, dex_files, timings);
+      VLOG(compiler) << "Resolve: " << GetMemoryUsageString(false);
+    }
 
     Verify(class_loader, dex_files, timings);
     VLOG(compiler) << "Verify: " << GetMemoryUsageString(false);
@@ -919,64 +927,193 @@ void CompilerDriver::PreCompile(jobject class_loader,
 
 class ResolveCatchBlockExceptionsClassVisitor : public ClassVisitor {
  public:
-  ResolveCatchBlockExceptionsClassVisitor() : classes_() {}
+  explicit ResolveCatchBlockExceptionsClassVisitor(Thread* self)
+      : hs_(self),
+        dex_file_records_(),
+        unprocessed_classes_(),
+        exception_types_to_resolve_(),
+        boot_images_start_(Runtime::Current()->GetHeap()->GetBootImagesStartAddress()),
+        boot_images_size_(Runtime::Current()->GetHeap()->GetBootImagesSize()) {}
 
   bool operator()(ObjPtr<mirror::Class> c) override REQUIRES_SHARED(Locks::mutator_lock_) {
-    classes_.push_back(c);
+    // Filter out classes from boot images we're compiling against.
+    // These have been processed when we compiled those boot images.
+    if (reinterpret_cast32<uint32_t>(c.Ptr()) - boot_images_start_ < boot_images_size_) {
+      DCHECK(Runtime::Current()->GetHeap()->ObjectIsInBootImageSpace(c));
+      return true;
+    }
+    // Filter out classes without methods.
+    // These include primitive types and array types which have no dex file.
+    if (c->GetMethodsPtr() == nullptr) {
+      return true;
+    }
+    auto it = dex_file_records_.find(&c->GetDexFile());
+    if (it != dex_file_records_.end()) {
+      DexFileRecord& record = it->second;
+      DCHECK_EQ(c->GetDexCache(), record.GetDexCache().Get());
+      DCHECK_EQ(c->GetClassLoader(), record.GetClassLoader().Get());
+      if (record.IsProcessedClass(c)) {
+        return true;
+      }
+    }
+    unprocessed_classes_.push_back(c);
     return true;
   }
 
-  void FindExceptionTypesToResolve(std::set<TypeReference>* exceptions_to_resolve)
+  void FindAndResolveExceptionTypes(Thread* self, ClassLinker* class_linker)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-    const auto pointer_size = Runtime::Current()->GetClassLinker()->GetImagePointerSize();
-    for (ObjPtr<mirror::Class> klass : classes_) {
-      for (ArtMethod& method : klass->GetMethods(pointer_size)) {
-        FindExceptionTypesToResolveForMethod(&method, exceptions_to_resolve);
-      }
+    // If we try to resolve any exception types, we need to repeat the process.
+    // Even if we failed to resolve an exception type, we could have resolved its supertype
+    // or some implemented interfaces as a side-effect (the exception type could implement
+    // another unresolved interface) and we need to visit methods of such new resolved
+    // classes as they shall be recorded as image classes.
+    while (FindExceptionTypesToResolve(class_linker)) {
+      ResolveExceptionTypes(self, class_linker);
     }
   }
 
  private:
-  void FindExceptionTypesToResolveForMethod(
-      ArtMethod* method,
-      std::set<TypeReference>* exceptions_to_resolve)
+  class DexFileRecord {
+   public:
+    DexFileRecord(Handle<mirror::DexCache> dex_cache, Handle<mirror::ClassLoader> class_loader)
+        REQUIRES_SHARED(Locks::mutator_lock_)
+        : dex_cache_(dex_cache),
+          class_loader_(class_loader),
+          processed_classes_(/*start_bits=*/ dex_cache->GetDexFile()->NumClassDefs(),
+                             /*expandable=*/ false,
+                             Allocator::GetCallocAllocator()),
+          processed_exception_types_(/*start_bits=*/ dex_cache->GetDexFile()->NumTypeIds(),
+                                     /*expandable=*/ false,
+                                     Allocator::GetCallocAllocator()) {}
+
+    Handle<mirror::DexCache> GetDexCache() {
+      return dex_cache_;
+    }
+
+    Handle<mirror::ClassLoader> GetClassLoader() {
+      return class_loader_;
+    }
+
+    bool IsProcessedClass(ObjPtr<mirror::Class> c) REQUIRES_SHARED(Locks::mutator_lock_) {
+      DCHECK_LT(c->GetDexClassDefIndex(), dex_cache_->GetDexFile()->NumClassDefs());
+      return processed_classes_.IsBitSet(c->GetDexClassDefIndex());
+    }
+
+    void MarkProcessedClass(ObjPtr<mirror::Class> c) REQUIRES_SHARED(Locks::mutator_lock_) {
+      DCHECK_LT(c->GetDexClassDefIndex(), dex_cache_->GetDexFile()->NumClassDefs());
+      processed_classes_.SetBit(c->GetDexClassDefIndex());
+    }
+
+    bool IsProcessedExceptionType(dex::TypeIndex type_idx) REQUIRES_SHARED(Locks::mutator_lock_) {
+      DCHECK_LT(type_idx.index_, dex_cache_->GetDexFile()->NumTypeIds());
+      return processed_exception_types_.IsBitSet(type_idx.index_);
+    }
+
+    void MarkProcessedExceptionType(dex::TypeIndex type_idx) REQUIRES_SHARED(Locks::mutator_lock_) {
+      DCHECK_LT(type_idx.index_, dex_cache_->GetDexFile()->NumTypeIds());
+      processed_exception_types_.SetBit(type_idx.index_);
+    }
+
+   private:
+    Handle<mirror::DexCache> dex_cache_;
+    Handle<mirror::ClassLoader> class_loader_;
+    BitVector processed_classes_;
+    BitVector processed_exception_types_;
+  };
+
+  struct ExceptionTypeReference {
+    dex::TypeIndex exception_type_idx;
+    Handle<mirror::DexCache> dex_cache;
+    Handle<mirror::ClassLoader> class_loader;
+  };
+
+  bool FindExceptionTypesToResolve(ClassLinker* class_linker)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  void ResolveExceptionTypes(Thread* self, ClassLinker* class_linker)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-    if (method->GetCodeItem() == nullptr) {
-      return;  // native or abstract method
-    }
-    CodeItemDataAccessor accessor(method->DexInstructionData());
-    if (accessor.TriesSize() == 0) {
-      return;  // nothing to process
-    }
-    const uint8_t* encoded_catch_handler_list = accessor.GetCatchHandlerData();
-    size_t num_encoded_catch_handlers = DecodeUnsignedLeb128(&encoded_catch_handler_list);
-    for (size_t i = 0; i < num_encoded_catch_handlers; i++) {
-      int32_t encoded_catch_handler_size = DecodeSignedLeb128(&encoded_catch_handler_list);
-      bool has_catch_all = false;
-      if (encoded_catch_handler_size <= 0) {
-        encoded_catch_handler_size = -encoded_catch_handler_size;
-        has_catch_all = true;
+    DCHECK(!exception_types_to_resolve_.empty());
+    for (auto [exception_type_idx, dex_cache, class_loader] : exception_types_to_resolve_) {
+      ObjPtr<mirror::Class> exception_class =
+          class_linker->ResolveType(exception_type_idx, dex_cache, class_loader);
+      if (exception_class == nullptr) {
+        VLOG(compiler) << "Failed to resolve exception class "
+            << dex_cache->GetDexFile()->GetTypeDescriptorView(exception_type_idx);
+        self->ClearException();
+      } else {
+        DCHECK(GetClassRoot<mirror::Throwable>(class_linker)->IsAssignableFrom(exception_class));
       }
-      for (int32_t j = 0; j < encoded_catch_handler_size; j++) {
-        dex::TypeIndex encoded_catch_handler_handlers_type_idx =
-            dex::TypeIndex(DecodeUnsignedLeb128(&encoded_catch_handler_list));
-        // Add to set of types to resolve if not already in the dex cache resolved types
-        if (!method->IsResolvedTypeIdx(encoded_catch_handler_handlers_type_idx)) {
-          exceptions_to_resolve->emplace(method->GetDexFile(),
-                                         encoded_catch_handler_handlers_type_idx);
+    }
+    exception_types_to_resolve_.clear();
+  }
+
+  VariableSizedHandleScope hs_;
+  SafeMap<const DexFile*, DexFileRecord> dex_file_records_;
+  std::vector<ObjPtr<mirror::Class>> unprocessed_classes_;
+  std::vector<ExceptionTypeReference> exception_types_to_resolve_;
+  const uint32_t boot_images_start_;
+  const uint32_t boot_images_size_;
+};
+
+bool ResolveCatchBlockExceptionsClassVisitor::FindExceptionTypesToResolve(
+    ClassLinker* class_linker) {
+  // Thread suspension is not allowed while the `ResolveCatchBlockExceptionsClassVisitor`
+  // is using a `std::vector<ObjPtr<mirror::Class>>`.
+  ScopedAssertNoThreadSuspension ants(__FUNCTION__);
+  DCHECK(unprocessed_classes_.empty());
+  class_linker->VisitClasses(this);
+  if (unprocessed_classes_.empty()) {
+    return false;
+  }
+
+  DCHECK(exception_types_to_resolve_.empty());
+  const PointerSize pointer_size = class_linker->GetImagePointerSize();
+  for (ObjPtr<mirror::Class> klass : unprocessed_classes_) {
+    const DexFile* dex_file = &klass->GetDexFile();
+    DexFileRecord& record = dex_file_records_.GetOrCreate(
+        dex_file,
+        // NO_THREAD_SAFETY_ANALYSIS: Called from unannotated `SafeMap<>::GetOrCreate()`.
+        [&]() NO_THREAD_SAFETY_ANALYSIS {
+          return DexFileRecord(hs_.NewHandle(klass->GetDexCache()),
+                               hs_.NewHandle(klass->GetClassLoader()));
+        });
+    DCHECK_EQ(klass->GetDexCache(), record.GetDexCache().Get());
+    DCHECK_EQ(klass->GetClassLoader(), record.GetClassLoader().Get());
+    DCHECK(!record.IsProcessedClass(klass));
+    record.MarkProcessedClass(klass);
+    for (ArtMethod& method : klass->GetDeclaredMethods(pointer_size)) {
+      if (method.GetCodeItem() == nullptr) {
+        continue;  // native or abstract method
+      }
+      CodeItemDataAccessor accessor(method.DexInstructionData());
+      if (accessor.TriesSize() == 0) {
+        continue;  // nothing to process
+      }
+      const uint8_t* handlers_ptr = accessor.GetCatchHandlerData();
+      size_t num_encoded_catch_handlers = DecodeUnsignedLeb128(&handlers_ptr);
+      for (size_t i = 0; i < num_encoded_catch_handlers; i++) {
+        CatchHandlerIterator iterator(handlers_ptr);
+        for (; iterator.HasNext(); iterator.Next()) {
+          dex::TypeIndex exception_type_idx = iterator.GetHandlerTypeIndex();
+          if (exception_type_idx.IsValid() &&
+              !record.IsProcessedExceptionType(exception_type_idx)) {
+            record.MarkProcessedExceptionType(exception_type_idx);
+            // Add to set of types to resolve if not resolved yet.
+            ObjPtr<mirror::Class> type = class_linker->LookupResolvedType(
+                exception_type_idx, record.GetDexCache().Get(), record.GetClassLoader().Get());
+            if (type == nullptr) {
+              exception_types_to_resolve_.push_back(
+                  {exception_type_idx, record.GetDexCache(), record.GetClassLoader()});
+            }
+          }
         }
-        // ignore address associated with catch handler
-        DecodeUnsignedLeb128(&encoded_catch_handler_list);
-      }
-      if (has_catch_all) {
-        // ignore catch all address
-        DecodeUnsignedLeb128(&encoded_catch_handler_list);
+        handlers_ptr = iterator.EndDataPointer();
       }
     }
   }
-
-  std::vector<ObjPtr<mirror::Class>> classes_;
-};
+  unprocessed_classes_.clear();
+  return !exception_types_to_resolve_.empty();
+}
 
 static inline bool CanIncludeInCurrentImage(ObjPtr<mirror::Class> klass)
     REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -988,7 +1125,7 @@ static inline bool CanIncludeInCurrentImage(ObjPtr<mirror::Class> klass)
   if (heap->ObjectIsInBootImageSpace(klass)) {
     return false;  // Already included in the boot image we're compiling against.
   }
-  return AotClassLinker::CanReferenceInBootImageExtension(klass, heap);
+  return AotClassLinker::CanReferenceInBootImageExtensionOrAppImage(klass, heap);
 }
 
 class RecordImageClassesVisitor : public ClassVisitor {
@@ -1085,9 +1222,10 @@ static void VerifyClassLoaderClassesAreImageClasses(/* out */ HashSet<std::strin
 
 // Make a list of descriptors for classes to include in the image
 void CompilerDriver::LoadImageClasses(TimingLogger* timings,
+                                      jobject class_loader,
                                       /*inout*/ HashSet<std::string>* image_classes) {
   CHECK(timings != nullptr);
-  if (!GetCompilerOptions().IsBootImage() && !GetCompilerOptions().IsBootImageExtension()) {
+  if (!GetCompilerOptions().IsGeneratingImage()) {
     return;
   }
 
@@ -1100,16 +1238,16 @@ void CompilerDriver::LoadImageClasses(TimingLogger* timings,
     AddClassLoaderClasses(image_classes);
   }
 
-  // Make a first pass to load all classes explicitly listed in the file
+  // Make a first pass to load all classes explicitly listed in the profile.
   Thread* self = Thread::Current();
   ScopedObjectAccess soa(self);
+  StackHandleScope<2u> hs(self);
+  Handle<mirror::ClassLoader> loader = hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader));
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   CHECK(image_classes != nullptr);
   for (auto it = image_classes->begin(), end = image_classes->end(); it != end;) {
     const std::string& descriptor(*it);
-    StackHandleScope<1> hs(self);
-    Handle<mirror::Class> klass(
-        hs.NewHandle(class_linker->FindSystemClass(self, descriptor.c_str())));
+    ObjPtr<mirror::Class> klass = class_linker->FindClass(self, descriptor.c_str(), loader);
     if (klass == nullptr) {
       VLOG(compiler) << "Failed to find class " << descriptor;
       it = image_classes->erase(it);  // May cause some descriptors to be revisited.
@@ -1122,48 +1260,11 @@ void CompilerDriver::LoadImageClasses(TimingLogger* timings,
   // Resolve exception classes referenced by the loaded classes. The catch logic assumes
   // exceptions are resolved by the verifier when there is a catch block in an interested method.
   // Do this here so that exception classes appear to have been specified image classes.
-  std::set<TypeReference> unresolved_exception_types;
-  StackHandleScope<2u> hs(self);
-  Handle<mirror::Class> java_lang_Throwable(
-      hs.NewHandle(class_linker->FindSystemClass(self, "Ljava/lang/Throwable;")));
-  MutableHandle<mirror::DexCache> dex_cache = hs.NewHandle(java_lang_Throwable->GetDexCache());
-  DCHECK(dex_cache != nullptr);
-  do {
-    unresolved_exception_types.clear();
-    {
-      // Thread suspension is not allowed while ResolveCatchBlockExceptionsClassVisitor
-      // is using a std::vector<ObjPtr<mirror::Class>>.
-      ScopedAssertNoThreadSuspension ants(__FUNCTION__);
-      ResolveCatchBlockExceptionsClassVisitor visitor;
-      class_linker->VisitClasses(&visitor);
-      visitor.FindExceptionTypesToResolve(&unresolved_exception_types);
-    }
-    for (auto it = unresolved_exception_types.begin(); it != unresolved_exception_types.end(); ) {
-      dex::TypeIndex exception_type_idx = it->TypeIndex();
-      const DexFile* dex_file = it->dex_file;
-      if (dex_cache->GetDexFile() != dex_file) {
-        dex_cache.Assign(class_linker->RegisterDexFile(*dex_file, /*class_loader=*/ nullptr));
-        DCHECK(dex_cache != nullptr);
-      }
-      ObjPtr<mirror::Class> klass = class_linker->ResolveType(
-          exception_type_idx, dex_cache, ScopedNullHandle<mirror::ClassLoader>());
-      if (klass == nullptr) {
-        const dex::TypeId& type_id = dex_file->GetTypeId(exception_type_idx);
-        const char* descriptor = dex_file->GetTypeDescriptor(type_id);
-        VLOG(compiler) << "Failed to resolve exception class " << descriptor;
-        self->ClearException();
-        it = unresolved_exception_types.erase(it);
-      } else {
-        DCHECK(java_lang_Throwable->IsAssignableFrom(klass));
-        ++it;
-      }
-    }
-    // Resolving exceptions may load classes that reference more exceptions, iterate until no
-    // more are found
-  } while (!unresolved_exception_types.empty());
+  ResolveCatchBlockExceptionsClassVisitor resolve_exception_classes_visitor(self);
+  resolve_exception_classes_visitor.FindAndResolveExceptionTypes(self, class_linker);
 
   // We walk the roots looking for classes so that we'll pick up the
-  // above classes plus any classes them depend on such super
+  // above classes plus any classes they depend on such super
   // classes, interfaces, and the required ClassLinker roots.
   RecordImageClassesVisitor visitor(image_classes);
   class_linker->VisitClasses(&visitor);

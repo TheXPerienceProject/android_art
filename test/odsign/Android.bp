@@ -14,6 +14,7 @@
 
 package {
     default_applicable_licenses: ["art_license"],
+    default_team: "trendy_team_art_mainline",
 }
 
 java_defaults {

@@ -366,4 +366,77 @@ std::string GetProcessStatus(const char* key) {
   return "<unknown>";
 }
 
+size_t GetOsThreadStat(pid_t tid, char* buf, size_t len) {
+#if defined(__linux__)
+  static constexpr int NAME_BUF_SIZE = 50;
+  char file_name_buf[NAME_BUF_SIZE];
+  snprintf(file_name_buf, NAME_BUF_SIZE, "/proc/%d/stat", tid);
+  int stat_fd = open(file_name_buf, O_RDONLY | O_CLOEXEC);
+  if (stat_fd >= 0) {
+    ssize_t bytes_read = TEMP_FAILURE_RETRY(read(stat_fd, buf, len));
+    CHECK_GT(bytes_read, 0) << strerror(errno);
+    int ret = close(stat_fd);
+    CHECK_EQ(ret, 0) << strerror(errno);
+    buf[len - 1] = '\0';
+    return bytes_read;
+  }
+#else
+  UNUSED(tid);
+  UNUSED(buf);
+  UNUSED(len);
+#endif
+  return 0;
+}
+
+std::string GetOsThreadStatQuick(pid_t tid) {
+  static constexpr int BUF_SIZE = 90;
+  char buf[BUF_SIZE];
+#if defined(__linux__)
+  if (GetOsThreadStat(tid, buf, BUF_SIZE) == 0) {
+    snprintf(buf, BUF_SIZE, "Unknown state: %d", tid);
+  }
+#else
+  UNUSED(tid);
+  strcpy(buf, "Unknown state");  // snprintf may not be usable.
+#endif
+  return buf;
+}
+
+std::string GetOtherThreadOsStats() {
+#if defined(__linux__)
+  DIR* dir = opendir("/proc/self/task");
+  if (dir == nullptr) {
+    return std::string("Failed to open /proc/self/task: ") + strerror(errno);
+  }
+  pid_t me = GetTid();
+  struct dirent* de;
+  std::string result;
+  bool found_me = false;
+  errno = 0;
+  while ((de = readdir(dir)) != nullptr) {
+    if (de->d_name[0] == '.') {
+      continue;
+    }
+    pid_t tid = atoi(de->d_name);
+    if (tid == me) {
+      found_me = true;
+    } else {
+      if (!result.empty()) {
+        result += "; ";
+      }
+      result += tid == 0 ? std::string("bad tid: ") + de->d_name : GetOsThreadStatQuick(tid);
+    }
+  }
+  if (errno == EBADF) {
+    result += "(Bad directory)";
+  }
+  if (!found_me) {
+    result += "(Failed to find requestor)";
+  }
+  return result;
+#else
+  return "Can't get other threads";
+#endif
+}
+
 }  // namespace art

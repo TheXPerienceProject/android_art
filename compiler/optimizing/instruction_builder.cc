@@ -1513,12 +1513,12 @@ void HInstructionBuilder::BuildConstructorFenceForAllocation(HInstruction* alloc
       MethodCompilationStat::kConstructorFenceGeneratedNew);
 }
 
-static bool IsInBootImage(ObjPtr<mirror::Class> cls, const CompilerOptions& compiler_options)
+static bool IsInImage(ObjPtr<mirror::Class> cls, const CompilerOptions& compiler_options)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   if (Runtime::Current()->GetHeap()->ObjectIsInBootImageSpace(cls)) {
     return true;
   }
-  if (compiler_options.IsBootImage() || compiler_options.IsBootImageExtension()) {
+  if (compiler_options.IsGeneratingImage()) {
     std::string temp;
     const char* descriptor = cls->GetDescriptor(&temp);
     return compiler_options.IsImageClass(descriptor);
@@ -1634,8 +1634,8 @@ static bool HasTrivialInitialization(ObjPtr<mirror::Class> cls,
 
   // Check the superclass chain.
   for (ObjPtr<mirror::Class> klass = cls; klass != nullptr; klass = klass->GetSuperClass()) {
-    if (klass->IsInitialized() && IsInBootImage(klass, compiler_options)) {
-      break;  // `klass` and its superclasses are already initialized in the boot image.
+    if (klass->IsInitialized() && IsInImage(klass, compiler_options)) {
+      break;  // `klass` and its superclasses are already initialized in the boot or app image.
     }
     if (!HasTrivialClinit(klass, pointer_size)) {
       return false;
@@ -1650,8 +1650,8 @@ static bool HasTrivialInitialization(ObjPtr<mirror::Class> cls,
     if (!iface->HasDefaultMethods()) {
       continue;  // Initializing `cls` does not initialize this interface.
     }
-    if (iface->IsInitialized() && IsInBootImage(iface, compiler_options)) {
-      continue;  // This interface is already initialized in the boot image.
+    if (iface->IsInitialized() && IsInImage(iface, compiler_options)) {
+      continue;  // This interface is already initialized in the boot or app image.
     }
     if (!HasTrivialClinit(iface, pointer_size)) {
       return false;
@@ -1669,9 +1669,8 @@ bool HInstructionBuilder::IsInitialized(ObjPtr<mirror::Class> cls) const {
   if (cls->IsInitialized()) {
     const CompilerOptions& compiler_options = code_generator_->GetCompilerOptions();
     if (compiler_options.IsAotCompiler()) {
-      // Assume loaded only if klass is in the boot image. App classes cannot be assumed
-      // loaded because we don't even know what class loader will be used to load them.
-      if (IsInBootImage(cls, compiler_options)) {
+      // Assume loaded only if klass is in the boot or app image.
+      if (IsInImage(cls, compiler_options)) {
         return true;
       }
     } else {
