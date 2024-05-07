@@ -373,6 +373,11 @@ bool OatFileBase::ComputeFields(const std::string& file_path, std::string* error
     }
     // Readjust to be non-inclusive upper bound.
     data_img_rel_ro_end_ += sizeof(uint32_t);
+    data_img_rel_ro_app_image_ =
+        FindDynamicSymbolAddress("oatdataimgrelroappimage", &symbol_error_msg);
+    if (data_img_rel_ro_app_image_ == nullptr) {
+      data_img_rel_ro_app_image_ = data_img_rel_ro_end_;
+    }
   }
 
   bss_begin_ = const_cast<uint8_t*>(FindDynamicSymbolAddress("oatbss", &symbol_error_msg));
@@ -648,10 +653,15 @@ bool OatFileBase::Setup(int zip_fd,
 
   if (!IsAligned<sizeof(uint32_t)>(data_img_rel_ro_begin_) ||
       !IsAligned<sizeof(uint32_t)>(data_img_rel_ro_end_) ||
-      data_img_rel_ro_begin_ > data_img_rel_ro_end_) {
-    *error_msg = ErrorPrintf("unaligned or unordered databimgrelro symbol(s): begin = %p, end = %p",
-                             data_img_rel_ro_begin_,
-                             data_img_rel_ro_end_);
+      !IsAligned<sizeof(uint32_t)>(data_img_rel_ro_app_image_) ||
+      data_img_rel_ro_begin_ > data_img_rel_ro_end_ ||
+      data_img_rel_ro_begin_ > data_img_rel_ro_app_image_ ||
+      data_img_rel_ro_app_image_ > data_img_rel_ro_end_) {
+    *error_msg = ErrorPrintf(
+        "unaligned or unordered databimgrelro symbol(s): begin = %p, end = %p, app_image = %p",
+        data_img_rel_ro_begin_,
+        data_img_rel_ro_end_,
+        data_img_rel_ro_app_image_);
     return false;
   }
 
@@ -2015,6 +2025,7 @@ OatFile::OatFile(const std::string& location, bool is_executable)
       end_(nullptr),
       data_img_rel_ro_begin_(nullptr),
       data_img_rel_ro_end_(nullptr),
+      data_img_rel_ro_app_image_(nullptr),
       bss_begin_(nullptr),
       bss_end_(nullptr),
       bss_methods_(nullptr),
@@ -2022,6 +2033,7 @@ OatFile::OatFile(const std::string& location, bool is_executable)
       is_executable_(is_executable),
       vdex_begin_(nullptr),
       vdex_end_(nullptr),
+      app_image_begin_(nullptr),
       secondary_lookup_lock_("OatFile secondary lookup lock", kOatFileSecondaryLookupLock) {
   CHECK(!location_.empty());
 }
@@ -2054,9 +2066,25 @@ const uint8_t* OatFile::DexEnd() const {
 
 ArrayRef<const uint32_t> OatFile::GetBootImageRelocations() const {
   if (data_img_rel_ro_begin_ != nullptr) {
-    const uint32_t* relocations = reinterpret_cast<const uint32_t*>(data_img_rel_ro_begin_);
-    const uint32_t* relocations_end = reinterpret_cast<const uint32_t*>(data_img_rel_ro_end_);
-    return ArrayRef<const uint32_t>(relocations, relocations_end - relocations);
+    const uint32_t* boot_image_relocations =
+        reinterpret_cast<const uint32_t*>(data_img_rel_ro_begin_);
+    const uint32_t* boot_image_relocations_end =
+        reinterpret_cast<const uint32_t*>(data_img_rel_ro_app_image_);
+    return ArrayRef<const uint32_t>(
+        boot_image_relocations, boot_image_relocations_end - boot_image_relocations);
+  } else {
+    return ArrayRef<const uint32_t>();
+  }
+}
+
+ArrayRef<const uint32_t> OatFile::GetAppImageRelocations() const {
+  if (data_img_rel_ro_begin_ != nullptr) {
+    const uint32_t* app_image_relocations =
+        reinterpret_cast<const uint32_t*>(data_img_rel_ro_app_image_);
+    const uint32_t* app_image_relocations_end =
+        reinterpret_cast<const uint32_t*>(data_img_rel_ro_end_);
+    return ArrayRef<const uint32_t>(
+        app_image_relocations, app_image_relocations_end - app_image_relocations);
   } else {
     return ArrayRef<const uint32_t>();
   }
@@ -2476,7 +2504,7 @@ void OatFile::InitializeRelocations() const {
   DCHECK(IsExecutable());
 
   // Initialize the .data.img.rel.ro section.
-  if (!GetBootImageRelocations().empty()) {
+  if (DataImgRelRoEnd() != DataImgRelRoBegin()) {
     uint8_t* reloc_begin = const_cast<uint8_t*>(DataImgRelRoBegin());
     CheckedCall(mprotect,
                 "un-protect boot image relocations",
@@ -2486,6 +2514,13 @@ void OatFile::InitializeRelocations() const {
     uint32_t boot_image_begin = Runtime::Current()->GetHeap()->GetBootImagesStartAddress();
     for (const uint32_t& relocation : GetBootImageRelocations()) {
       const_cast<uint32_t&>(relocation) += boot_image_begin;
+    }
+    if (!GetAppImageRelocations().empty()) {
+      CHECK(app_image_begin_ != nullptr);
+      uint32_t app_image_begin = reinterpret_cast32<uint32_t>(app_image_begin_);
+      for (const uint32_t& relocation : GetAppImageRelocations()) {
+        const_cast<uint32_t&>(relocation) += app_image_begin;
+      }
     }
     CheckedCall(mprotect,
                 "protect boot image relocations",

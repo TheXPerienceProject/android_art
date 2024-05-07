@@ -61,6 +61,7 @@ class ElfWriter {
   virtual void PrepareDynamicSection(size_t rodata_size,
                                      size_t text_size,
                                      size_t data_img_rel_ro_size,
+                                     size_t data_img_rel_ro_app_image_offset,
                                      size_t bss_size,
                                      size_t bss_methods_offset,
                                      size_t bss_roots_offset,

@@ -183,6 +183,7 @@ class OatSymbolizer final {
                                     rodata_size,
                                     text_size,
                                     oat_file_->DataImgRelRoSize(),
+                                    oat_file_->DataImgRelRoAppImageOffset(),
                                     oat_file_->BssSize(),
                                     oat_file_->BssMethodsOffset(),
                                     oat_file_->BssRootsOffset(),
