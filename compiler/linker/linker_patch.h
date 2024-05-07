@@ -54,6 +54,7 @@ class LinkerPatch {
     kJniEntrypointRelative,
     kCallRelative,
     kTypeRelative,
+    kTypeAppImageRelRo,
     kTypeBssEntry,
     kPublicTypeBssEntry,
     kPackageTypeBssEntry,
@@ -125,6 +126,16 @@ class LinkerPatch {
                                        uint32_t pc_insn_offset,
                                        uint32_t target_type_idx) {
     LinkerPatch patch(literal_offset, Type::kTypeRelative, target_dex_file);
+    patch.type_idx_ = target_type_idx;
+    patch.pc_insn_offset_ = pc_insn_offset;
+    return patch;
+  }
+
+  static LinkerPatch TypeAppImageRelRoPatch(size_t literal_offset,
+                                            const DexFile* target_dex_file,
+                                            uint32_t pc_insn_offset,
+                                            uint32_t target_type_idx) {
+    LinkerPatch patch(literal_offset, Type::kTypeAppImageRelRo, target_dex_file);
     patch.type_idx_ = target_type_idx;
     patch.pc_insn_offset_ = pc_insn_offset;
     return patch;
@@ -241,6 +252,7 @@ class LinkerPatch {
 
   TypeReference TargetType() const {
     DCHECK(patch_type_ == Type::kTypeRelative ||
+           patch_type_ == Type::kTypeAppImageRelRo ||
            patch_type_ == Type::kTypeBssEntry ||
            patch_type_ == Type::kPublicTypeBssEntry ||
            patch_type_ == Type::kPackageTypeBssEntry);
@@ -265,6 +277,7 @@ class LinkerPatch {
            patch_type_ == Type::kMethodBssEntry ||
            patch_type_ == Type::kJniEntrypointRelative ||
            patch_type_ == Type::kTypeRelative ||
+           patch_type_ == Type::kTypeAppImageRelRo ||
            patch_type_ == Type::kTypeBssEntry ||
            patch_type_ == Type::kPublicTypeBssEntry ||
            patch_type_ == Type::kPackageTypeBssEntry ||

@@ -641,6 +641,7 @@ class ElfBuilder final {
                              Elf_Word rodata_size,
                              Elf_Word text_size,
                              Elf_Word data_img_rel_ro_size,
+                             Elf_Word data_img_rel_ro_app_image_offset,
                              Elf_Word bss_size,
                              Elf_Word bss_methods_offset,
                              Elf_Word bss_roots_offset,
@@ -682,6 +683,7 @@ class ElfBuilder final {
       Elf_Word oatlastword_address = rodata_.GetAddress() + rodata_size - 4;
       dynsym_.Add(oatlastword, &rodata_, oatlastword_address, 4, STB_GLOBAL, STT_OBJECT);
     }
+    DCHECK_LE(data_img_rel_ro_app_image_offset, data_img_rel_ro_size);
     if (data_img_rel_ro_size != 0u) {
       Elf_Word oatdataimgrelro = dynstr_.Add("oatdataimgrelro");
       dynsym_.Add(oatdataimgrelro,
@@ -691,14 +693,21 @@ class ElfBuilder final {
                   STB_GLOBAL,
                   STT_OBJECT);
       Elf_Word oatdataimgrelrolastword = dynstr_.Add("oatdataimgrelrolastword");
-      Elf_Word oatdataimgrelrolastword_address =
-          data_img_rel_ro_.GetAddress() + data_img_rel_ro_size - 4;
       dynsym_.Add(oatdataimgrelrolastword,
                   &data_img_rel_ro_,
-                  oatdataimgrelrolastword_address,
+                  data_img_rel_ro_.GetAddress() + data_img_rel_ro_size - 4,
                   4,
                   STB_GLOBAL,
                   STT_OBJECT);
+      if (data_img_rel_ro_app_image_offset != data_img_rel_ro_size) {
+        Elf_Word oatdataimgrelroappimage = dynstr_.Add("oatdataimgrelroappimage");
+        dynsym_.Add(oatdataimgrelroappimage,
+                    &data_img_rel_ro_,
+                    data_img_rel_ro_.GetAddress() + data_img_rel_ro_app_image_offset,
+                    data_img_rel_ro_app_image_offset,
+                    STB_GLOBAL,
+                    STT_OBJECT);
+      }
     }
     DCHECK_LE(bss_roots_offset, bss_size);
     if (bss_size != 0u) {
