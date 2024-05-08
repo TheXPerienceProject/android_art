@@ -82,7 +82,7 @@ const NoDestructor<std::string> kBindMountTmpDir(
 constexpr mode_t kChrootDefaultMode = 0755;
 constexpr std::chrono::milliseconds kSnapshotCtlTimeout = std::chrono::seconds(60);
 
-bool IsOtaUpdate(const std::optional<std::string> ota_slot) { return ota_slot.has_value(); }
+bool IsOtaUpdate(const std::optional<std::string>& ota_slot) { return ota_slot.has_value(); }
 
 Result<void> Run(std::string_view log_name, const std::vector<std::string>& args) {
   LOG(INFO) << "Running " << log_name << ": " << Join(args, /*separator=*/" ");

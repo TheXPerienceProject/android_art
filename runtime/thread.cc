@@ -4846,7 +4846,7 @@ int Thread::GetNativePriority() const {
   return priority;
 }
 
-void Thread::AbortInThis(std::string message) {
+void Thread::AbortInThis(const std::string& message) {
   std::string thread_name;
   Thread::Current()->GetThreadName(thread_name);
   LOG(ERROR) << message;
