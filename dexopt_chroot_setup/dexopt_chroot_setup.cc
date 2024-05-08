@@ -66,7 +66,6 @@ using ::android::base::ReadFileToString;
 using ::android::base::Result;
 using ::android::base::SetProperty;
 using ::android::base::Split;
-using ::android::base::StringReplace;
 using ::android::base::Tokenize;
 using ::android::base::WaitForProperty;
 using ::android::fs_mgr::FstabEntry;
