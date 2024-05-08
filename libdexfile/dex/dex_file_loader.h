@@ -94,7 +94,7 @@ class DexFileLoader {
     std::optional<uint32_t> checksum;
     for (; *i < dex_files.size(); ++(*i)) {
       const auto* dex_file = &*dex_files[*i];
-      bool is_primary_dex = !IsMultiDexLocation(dex_file->GetLocation().c_str());
+      bool is_primary_dex = !IsMultiDexLocation(dex_file->GetLocation());
       if (!checksum.has_value()) {                         // First dex file.
         CHECK(is_primary_dex) << dex_file->GetLocation();  // Expect primary dex.
       } else if (is_primary_dex) {                         // Later dex file.
