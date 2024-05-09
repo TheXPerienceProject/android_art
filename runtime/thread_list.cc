@@ -17,6 +17,9 @@
 #include "thread_list.h"
 
 #include <dirent.h>
+#include <nativehelper/scoped_local_ref.h>
+#include <nativehelper/scoped_utf_chars.h>
+#include <sys/resource.h>  // For getpriority()
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -26,10 +29,6 @@
 #include <vector>
 
 #include "android-base/stringprintf.h"
-#include "nativehelper/scoped_local_ref.h"
-#include "nativehelper/scoped_utf_chars.h"
-#include "unwindstack/AndroidUnwinder.h"
-
 #include "art_field-inl.h"
 #include "base/aborting.h"
 #include "base/histogram-inl.h"
@@ -52,6 +51,7 @@
 #include "scoped_thread_state_change-inl.h"
 #include "thread.h"
 #include "trace.h"
+#include "unwindstack/AndroidUnwinder.h"
 #include "well_known_classes.h"
 
 #if ART_USE_FUTEXES
@@ -714,6 +714,16 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
 #endif
   uint64_t timeout_ns =
       attempt_of_4 == 0 ? thread_suspend_timeout_ns_ : thread_suspend_timeout_ns_ / 4;
+  if (attempt_of_4 != 1 && getpriority(PRIO_PROCESS, 0 /* this thread */) > 0) {
+    // We're a low priority thread, and thus have a longer ANR timeout. Double the suspend
+    // timeout. To avoid the getpriority system call in the common case, we fail to double the
+    // first of 4 waits, but then triple the third one to compensate.
+    if (attempt_of_4 == 3) {
+      timeout_ns *= 3;
+    } else {
+      timeout_ns *= 2;
+    }
+  }
   bool collect_state = (t != 0 && (attempt_of_4 == 0 || attempt_of_4 == 4));
   int32_t cur_val = barrier->load(std::memory_order_acquire);
   if (cur_val <= 0) {

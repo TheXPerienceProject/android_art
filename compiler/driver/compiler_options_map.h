@@ -42,7 +42,7 @@ struct CompilerOptionsMap : VariantMap<Base, KeyType> {
 #include "compiler_options_map.def"
 };
 
-#undef DECLARE_KEY
+#undef COMPILER_OPTIONS_KEY
 
 }  // namespace art
 
