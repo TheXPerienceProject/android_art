@@ -1691,6 +1691,68 @@ ObjPtr<Class> Class::CopyOf(Handle<Class> h_this,
   return new_class->AsClass();
 }
 
+bool Class::DescriptorEquals(ObjPtr<mirror::Class> match) {
+  DCHECK(match != nullptr);
+  ObjPtr<mirror::Class> klass = this;
+  while (klass->IsArrayClass()) {
+    // No read barrier needed, we're reading a chain of constant references for comparison
+    // with null. Then we follow up below with reading constant references to read constant
+    // primitive data in both proxy and non-proxy paths. See ReadBarrierOption.
+    klass = klass->GetComponentType<kDefaultVerifyFlags, kWithoutReadBarrier>();
+    DCHECK(klass != nullptr);
+    match = match->GetComponentType<kDefaultVerifyFlags, kWithoutReadBarrier>();
+    if (match == nullptr){
+      return false;
+    }
+  }
+  if (match->IsArrayClass()) {
+    return false;
+  }
+
+  if (UNLIKELY(klass->IsPrimitive()) || UNLIKELY(match->IsPrimitive())) {
+    return klass->GetPrimitiveType() == match->GetPrimitiveType();
+  }
+
+  if (UNLIKELY(klass->IsProxyClass())) {
+    return klass->ProxyDescriptorEquals(match);
+  }
+  if (UNLIKELY(match->IsProxyClass())) {
+    return match->ProxyDescriptorEquals(klass);
+  }
+
+  const DexFile& klass_dex_file = klass->GetDexFile();
+  const DexFile& match_dex_file = match->GetDexFile();
+  dex::TypeIndex klass_type_index = klass->GetDexTypeIndex();
+  dex::TypeIndex match_type_index = match->GetDexTypeIndex();
+  if (&klass_dex_file == &match_dex_file) {
+    return klass_type_index == match_type_index;
+  }
+  std::string_view klass_descriptor = klass_dex_file.GetTypeDescriptorView(klass_type_index);
+  std::string_view match_descriptor = match_dex_file.GetTypeDescriptorView(match_type_index);
+  return klass_descriptor == match_descriptor;
+}
+
+bool Class::ProxyDescriptorEquals(ObjPtr<mirror::Class> match) {
+  DCHECK(IsProxyClass());
+  ObjPtr<mirror::String> name = GetName<kVerifyNone, kWithoutReadBarrier>();
+  DCHECK(name != nullptr);
+
+  DCHECK(match != nullptr);
+  DCHECK(!match->IsArrayClass());
+  DCHECK(!match->IsPrimitive());
+  if (match->IsProxyClass()) {
+    ObjPtr<mirror::String> match_name = match->GetName<kVerifyNone, kWithoutReadBarrier>();
+    DCHECK(name != nullptr);
+    return name->Equals(match_name);
+  }
+
+  // Note: Proxy descriptor should never match a non-proxy descriptor but ART does not enforce that.
+  std::string descriptor = DotToDescriptor(name->ToModifiedUtf8().c_str());
+  std::string_view match_descriptor =
+      match->GetDexFile().GetTypeDescriptorView(match->GetDexTypeIndex());
+  return descriptor == match_descriptor;
+}
+
 bool Class::ProxyDescriptorEquals(const char* match) {
   DCHECK(IsProxyClass());
   std::string storage;
