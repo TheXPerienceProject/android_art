@@ -6403,7 +6403,7 @@ bool ClassLinker::LinkClass(Thread* self,
       const ObjPtr<mirror::ClassLoader> class_loader = h_new_class.Get()->GetClassLoader();
       ClassTable* const table = InsertClassTableForClassLoader(class_loader);
       const ObjPtr<mirror::Class> existing =
-          table->UpdateClass(descriptor, h_new_class.Get(), ComputeModifiedUtf8Hash(descriptor));
+          table->UpdateClass(h_new_class.Get(), ComputeModifiedUtf8Hash(descriptor));
       CHECK_EQ(existing, klass.Get());
       WriteBarrierOnClassLoaderLocked(class_loader, h_new_class.Get());
     }
