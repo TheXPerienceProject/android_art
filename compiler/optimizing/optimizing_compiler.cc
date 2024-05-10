@@ -1183,14 +1183,14 @@ CompiledMethod* OptimizingCompiler::JniCompile(uint32_t access_flags,
   const CompilerOptions& compiler_options = GetCompilerOptions();
   if (compiler_options.IsBootImage()) {
     ScopedObjectAccess soa(Thread::Current());
-    VariableSizedHandleScope handles(soa.Self());
-    ScopedNullHandle<mirror::ClassLoader> class_loader;  // null means boot class path loader.
-    ArtMethod* method =
-        runtime->GetClassLinker()->LookupResolvedMethod(method_idx, dex_cache, class_loader);
+    ArtMethod* method = runtime->GetClassLinker()->LookupResolvedMethod(
+        method_idx, dex_cache.Get(), /*class_loader=*/ nullptr);
     // Try to compile a fully intrinsified implementation. Do not try to do this for
     // signature polymorphic methods as the InstructionBuilder cannot handle them;
     // and it would be useless as they always have a slow path for type conversions.
     if (method != nullptr && UNLIKELY(method->IsIntrinsic()) && !method->IsSignaturePolymorphic()) {
+      VariableSizedHandleScope handles(soa.Self());
+      ScopedNullHandle<mirror::ClassLoader> class_loader;  // null means boot class path loader.
       Handle<mirror::Class> compiling_class = handles.NewHandle(method->GetDeclaringClass());
       DexCompilationUnit dex_compilation_unit(
           class_loader,
