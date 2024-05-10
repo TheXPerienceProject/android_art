@@ -255,6 +255,11 @@ static jint Executable_compareMethodParametersInternal(JNIEnv* env,
   this_method = this_method->GetInterfaceMethodIfProxy(kRuntimePointerSize);
   other_method = other_method->GetInterfaceMethodIfProxy(kRuntimePointerSize);
 
+  // Get dex files early. (`ArtMethod::GetParameterTypeList()` includes `GetDexFile()`,
+  // so the compiler should deduplicate these subexpressions after inlining.)
+  const DexFile* this_dex_file = this_method->GetDexFile();
+  const DexFile* other_dex_file = other_method->GetDexFile();
+
   const dex::TypeList* this_list = this_method->GetParameterTypeList();
   const dex::TypeList* other_list = other_method->GetParameterTypeList();
 
@@ -278,15 +283,9 @@ static jint Executable_compareMethodParametersInternal(JNIEnv* env,
   }
 
   for (int32_t i = 0; i < this_size; ++i) {
-    const std::string_view lhs_data = this_method->GetDexFile()->GetTypeDescriptorView(
-        this_list->GetTypeItem(i).type_idx_);
-    const std::string_view rhs_data = other_method->GetDexFile()->GetTypeDescriptorView(
-        other_list->GetTypeItem(i).type_idx_);
-
-    // Note: `std::string_view::compare()` uses lexicographical comparison and treats the `char`
-    // as unsigned; for Modified-UTF-8 without embedded nulls this is consistent with the
-    // `CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues()` ordering.
-    int cmp = lhs_data.compare(rhs_data);
+    int cmp = DexFile::CompareDescriptors(
+        this_dex_file->GetTypeDescriptorView(this_list->GetTypeItem(i).type_idx_),
+        other_dex_file->GetTypeDescriptorView(other_list->GetTypeItem(i).type_idx_));
     if (cmp != 0) {
       return (cmp < 0) ? -1 : 1;
     }
