@@ -193,14 +193,8 @@ class TraceWriter {
   // thread.
   void RecordThreadInfo(Thread* thread) REQUIRES(!tracing_lock_);
 
-  // Records information about all methods in the newly loaded class in the buffer. If the buffer
-  // doesn't have enough space to record the entry, then it adds a task to flush the buffer
-  // contents and uses a new buffer to record the information.
-  // buffer is the pointer to buffer that is used to record method info and the offset is the
-  // offset in the buffer to start recording method info. If *buffer is nullptr then a new one is
-  // allocated and buffer is updated to point to the newly allocated one.
-  void RecordMethodInfoV2(mirror::Class* klass, uint8_t** buffer, size_t* offset)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  // Records information about all methods in the newly loaded class.
+  void RecordMethodInfo(mirror::Class* klass) REQUIRES_SHARED(Locks::mutator_lock_);
 
   bool HasOverflow() { return overflow_; }
   TraceOutputMode GetOutputMode() { return trace_output_mode_; }
@@ -223,15 +217,6 @@ class TraceWriter {
   int GetMethodTraceIndex(uintptr_t* current_buffer);
 
   int GetTraceFormatVersion() { return trace_format_version_; }
-
-  // Adds a task to write method info to the file. The buffer is already in the
-  // right format and it just adds a new task which takes the ownership of the
-  // buffer and returns a new buffer that can be used. If release is set to true
-  // then it doesn't fetch a new buffer.
-  uint8_t* AddMethodInfoWriteTask(uint8_t* buffer, size_t offset, size_t tid, bool release);
-
-  // Writes buffer contents to the file.
-  void WriteToFile(uint8_t* buffer, size_t offset);
 
  private:
   void ReadValuesFromRecord(uintptr_t* method_trace_entries,
@@ -269,8 +254,7 @@ class TraceWriter {
   // Helper function to record method information when processing the events. These are used by
   // streaming output mode. Non-streaming modes dump the methods and threads list at the end of
   // tracing.
-  void RecordMethodInfoV1(const std::string& method_line, uint64_t method_id)
-      REQUIRES(tracing_lock_);
+  void RecordMethodInfo(const std::string& method_line, uint64_t method_id) REQUIRES(tracing_lock_);
 
   // Encodes the trace event. This assumes that there is enough space reserved to encode the entry.
   void EncodeEventEntry(uint8_t* ptr,
