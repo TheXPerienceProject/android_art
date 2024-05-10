@@ -459,14 +459,13 @@ MarkCompact::MarkCompact(Heap* heap)
   // minor-fault. Eventually, a cleanup of linear-alloc update logic to only
   // use private anonymous would be ideal.
   CHECK(!uffd_minor_fault_supported_);
-  uint8_t* moving_space_begin = bump_pointer_space_->Begin();
 
   // TODO: Depending on how the bump-pointer space move is implemented. If we
   // switch between two virtual memories each time, then we will have to
   // initialize live_words_bitmap_ accordingly.
   live_words_bitmap_.reset(LiveWordsBitmap<kAlignment>::Create(
-      reinterpret_cast<uintptr_t>(moving_space_begin),
-      reinterpret_cast<uintptr_t>(bump_pointer_space_->Limit())));
+          reinterpret_cast<uintptr_t>(bump_pointer_space_->Begin()),
+          reinterpret_cast<uintptr_t>(bump_pointer_space_->Limit())));
 
   std::string err_msg;
   size_t moving_space_size = bump_pointer_space_->Capacity();
@@ -488,7 +487,7 @@ MarkCompact::MarkCompact(Heap* heap)
   size_t moving_space_alignment = Heap::BestPageTableAlignment(moving_space_size);
   // The moving space is created at a fixed address, which is expected to be
   // PMD-size aligned.
-  if (!IsAlignedParam(moving_space_begin, moving_space_alignment)) {
+  if (!IsAlignedParam(bump_pointer_space_->Begin(), moving_space_alignment)) {
     LOG(WARNING) << "Bump pointer space is not aligned to " << PrettySize(moving_space_alignment)
                  << ". This can lead to longer stop-the-world pauses for compaction";
   }
@@ -545,11 +544,6 @@ MarkCompact::MarkCompact(Heap* heap)
 
   // In most of the cases, we don't expect more than one LinearAlloc space.
   linear_alloc_spaces_data_.reserve(1);
-
-  // Ensure that huge-pages are not used on the moving-space, which may happen
-  // if THP is 'always' enabled and breaks our assumption that a normal-page is
-  // mapped when any address is accessed.
-  CHECK_EQ(madvise(moving_space_begin, moving_space_size, MADV_NOHUGEPAGE), 0);
 
   // Initialize GC metrics.
   metrics::ArtMetrics* metrics = GetMetrics();
@@ -3225,9 +3219,9 @@ void MarkCompact::KernelPreparation() {
   uint8_t* moving_space_begin = bump_pointer_space_->Begin();
   size_t moving_space_size = bump_pointer_space_->Capacity();
   int mode = kCopyMode;
-  size_t moving_space_register_sz = (moving_first_objs_count_ + black_page_count_) * gPageSize;
-  DCHECK_LE(moving_space_register_sz, moving_space_size);
+  size_t moving_space_register_sz;
   if (minor_fault_initialized_) {
+    moving_space_register_sz = (moving_first_objs_count_ + black_page_count_) * gPageSize;
     if (shadow_to_space_map_.IsValid()) {
       size_t shadow_size = shadow_to_space_map_.Size();
       void* addr = shadow_to_space_map_.Begin();
@@ -3255,6 +3249,8 @@ void MarkCompact::KernelPreparation() {
             << "mprotect failed: " << strerror(errno);
       }
     }
+  } else {
+    moving_space_register_sz = moving_space_size;
   }
 
   bool map_shared =
@@ -3274,25 +3270,8 @@ void MarkCompact::KernelPreparation() {
                             shadow_addr);
 
   if (IsValidFd(uffd_)) {
-    if (moving_space_register_sz > 0) {
-      // mremap clears 'anon_vma' field of anonymous mappings. If we
-      // uffd-register only the used portion of the space, then the vma gets
-      // split (between used and unused portions) and as soon as pages are
-      // mapped to the vmas, they get different `anon_vma` assigned, which
-      // ensures that the two vmas cannot merge after we uffd-unregister the
-      // used portion. OTOH, registering the entire space avoids the split, but
-      // unnecessarily causes userfaults on allocations.
-      // By faulting-in a page we force the kernel to allocate 'anon_vma' *before*
-      // the vma-split in uffd-register. This ensures that when we unregister
-      // the used portion after compaction, the two split vmas merge. This is
-      // necessary for the mremap of the next GC cycle to not fail due to having
-      // more than one vma in the source range.
-      if (moving_space_register_sz < moving_space_size) {
-        *const_cast<volatile uint8_t*>(moving_space_begin + moving_space_register_sz) = 0;
-      }
-      // Register the moving space with userfaultfd.
-      RegisterUffd(moving_space_begin, moving_space_register_sz, mode);
-    }
+    // Register the moving space with userfaultfd.
+    RegisterUffd(moving_space_begin, moving_space_register_sz, mode);
     // Prepare linear-alloc for concurrent compaction.
     for (auto& data : linear_alloc_spaces_data_) {
       bool mmap_again = map_shared && !data.already_shared_;
@@ -4048,49 +4027,32 @@ void MarkCompact::CompactionPhase() {
     RecordFree(ObjectBytePair(freed_objects_, freed_bytes));
   }
 
+  size_t moving_space_size = bump_pointer_space_->Capacity();
+  size_t used_size = (moving_first_objs_count_ + black_page_count_) * gPageSize;
   if (CanCompactMovingSpaceWithMinorFault()) {
     CompactMovingSpace<kMinorFaultMode>(/*page=*/nullptr);
   } else {
+    if (used_size < moving_space_size) {
+      // mremap clears 'anon_vma' field of anonymous mappings. If we
+      // uffd-register only the used portion of the space, then the vma gets
+      // split (between used and unused portions) and as soon as pages are
+      // mapped to the vmas, they get different `anon_vma` assigned, which
+      // ensures that the two vmas cannot merged after we uffd-unregister the
+      // used portion. OTOH, registering the entire space avoids the split, but
+      // unnecessarily causes userfaults on allocations.
+      // By mapping a zero-page (below) we let the kernel assign an 'anon_vma'
+      // *before* the vma-split caused by uffd-unregister of the unused portion
+      // This ensures that when we unregister the used portion after compaction,
+      // the two split vmas merge. This is necessary for the mremap of the
+      // next GC cycle to not fail due to having more than one vmas in the source
+      // range.
+      uint8_t* unused_first_page = bump_pointer_space_->Begin() + used_size;
+      // It's ok if somebody else already mapped the page.
+      ZeropageIoctl(
+          unused_first_page, gPageSize, /*tolerate_eexist*/ true, /*tolerate_enoent*/ false);
+      UnregisterUffd(unused_first_page, moving_space_size - used_size);
+    }
     CompactMovingSpace<kCopyMode>(compaction_buffers_map_.Begin());
-  }
-
-  ProcessLinearAlloc();
-
-  if (use_uffd_sigbus_) {
-    // Set compaction-done bit so that no new mutator threads start compaction
-    // process in the SIGBUS handler.
-    SigbusCounterType count = sigbus_in_progress_count_.fetch_or(kSigbusCounterCompactionDoneMask,
-                                                                 std::memory_order_acq_rel);
-    // Wait for SIGBUS handlers already in play.
-    for (uint32_t i = 0; count > 0; i++) {
-      BackOff(i);
-      count = sigbus_in_progress_count_.load(std::memory_order_acquire);
-      count &= ~kSigbusCounterCompactionDoneMask;
-    }
-  } else {
-    DCHECK(IsAlignedParam(conc_compaction_termination_page_, gPageSize));
-    // We will only iterate once if gKernelHasFaultRetry is true.
-    do {
-      // madvise the page so that we can get userfaults on it.
-      ZeroAndReleaseMemory(conc_compaction_termination_page_, gPageSize);
-      // The following load triggers 'special' userfaults. When received by the
-      // thread-pool workers, they will exit out of the compaction task. This fault
-      // happens because we madvised the page.
-      ForceRead(conc_compaction_termination_page_);
-    } while (thread_pool_counter_ > 0);
-  }
-  // Unregister linear-alloc spaces
-  for (auto& data : linear_alloc_spaces_data_) {
-    DCHECK_EQ(data.end_ - data.begin_, static_cast<ssize_t>(data.shadow_.Size()));
-    UnregisterUffd(data.begin_, data.shadow_.Size());
-    // madvise linear-allocs's page-status array. Note that we don't need to
-    // madvise the shado-map as the pages from it were reclaimed in
-    // ProcessLinearAlloc() after arenas were mapped.
-    data.page_status_map_.MadviseDontNeedAndZero();
-    if (minor_fault_initialized_) {
-      DCHECK_EQ(mprotect(data.shadow_.Begin(), data.shadow_.Size(), PROT_NONE), 0)
-          << "mprotect failed: " << strerror(errno);
-    }
   }
 
   // Make sure no mutator is reading from the from-space before unregistering
@@ -4103,8 +4065,6 @@ void MarkCompact::CompactionPhase() {
   for (uint32_t i = 0; compaction_in_progress_count_.load(std::memory_order_acquire) > 0; i++) {
     BackOff(i);
   }
-  size_t moving_space_size = bump_pointer_space_->Capacity();
-  size_t used_size = (moving_first_objs_count_ + black_page_count_) * gPageSize;
   if (used_size > 0) {
     UnregisterUffd(bump_pointer_space_->Begin(), used_size);
   }
@@ -4144,6 +4104,48 @@ void MarkCompact::CompactionPhase() {
     // The other case is already mprotected above.
     DCHECK_EQ(mprotect(from_space_begin_, moving_space_size, PROT_NONE), 0)
         << "mprotect(PROT_NONE) for from-space failed: " << strerror(errno);
+  }
+
+  ProcessLinearAlloc();
+
+  if (use_uffd_sigbus_) {
+    // Set compaction-done bit so that no new mutator threads start compaction
+    // process in the SIGBUS handler.
+    SigbusCounterType count = sigbus_in_progress_count_.fetch_or(kSigbusCounterCompactionDoneMask,
+                                                                 std::memory_order_acq_rel);
+    // Wait for SIGBUS handlers already in play.
+    for (uint32_t i = 0; count > 0; i++) {
+      BackOff(i);
+      count = sigbus_in_progress_count_.load(std::memory_order_acquire);
+      count &= ~kSigbusCounterCompactionDoneMask;
+    }
+  } else {
+    DCHECK(IsAlignedParam(conc_compaction_termination_page_, gPageSize));
+    // We will only iterate once if gKernelHasFaultRetry is true.
+    do {
+      // madvise the page so that we can get userfaults on it.
+      ZeroAndReleaseMemory(conc_compaction_termination_page_, gPageSize);
+      // The following load triggers 'special' userfaults. When received by the
+      // thread-pool workers, they will exit out of the compaction task. This fault
+      // happens because we madvised the page.
+      ForceRead(conc_compaction_termination_page_);
+    } while (thread_pool_counter_ > 0);
+  }
+  // Unregister linear-alloc spaces
+  for (auto& data : linear_alloc_spaces_data_) {
+    DCHECK_EQ(data.end_ - data.begin_, static_cast<ssize_t>(data.shadow_.Size()));
+    UnregisterUffd(data.begin_, data.shadow_.Size());
+    // madvise linear-allocs's page-status array
+    data.page_status_map_.MadviseDontNeedAndZero();
+    // Madvise the entire linear-alloc space's shadow. In copy-mode it gets rid
+    // of the pages which are still mapped. In minor-fault mode this unmaps all
+    // pages, which is good in reducing the mremap (done in STW pause) time in
+    // next GC cycle.
+    data.shadow_.MadviseDontNeedAndZero();
+    if (minor_fault_initialized_) {
+      DCHECK_EQ(mprotect(data.shadow_.Begin(), data.shadow_.Size(), PROT_NONE), 0)
+          << "mprotect failed: " << strerror(errno);
+    }
   }
 
   if (!use_uffd_sigbus_) {
