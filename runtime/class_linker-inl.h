@@ -271,31 +271,16 @@ inline bool ClassLinker::CheckInvokeClassMismatch(ObjPtr<mirror::DexCache> dex_c
 }
 
 inline ArtMethod* ClassLinker::LookupResolvedMethod(uint32_t method_idx,
-                                                    Handle<mirror::DexCache> dex_cache,
-                                                    Handle<mirror::ClassLoader> class_loader) {
-  DCHECK(dex_cache->GetClassLoader() == class_loader.Get());
+                                                    ObjPtr<mirror::DexCache> dex_cache,
+                                                    ObjPtr<mirror::ClassLoader> class_loader) {
+  DCHECK(dex_cache->GetClassLoader() == class_loader);
   ArtMethod* resolved = dex_cache->GetResolvedMethod(method_idx);
   if (resolved == nullptr) {
     const DexFile& dex_file = *dex_cache->GetDexFile();
     const dex::MethodId& method_id = dex_file.GetMethodId(method_idx);
-    ObjPtr<mirror::Class> klass =
-        LookupResolvedType(method_id.class_idx_, dex_cache.Get(), class_loader.Get());
-
-    if (UNLIKELY(klass == nullptr)) {
-      // We normaly should not end up here. However the verifier currently doesn't guarantee
-      // the invariant of having the klass in the class table. b/73760543 b/336842546
-      klass = ResolveType(method_id.class_idx_, dex_cache, class_loader);
-      if (UNLIKELY(klass == nullptr)) {
-        // This can only happen if the current thread is not allowed to load
-        // classes.
-        DCHECK(!Thread::Current()->CanLoadClasses());
-        DCHECK(Thread::Current()->IsExceptionPending());
-        return nullptr;
-      }
-    }
-
+    ObjPtr<mirror::Class> klass = LookupResolvedType(method_id.class_idx_, dex_cache, class_loader);
     if (klass != nullptr) {
-      resolved = FindResolvedMethod(klass, dex_cache.Get(), class_loader.Get(), method_idx);
+      resolved = FindResolvedMethod(klass, dex_cache, class_loader, method_idx);
     }
   }
   return resolved;
