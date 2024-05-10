@@ -3011,6 +3011,22 @@ void Runtime::ThrowTransactionAbortError(Thread* self) {
   GetTransaction()->ThrowAbortError(self, nullptr);
 }
 
+void Runtime::AbortTransactionF(Thread* self, const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  AbortTransactionV(self, fmt, args);
+  va_end(args);
+}
+
+void Runtime::AbortTransactionV(Thread* self, const char* fmt, va_list args) {
+  CHECK(IsActiveTransaction());
+  // Constructs abort message.
+  std::string abort_msg;
+  android::base::StringAppendV(&abort_msg, fmt, args);
+  // Throws an exception so we can abort the transaction and rollback every change.
+  AbortTransactionAndThrowAbortError(self, abort_msg);
+}
+
 void Runtime::RecordWriteFieldBoolean(mirror::Object* obj,
                                       MemberOffset field_offset,
                                       uint8_t value,

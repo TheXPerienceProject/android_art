@@ -137,13 +137,13 @@ art_cc_test {
 // target.
 art_cc_test {
     name: "art_standalone_libartpalette_tests",
+    team: "trendy_team_art_performance",
     defaults: [
         "art_standalone_gtest_defaults",
         "art_libartpalette_tests_defaults",
     ],
     test_config_template: ":art-gtests-target-standalone-cts-template",
     test_suites: [
-        "cts",
         "mcts-art",
     ],
 }

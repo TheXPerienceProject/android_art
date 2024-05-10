@@ -211,6 +211,7 @@ class OatTest : public CommonCompilerDriverTest {
     elf_writer->PrepareDynamicSection(oat_writer.GetOatHeader().GetExecutableOffset(),
                                       oat_writer.GetCodeSize(),
                                       oat_writer.GetDataImgRelRoSize(),
+                                      oat_writer.GetDataImgRelRoAppImageOffset(),
                                       oat_writer.GetBssSize(),
                                       oat_writer.GetBssMethodsOffset(),
                                       oat_writer.GetBssRootsOffset(),

@@ -40,7 +40,6 @@ import android.os.SystemProperties;
 import android.os.UserManager;
 import android.os.storage.StorageManager;
 import android.text.TextUtils;
-import android.util.Log;
 import android.util.Pair;
 
 import androidx.annotation.RequiresApi;
@@ -69,7 +68,6 @@ import java.util.Objects;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
-    private static final String TAG = ArtManagerLocal.TAG;
     private static final List<String> ART_PACKAGE_NAMES =
             List.of("com.google.android.art", "com.android.art", "com.google.android.go.art");
 
@@ -102,7 +100,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
     @NonNull
     public final List<DexContainerFileDexoptResult> dexopt() throws RemoteException {
         if (SystemProperties.getBoolean("dalvik.vm.disable-art-service-dexopt", false /* def */)) {
-            Log.i(TAG, "Dexopt skipped because it's disabled by system property");
+            AsLog.i("Dexopt skipped because it's disabled by system property");
             return List.of();
         }
 
@@ -135,7 +133,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                     if (!dmInfo.config().getEnableEmbeddedProfile()) {
                         String dmPath = DexMetadataHelper.getDmPath(
                                 Objects.requireNonNull(dmInfo.dmPath()));
-                        Log.i(TAG, "Embedded profile disabled by config in the dm file " + dmPath);
+                        AsLog.i("Embedded profile disabled by config in the dm file " + dmPath);
                     }
 
                     if (needsToBeShared) {
@@ -228,7 +226,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                                 continue;
                             }
                         } catch (IOException e) {
-                            Log.e(TAG, "Failed to check storage. Assuming storage not low", e);
+                            AsLog.e("Failed to check storage. Assuming storage not low", e);
                         }
 
                         IArtdCancellationSignal artdCancellationSignal =
@@ -237,8 +235,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                             try {
                                 artdCancellationSignal.cancel();
                             } catch (RemoteException e) {
-                                Log.e(TAG, "An error occurred when sending a cancellation signal",
-                                        e);
+                                AsLog.e("An error occurred when sending a cancellation signal", e);
                             }
                         });
 
@@ -257,8 +254,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                         }
                     } catch (ServiceSpecificException e) {
                         // Log the error and continue.
-                        Log.e(TAG,
-                                String.format("Failed to dexopt [packageName = %s, dexPath = %s, "
+                        AsLog.e(String.format("Failed to dexopt [packageName = %s, dexPath = %s, "
                                                 + "isa = %s, classLoaderContext = %s]",
                                         mPkgState.getPackageName(), dexInfo.dexPath(), abi.isa(),
                                         dexInfo.classLoaderContext()),
@@ -272,9 +268,8 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                                 abi.isPrimaryAbi(), abi.name(), compilerFilter, status, wallTimeMs,
                                 cpuTimeMs, sizeBytes, sizeBeforeBytes, extendedStatusFlags,
                                 externalProfileErrors);
-                        Log.i(TAG,
-                                String.format("Dexopt result: [packageName = %s] %s",
-                                        mPkgState.getPackageName(), result));
+                        AsLog.i(String.format("Dexopt result: [packageName = %s] %s",
+                                mPkgState.getPackageName(), result));
                         results.add(result);
                         if (status != DexoptResult.DEXOPT_SKIPPED
                                 && status != DexoptResult.DEXOPT_PERFORMED) {
@@ -293,7 +288,9 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                             profile = null;
                         }
                     }
-                    if (profileMerged) {
+                    // We keep the current profiles in the Pre-reboot Dexopt case, to leave it to
+                    // background dexopt.
+                    if (profileMerged && !mInjector.isPreReboot()) {
                         // Note that this is just an optimization, to reduce the amount of data that
                         // the runtime writes on every profile save. The profile merge result on the
                         // next run won't change regardless of whether the cleanup is done or not
@@ -393,8 +390,8 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
     private InitProfileResult getOrInitReferenceProfile(
             @NonNull DexInfoType dexInfo, boolean enableEmbeddedProfile) throws RemoteException {
         return Utils.getOrInitReferenceProfile(mInjector.getArtd(), dexInfo.dexPath(),
-                buildRefProfilePath(dexInfo), getExternalProfiles(dexInfo), enableEmbeddedProfile,
-                buildOutputProfile(dexInfo, true /* isPublic */));
+                buildRefProfilePathAsInput(dexInfo), getExternalProfiles(dexInfo),
+                enableEmbeddedProfile, buildOutputProfile(dexInfo, true /* isPublic */));
     }
 
     @Nullable
@@ -472,7 +469,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
             dexoptTrigger |= DexoptTrigger.COMPILER_FILTER_IS_SAME;
         }
 
-        ArtifactsPath existingArtifactsPath = AidlUtils.buildArtifactsPath(
+        ArtifactsPath existingArtifactsPath = AidlUtils.buildArtifactsPathAsInput(
                 target.dexInfo().dexPath(), target.isa(), target.isInDalvikCache());
 
         if (options.needsToBePublic()
@@ -493,8 +490,9 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
             @NonNull PermissionSettings permissionSettings, @PriorityClass int priorityClass,
             @NonNull DexoptOptions dexoptOptions, IArtdCancellationSignal artdCancellationSignal)
             throws RemoteException {
-        OutputArtifacts outputArtifacts = AidlUtils.buildOutputArtifacts(target.dexInfo().dexPath(),
-                target.isa(), target.isInDalvikCache(), permissionSettings);
+        OutputArtifacts outputArtifacts =
+                AidlUtils.buildOutputArtifacts(target.dexInfo().dexPath(), target.isa(),
+                        target.isInDalvikCache(), permissionSettings, mInjector.isPreReboot());
 
         VdexPath inputVdex =
                 getInputVdex(getDexoptNeededResult, target.dexInfo().dexPath(), target.isa());
@@ -527,7 +525,9 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         // images are still usable, technically, they can still be used to improve runtime
         // performance; if they are no longer usable, they will be deleted by the file GC during the
         // daily background dexopt job anyway.
-        if (!result.cancelled) {
+        // We keep the runtime artifacts in the Pre-reboot Dexopt case because they are still needed
+        // before the reboot.
+        if (!result.cancelled && !mInjector.isPreReboot()) {
             mInjector.getArtd().deleteRuntimeArtifacts(AidlUtils.buildRuntimeArtifactsPath(
                     mPkgState.getPackageName(), target.dexInfo().dexPath(), target.isa()));
         }
@@ -543,11 +543,11 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         }
         switch (getDexoptNeededResult.artifactsLocation) {
             case ArtifactsLocation.DALVIK_CACHE:
-                return VdexPath.artifactsPath(
-                        AidlUtils.buildArtifactsPath(dexPath, isa, true /* isInDalvikCache */));
+                return VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
+                        dexPath, isa, true /* isInDalvikCache */));
             case ArtifactsLocation.NEXT_TO_DEX:
-                return VdexPath.artifactsPath(
-                        AidlUtils.buildArtifactsPath(dexPath, isa, false /* isInDalvikCache */));
+                return VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
+                        dexPath, isa, false /* isInDalvikCache */));
             case ArtifactsLocation.DM:
                 // The DM file is passed to dex2oat as a separate flag whenever it exists.
                 return null;
@@ -563,8 +563,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
             mInjector.getArtd().commitTmpProfile(profile);
             return true;
         } catch (ServiceSpecificException e) {
-            Log.e(TAG, "Failed to commit profile changes " + AidlUtils.toString(profile.finalPath),
-                    e);
+            AsLog.e("Failed to commit profile changes " + AidlUtils.toString(profile.finalPath), e);
             return false;
         }
     }
@@ -583,8 +582,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                 return ProfilePath.tmpProfilePath(output.profilePath);
             }
         } catch (ServiceSpecificException e) {
-            Log.e(TAG,
-                    "Failed to merge profiles " + AidlUtils.toString(output.profilePath.finalPath),
+            AsLog.e("Failed to merge profiles " + AidlUtils.toString(output.profilePath.finalPath),
                     e);
         }
 
@@ -635,7 +633,8 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
     @NonNull protected abstract List<Abi> getAllAbis(@NonNull DexInfoType dexInfo);
 
     /** Returns the path to the reference profile of the given dex file. */
-    @NonNull protected abstract ProfilePath buildRefProfilePath(@NonNull DexInfoType dexInfo);
+    @NonNull
+    protected abstract ProfilePath buildRefProfilePathAsInput(@NonNull DexInfoType dexInfo);
 
     /**
      * Returns the data structure that represents the temporary profile to use during processing.
@@ -772,6 +771,10 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         @NonNull
         public DexMetadataHelper getDexMetadataHelper() {
             return new DexMetadataHelper();
+        }
+
+        public boolean isPreReboot() {
+            return GlobalInjector.getInstance().isPreReboot();
         }
     }
 }

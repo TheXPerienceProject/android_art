@@ -1503,7 +1503,11 @@
                   "623-checker-loop-regressions",
                   "639-checker-code-sinking",
                   "640-checker-integer-valueof",
-                  "732-checker-app-image"],
+                  "640-checker-simd",
+                  "645-checker-abs-simd",
+                  "660-checker-simd-sad",
+                  "732-checker-app-image",
+                  "2256-checker-vector-replacement"],
         "variant": "optimizing & no-image",
         "description": ["Expected failures when compiling without a boot image"]
     },

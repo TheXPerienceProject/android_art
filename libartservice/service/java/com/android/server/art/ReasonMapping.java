@@ -62,6 +62,8 @@ public class ReasonMapping {
     public static final String REASON_CMDLINE = "cmdline";
     /** Downgrading the compiler filter when an app is not used for a long time. */
     public static final String REASON_INACTIVE = "inactive";
+    /** @hide */
+    public static final String REASON_PRE_REBOOT_DEXOPT = "ab-ota";
 
     // Reasons for Play Install Hints (go/install-hints).
     public static final String REASON_INSTALL_FAST = "install-fast";
@@ -78,8 +80,9 @@ public class ReasonMapping {
 
     // Keep this in sync with `ArtShellCommand.printHelp`.
     /** @hide */
-    public static final Set<String> BATCH_DEXOPT_REASONS = Set.of(REASON_FIRST_BOOT,
-            REASON_BOOT_AFTER_OTA, REASON_BOOT_AFTER_MAINLINE_UPDATE, REASON_BG_DEXOPT);
+    public static final Set<String> BATCH_DEXOPT_REASONS =
+            Set.of(REASON_FIRST_BOOT, REASON_BOOT_AFTER_OTA, REASON_BOOT_AFTER_MAINLINE_UPDATE,
+                    REASON_BG_DEXOPT, REASON_PRE_REBOOT_DEXOPT);
 
     /**
      * Reasons for {@link ArtManagerLocal#dexoptPackages}.
@@ -92,6 +95,7 @@ public class ReasonMapping {
         REASON_BOOT_AFTER_OTA,
         REASON_BOOT_AFTER_MAINLINE_UPDATE,
         REASON_BG_DEXOPT,
+        REASON_PRE_REBOOT_DEXOPT,
     })
     // clang-format on
     @Retention(RetentionPolicy.SOURCE)
@@ -175,6 +179,7 @@ public class ReasonMapping {
             case REASON_CMDLINE:
                 return ArtFlags.PRIORITY_INTERACTIVE;
             case REASON_BG_DEXOPT:
+            case REASON_PRE_REBOOT_DEXOPT:
             case REASON_INACTIVE:
             case REASON_INSTALL_BULK:
             case REASON_INSTALL_BULK_SECONDARY:

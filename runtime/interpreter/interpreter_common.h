@@ -20,7 +20,6 @@
 #include "android-base/macros.h"
 #include "instrumentation.h"
 #include "interpreter.h"
-#include "transaction.h"
 
 #include <math.h>
 
@@ -67,6 +66,38 @@
 namespace art HIDDEN {
 namespace interpreter {
 
+// We declare the helper class for transaction checks here but it shall be defined
+// only when compiling the transactional interpreter.
+class ActiveTransactionChecker;
+
+// Define the helper class that does not do any transaction checks.
+class InactiveTransactionChecker {
+ public:
+  ALWAYS_INLINE static bool WriteConstraint([[maybe_unused]] Thread* self,
+                                            [[maybe_unused]] ObjPtr<mirror::Object> obj)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+
+  ALWAYS_INLINE static bool WriteValueConstraint([[maybe_unused]] Thread* self,
+                                                 [[maybe_unused]] ObjPtr<mirror::Object> value)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+
+  ALWAYS_INLINE static bool ReadConstraint([[maybe_unused]] Thread* self,
+                                           [[maybe_unused]] ObjPtr<mirror::Object> value)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+
+  ALWAYS_INLINE static bool AllocationConstraint([[maybe_unused]] Thread* self,
+                                                 [[maybe_unused]] ObjPtr<mirror::Class> klass)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+};
+
 void ThrowNullPointerExceptionFromInterpreter()
     REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -110,13 +141,6 @@ static inline bool DoMonitorCheckOnExit(Thread* self, ShadowFrame* frame)
   }
   return true;
 }
-
-void AbortTransactionF(Thread* self, const char* fmt, ...)
-    __attribute__((__format__(__printf__, 2, 3)))
-    REQUIRES_SHARED(Locks::mutator_lock_);
-
-void AbortTransactionV(Thread* self, const char* fmt, va_list args)
-    REQUIRES_SHARED(Locks::mutator_lock_);
 
 void RecordArrayElementsInTransaction(ObjPtr<mirror::Array> array, int32_t count)
     REQUIRES_SHARED(Locks::mutator_lock_);
@@ -378,12 +402,10 @@ ALWAYS_INLINE bool DoFieldGet(Thread* self,
   ObjPtr<mirror::Object> obj;
   if (is_static) {
     obj = field->GetDeclaringClass();
-    if (transaction_active) {
-      if (Runtime::Current()->GetTransaction()->ReadConstraint(obj)) {
-        Runtime::Current()->AbortTransactionAndThrowAbortError(self, "Can't read static fields of "
-            + obj->PrettyTypeOf() + " since it does not belong to clinit's class.");
-        return false;
-      }
+    using TransactionChecker = typename std::conditional_t<
+        transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
+    if (TransactionChecker::ReadConstraint(self, obj)) {
+      return false;
     }
   } else {
     obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
@@ -446,34 +468,6 @@ ALWAYS_INLINE bool DoFieldGet(Thread* self,
   return true;
 }
 
-static inline bool CheckWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
-  Runtime* runtime = Runtime::Current();
-  if (runtime->GetTransaction()->WriteConstraint(obj)) {
-    DCHECK(runtime->GetHeap()->ObjectIsInBootImageSpace(obj) || obj->IsClass());
-    const char* base_msg = runtime->GetHeap()->ObjectIsInBootImageSpace(obj)
-        ? "Can't set fields of boot image "
-        : "Can't set fields of ";
-    runtime->AbortTransactionAndThrowAbortError(self, base_msg + obj->PrettyTypeOf());
-    return false;
-  }
-  return true;
-}
-
-static inline bool CheckWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
-  Runtime* runtime = Runtime::Current();
-  if (runtime->GetTransaction()->WriteValueConstraint(value)) {
-    DCHECK(value != nullptr);
-    std::string msg = value->IsClass()
-        ? "Can't store reference to class " + value->AsClass()->PrettyDescriptor()
-        : "Can't store reference to instance of " + value->GetClass()->PrettyDescriptor();
-    runtime->AbortTransactionAndThrowAbortError(self, msg);
-    return false;
-  }
-  return true;
-}
-
 // Handles iput-XXX and sput-XXX instructions.
 // Returns true on success, otherwise throws an exception and returns false.
 template<FindFieldType find_type, Primitive::Type field_type, bool transaction_active>
@@ -523,15 +517,16 @@ ALWAYS_INLINE bool DoFieldPut(Thread* self,
       obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
     }
   }
-  if (transaction_active && !CheckWriteConstraint(self, obj)) {
+  using TransactionChecker = typename std::conditional_t<
+      transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
+  if (TransactionChecker::WriteConstraint(self, obj)) {
     return false;
   }
 
   JValue value = GetFieldValue<field_type>(shadow_frame, vregA);
 
-  if (transaction_active &&
-      field_type == Primitive::kPrimNot &&
-      !CheckWriteValueConstraint(self, value.GetL())) {
+  if (field_type == Primitive::kPrimNot &&
+      TransactionChecker::WriteValueConstraint(self, value.GetL())) {
     return false;
   }
   if (should_report) {

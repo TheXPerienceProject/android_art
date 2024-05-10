@@ -20,7 +20,6 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.os.Build;
 import android.os.RemoteException;
-import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 

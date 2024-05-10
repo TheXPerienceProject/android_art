@@ -35,6 +35,9 @@ class DexFile;
 enum InvokeType : uint32_t;
 class Signature;
 
+// The descriptor of the transaction abort exception.
+constexpr const char kTransactionAbortErrorDescriptor[] = "Ldalvik/system/TransactionAbortError;";
+
 // AbstractMethodError
 
 void ThrowAbstractMethodError(ArtMethod* method)

@@ -215,6 +215,10 @@ class OatWriter {
     return data_img_rel_ro_size_;
   }
 
+  size_t GetDataImgRelRoAppImageOffset() const {
+    return data_img_rel_ro_app_image_offset_;
+  }
+
   size_t GetBssSize() const {
     return bss_size_;
   }
@@ -419,6 +423,9 @@ class OatWriter {
   // The size of the optional .data.img.rel.ro section holding the image relocations.
   size_t data_img_rel_ro_size_;
 
+  // The start of app image relocations in the .data.img.rel.ro section.
+  size_t data_img_rel_ro_app_image_offset_;
+
   // The start of the optional .bss section.
   size_t bss_start_;
 
@@ -461,6 +468,11 @@ class OatWriter {
   // method in the dex file with the "method reference value comparator" for deduplication.
   // The value is the target offset for patching, starting at `bss_start_ + bss_methods_offset_`.
   SafeMap<MethodReference, size_t, MethodReferenceValueComparator> bss_method_entries_;
+
+  // Map for allocating app image Class entries in .data.img.rel.ro. Indexed by TypeReference for
+  // the source type in the dex file with the "type value comparator" for deduplication. The value
+  // is the target offset for patching, starting at `data_img_rel_ro_start_`.
+  SafeMap<TypeReference, size_t, TypeReferenceValueComparator> app_image_rel_ro_type_entries_;
 
   // Map for allocating Class entries in .bss. Indexed by TypeReference for the source
   // type in the dex file with the "type value comparator" for deduplication. The value

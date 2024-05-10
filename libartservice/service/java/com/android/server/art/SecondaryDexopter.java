@@ -40,8 +40,6 @@ import java.util.List;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class SecondaryDexopter extends Dexopter<CheckedSecondaryDexInfo> {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     public SecondaryDexopter(@NonNull Context context, @NonNull Config config,
             @NonNull PackageState pkgState, @NonNull AndroidPackage pkg,
             @NonNull DexoptParams params, @NonNull CancellationSignal cancellationSignal) {
@@ -116,8 +114,8 @@ public class SecondaryDexopter extends Dexopter<CheckedSecondaryDexInfo> {
 
     @Override
     @NonNull
-    protected ProfilePath buildRefProfilePath(@NonNull CheckedSecondaryDexInfo dexInfo) {
-        return AidlUtils.buildProfilePathForSecondaryRef(dexInfo.dexPath());
+    protected ProfilePath buildRefProfilePathAsInput(@NonNull CheckedSecondaryDexInfo dexInfo) {
+        return AidlUtils.buildProfilePathForSecondaryRefAsInput(dexInfo.dexPath());
     }
 
     @Override
@@ -125,7 +123,8 @@ public class SecondaryDexopter extends Dexopter<CheckedSecondaryDexInfo> {
     protected OutputProfile buildOutputProfile(
             @NonNull CheckedSecondaryDexInfo dexInfo, boolean isPublic) {
         int uid = getUid(dexInfo);
-        return AidlUtils.buildOutputProfileForSecondary(dexInfo.dexPath(), uid, uid, isPublic);
+        return AidlUtils.buildOutputProfileForSecondary(
+                dexInfo.dexPath(), uid, uid, isPublic, mInjector.isPreReboot());
     }
 
     @Override

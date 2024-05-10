@@ -62,7 +62,6 @@
 #include "nth_caller_visitor.h"
 #include "reflection.h"
 #include "thread-inl.h"
-#include "transaction.h"
 #include "unstarted_runtime_list.h"
 #include "well_known_classes-inl.h"
 
@@ -78,9 +77,10 @@ static void AbortTransactionOrFail(Thread* self, const char* fmt, ...)
 
 static void AbortTransactionOrFail(Thread* self, const char* fmt, ...) {
   va_list args;
-  if (Runtime::Current()->IsActiveTransaction()) {
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction()) {
     va_start(args, fmt);
-    AbortTransactionV(self, fmt, args);
+    runtime->AbortTransactionV(self, fmt, args);
     va_end(args);
   } else {
     va_start(args, fmt);
@@ -166,8 +166,7 @@ static void CheckExceptionGenerateClassNotFound(Thread* self)
   if (self->IsExceptionPending()) {
     Runtime* runtime = Runtime::Current();
     DCHECK_EQ(runtime->IsTransactionAborted(),
-              self->GetException()->GetClass()->DescriptorEquals(
-                  Transaction::kAbortExceptionDescriptor))
+              self->GetException()->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor))
         << self->GetException()->GetClass()->PrettyDescriptor();
     if (runtime->IsActiveTransaction()) {
       // The boot class path at run time may contain additional dex files with
@@ -176,7 +175,7 @@ static void CheckExceptionGenerateClassNotFound(Thread* self)
       // initialize a class differently than when executing at run time.
       // If we're not aborting the transaction yet, abort now. b/183691501
       if (!runtime->IsTransactionAborted()) {
-        AbortTransactionF(self, "ClassNotFoundException");
+        runtime->AbortTransactionF(self, "ClassNotFoundException");
       }
     } else {
       // If not in a transaction, it cannot be the transaction abort exception. Wrap it.
@@ -301,12 +300,11 @@ void UnstartedRuntime::UnstartedClassNewInstance(
   }
 
   // If we're in a transaction, class must not be finalizable (it or a superclass has a finalizer).
-  if (Runtime::Current()->IsActiveTransaction()) {
-    if (h_klass->IsFinalizable()) {
-      AbortTransactionF(self, "Class for newInstance is finalizable: '%s'",
-                        h_klass->PrettyClass().c_str());
-      return;
-    }
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction() &&
+      runtime->GetClassLinker()->TransactionAllocationConstraint(self, h_klass.Get())) {
+    DCHECK(self->IsExceptionPending());
+    return;
   }
 
   // There are two situations in which we'll abort this run.
@@ -314,7 +312,7 @@ void UnstartedRuntime::UnstartedClassNewInstance(
   //  2) If we can't find the default constructor. We'll postpone the exception to runtime.
   // Note that 2) could likely be handled here, but for safety abort the transaction.
   bool ok = false;
-  auto* cl = Runtime::Current()->GetClassLinker();
+  auto* cl = runtime->GetClassLinker();
   if (cl->EnsureInitialized(self, h_klass, true, true)) {
     ArtMethod* cons = h_klass->FindConstructor("()V", cl->GetImagePointerSize());
     if (cons != nullptr && ShouldDenyAccessToMember(cons, shadow_frame)) {
@@ -764,14 +762,13 @@ void UnstartedRuntime::UnstartedVmClassLoaderFindLoadedClass(
   if (self->IsExceptionPending()) {
     Runtime* runtime = Runtime::Current();
     DCHECK_EQ(runtime->IsTransactionAborted(),
-              self->GetException()->GetClass()->DescriptorEquals(
-                  Transaction::kAbortExceptionDescriptor))
+              self->GetException()->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor))
         << self->GetException()->GetClass()->PrettyDescriptor();
     if (runtime->IsActiveTransaction()) {
       // If we're not aborting the transaction yet, abort now. b/183691501
       // See CheckExceptionGenerateClassNotFound() for more detailed explanation.
       if (!runtime->IsTransactionAborted()) {
-        AbortTransactionF(self, "ClassNotFoundException");
+        runtime->AbortTransactionF(self, "ClassNotFoundException");
       }
     } else {
       // If not in a transaction, it cannot be the transaction abort exception. Clear it.
@@ -855,7 +852,9 @@ void UnstartedRuntime::UnstartedSystemArraycopy(Thread* self,
     return;
   }
 
-  if (Runtime::Current()->IsActiveTransaction() && !CheckWriteConstraint(self, dst_obj)) {
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction() &&
+      runtime->GetClassLinker()->TransactionWriteConstraint(self, dst_obj)) {
     DCHECK(self->IsExceptionPending());
     return;
   }
@@ -1589,8 +1588,9 @@ void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSwapLong(
   int64_t newValue = shadow_frame->GetVRegLong(arg_offset + 6);
   bool success;
   // Check whether we're in a transaction, call accordingly.
-  if (Runtime::Current()->IsActiveTransaction()) {
-    if (!CheckWriteConstraint(self, obj)) {
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction()) {
+    if (runtime->GetClassLinker()->TransactionWriteConstraint(self, obj)) {
       DCHECK(self->IsExceptionPending());
       return;
     }
@@ -1635,8 +1635,10 @@ void UnstartedRuntime::UnstartedJdkUnsafeCompareAndSwapObject(
   }
   bool success;
   // Check whether we're in a transaction, call accordingly.
-  if (Runtime::Current()->IsActiveTransaction()) {
-    if (!CheckWriteConstraint(self, obj) || !CheckWriteValueConstraint(self, new_value)) {
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction()) {
+    if (runtime->GetClassLinker()->TransactionWriteConstraint(self, obj) ||
+        runtime->GetClassLinker()->TransactionWriteValueConstraint(self, new_value)) {
       DCHECK(self->IsExceptionPending());
       return;
     }
@@ -1682,8 +1684,10 @@ void UnstartedRuntime::UnstartedJdkUnsafePutReferenceVolatile(Thread* self,
   }
   int64_t offset = shadow_frame->GetVRegLong(arg_offset + 2);
   mirror::Object* value = shadow_frame->GetVRegReference(arg_offset + 4);
-  if (Runtime::Current()->IsActiveTransaction()) {
-    if (!CheckWriteConstraint(self, obj) || !CheckWriteValueConstraint(self, value)) {
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction()) {
+    if (runtime->GetClassLinker()->TransactionWriteConstraint(self, obj) ||
+        runtime->GetClassLinker()->TransactionWriteValueConstraint(self, value)) {
       DCHECK(self->IsExceptionPending());
       return;
     }
@@ -1707,8 +1711,10 @@ void UnstartedRuntime::UnstartedJdkUnsafePutOrderedObject(Thread* self,
   int64_t offset = shadow_frame->GetVRegLong(arg_offset + 2);
   mirror::Object* new_value = shadow_frame->GetVRegReference(arg_offset + 4);
   std::atomic_thread_fence(std::memory_order_release);
-  if (Runtime::Current()->IsActiveTransaction()) {
-    if (!CheckWriteConstraint(self, obj) || !CheckWriteValueConstraint(self, new_value)) {
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction()) {
+    if (runtime->GetClassLinker()->TransactionWriteConstraint(self, obj) ||
+        runtime->GetClassLinker()->TransactionWriteValueConstraint(self, new_value)) {
       DCHECK(self->IsExceptionPending());
       return;
     }
@@ -2154,8 +2160,9 @@ void UnstartedRuntime::UnstartedJNIJdkUnsafeCompareAndSwapInt(
   jint expectedValue = args[3];
   jint newValue = args[4];
   bool success;
-  if (Runtime::Current()->IsActiveTransaction()) {
-    if (!CheckWriteConstraint(self, obj)) {
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction()) {
+    if (runtime->GetClassLinker()->TransactionWriteConstraint(self, obj)) {
       DCHECK(self->IsExceptionPending());
       return;
     }
@@ -2211,8 +2218,10 @@ void UnstartedRuntime::UnstartedJNIJdkUnsafePutReference(Thread* self,
   }
   jlong offset = (static_cast<uint64_t>(args[2]) << 32) | args[1];
   ObjPtr<mirror::Object> new_value = reinterpret_cast32<mirror::Object*>(args[3]);
-  if (Runtime::Current()->IsActiveTransaction()) {
-    if (!CheckWriteConstraint(self, obj) || !CheckWriteValueConstraint(self, new_value)) {
+  Runtime* runtime = Runtime::Current();
+  if (runtime->IsActiveTransaction()) {
+    if (runtime->GetClassLinker()->TransactionWriteConstraint(self, obj) ||
+        runtime->GetClassLinker()->TransactionWriteValueConstraint(self, new_value)) {
       DCHECK(self->IsExceptionPending());
       return;
     }
@@ -2420,12 +2429,16 @@ void UnstartedRuntime::Jni(Thread* self, ArtMethod* method, mirror::Object* rece
     // Clear out the result in case it's not zeroed out.
     result->SetL(nullptr);
     (*iter->second)(self, method, receiver, args, result);
-  } else if (Runtime::Current()->IsActiveTransaction()) {
-    AbortTransactionF(self, "Attempt to invoke native method in non-started runtime: %s",
-                      ArtMethod::PrettyMethod(method).c_str());
   } else {
-    LOG(FATAL) << "Calling native method " << ArtMethod::PrettyMethod(method) << " in an unstarted "
-        "non-transactional runtime";
+    Runtime* runtime = Runtime::Current();
+    if (runtime->IsActiveTransaction()) {
+      runtime->AbortTransactionF(self,
+                                 "Attempt to invoke native method in non-started runtime: %s",
+                                 ArtMethod::PrettyMethod(method).c_str());
+    } else {
+      LOG(FATAL) << "Calling native method " << ArtMethod::PrettyMethod(method)
+                 << " in an unstarted non-transactional runtime";
+    }
   }
 }
 

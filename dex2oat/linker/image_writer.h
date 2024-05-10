@@ -128,6 +128,15 @@ class ImageWriter final {
     }
   }
 
+  uint32_t GetGlobalImageOffset(mirror::Object* object) const REQUIRES_SHARED(Locks::mutator_lock_) {
+    DCHECK(object != nullptr);
+    DCHECK(!IsInBootImage(object));
+    size_t oat_index = GetOatIndex(object);
+    const ImageInfo& image_info = GetImageInfo(oat_index);
+    return dchecked_integral_cast<uint32_t>(
+        image_info.image_begin_ + GetImageOffset(object, oat_index) - global_image_begin_);
+  }
+
   ArtMethod* GetImageMethodAddress(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_);
   const void* GetIntrinsicReferenceAddress(uint32_t intrinsic_data)
       REQUIRES_SHARED(Locks::mutator_lock_);
