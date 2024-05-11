@@ -766,14 +766,14 @@ static void WaitUntilSingleThreaded() {
 #if defined(__linux__)
   // Read num_threads field from /proc/self/stat, avoiding higher-level IO libraries that may
   // break atomicity of the read.
-  static constexpr size_t kNumTries = 1000;
+  static constexpr size_t kNumTries = 1500;
   static constexpr size_t kNumThreadsIndex = 20;
   static constexpr size_t BUF_SIZE = 500;
   static constexpr size_t BUF_PRINT_SIZE = 150;  // Only log this much on failure to limit length.
   static_assert(BUF_SIZE > BUF_PRINT_SIZE);
   char buf[BUF_SIZE];
   size_t bytes_read = 0;
-
+  uint64_t millis = 0;
   for (size_t tries = 0; tries < kNumTries; ++tries) {
     bytes_read = GetOsThreadStat(getpid(), buf, BUF_SIZE);
     CHECK_NE(bytes_read, 0u);
@@ -794,6 +794,9 @@ static void WaitUntilSingleThreaded() {
     if (buf[pos] == '1') {
       return;  //  num_threads == 1; success.
     }
+    if (millis == 0) {
+      millis = MilliTime();
+    }
     usleep(1000);
   }
   buf[std::min(BUF_PRINT_SIZE, bytes_read)] = '\0';  // Truncate buf before printing.
@@ -804,7 +807,7 @@ static void WaitUntilSingleThreaded() {
   CHECK_NE(bytes_read, 0u);
   LOG(ERROR) << "After re-read: bytes_read = " << bytes_read << " stat contents = \"" << buf
              << "...\"";
-  LOG(FATAL) << "Failed to reach single-threaded state";
+  LOG(FATAL) << "Failed to reach single-threaded state: wait_time = " << MilliTime() - millis;
 #else  // Not Linux; shouldn't matter, but this has a high probability of working slowly.
   usleep(20'000);
 #endif
