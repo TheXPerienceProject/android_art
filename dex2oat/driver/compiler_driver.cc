@@ -43,6 +43,7 @@
 #include "base/timing_logger.h"
 #include "class_linker-inl.h"
 #include "class_root-inl.h"
+#include "common_throws.h"
 #include "compiled_method-inl.h"
 #include "compiler.h"
 #include "compiler_callbacks.h"
@@ -82,7 +83,6 @@
 #include "thread_list.h"
 #include "thread_pool.h"
 #include "trampolines/trampoline_compiler.h"
-#include "transaction.h"
 #include "utils/atomic_dex_ref_map-inl.h"
 #include "utils/swap_space.h"
 #include "vdex_file.h"
@@ -889,6 +889,12 @@ void CompilerDriver::PreCompile(jobject class_loader,
                                << "Please check the log.";
       _exit(1);
     }
+
+    if (GetCompilerOptions().IsAppImage() && had_hard_verifier_failure_) {
+      // Prune erroneous classes and classes that depend on them.
+      UpdateImageClasses(timings, image_classes);
+      VLOG(compiler) << "verify/UpdateImageClasses: " << GetMemoryUsageString(false);
+    }
   }
 
   if (GetCompilerOptions().IsGeneratingImage()) {
@@ -911,8 +917,10 @@ void CompilerDriver::PreCompile(jobject class_loader,
       visitor.FillAllIMTAndConflictTables();
     }
 
-    UpdateImageClasses(timings, image_classes);
-    VLOG(compiler) << "UpdateImageClasses: " << GetMemoryUsageString(false);
+    if (GetCompilerOptions().IsBootImage() || GetCompilerOptions().IsBootImageExtension()) {
+      UpdateImageClasses(timings, image_classes);
+      VLOG(compiler) << "UpdateImageClasses: " << GetMemoryUsageString(false);
+    }
 
     if (kBitstringSubtypeCheckEnabled &&
         GetCompilerOptions().IsForceDeterminism() && GetCompilerOptions().IsBootImage()) {
@@ -1380,7 +1388,8 @@ class ClinitImageUpdate {
     bool operator()(ObjPtr<mirror::Class> klass) override REQUIRES_SHARED(Locks::mutator_lock_) {
       bool resolved = klass->IsResolved();
       DCHECK(resolved || klass->IsErroneousUnresolved());
-      bool can_include_in_image = LIKELY(resolved) && CanIncludeInCurrentImage(klass);
+      bool can_include_in_image =
+          LIKELY(resolved) && LIKELY(!klass->IsErroneous()) && CanIncludeInCurrentImage(klass);
       std::string temp;
       std::string_view descriptor(klass->GetDescriptor(&temp));
       auto it = data_->image_class_descriptors_->find(descriptor);
@@ -1451,17 +1460,16 @@ class ClinitImageUpdate {
 
 void CompilerDriver::UpdateImageClasses(TimingLogger* timings,
                                         /*inout*/ HashSet<std::string>* image_classes) {
-  if (GetCompilerOptions().IsBootImage() || GetCompilerOptions().IsBootImageExtension()) {
-    TimingLogger::ScopedTiming t("UpdateImageClasses", timings);
+  DCHECK(GetCompilerOptions().IsGeneratingImage());
+  TimingLogger::ScopedTiming t("UpdateImageClasses", timings);
 
-    // Suspend all threads.
-    ScopedSuspendAll ssa(__FUNCTION__);
+  // Suspend all threads.
+  ScopedSuspendAll ssa(__FUNCTION__);
 
-    ClinitImageUpdate update(image_classes, Thread::Current());
+  ClinitImageUpdate update(image_classes, Thread::Current());
 
-    // Do the marking.
-    update.Walk();
-  }
+  // Do the marking.
+  update.Walk();
 }
 
 void CompilerDriver::ProcessedInstanceField(bool resolved) {
@@ -1641,7 +1649,7 @@ class ParallelCompilationManager {
 static bool SkipClass(jobject class_loader, const DexFile& dex_file, ObjPtr<mirror::Class> klass)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(klass != nullptr);
-  const DexFile& original_dex_file = *klass->GetDexCache()->GetDexFile();
+  const DexFile& original_dex_file = klass->GetDexFile();
   if (&dex_file != &original_dex_file) {
     if (class_loader == nullptr) {
       LOG(WARNING) << "Skipping class " << klass->PrettyDescriptor() << " from "
@@ -2029,17 +2037,18 @@ class VerifyClassVisitor : public CompilationVisitor {
           break;
         }
       }
-    } else if (&klass->GetDexFile() != &dex_file) {
+    } else if (SkipClass(jclass_loader, dex_file, klass.Get())) {
       // Skip a duplicate class (as the resolved class is from another, earlier dex file).
       return;  // Do not update state.
-    } else if (!SkipClass(jclass_loader, dex_file, klass.Get())) {
+    } else {
       CHECK(klass->IsResolved()) << klass->PrettyClass();
       failure_kind = class_linker->VerifyClass(soa.Self(),
                                                soa.Self()->GetVerifierDeps(),
                                                klass,
                                                log_level_);
 
-      if (klass->IsErroneous()) {
+      DCHECK_EQ(klass->IsErroneous(), failure_kind == verifier::FailureKind::kHardFailure);
+      if (failure_kind == verifier::FailureKind::kHardFailure) {
         // ClassLinker::VerifyClass throws, which isn't useful in the compiler.
         CHECK(soa.Self()->IsExceptionPending());
         soa.Self()->ClearException();
@@ -2092,9 +2101,6 @@ class VerifyClassVisitor : public CompilationVisitor {
           DCHECK_EQ(failure_kind, verifier::FailureKind::kHardFailure);
         }
       }
-    } else {
-      // Make the skip a soft failure, essentially being considered as verify at runtime.
-      failure_kind = verifier::FailureKind::kSoftFailure;
     }
     verifier::VerifierDeps::MaybeRecordVerificationStatus(soa.Self()->GetVerifierDeps(),
                                                           dex_file,
@@ -2332,10 +2338,8 @@ class InitializeClassVisitor : public CompilationVisitor {
             // the transaction aborts and cannot resolve the type.
             // TransactionAbortError is not initialized ant not in boot image, needed only by
             // compiler and will be pruned by ImageWriter.
-            Handle<mirror::Class> exception_class =
-                hs.NewHandle(class_linker->FindClass(self,
-                                                     Transaction::kAbortExceptionDescriptor,
-                                                     class_loader));
+            Handle<mirror::Class> exception_class = hs.NewHandle(
+                class_linker->FindClass(self, kTransactionAbortErrorDescriptor, class_loader));
             bool exception_initialized =
                 class_linker->EnsureInitialized(self, exception_class, true, true);
             DCHECK(exception_initialized);
@@ -2708,8 +2712,6 @@ static void CompileDexFile(CompilerDriver* driver,
       soa.Self()->ClearException();
       dex_cache = hs.NewHandle(class_linker->FindDexCache(soa.Self(), dex_file));
     } else if (SkipClass(jclass_loader, dex_file, klass.Get())) {
-      return;
-    } else if (&klass->GetDexFile() != &dex_file) {
       // Skip a duplicate class (as the resolved class is from another, earlier dex file).
       return;  // Do not update state.
     } else {

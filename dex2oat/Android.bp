@@ -554,7 +554,6 @@ art_cc_test {
     ],
     test_config: "art_standalone_dex2oat_cts_tests.xml",
     test_suites: [
-        "cts",
         "mcts-art",
     ],
 }

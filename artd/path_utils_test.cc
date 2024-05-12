@@ -19,6 +19,7 @@
 #include "aidl/com/android/server/art/BnArtd.h"
 #include "android-base/result-gmock.h"
 #include "base/common_art_test.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace art {
@@ -31,6 +32,8 @@ using ::aidl::com::android::server::art::ProfilePath;
 using ::android::base::testing::HasError;
 using ::android::base::testing::HasValue;
 using ::android::base::testing::WithMessage;
+using ::testing::AllOf;
+using ::testing::Field;
 
 using PrebuiltProfilePath = ProfilePath::PrebuiltProfilePath;
 using PrimaryCurProfilePath = ProfilePath::PrimaryCurProfilePath;
@@ -50,75 +53,107 @@ TEST_F(PathUtilsTest, BuildArtBinPath) {
   EXPECT_THAT(BuildArtBinPath("foo"), HasValue(scratch_dir->GetPath() + "/bin/foo"));
 }
 
-TEST_F(PathUtilsTest, BuildOatPath) {
+TEST_F(PathUtilsTest, BuildArtifactsPath) {
   EXPECT_THAT(
-      BuildOatPath(ArtifactsPath{.dexPath = "/a/b.apk", .isa = "arm64", .isInDalvikCache = false}),
-      HasValue("/a/oat/arm64/b.odex"));
+      BuildArtifactsPath(ArtifactsPath{
+          .dexPath = "/a/b.apk", .isa = "arm64", .isInDalvikCache = false, .isPreReboot = false}),
+      HasValue(AllOf(Field(&RawArtifactsPath::oat_path, "/a/oat/arm64/b.odex"),
+                     Field(&RawArtifactsPath::vdex_path, "/a/oat/arm64/b.vdex"),
+                     Field(&RawArtifactsPath::art_path, "/a/oat/arm64/b.art"))));
 }
 
-TEST_F(PathUtilsTest, BuildOatPathDalvikCache) {
+TEST_F(PathUtilsTest, BuildArtifactsPathPreReboot) {
   EXPECT_THAT(
-      BuildOatPath(ArtifactsPath{.dexPath = "/a/b.apk", .isa = "arm64", .isInDalvikCache = true}),
-      HasValue(android_data_ + "/dalvik-cache/arm64/a@b.apk@classes.dex"));
+      BuildArtifactsPath(ArtifactsPath{
+          .dexPath = "/a/b.apk", .isa = "arm64", .isInDalvikCache = false, .isPreReboot = true}),
+      HasValue(AllOf(Field(&RawArtifactsPath::oat_path, "/a/oat/arm64/b.odex.staged"),
+                     Field(&RawArtifactsPath::vdex_path, "/a/oat/arm64/b.vdex.staged"),
+                     Field(&RawArtifactsPath::art_path, "/a/oat/arm64/b.art.staged"))));
+}
+
+TEST_F(PathUtilsTest, BuildArtifactsPathDalvikCache) {
+  EXPECT_THAT(
+      BuildArtifactsPath(ArtifactsPath{
+          .dexPath = "/a/b.apk", .isa = "arm64", .isInDalvikCache = true, .isPreReboot = false}),
+      HasValue(AllOf(Field(&RawArtifactsPath::oat_path,
+                           android_data_ + "/dalvik-cache/arm64/a@b.apk@classes.dex"),
+                     Field(&RawArtifactsPath::vdex_path,
+                           android_data_ + "/dalvik-cache/arm64/a@b.apk@classes.vdex"),
+                     Field(&RawArtifactsPath::art_path,
+                           android_data_ + "/dalvik-cache/arm64/a@b.apk@classes.art"))));
+}
+
+TEST_F(PathUtilsTest, BuildArtifactsPathDalvikCachePreReboot) {
+  EXPECT_THAT(
+      BuildArtifactsPath(ArtifactsPath{
+          .dexPath = "/a/b.apk", .isa = "arm64", .isInDalvikCache = true, .isPreReboot = true}),
+      HasValue(AllOf(Field(&RawArtifactsPath::oat_path,
+                           android_data_ + "/dalvik-cache/arm64/a@b.apk@classes.dex.staged"),
+                     Field(&RawArtifactsPath::vdex_path,
+                           android_data_ + "/dalvik-cache/arm64/a@b.apk@classes.vdex.staged"),
+                     Field(&RawArtifactsPath::art_path,
+                           android_data_ + "/dalvik-cache/arm64/a@b.apk@classes.art.staged"))));
 }
 
 TEST_F(PathUtilsTest, BuildOatPathInvalidDexPath) {
   EXPECT_THAT(
-      BuildOatPath(ArtifactsPath{.dexPath = "a/b.apk", .isa = "arm64", .isInDalvikCache = false}),
+      BuildArtifactsPath(ArtifactsPath{
+          .dexPath = "a/b.apk", .isa = "arm64", .isInDalvikCache = false, .isPreReboot = false}),
       HasError(WithMessage("Path 'a/b.apk' is not an absolute path")));
 }
 
 TEST_F(PathUtilsTest, BuildOatPathInvalidIsa) {
-  EXPECT_THAT(BuildOatPath(
-                  ArtifactsPath{.dexPath = "/a/b.apk", .isa = "invalid", .isInDalvikCache = false}),
-              HasError(WithMessage("Instruction set 'invalid' is invalid")));
-}
-
-TEST_F(PathUtilsTest, OatPathToVdexPath) {
-  EXPECT_EQ(OatPathToVdexPath("/a/oat/arm64/b.odex"), "/a/oat/arm64/b.vdex");
-}
-
-TEST_F(PathUtilsTest, OatPathToArtPath) {
-  EXPECT_EQ(OatPathToArtPath("/a/oat/arm64/b.odex"), "/a/oat/arm64/b.art");
+  EXPECT_THAT(
+      BuildArtifactsPath(ArtifactsPath{
+          .dexPath = "/a/b.apk", .isa = "invalid", .isInDalvikCache = false, .isPreReboot = false}),
+      HasError(WithMessage("Instruction set 'invalid' is invalid")));
 }
 
 TEST_F(PathUtilsTest, BuildPrimaryRefProfilePath) {
-  EXPECT_THAT(BuildPrimaryRefProfilePath(PrimaryRefProfilePath{.packageName = "com.android.foo",
-                                                               .profileName = "primary"}),
-              HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof"));
+  EXPECT_THAT(
+      BuildPrimaryRefProfilePath(PrimaryRefProfilePath{
+          .packageName = "com.android.foo", .profileName = "primary", .isPreReboot = false}),
+      HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof"));
+}
+
+TEST_F(PathUtilsTest, BuildPrimaryRefProfilePathPreReboot) {
+  EXPECT_THAT(BuildPrimaryRefProfilePath(PrimaryRefProfilePath{
+                  .packageName = "com.android.foo", .profileName = "primary", .isPreReboot = true}),
+              HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof.staged"));
 }
 
 TEST_F(PathUtilsTest, BuildPrimaryRefProfilePathPackageNameOk) {
-  EXPECT_THAT(BuildPrimaryRefProfilePath(
-                  PrimaryRefProfilePath{.packageName = "...", .profileName = "primary"}),
+  EXPECT_THAT(BuildPrimaryRefProfilePath(PrimaryRefProfilePath{
+                  .packageName = "...", .profileName = "primary", .isPreReboot = false}),
               HasValue(android_data_ + "/misc/profiles/ref/.../primary.prof"));
 }
 
 TEST_F(PathUtilsTest, BuildPrimaryRefProfilePathPackageNameWrong) {
-  EXPECT_THAT(BuildPrimaryRefProfilePath(
-                  PrimaryRefProfilePath{.packageName = "..", .profileName = "primary"}),
+  EXPECT_THAT(BuildPrimaryRefProfilePath(PrimaryRefProfilePath{
+                  .packageName = "..", .profileName = "primary", .isPreReboot = false}),
               HasError(WithMessage("Invalid packageName '..'")));
-  EXPECT_THAT(BuildPrimaryRefProfilePath(
-                  PrimaryRefProfilePath{.packageName = "a/b", .profileName = "primary"}),
+  EXPECT_THAT(BuildPrimaryRefProfilePath(PrimaryRefProfilePath{
+                  .packageName = "a/b", .profileName = "primary", .isPreReboot = false}),
               HasError(WithMessage("packageName 'a/b' has invalid character '/'")));
 }
 
 TEST_F(PathUtilsTest, BuildPrimaryRefProfilePathProfileNameOk) {
-  EXPECT_THAT(BuildPrimaryRefProfilePath(
-                  PrimaryRefProfilePath{.packageName = "com.android.foo", .profileName = ".."}),
+  EXPECT_THAT(BuildPrimaryRefProfilePath(PrimaryRefProfilePath{
+                  .packageName = "com.android.foo", .profileName = "..", .isPreReboot = false}),
               HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/...prof"));
 }
 
 TEST_F(PathUtilsTest, BuildPrimaryRefProfilePathProfileNameWrong) {
-  EXPECT_THAT(BuildPrimaryRefProfilePath(
-                  PrimaryRefProfilePath{.packageName = "com.android.foo", .profileName = "a/b"}),
+  EXPECT_THAT(BuildPrimaryRefProfilePath(PrimaryRefProfilePath{
+                  .packageName = "com.android.foo", .profileName = "a/b", .isPreReboot = false}),
               HasError(WithMessage("profileName 'a/b' has invalid character '/'")));
 }
 
 TEST_F(PathUtilsTest, BuildFinalProfilePathForPrimary) {
   EXPECT_THAT(BuildFinalProfilePath(TmpProfilePath{
                   .finalPath = PrimaryRefProfilePath{.packageName = "com.android.foo",
-                                                     .profileName = "primary"},
+                                                     .profileName = "primary",
+                                                     .isPreReboot = false},
                   .id = "12345"}),
               HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof"));
 }
@@ -126,7 +161,8 @@ TEST_F(PathUtilsTest, BuildFinalProfilePathForPrimary) {
 TEST_F(PathUtilsTest, BuildFinalProfilePathForSecondary) {
   EXPECT_THAT(BuildFinalProfilePath(TmpProfilePath{
                   .finalPath = SecondaryRefProfilePath{.dexPath = android_data_ +
-                                                                  "/user/0/com.android.foo/a.apk"},
+                                                                  "/user/0/com.android.foo/a.apk",
+                                                       .isPreReboot = false},
                   .id = "12345"}),
               HasValue(android_data_ + "/user/0/com.android.foo/oat/a.apk.prof"));
 }
@@ -135,7 +171,8 @@ TEST_F(PathUtilsTest, BuildTmpProfilePathForPrimary) {
   EXPECT_THAT(
       BuildTmpProfilePath(TmpProfilePath{
           .finalPath =
-              PrimaryRefProfilePath{.packageName = "com.android.foo", .profileName = "primary"},
+              PrimaryRefProfilePath{
+                  .packageName = "com.android.foo", .profileName = "primary", .isPreReboot = false},
           .id = "12345"}),
       HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof.12345.tmp"));
 }
@@ -143,7 +180,8 @@ TEST_F(PathUtilsTest, BuildTmpProfilePathForPrimary) {
 TEST_F(PathUtilsTest, BuildTmpProfilePathForSecondary) {
   EXPECT_THAT(BuildTmpProfilePath(TmpProfilePath{
                   .finalPath = SecondaryRefProfilePath{.dexPath = android_data_ +
-                                                                  "/user/0/com.android.foo/a.apk"},
+                                                                  "/user/0/com.android.foo/a.apk",
+                                                       .isPreReboot = false},
                   .id = "12345"}),
               HasValue(android_data_ + "/user/0/com.android.foo/oat/a.apk.prof.12345.tmp"));
 }
@@ -151,7 +189,8 @@ TEST_F(PathUtilsTest, BuildTmpProfilePathForSecondary) {
 TEST_F(PathUtilsTest, BuildTmpProfilePathIdWrong) {
   EXPECT_THAT(BuildTmpProfilePath(TmpProfilePath{
                   .finalPath = PrimaryRefProfilePath{.packageName = "com.android.foo",
-                                                     .profileName = "primary"},
+                                                     .profileName = "primary",
+                                                     .isPreReboot = false},
                   .id = "123/45"}),
               HasError(WithMessage("id '123/45' has invalid character '/'")));
 }
@@ -168,9 +207,16 @@ TEST_F(PathUtilsTest, BuildPrimaryCurProfilePath) {
 }
 
 TEST_F(PathUtilsTest, BuildSecondaryRefProfilePath) {
+  EXPECT_THAT(
+      BuildSecondaryRefProfilePath(SecondaryRefProfilePath{
+          .dexPath = android_data_ + "/user/0/com.android.foo/a.apk", .isPreReboot = false}),
+      HasValue(android_data_ + "/user/0/com.android.foo/oat/a.apk.prof"));
+}
+
+TEST_F(PathUtilsTest, BuildSecondaryRefProfilePathPreReboot) {
   EXPECT_THAT(BuildSecondaryRefProfilePath(SecondaryRefProfilePath{
-                  .dexPath = android_data_ + "/user/0/com.android.foo/a.apk"}),
-              HasValue(android_data_ + "/user/0/com.android.foo/oat/a.apk.prof"));
+                  .dexPath = android_data_ + "/user/0/com.android.foo/a.apk", .isPreReboot = true}),
+              HasValue(android_data_ + "/user/0/com.android.foo/oat/a.apk.prof.staged"));
 }
 
 TEST_F(PathUtilsTest, BuildSecondaryCurProfilePath) {
@@ -184,13 +230,15 @@ TEST_F(PathUtilsTest, BuildDexMetadataPath) {
 }
 
 TEST_F(PathUtilsTest, BuildProfilePath) {
-  EXPECT_THAT(BuildProfileOrDmPath(PrimaryRefProfilePath{.packageName = "com.android.foo",
-                                                         .profileName = "primary"}),
-              HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof"));
+  EXPECT_THAT(
+      BuildProfileOrDmPath(PrimaryRefProfilePath{
+          .packageName = "com.android.foo", .profileName = "primary", .isPreReboot = false}),
+      HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof"));
   EXPECT_THAT(
       BuildProfileOrDmPath(TmpProfilePath{
           .finalPath =
-              PrimaryRefProfilePath{.packageName = "com.android.foo", .profileName = "primary"},
+              PrimaryRefProfilePath{
+                  .packageName = "com.android.foo", .profileName = "primary", .isPreReboot = false},
           .id = "12345"}),
       HasValue(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof.12345.tmp"));
   EXPECT_THAT(BuildProfileOrDmPath(PrebuiltProfilePath{.dexPath = "/a/b.apk"}),

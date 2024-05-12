@@ -31,7 +31,6 @@ import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.os.UserHandle;
 import android.text.TextUtils;
-import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
@@ -56,8 +55,6 @@ import java.util.Objects;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class PrimaryDexopter extends Dexopter<DetailedPrimaryDexInfo> {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     private final int mSharedGid;
 
     public PrimaryDexopter(@NonNull Context context, @NonNull Config config,
@@ -148,16 +145,16 @@ public class PrimaryDexopter extends Dexopter<DetailedPrimaryDexInfo> {
 
     @Override
     @NonNull
-    protected ProfilePath buildRefProfilePath(@NonNull DetailedPrimaryDexInfo dexInfo) {
-        return PrimaryDexUtils.buildRefProfilePath(mPkgState, dexInfo);
+    protected ProfilePath buildRefProfilePathAsInput(@NonNull DetailedPrimaryDexInfo dexInfo) {
+        return PrimaryDexUtils.buildRefProfilePathAsInput(mPkgState, dexInfo);
     }
 
     @Override
     @NonNull
     protected OutputProfile buildOutputProfile(
             @NonNull DetailedPrimaryDexInfo dexInfo, boolean isPublic) {
-        return PrimaryDexUtils.buildOutputProfile(
-                mPkgState, dexInfo, Process.SYSTEM_UID, mSharedGid, isPublic);
+        return PrimaryDexUtils.buildOutputProfile(mPkgState, dexInfo, Process.SYSTEM_UID,
+                mSharedGid, isPublic, mInjector.isPreReboot());
     }
 
     @Override

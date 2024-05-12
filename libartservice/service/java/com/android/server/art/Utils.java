@@ -37,7 +37,6 @@ import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
-import android.util.Slog;
 import android.util.SparseArray;
 
 import androidx.annotation.RequiresApi;
@@ -73,7 +72,6 @@ import java.util.stream.Collectors;
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public final class Utils {
-    public static final String TAG = ArtManagerLocal.TAG;
     public static final String PLATFORM_PACKAGE_NAME = "android";
 
     /** A copy of {@link android.os.Trace.TRACE_TAG_DALVIK}. */
@@ -112,7 +110,9 @@ public final class Utils {
         if (pkgSecondaryCpuAbi != null) {
             Utils.check(pkgState.getPrimaryCpuAbi() != null);
             String isa = getTranslatedIsa(VMRuntime.getInstructionSet(pkgSecondaryCpuAbi));
-            abis.add(Abi.create(nativeIsaToAbi(isa), isa, false /* isPrimaryAbi */));
+            if (isa != null) {
+                abis.add(Abi.create(nativeIsaToAbi(isa), isa, false /* isPrimaryAbi */));
+            }
         }
         // Primary and secondary ABIs should be guaranteed to have different ISAs.
         if (abis.size() == 2 && abis.get(0).isa().equals(abis.get(1).isa())) {
@@ -145,10 +145,14 @@ public final class Utils {
         String primaryCpuAbi = pkgState.getPrimaryCpuAbi();
         if (primaryCpuAbi != null) {
             String isa = getTranslatedIsa(VMRuntime.getInstructionSet(primaryCpuAbi));
-            return Abi.create(nativeIsaToAbi(isa), isa, true /* isPrimaryAbi */);
+            // Fall through if there is no native bridge support.
+            if (isa != null) {
+                return Abi.create(nativeIsaToAbi(isa), isa, true /* isPrimaryAbi */);
+            }
         }
-        // This is the most common case. The package manager can't infer the ABIs, probably because
-        // the package doesn't contain any native library. The app is launched with the device's
+        // This is the most common case. Either the package manager can't infer the ABIs, probably
+        // because the package doesn't contain any native library, or the primary ABI is a foreign
+        // one and there is no native bridge support. The app is launched with the device's
         // preferred ABI.
         String preferredAbi = Constants.getPreferredAbi();
         Utils.check(isNativeAbi(preferredAbi));
@@ -158,10 +162,11 @@ public final class Utils {
 
     /**
      * If the given ISA isn't native to the device, returns the ISA that the native bridge
-     * translates it to. Otherwise, returns the ISA as is. This is the ISA that the app is actually
-     * launched with and therefore the ISA that should be used to compile the app.
+     * translates it to, or null if there is no native bridge support. Otherwise, returns the ISA as
+     * is. This is the ISA that the app is actually launched with and therefore the ISA that should
+     * be used to compile the app.
      */
-    @NonNull
+    @Nullable
     private static String getTranslatedIsa(@NonNull String isa) {
         String abi64 = Constants.getNative64BitAbi();
         String abi32 = Constants.getNative32BitAbi();
@@ -171,7 +176,7 @@ public final class Utils {
         }
         String translatedIsa = SystemProperties.get("ro.dalvik.vm.isa." + isa);
         if (TextUtils.isEmpty(translatedIsa)) {
-            throw new IllegalStateException(String.format("Unsupported isa '%s'", isa));
+            return null;
         }
         return translatedIsa;
     }
@@ -189,7 +194,7 @@ public final class Utils {
         throw new IllegalStateException(String.format("Non-native isa '%s'", isa));
     }
 
-    private static boolean isNativeAbi(@NonNull String abiName) {
+    public static boolean isNativeAbi(@NonNull String abiName) {
         return abiName.equals(Constants.getNative64BitAbi())
                 || abiName.equals(Constants.getNative32BitAbi());
     }
@@ -210,7 +215,7 @@ public final class Utils {
             // This should never happen. Ignore the error and conservatively use dalvik-cache to
             // minimize the risk.
             // TODO(jiakaiz): Throw the error instead of ignoring it.
-            Log.e(TAG, "Failed to determine the location of the artifacts", e);
+            AsLog.e("Failed to determine the location of the artifacts", e);
             return true;
         }
     }
@@ -336,7 +341,7 @@ public final class Utils {
         try {
             Files.deleteIfExists(path);
         } catch (IOException e) {
-            Log.e(TAG, "Failed to delete file '" + path + "'", e);
+            AsLog.e("Failed to delete file '" + path + "'", e);
         }
     }
 
@@ -383,8 +388,7 @@ public final class Utils {
                         refProfile, isOtherReadable, List.of() /* externalProfileErrors */);
             }
         } catch (ServiceSpecificException e) {
-            Log.e(TAG,
-                    "Failed to use the existing reference profile "
+            AsLog.e("Failed to use the existing reference profile "
                             + AidlUtils.toString(refProfile),
                     e);
         }
@@ -433,7 +437,7 @@ public final class Utils {
                     externalProfileErrors.add(result.errorMsg);
                 }
             } catch (ServiceSpecificException e) {
-                Log.e(TAG, "Failed to initialize profile from " + pair.first, e);
+                AsLog.e("Failed to initialize profile from " + pair.first, e);
             }
         }
 
@@ -450,16 +454,24 @@ public final class Utils {
             //    exception is expected.
             // In either case, we don't need to surface the exception from here.
             // The Java stack trace is intentionally omitted because it's not helpful.
-            Log.e(TAG, message);
+            AsLog.e(message);
         } else {
             // Not expected. Log wtf to surface it.
-            Slog.wtf(TAG, message, e);
+            AsLog.wtf(message, e);
         }
     }
 
     public static boolean isSystemOrRootOrShell() {
         int uid = Binder.getCallingUid();
         return uid == Process.SYSTEM_UID || uid == Process.ROOT_UID || uid == Process.SHELL_UID;
+    }
+
+    public static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            AsLog.wtf("Sleep interrupted", e);
+        }
     }
 
     @AutoValue

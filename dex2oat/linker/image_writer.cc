@@ -1101,7 +1101,17 @@ bool ImageWriter::KeepClass(ObjPtr<mirror::Class> klass) {
     // the boot image spaces since these may have already been loaded at
     // run time when this image is loaded. Keep classes in the boot image
     // spaces we're compiling against since we don't want to re-resolve these.
-    return !PruneImageClass(klass);
+    // FIXME: Update image classes in the `CompilerOptions` after initializing classes
+    // with `--initialize-app-image-classes=true`. This experimental flag can currently
+    // cause an inconsistency between `CompilerOptions::IsImageClass()` and what actually
+    // ends up in the app image as seen in the run-test `660-clinit` where the class
+    // `ObjectRef` is considered an app image class during compilation but in the end
+    // it's pruned here. This inconsistency should be fixed if we want to properly
+    // initialize app image classes. b/38313278
+    bool keep = !PruneImageClass(klass);
+    CHECK_IMPLIES(!compiler_options_.InitializeAppImageClasses(), keep)
+        << klass->PrettyDescriptor();
+    return keep;
   }
   return true;
 }

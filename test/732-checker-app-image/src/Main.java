@@ -14,18 +14,43 @@
  * limitations under the License.
  */
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+
 public class Main {
-    public static void main(String args[]) {
+    public static String TEST_NAME = "732-checker-app-image";
+
+    public static ClassLoader getSecondaryClassLoader() throws Exception {
+        String location = System.getenv("DEX_LOCATION");
+        try {
+            Class<?> class_loader_class = Class.forName("dalvik.system.PathClassLoader");
+            Constructor<?> ctor =
+                    class_loader_class.getConstructor(String.class, ClassLoader.class);
+            return (ClassLoader) ctor.newInstance(location + "/" + TEST_NAME + "-ex.jar",
+                                                  Main.class.getClassLoader());
+        } catch (ClassNotFoundException e) {
+            // Running on RI. Use URLClassLoader.
+            return new java.net.URLClassLoader(
+                    new java.net.URL[] { new java.net.URL("file://" + location + "/classes-ex/") });
+        }
+    }
+
+    public static void main(String args[]) throws Exception {
         System.out.println($noinline$getAppImageClass().getName());
         System.out.println($noinline$getNonAppImageClass().getName());
 
         $noinline$callAppImageClassNop();
         $noinline$callAppImageClassWithClinitNop();
         $noinline$callNonAppImageClassNop();
+
+        ClassLoader secondaryLoader = getSecondaryClassLoader();
+        Class<?> secondaryClass = Class.forName("Secondary", true, secondaryLoader);
+        Method secondaryMain = secondaryClass.getMethod("main");
+        secondaryMain.invoke(null);
     }
 
     /// CHECK-START: java.lang.Class Main.$noinline$getAppImageClass() builder (after)
-    /// CHECK:            LoadClass load_kind:BssEntry in_image:true
+    /// CHECK:            LoadClass load_kind:AppImageRelRo in_image:true
     public static Class<?> $noinline$getAppImageClass() {
         return AppImageClass.class;
     }
@@ -52,22 +77,20 @@ public class Main {
     }
 
     /// CHECK-START: void Main.$noinline$callAppImageClassWithClinitNop() builder (after)
-    /// CHECK:            LoadClass load_kind:BssEntry in_image:true gen_clinit_check:false
+    /// CHECK:            LoadClass load_kind:AppImageRelRo in_image:true gen_clinit_check:false
     /// CHECK:            ClinitCheck
     /// CHECK:            InvokeStaticOrDirect clinit_check:explicit
 
     /// CHECK-START: void Main.$noinline$callAppImageClassWithClinitNop() inliner (after)
-    /// CHECK:            LoadClass load_kind:BssEntry in_image:true gen_clinit_check:false
+    /// CHECK:            LoadClass load_kind:AppImageRelRo in_image:true gen_clinit_check:false
     /// CHECK:            ClinitCheck
 
     /// CHECK-START: void Main.$noinline$callAppImageClassWithClinitNop() inliner (after)
     /// CHECK-NOT:        InvokeStaticOrDirect
 
     /// CHECK-START: void Main.$noinline$callAppImageClassWithClinitNop() prepare_for_register_allocation (after)
-    /// CHECK:            LoadClass load_kind:BssEntry in_image:true gen_clinit_check:true
-
-    /// CHECK-START: void Main.$noinline$callAppImageClassWithClinitNop() prepare_for_register_allocation (after)
-    /// CHECK-NOT:        ClinitCheck
+    /// CHECK:            LoadClass load_kind:AppImageRelRo in_image:true gen_clinit_check:false
+    /// CHECK:            ClinitCheck
     public static void $noinline$callAppImageClassWithClinitNop() {
         AppImageClassWithClinit.$inline$nop();
     }

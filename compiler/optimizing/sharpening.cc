@@ -277,7 +277,7 @@ HLoadClass::LoadKind HSharpening::ComputeLoadClassKind(
       } else if (compiler_options.IsAppImage() && is_class_in_current_image()) {
         // AOT app compilation, app image class.
         is_in_image = true;
-        desired_load_kind = HLoadClass::LoadKind::kBssEntry;
+        desired_load_kind = HLoadClass::LoadKind::kAppImageRelRo;
       } else {
         // Not JIT and the klass is not in boot image or app image.
         desired_load_kind = HLoadClass::LoadKind::kBssEntry;
