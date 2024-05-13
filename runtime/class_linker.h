@@ -64,7 +64,6 @@ class OatFile;
 template<class T> class ObjectLock;
 class Runtime;
 class ScopedObjectAccessAlreadyRunnable;
-class SdkChecker;
 template<size_t kNumReferences> class PACKED(4) StackHandleScope;
 class Thread;
 class VariableSizedHandleScope;
@@ -887,7 +886,7 @@ class EXPORT ClassLinker {
   virtual bool DenyAccessBasedOnPublicSdk(ArtField* art_field) const
       REQUIRES_SHARED(Locks::mutator_lock_);
   // Verifies if the descriptor is accesible according to the SdkChecker (if installed).
-  virtual bool DenyAccessBasedOnPublicSdk(const char* type_descriptor) const;
+  virtual bool DenyAccessBasedOnPublicSdk(std::string_view type_descriptor) const;
   // Enable or disable public sdk checks.
   virtual void SetEnablePublicSdkChecks(bool enabled);
 
