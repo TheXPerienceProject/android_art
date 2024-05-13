@@ -21,14 +21,6 @@ package {
     default_applicable_licenses: ["art_license"],
 }
 
-soong_config_module_type_import {
-    from: "art/build/SoongConfig.bp",
-    module_types: [
-        "art_module_sdk",
-        "art_module_exports",
-    ],
-}
-
 // Additional visibility to add to the prebuilt modules that are part of
 // the snapshots of the ART sdk/module_exports to ensure that they are
 // visible to each other.
@@ -39,7 +31,7 @@ prebuilt_visibility = [
 ]
 
 // The SDK for the art module apex.
-art_module_sdk {
+sdk {
     name: "art-module-sdk",
     host_supported: true,
 
@@ -140,7 +132,7 @@ art_module_sdk {
 }
 
 // Exported host tools and libraries.
-art_module_exports {
+module_exports {
     name: "art-module-host-exports",
     host_supported: true,
 
@@ -188,7 +180,7 @@ art_module_exports {
 }
 
 // Exported tests and supporting libraries
-art_module_exports {
+module_exports {
     name: "art-module-test-exports",
 
     prebuilt_visibility: prebuilt_visibility,

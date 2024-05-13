@@ -61,7 +61,6 @@ def main():
           // Install in the output directory to make it accessible for tests.
           prebuilt_etc_host {{
               name: "{name}",
-              defaults: ["art_module_source_build_prebuilt_defaults"],
               src: ":{name}-tmp",
               sub_dir: "art",
               filename: "{name}.zip",
@@ -89,7 +88,6 @@ def main():
         // Install in the output directory to make it accessible for tests.
         prebuilt_etc_host {{
             name: "{name}",
-            defaults: ["art_module_source_build_prebuilt_defaults"],
             src: ":{name}-tmp",
             sub_dir: "art",
             filename: "{name}.zip",
@@ -99,11 +97,6 @@ def main():
       f.write(textwrap.dedent(f"""
         genrule_defaults {{
             name: "art-run-test-{mode}-data-defaults",
-            defaults: [
-                // Enable only in source builds, where com.android.art.testing is
-                // available.
-                "art_module_source_build_genrule_defaults",
-            ],
             tool_files: [
                 "run_test_build.py",
                 ":art-run-test-bootclasspath",
@@ -142,7 +135,6 @@ def main():
       f.write(textwrap.dedent(f"""
         java_genrule {{
             name: "{name}-tmp",
-            defaults: ["art_module_source_build_genrule_defaults"],
             out: ["{name}.zip"],
             srcs: [
                 {srcs}
@@ -154,7 +146,6 @@ def main():
         // Install in the output directory to make it accessible for tests.
         prebuilt_etc_host {{
             name: "{name}",
-            defaults: ["art_module_source_build_prebuilt_defaults"],
             src: ":{name}-tmp",
             required: [
                 {deps}
@@ -171,11 +162,6 @@ def main():
         // Phony target used to build all shards
         java_genrule {{
             name: "{name}-tmp",
-            defaults: [
-                // Enable only in source builds, where com.android.art.testing is
-                // available.
-                "art_module_source_build_genrule_defaults",
-            ],
             out: ["{name}.txt"],
             srcs: [
                 {srcs}
@@ -186,7 +172,6 @@ def main():
         // Phony target used to install all shards
         prebuilt_etc_host {{
             name: "{name}",
-            defaults: ["art_module_source_build_prebuilt_defaults"],
             src: ":{name}-tmp",
             required: [
                 {deps}

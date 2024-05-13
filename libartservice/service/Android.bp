@@ -231,11 +231,6 @@ android_test {
         "javatests/**/*.java",
     ],
 
-    // disable the target when prebuilt modules are used
-    defaults: [
-        "art_module_source_build_java_defaults",
-    ],
-
     libs: [
         "sdk_module-lib_current_framework-configinfrastructure",
     ],

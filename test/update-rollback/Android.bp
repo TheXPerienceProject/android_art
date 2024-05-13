@@ -18,7 +18,6 @@ package {
 
 java_test_host {
     name: "art-apex-update-rollback",
-    defaults: ["art_module_source_build_java_defaults"],
     srcs: ["src/**/*.java"],
     libs: ["tradefed"],
     static_libs: ["cts-install-lib-host"],
