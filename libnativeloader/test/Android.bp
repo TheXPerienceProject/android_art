@@ -55,7 +55,6 @@ cc_library {
 // library in the host test. It's not actually installed or started.
 android_test_helper_app {
     name: "library_container_app",
-    defaults: ["art_module_source_build_java_defaults"],
     min_sdk_version: "31",
     manifest: "library_container_app_manifest.xml",
     compile_multilib: "both",
@@ -120,7 +119,6 @@ java_library {
 
 java_defaults {
     name: "loadlibrarytest_app_defaults",
-    defaults: ["art_module_source_build_java_defaults"],
     min_sdk_version: "31",
     // Don't let targetSdkVersion become the latest codename, because
     // PackageManager refuses to install the app on released platform images
@@ -188,7 +186,6 @@ android_test_helper_app {
 
 java_test_host {
     name: "libnativeloader_e2e_tests",
-    defaults: ["art_module_source_build_java_defaults"],
     srcs: ["src/android/test/hostside/*.java"],
     libs: [
         "compatibility-tradefed",

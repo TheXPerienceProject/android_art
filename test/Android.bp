@@ -26,15 +26,8 @@ package {
     default_team: "trendy_team_art_performance",
 }
 
-soong_config_module_type_import {
-    from: "art/build/SoongConfig.bp",
-    module_types: [
-        "art_module_cc_defaults",
-    ],
-}
-
 // Properties common to `art_test_defaults` and `art_standalone_test_defaults`.
-art_module_cc_defaults {
+cc_defaults {
     name: "art_test_common_defaults",
     defaults: ["art_defaults"],
 
@@ -68,7 +61,7 @@ art_module_cc_defaults {
     },
 }
 
-art_module_cc_defaults {
+cc_defaults {
     name: "art_test_defaults",
     defaults: [
         "art_test_common_defaults",
@@ -1320,11 +1313,6 @@ java_library {
 
 art_cc_test {
     name: "ArtGtestsTargetInstallApex",
-    defaults: [
-        // Enable only in source builds, where com.android.art.testing is
-        // available.
-        "art_module_source_build_defaults",
-    ],
     data: [
         // We need the ART testing apex, which contains all gtest binaries.
         // Note that due to build system and linker constraints the gtests must be in the apex.
@@ -1357,11 +1345,6 @@ art_cc_test {
 
 art_cc_test {
     name: "ArtGtestsTargetChroot",
-    defaults: [
-        // Enable only in source builds, where com.android.art.testing is
-        // available.
-        "art_module_source_build_defaults",
-    ],
     data: [
         // We need the ART testing apex, which contains all gtest binaries.
         // Note that due to build system and linker constraints the gtests must be in the apex.

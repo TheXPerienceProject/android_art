@@ -12,14 +12,6 @@ package {
     default_applicable_licenses: ["art_license"],
 }
 
-soong_config_module_type_import {
-    from: "art/build/SoongConfig.bp",
-    module_types: [
-        "art_module_apex_defaults",
-        "art_module_cc_defaults",
-    ],
-}
-
 // Binaries for which both 32- and 64-bit versions are built, if possible.
 art_runtime_binaries_both = [
     "dalvikvm",
@@ -168,7 +160,7 @@ apex_key {
 }
 
 // Default shared by all ART APEXes.
-art_module_apex_defaults {
+apex_defaults {
     name: "com.android.art-base-defaults",
 
     target: {
@@ -411,7 +403,6 @@ art_check_apex_gen_stem = "$(location art-apex-tester)" +
 // (even when APEX flattening is enabled).
 genrule_defaults {
     name: "art-check-apex-gen-defaults",
-    defaults: ["art_module_source_build_genrule_defaults"],
     tools: [
         "art-apex-tester",
         "deapexer",
@@ -420,7 +411,7 @@ genrule_defaults {
     ],
 }
 
-art_module_cc_defaults {
+cc_defaults {
     name: "art-check-apex-gen-fakebin-defaults",
     host_supported: true,
     device_supported: false,
@@ -499,7 +490,6 @@ linker_config {
 // 1 variant, we can then depend on it from a different type of genrule like regular genrule.
 sdk_genrule {
     name: "art-module-host-exports-for-genrule",
-    defaults: ["art_module_source_build_genrule_defaults"],
     srcs: [":art-module-host-exports"],
     out: ["art-module-host-exports-current.zip"],
     cmd: "cp $(in) $(out)",
@@ -509,7 +499,6 @@ sdk_genrule {
 // At the time of writing, this is only for Compiler Explorer (https://godbolt.org).
 genrule {
     name: "art_release_zip",
-    defaults: ["art_module_source_build_genrule_defaults"],
     srcs: [
         ":art-module-host-exports-for-genrule",
         ":com.android.art",
