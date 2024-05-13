@@ -126,7 +126,6 @@ cc_library {
 art_cc_test {
     name: "libnativeloader_test",
     defaults: [
-        "art_module_source_build_defaults",
         // Cannot use art_standalone_gtest_defaults because it makes us link
         // libnativebridge statically through libart-gtest, but we need to mock
         // its symbols here.

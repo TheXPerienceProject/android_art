@@ -24,24 +24,10 @@ package {
     default_team: "trendy_team_art_performance",
 }
 
-soong_config_module_type_import {
-    from: "art/build/SoongConfig.bp",
-    module_types: [
-        "art_module_cc_genrule",
-    ],
-}
-
 python_binary_host {
     name: "generate_operator_out",
     srcs: [
         "generate_operator_out.py",
-    ],
-}
-
-soong_config_module_type_import {
-    from: "art/build/SoongConfig.bp",
-    module_types: [
-        "art_module_sh_binary",
     ],
 }
 
@@ -57,7 +43,7 @@ cc_binary {
 }
 
 // Copy the art shell script to the host and target's bin directory
-art_module_sh_binary {
+sh_binary {
     name: "art-script",
 
     host_supported: true,
@@ -106,7 +92,7 @@ sh_binary {
     },
 }
 
-art_module_cc_genrule {
+cc_genrule {
     name: "check_cfi",
 
     tool_files: [

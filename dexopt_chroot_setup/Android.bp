@@ -88,7 +88,6 @@ cc_fuzz {
     name: "dexopt_chroot_setup_fuzzer",
     defaults: [
         "service_fuzzer_defaults",
-        "art_module_source_build_defaults",
         "dexopt_chroot_setup_defaults",
     ],
     srcs: ["dexopt_chroot_setup_fuzzer.cc"],

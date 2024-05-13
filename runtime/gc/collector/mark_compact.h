@@ -541,13 +541,26 @@ class MarkCompact final : public GarbageCollector {
                          size_t arr_idx,
                          size_t arr_len) REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Maps moving space pages in [arr_idx, arr_len) range. It fetches the page
+  // Maps moving space pages in [start_idx, arr_len) range. It fetches the page
   // address containing the compacted content from moving_pages_status_ array.
-  // Returns number of bytes (should be multiple of page-size) that are mapped
-  // by the thread.
-  size_t MapMovingSpacePages(size_t arr_idx, size_t arr_len) REQUIRES_SHARED(Locks::mutator_lock_);
+  // 'from_fault' is true when called from userfault (sigbus handler).
+  // 'return_on_contention' is set to true by gc-thread while it is compacting
+  // pages. In the end it calls the function with `return_on_contention=false`
+  // to ensure all pages are mapped. Returns number of pages that are mapped.
+  size_t MapMovingSpacePages(size_t start_idx,
+                             size_t arr_len,
+                             bool from_fault,
+                             bool return_on_contention) REQUIRES_SHARED(Locks::mutator_lock_);
 
   bool IsValidFd(int fd) const { return fd >= 0; }
+
+  PageState GetPageStateFromWord(uint32_t page_word) {
+    return static_cast<PageState>(static_cast<uint8_t>(page_word));
+  }
+
+  PageState GetMovingPageState(size_t idx) {
+    return GetPageStateFromWord(moving_pages_status_[idx].load(std::memory_order_acquire));
+  }
 
   // Add/update <class, obj> pair if class > obj and obj is the lowest address
   // object of class.
@@ -563,13 +576,24 @@ class MarkCompact final : public GarbageCollector {
   void MarkZygoteLargeObjects() REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(Locks::heap_bitmap_lock_);
 
-  void ZeropageIoctl(void* addr, size_t length, bool tolerate_eexist, bool tolerate_enoent);
-  void CopyIoctl(void* dst, void* buffer, size_t length);
+  // Map zero-pages in the given range. 'tolerate_eexist' and 'tolerate_enoent'
+  // help us decide if we should expect EEXIST or ENOENT back from the ioctl
+  // respectively. It may return after mapping fewer pages than requested.
+  // found to be contended, then we delay the operations based on thread's
+  // Returns number of bytes (multiple of page-size) now known to be mapped.
+  size_t ZeropageIoctl(void* addr, size_t length, bool tolerate_eexist, bool tolerate_enoent);
+  // Map 'buffer' to 'dst', both being 'length' bytes using at most one ioctl
+  // call. 'return_on_contention' indicates that the function should return
+  // as soon as mmap_lock contention is detected. Like ZeropageIoctl(), this
+  // function also uses thread's priority to decide how long we delay before
+  // forcing the ioctl operation. If ioctl returns EEXIST, then also function
+  // returns. Returns number of bytes (multiple of page-size) mapped.
+  size_t CopyIoctl(void* dst, void* buffer, size_t length, bool return_on_contention);
 
   // Called after updating linear-alloc page(s) to map the page. It first
   // updates the state of the pages to kProcessedAndMapping and after ioctl to
-  // kProcessedAndMapped. Returns true if at least one ioctl invocation was
-  // done. If 'free_pages' is true then also frees shadow pages. If 'single_ioctl'
+  // kProcessedAndMapped. Returns true if at least the first page is now mapped.
+  // If 'free_pages' is true then also frees shadow pages. If 'single_ioctl'
   // is true, then stops after first ioctl.
   bool MapUpdatedLinearAllocPages(uint8_t* start_page,
                                   uint8_t* start_shadow_page,

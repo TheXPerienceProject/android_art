@@ -177,7 +177,7 @@ std::string_view TypeLookupTable::GetStringData(const Entry& entry) const {
   DCHECK(dex_data_begin_ != nullptr);
   const uint8_t* ptr = dex_data_begin_ + entry.GetStringOffset();
   uint32_t utf16_length = DecodeUnsignedLeb128(&ptr);
-  return StringViewFromUtf16Length(reinterpret_cast<const char*>(ptr), utf16_length);
+  return DexFile::StringViewFromUtf16Length(reinterpret_cast<const char*>(ptr), utf16_length);
 }
 
 }  // namespace art
