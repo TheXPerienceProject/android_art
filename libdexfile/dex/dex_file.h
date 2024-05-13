@@ -904,6 +904,11 @@ class DexFile {
   static inline bool StringEquals(const DexFile* df1, dex::StringIndex sidx1,
                                   const DexFile* df2, dex::StringIndex sidx2);
 
+  static int CompareDescriptors(std::string_view lhs, std::string_view rhs);
+  static int CompareMemberNames(std::string_view lhs, std::string_view rhs);
+
+  static std::string_view StringViewFromUtf16Length(const char* utf8_data, size_t utf16_length);
+
  protected:
   // First Dex format version supporting default methods.
   static constexpr uint32_t kDefaultMethodsVersion = 37;

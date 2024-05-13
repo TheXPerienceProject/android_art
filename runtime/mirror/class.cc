@@ -793,7 +793,7 @@ static std::tuple<bool, ArtMethod*> FindDeclaredClassMethod(ObjPtr<mirror::Class
     // Do not use ArtMethod::GetNameView() to avoid reloading dex file through the same
     // declaring class from different methods and also avoid the runtime method check.
     const dex::MethodId& method_id = get_method_id(mid);
-    return name.compare(dex_file.GetMethodNameView(method_id));
+    return DexFile::CompareMemberNames(name, dex_file.GetMethodNameView(method_id));
   };
   auto signature_cmp = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE {
     // Do not use ArtMethod::GetSignature() to avoid reloading dex file through the same
@@ -1054,11 +1054,12 @@ static std::tuple<bool, ArtField*> FindFieldByNameAndType(const DexFile& dex_fil
   };
   auto name_cmp = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE {
     const dex::FieldId& field_id = get_field_id(mid);
-    return name.compare(dex_file.GetFieldNameView(field_id));
+    return DexFile::CompareMemberNames(name, dex_file.GetFieldNameView(field_id));
   };
   auto type_cmp = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE {
     const dex::FieldId& field_id = get_field_id(mid);
-    return type.compare(dex_file.GetTypeDescriptorView(dex_file.GetTypeId(field_id.type_idx_)));
+    return DexFile::CompareDescriptors(
+        type, dex_file.GetTypeDescriptorView(dex_file.GetTypeId(field_id.type_idx_)));
   };
   auto get_name_idx = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE {
     const dex::FieldId& field_id = get_field_id(mid);
