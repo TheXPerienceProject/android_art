@@ -214,11 +214,13 @@ class EXPORT ArtField final {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   const char* GetName() REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string_view GetNameView() REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Resolves / returns the name from the dex cache.
   ObjPtr<mirror::String> ResolveNameString() REQUIRES_SHARED(Locks::mutator_lock_);
 
   const char* GetTypeDescriptor() REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string_view GetTypeDescriptorView() REQUIRES_SHARED(Locks::mutator_lock_);
 
   Primitive::Type GetTypeAsPrimitiveType() REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -233,6 +235,9 @@ class EXPORT ArtField final {
   ObjPtr<mirror::DexCache> GetDexCache() REQUIRES_SHARED(Locks::mutator_lock_);
 
   const DexFile* GetDexFile() REQUIRES_SHARED(Locks::mutator_lock_);
+
+  const char* GetDeclaringClassDescriptor() REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string_view GetDeclaringClassDescriptorView() REQUIRES_SHARED(Locks::mutator_lock_);
 
   GcRoot<mirror::Class>& DeclaringClassRoot() {
     return declaring_class_;

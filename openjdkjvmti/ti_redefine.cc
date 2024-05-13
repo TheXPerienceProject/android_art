@@ -2586,9 +2586,8 @@ void Redefiner::ClassRedefinition::UpdateFields(art::ObjPtr<art::mirror::Class> 
   // TODO The IFields & SFields pointers should be combined like the methods_ arrays were.
   for (auto fields_iter : {mclass->GetIFields(), mclass->GetSFields()}) {
     for (art::ArtField& field : fields_iter) {
-      std::string declaring_class_name;
       const art::dex::TypeId* new_declaring_id =
-          dex_file_->FindTypeId(field.GetDeclaringClass()->GetDescriptor(&declaring_class_name));
+          dex_file_->FindTypeId(field.GetDeclaringClassDescriptor());
       const art::dex::StringId* new_name_id = dex_file_->FindStringId(field.GetName());
       const art::dex::TypeId* new_type_id = dex_file_->FindTypeId(field.GetTypeDescriptor());
       CHECK(new_name_id != nullptr && new_type_id != nullptr && new_declaring_id != nullptr);

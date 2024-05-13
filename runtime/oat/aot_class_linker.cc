@@ -235,12 +235,10 @@ const SdkChecker* AotClassLinker::GetSdkChecker() const {
   return sdk_checker_.get();
 }
 
-bool AotClassLinker::DenyAccessBasedOnPublicSdk(ArtMethod* art_method) const
-    REQUIRES_SHARED(Locks::mutator_lock_) {
+bool AotClassLinker::DenyAccessBasedOnPublicSdk(ArtMethod* art_method) const {
   return sdk_checker_ != nullptr && sdk_checker_->ShouldDenyAccess(art_method);
 }
-bool AotClassLinker::DenyAccessBasedOnPublicSdk(ArtField* art_field) const
-    REQUIRES_SHARED(Locks::mutator_lock_) {
+bool AotClassLinker::DenyAccessBasedOnPublicSdk(ArtField* art_field) const {
   return sdk_checker_ != nullptr && sdk_checker_->ShouldDenyAccess(art_field);
 }
 bool AotClassLinker::DenyAccessBasedOnPublicSdk(const char* type_descriptor) const {

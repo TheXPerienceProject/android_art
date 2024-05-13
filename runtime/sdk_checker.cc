@@ -47,14 +47,16 @@ bool SdkChecker::ShouldDenyAccess(ArtMethod* art_method) const {
     return false;
   }
 
+  const char* declaring_class_descriptor = art_method->GetDeclaringClassDescriptor();
+  const char* name = art_method->GetName();
+
   bool found = false;
   for (const std::unique_ptr<const DexFile>& dex_file : sdk_dex_files_) {
-    const dex::TypeId* declaring_type_id =
-        dex_file->FindTypeId(art_method->GetDeclaringClassDescriptor());
+    const dex::TypeId* declaring_type_id = dex_file->FindTypeId(declaring_class_descriptor);
     if (declaring_type_id == nullptr) {
       continue;
     }
-    const dex::StringId* name_id = dex_file->FindStringId(art_method->GetName());
+    const dex::StringId* name_id = dex_file->FindStringId(name);
     if (name_id == nullptr) {
       continue;
     }
@@ -91,20 +93,21 @@ bool SdkChecker::ShouldDenyAccess(ArtField* art_field) const {
     return false;
   }
 
+  const char* declaring_class_descriptor = art_field->GetDeclaringClassDescriptor();
+  const char* name = art_field->GetName();
+  const char* type_descriptor = art_field->GetTypeDescriptor();
+
   bool found = false;
   for (const std::unique_ptr<const DexFile>& dex_file : sdk_dex_files_) {
-    std::string declaring_class;
-
-    const dex::TypeId* declaring_type_id =
-        dex_file->FindTypeId(art_field->GetDeclaringClass()->GetDescriptor(&declaring_class));
+    const dex::TypeId* declaring_type_id = dex_file->FindTypeId(declaring_class_descriptor);
     if (declaring_type_id == nullptr) {
       continue;
     }
-    const dex::StringId* name_id = dex_file->FindStringId(art_field->GetName());
+    const dex::StringId* name_id = dex_file->FindStringId(name);
     if (name_id == nullptr) {
       continue;
     }
-    const dex::TypeId* type_id = dex_file->FindTypeId(art_field->GetTypeDescriptor());
+    const dex::TypeId* type_id = dex_file->FindTypeId(type_descriptor);
     if (type_id == nullptr) {
       continue;
     }
