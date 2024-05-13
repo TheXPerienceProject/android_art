@@ -32,7 +32,22 @@
 
 namespace art {
 
-inline std::string_view StringViewFromUtf16Length(const char* utf8_data, size_t utf16_length) {
+inline int DexFile::CompareDescriptors(std::string_view lhs, std::string_view rhs) {
+  // Note: `std::string_view::compare()` uses lexicographical comparison and treats the `char`
+  // as unsigned; for Modified-UTF-8 without embedded nulls this is consistent with the
+  // `CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues()` ordering.
+  return lhs.compare(rhs);
+}
+
+inline int DexFile::CompareMemberNames(std::string_view lhs, std::string_view rhs) {
+  // Note: `std::string_view::compare()` uses lexicographical comparison and treats the `char`
+  // as unsigned; for Modified-UTF-8 without embedded nulls this is consistent with the
+  // `CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues()` ordering.
+  return lhs.compare(rhs);
+}
+
+inline std::string_view DexFile::StringViewFromUtf16Length(const char* utf8_data,
+                                                           size_t utf16_length) {
   size_t utf8_length = LIKELY(utf8_data[utf16_length] == 0)  // Is ASCII?
                            ? utf16_length
                            : utf16_length + strlen(utf8_data + utf16_length);
