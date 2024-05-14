@@ -1260,7 +1260,7 @@ class ProfMan final {
       return !receiver_.has_value();
     }
 
-    const std::string_view& GetReceiverType() const {
+    std::string_view GetReceiverType() const {
       DCHECK(!IsSingleReceiver());
       return *receiver_;
     }
@@ -1550,9 +1550,8 @@ class ProfMan final {
           }
         } else {
           // Get the type-ref the method code will use.
-          std::string receiver_str(segment.GetReceiverType());
-          const dex::TypeId *type_id =
-              class_ref.dex_file->FindTypeId(receiver_str.c_str());
+          std::string_view receiver_descriptor = segment.GetReceiverType();
+          const dex::TypeId *type_id = class_ref.dex_file->FindTypeId(receiver_descriptor);
           if (type_id == nullptr) {
             LOG(WARNING) << "Could not find class: "
                          << segment.GetReceiverType() << " in dex-file "

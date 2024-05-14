@@ -359,11 +359,6 @@ class DexFile {
   // Looks up a string id for a given modified utf8 string.
   const dex::StringId* FindStringId(const char* string) const;
 
-  const dex::TypeId* FindTypeId(const char* string) const;
-  const dex::TypeId* FindTypeId(std::string_view string) const {
-    return FindTypeId(std::string(string).c_str());
-  }
-
   // Returns the number of type identifiers in the .dex file.
   uint32_t NumTypeIds() const {
     DCHECK(header_ != nullptr) << GetLocation();
@@ -393,6 +388,8 @@ class DexFile {
   const char* GetTypeDescriptor(dex::TypeIndex type_idx) const;
   std::string_view GetTypeDescriptorView(const dex::TypeId& type_id) const;
   std::string_view GetTypeDescriptorView(dex::TypeIndex type_idx) const;
+
+  const dex::TypeId* FindTypeId(std::string_view descriptor) const;
 
   // Looks up a type for the given string index
   const dex::TypeId* FindTypeId(dex::StringIndex string_idx) const;

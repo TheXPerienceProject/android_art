@@ -1817,8 +1817,15 @@ uint32_t Class::Depth() {
 }
 
 dex::TypeIndex Class::FindTypeIndexInOtherDexFile(const DexFile& dex_file) {
-  std::string temp;
-  const dex::TypeId* type_id = dex_file.FindTypeId(GetDescriptor(&temp));
+  std::string_view descriptor;
+  std::optional<std::string> temp;
+  if (IsPrimitive() || IsArrayClass() || IsProxyClass()) {
+    temp.emplace();
+    descriptor = GetDescriptor(&temp.value());
+  } else {
+    descriptor = GetDescriptorView();
+  }
+  const dex::TypeId* type_id = dex_file.FindTypeId(descriptor);
   return (type_id == nullptr) ? dex::TypeIndex() : dex_file.GetIndexForTypeId(*type_id);
 }
 

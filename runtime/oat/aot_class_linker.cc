@@ -241,7 +241,7 @@ bool AotClassLinker::DenyAccessBasedOnPublicSdk(ArtMethod* art_method) const {
 bool AotClassLinker::DenyAccessBasedOnPublicSdk(ArtField* art_field) const {
   return sdk_checker_ != nullptr && sdk_checker_->ShouldDenyAccess(art_field);
 }
-bool AotClassLinker::DenyAccessBasedOnPublicSdk(const char* type_descriptor) const {
+bool AotClassLinker::DenyAccessBasedOnPublicSdk(std::string_view type_descriptor) const {
   return sdk_checker_ != nullptr && sdk_checker_->ShouldDenyAccess(type_descriptor);
 }
 

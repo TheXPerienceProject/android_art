@@ -261,7 +261,7 @@ MemberSignature::MemberSignature(ArtField* field) {
 MemberSignature::MemberSignature(ArtMethod* method) {
   DCHECK(method == method->GetInterfaceMethodIfProxy(kRuntimePointerSize))
       << "Caller should have replaced proxy method with interface method";
-  class_name_ = method->GetDeclaringClassDescriptor();
+  class_name_ = method->GetDeclaringClassDescriptorView();
   member_name_ = method->GetNameView();
   type_signature_ = method->GetSignature().ToString();
   type_ = kMethod;
