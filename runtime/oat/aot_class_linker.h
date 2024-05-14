@@ -47,7 +47,7 @@ class AotClassLinker : public ClassLinker {
       REQUIRES_SHARED(Locks::mutator_lock_);
   bool DenyAccessBasedOnPublicSdk(ArtField* art_field) const override
       REQUIRES_SHARED(Locks::mutator_lock_);
-  bool DenyAccessBasedOnPublicSdk(const char* type_descriptor) const override;
+  bool DenyAccessBasedOnPublicSdk(std::string_view type_descriptor) const override;
   void SetEnablePublicSdkChecks(bool enabled) override;
 
   // Transaction constraint checks for AOT compilation.

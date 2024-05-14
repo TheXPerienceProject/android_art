@@ -47,7 +47,7 @@ bool SdkChecker::ShouldDenyAccess(ArtMethod* art_method) const {
     return false;
   }
 
-  const char* declaring_class_descriptor = art_method->GetDeclaringClassDescriptor();
+  std::string_view declaring_class_descriptor = art_method->GetDeclaringClassDescriptorView();
   const char* name = art_method->GetName();
 
   bool found = false;
@@ -93,9 +93,9 @@ bool SdkChecker::ShouldDenyAccess(ArtField* art_field) const {
     return false;
   }
 
-  const char* declaring_class_descriptor = art_field->GetDeclaringClassDescriptor();
+  std::string_view declaring_class_descriptor = art_field->GetDeclaringClassDescriptorView();
   const char* name = art_field->GetName();
-  const char* type_descriptor = art_field->GetTypeDescriptor();
+  std::string_view type_descriptor = art_field->GetTypeDescriptorView();
 
   bool found = false;
   for (const std::unique_ptr<const DexFile>& dex_file : sdk_dex_files_) {
@@ -127,7 +127,7 @@ bool SdkChecker::ShouldDenyAccess(ArtField* art_field) const {
   return !found;
 }
 
-bool SdkChecker::ShouldDenyAccess(const char* descriptor) const {
+bool SdkChecker::ShouldDenyAccess(std::string_view descriptor) const {
   if (!enabled_) {
     return false;
   }

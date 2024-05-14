@@ -696,12 +696,12 @@ dex::TypeIndex ProfileCompilationInfo::FindOrCreateTypeIndex(const DexFile& dex_
     return class_ref.TypeIndex();
   }
   // Try to find a `TypeId` in the method's dex file.
-  const char* descriptor = class_ref.dex_file->GetTypeDescriptor(class_ref.TypeIndex());
+  std::string_view descriptor = class_ref.dex_file->GetTypeDescriptorView(class_ref.TypeIndex());
   return FindOrCreateTypeIndex(dex_file, descriptor);
 }
 
 dex::TypeIndex ProfileCompilationInfo::FindOrCreateTypeIndex(const DexFile& dex_file,
-                                                             const char* descriptor) {
+                                                             std::string_view descriptor) {
   const dex::TypeId* type_id = dex_file.FindTypeId(descriptor);
   if (type_id != nullptr) {
     return dex_file.GetIndexForTypeId(*type_id);
@@ -709,12 +709,11 @@ dex::TypeIndex ProfileCompilationInfo::FindOrCreateTypeIndex(const DexFile& dex_
   // Try to find an existing extra descriptor.
   uint32_t num_type_ids = dex_file.NumTypeIds();
   uint32_t max_artificial_ids = DexFile::kDexNoIndex16 - num_type_ids;
-  std::string_view descriptor_view(descriptor);
   // Check descriptor length for "extra descriptor". We are using `uint16_t` as prefix.
-  if (UNLIKELY(descriptor_view.size() > kMaxExtraDescriptorLength)) {
+  if (UNLIKELY(descriptor.size() > kMaxExtraDescriptorLength)) {
     return dex::TypeIndex();  // Invalid.
   }
-  auto it = extra_descriptors_indexes_.find(descriptor_view);
+  auto it = extra_descriptors_indexes_.find(descriptor);
   if (it != extra_descriptors_indexes_.end()) {
     return (*it < max_artificial_ids) ? dex::TypeIndex(num_type_ids + *it) : dex::TypeIndex();
   }
@@ -723,13 +722,13 @@ dex::TypeIndex ProfileCompilationInfo::FindOrCreateTypeIndex(const DexFile& dex_
     return dex::TypeIndex();  // Invalid.
   }
   // Add the descriptor to extra descriptors and return the artificial type index.
-  ExtraDescriptorIndex new_extra_descriptor_index = AddExtraDescriptor(descriptor_view);
+  ExtraDescriptorIndex new_extra_descriptor_index = AddExtraDescriptor(descriptor);
   DCHECK_LT(new_extra_descriptor_index, max_artificial_ids);
   return dex::TypeIndex(num_type_ids + new_extra_descriptor_index);
 }
 
 bool ProfileCompilationInfo::AddClass(const DexFile& dex_file,
-                                      const char* descriptor,
+                                      std::string_view descriptor,
                                       const ProfileSampleAnnotation& annotation) {
   DexFileData* const data = GetOrAddDexFileData(&dex_file, annotation);
   if (data == nullptr) {  // checksum mismatch

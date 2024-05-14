@@ -2339,7 +2339,7 @@ OatFile::OatClass OatDexFile::GetOatClass(uint16_t class_def_index) const {
 }
 
 const dex::ClassDef* OatDexFile::FindClassDef(const DexFile& dex_file,
-                                              const char* descriptor,
+                                              std::string_view descriptor,
                                               size_t hash) {
   const OatDexFile* oat_dex_file = dex_file.GetOatDexFile();
   DCHECK_EQ(ComputeModifiedUtf8Hash(descriptor), hash);

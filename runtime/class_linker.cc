@@ -11154,7 +11154,8 @@ bool ClassLinker::DenyAccessBasedOnPublicSdk([[maybe_unused]] ArtField* art_fiel
   UNREACHABLE();
 }
 
-bool ClassLinker::DenyAccessBasedOnPublicSdk([[maybe_unused]] const char* type_descriptor) const {
+bool ClassLinker::DenyAccessBasedOnPublicSdk(
+    [[maybe_unused]] std::string_view type_descriptor) const {
   // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
   LOG(FATAL) << "UNREACHABLE";
   UNREACHABLE();
