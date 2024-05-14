@@ -620,7 +620,7 @@ bool JavaVMExt::ShouldTrace(ArtMethod* method) {
     return false;
   }
   // Perform checks based on class name.
-  std::string_view class_name(method->GetDeclaringClassDescriptor());
+  std::string_view class_name = method->GetDeclaringClassDescriptorView();
   if (!trace_.empty() && class_name.find(trace_) != std::string_view::npos) {
     return true;
   }

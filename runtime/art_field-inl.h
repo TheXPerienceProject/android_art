@@ -318,18 +318,27 @@ inline void ArtField::SetObject(ObjPtr<mirror::Object> object, ObjPtr<mirror::Ob
   SetObj<kTransactionActive>(object, l);
 }
 
-inline const char* ArtField::GetName() REQUIRES_SHARED(Locks::mutator_lock_) {
+inline const char* ArtField::GetName() {
   uint32_t field_index = GetDexFieldIndex();
   if (UNLIKELY(IsProxyField())) {
     DCHECK(IsStatic());
     DCHECK_LT(field_index, 2U);
     return field_index == 0 ? "interfaces" : "throws";
   }
-  const DexFile* dex_file = GetDexFile();
-  return dex_file->GetFieldName(dex_file->GetFieldId(field_index));
+  return GetDexFile()->GetFieldName(field_index);
 }
 
-inline const char* ArtField::GetTypeDescriptor() REQUIRES_SHARED(Locks::mutator_lock_) {
+inline std::string_view ArtField::GetNameView() {
+  uint32_t field_index = GetDexFieldIndex();
+  if (UNLIKELY(IsProxyField())) {
+    DCHECK(IsStatic());
+    DCHECK_LT(field_index, 2U);
+    return field_index == 0 ? "interfaces" : "throws";
+  }
+  return GetDexFile()->GetFieldNameView(field_index);
+}
+
+inline const char* ArtField::GetTypeDescriptor() {
   uint32_t field_index = GetDexFieldIndex();
   if (UNLIKELY(IsProxyField())) {
     DCHECK(IsStatic());
@@ -337,17 +346,25 @@ inline const char* ArtField::GetTypeDescriptor() REQUIRES_SHARED(Locks::mutator_
     // 0 == Class[] interfaces; 1 == Class[][] throws;
     return field_index == 0 ? "[Ljava/lang/Class;" : "[[Ljava/lang/Class;";
   }
-  const DexFile* dex_file = GetDexFile();
-  const dex::FieldId& field_id = dex_file->GetFieldId(field_index);
-  return dex_file->GetFieldTypeDescriptor(field_id);
+  return GetDexFile()->GetFieldTypeDescriptor(field_index);
 }
 
-inline Primitive::Type ArtField::GetTypeAsPrimitiveType()
-    REQUIRES_SHARED(Locks::mutator_lock_) {
+inline std::string_view ArtField::GetTypeDescriptorView() {
+  uint32_t field_index = GetDexFieldIndex();
+  if (UNLIKELY(IsProxyField())) {
+    DCHECK(IsStatic());
+    DCHECK_LT(field_index, 2U);
+    // 0 == Class[] interfaces; 1 == Class[][] throws;
+    return field_index == 0 ? "[Ljava/lang/Class;" : "[[Ljava/lang/Class;";
+  }
+  return GetDexFile()->GetFieldTypeDescriptorView(field_index);
+}
+
+inline Primitive::Type ArtField::GetTypeAsPrimitiveType() {
   return Primitive::GetType(GetTypeDescriptor()[0]);
 }
 
-inline bool ArtField::IsPrimitiveType() REQUIRES_SHARED(Locks::mutator_lock_) {
+inline bool ArtField::IsPrimitiveType() {
   return GetTypeAsPrimitiveType() != Primitive::kPrimNot;
 }
 
@@ -372,18 +389,28 @@ inline ObjPtr<mirror::Class> ArtField::ResolveType() {
   return type;
 }
 
-inline size_t ArtField::FieldSize() REQUIRES_SHARED(Locks::mutator_lock_) {
+inline size_t ArtField::FieldSize() {
   return Primitive::ComponentSize(GetTypeAsPrimitiveType());
 }
 
 template <ReadBarrierOption kReadBarrierOption>
-inline ObjPtr<mirror::DexCache> ArtField::GetDexCache() REQUIRES_SHARED(Locks::mutator_lock_) {
+inline ObjPtr<mirror::DexCache> ArtField::GetDexCache() {
   ObjPtr<mirror::Class> klass = GetDeclaringClass<kReadBarrierOption>();
   return klass->GetDexCache<kDefaultVerifyFlags, kReadBarrierOption>();
 }
 
-inline const DexFile* ArtField::GetDexFile() REQUIRES_SHARED(Locks::mutator_lock_) {
+inline const DexFile* ArtField::GetDexFile() {
   return GetDexCache<kWithoutReadBarrier>()->GetDexFile();
+}
+
+inline const char* ArtField::GetDeclaringClassDescriptor() {
+  DCHECK(!IsProxyField());
+  return GetDexFile()->GetFieldDeclaringClassDescriptor(GetDexFieldIndex());
+}
+
+inline std::string_view ArtField::GetDeclaringClassDescriptorView() {
+  DCHECK(!IsProxyField());
+  return GetDexFile()->GetFieldDeclaringClassDescriptorView(GetDexFieldIndex());
 }
 
 inline ObjPtr<mirror::String> ArtField::ResolveNameString() {

@@ -255,12 +255,12 @@ ALWAYS_INLINE bool DoFieldPutCommon(Thread* self,
         }
         if (UNLIKELY(!reg->VerifierInstanceOf(field_class))) {
           // This should never happen.
-          std::string temp1, temp2, temp3;
+          std::string temp1, temp2;
           self->ThrowNewExceptionF("Ljava/lang/InternalError;",
                                    "Put '%s' that is not instance of field '%s' in '%s'",
                                    reg->GetClass()->GetDescriptor(&temp1),
                                    field_class->GetDescriptor(&temp2),
-                                   field->GetDeclaringClass()->GetDescriptor(&temp3));
+                                   field->GetDeclaringClassDescriptor());
           return false;
         }
       }
