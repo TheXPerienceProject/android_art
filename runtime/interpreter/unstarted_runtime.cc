@@ -80,7 +80,7 @@ static void AbortTransactionOrFail(Thread* self, const char* fmt, ...) {
   Runtime* runtime = Runtime::Current();
   if (runtime->IsActiveTransaction()) {
     va_start(args, fmt);
-    runtime->AbortTransactionV(self, fmt, args);
+    runtime->GetClassLinker()->AbortTransactionV(self, fmt, args);
     va_end(args);
   } else {
     va_start(args, fmt);
@@ -156,6 +156,12 @@ static void UnstartedRuntimeFindClass(Thread* self,
   result->SetL(found);
 }
 
+static inline bool PendingExceptionHasAbortDescriptor(Thread* self)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  DCHECK(self->IsExceptionPending());
+  return self->GetException()->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor);
+}
+
 // Common helper for class-loading cutouts in an unstarted runtime. We call Runtime methods that
 // rely on Java code to wrap errors in the correct exception class (i.e., NoClassDefFoundError into
 // ClassNotFoundException), so need to do the same. The only exception is if the exception is
@@ -165,21 +171,22 @@ static void CheckExceptionGenerateClassNotFound(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   if (self->IsExceptionPending()) {
     Runtime* runtime = Runtime::Current();
-    DCHECK_EQ(runtime->IsTransactionAborted(),
-              self->GetException()->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor))
-        << self->GetException()->GetClass()->PrettyDescriptor();
     if (runtime->IsActiveTransaction()) {
       // The boot class path at run time may contain additional dex files with
       // the required class definition(s). We cannot throw a normal exception at
       // compile time because a class initializer could catch it and successfully
       // initialize a class differently than when executing at run time.
       // If we're not aborting the transaction yet, abort now. b/183691501
-      if (!runtime->IsTransactionAborted()) {
-        runtime->AbortTransactionF(self, "ClassNotFoundException");
+      if (!runtime->GetClassLinker()->IsTransactionAborted()) {
+        DCHECK(!PendingExceptionHasAbortDescriptor(self));
+        runtime->GetClassLinker()->AbortTransactionF(self, "ClassNotFoundException");
+      } else {
+        DCHECK(PendingExceptionHasAbortDescriptor(self))
+            << self->GetException()->GetClass()->PrettyDescriptor();
       }
     } else {
       // If not in a transaction, it cannot be the transaction abort exception. Wrap it.
-      DCHECK(!runtime->IsTransactionAborted());
+      DCHECK(!PendingExceptionHasAbortDescriptor(self));
       self->ThrowNewWrappedException("Ljava/lang/ClassNotFoundException;",
                                      "ClassNotFoundException");
     }
@@ -761,18 +768,19 @@ void UnstartedRuntime::UnstartedVmClassLoaderFindLoadedClass(
   // This might have an error pending. But semantics are to just return null.
   if (self->IsExceptionPending()) {
     Runtime* runtime = Runtime::Current();
-    DCHECK_EQ(runtime->IsTransactionAborted(),
-              self->GetException()->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor))
-        << self->GetException()->GetClass()->PrettyDescriptor();
     if (runtime->IsActiveTransaction()) {
       // If we're not aborting the transaction yet, abort now. b/183691501
       // See CheckExceptionGenerateClassNotFound() for more detailed explanation.
-      if (!runtime->IsTransactionAborted()) {
-        runtime->AbortTransactionF(self, "ClassNotFoundException");
+      if (!runtime->GetClassLinker()->IsTransactionAborted()) {
+        DCHECK(!PendingExceptionHasAbortDescriptor(self));
+        runtime->GetClassLinker()->AbortTransactionF(self, "ClassNotFoundException");
+      } else {
+        DCHECK(PendingExceptionHasAbortDescriptor(self))
+            << self->GetException()->GetClass()->PrettyDescriptor();
       }
     } else {
       // If not in a transaction, it cannot be the transaction abort exception. Clear it.
-      DCHECK(!runtime->IsTransactionAborted());
+      DCHECK(!PendingExceptionHasAbortDescriptor(self));
       self->ClearException();
     }
   }
@@ -1300,7 +1308,7 @@ static void UnstartedMemoryPeekArray(
   int64_t address_long = shadow_frame->GetVRegLong(arg_offset);
   mirror::Object* obj = shadow_frame->GetVRegReference(arg_offset + 2);
   if (obj == nullptr) {
-    Runtime::Current()->AbortTransactionAndThrowAbortError(self, "Null pointer in peekArray");
+    Runtime::Current()->GetClassLinker()->AbortTransactionF(self, "Null pointer in peekArray");
     return;
   }
   ObjPtr<mirror::Array> array = obj->AsArray();
@@ -1308,9 +1316,8 @@ static void UnstartedMemoryPeekArray(
   int offset = shadow_frame->GetVReg(arg_offset + 3);
   int count = shadow_frame->GetVReg(arg_offset + 4);
   if (offset < 0 || offset + count > array->GetLength()) {
-    std::string error_msg(StringPrintf("Array out of bounds in peekArray: %d/%d vs %d",
-                                       offset, count, array->GetLength()));
-    Runtime::Current()->AbortTransactionAndThrowAbortError(self, error_msg);
+    Runtime::Current()->GetClassLinker()->AbortTransactionF(
+        self, "Array out of bounds in peekArray: %d/%d vs %d", offset, count, array->GetLength());
     return;
   }
 
@@ -2432,9 +2439,10 @@ void UnstartedRuntime::Jni(Thread* self, ArtMethod* method, mirror::Object* rece
   } else {
     Runtime* runtime = Runtime::Current();
     if (runtime->IsActiveTransaction()) {
-      runtime->AbortTransactionF(self,
-                                 "Attempt to invoke native method in non-started runtime: %s",
-                                 ArtMethod::PrettyMethod(method).c_str());
+      runtime->GetClassLinker()->AbortTransactionF(
+          self,
+          "Attempt to invoke native method in non-started runtime: %s",
+          ArtMethod::PrettyMethod(method).c_str());
     } else {
       LOG(FATAL) << "Calling native method " << ArtMethod::PrettyMethod(method)
                  << " in an unstarted non-transactional runtime";
