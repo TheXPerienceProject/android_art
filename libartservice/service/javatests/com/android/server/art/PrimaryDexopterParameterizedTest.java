@@ -83,6 +83,11 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
         params = new Params();
         list.add(params);
 
+        // Sandbox SdkLib.
+        params = new Params();
+        params.mIsSanboxSdkLib = true;
+        list.add(params);
+
         params = new Params();
         params.mRequestedCompilerFilter = "speed";
         params.mExpectedCompilerFilter = "speed";
@@ -258,6 +263,10 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
                     });
         }
 
+        if (mParams.mIsSanboxSdkLib) {
+            lenient().when(mPkgState.getAppId()).thenReturn(-1);
+        }
+
         mDexoptParams =
                 new DexoptParams.Builder("install")
                         .setCompilerFilter(mParams.mRequestedCompilerFilter)
@@ -280,10 +289,11 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
 
     @Test
     public void testDexopt() throws Exception {
+        int sharedGid = mParams.mIsSanboxSdkLib ? Process.SYSTEM_UID : SHARED_GID;
         PermissionSettings permissionSettings = buildPermissionSettings(
                 buildFsPermission(Process.SYSTEM_UID /* uid */, Process.SYSTEM_UID /* gid */,
                         false /* isOtherReadable */, true /* isOtherExecutable */),
-                buildFsPermission(Process.SYSTEM_UID /* uid */, SHARED_GID /* gid */,
+                buildFsPermission(Process.SYSTEM_UID /* uid */, sharedGid /* gid */,
                         true /* isOtherReadable */),
                 null /* seContext */);
 
@@ -407,6 +417,7 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
         public boolean mIsSystemUi = false;
         public boolean mIsLauncher = false;
         public boolean mIsUseEmbeddedDex = false;
+        public boolean mIsSanboxSdkLib = false;
 
         // Options.
         public String mRequestedCompilerFilter = "verify";
@@ -439,6 +450,7 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
                             + "isSystemUi=%b,"
                             + "isLauncher=%b,"
                             + "isUseEmbeddedDex=%b,"
+                            + "isSanboxSdkLib=%b,"
                             + "requestedCompilerFilter=%s,"
                             + "callbackReturnedCompilerFilter=%s,"
                             + "force=%b,"
@@ -457,11 +469,11 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
                             + "expectedOutputIsPreReboot=%b,"
                             + "expectedDeleteRuntimeArtifacts=%b",
                     mIsInDalvikCache, mHiddenApiEnforcementPolicy, mIsVmSafeMode, mIsDebuggable,
-                    mIsSystemUi, mIsLauncher, mIsUseEmbeddedDex, mRequestedCompilerFilter,
-                    mCallbackReturnedCompilerFilter, mForce, mShouldDowngrade, mSkipIfStorageLow,
-                    mIgnoreProfile, mIsPreReboot, mForceCompilerFilter, mAlwaysDebuggable,
-                    mExpectedCallbackInputCompilerFilter, mExpectedCompilerFilter,
-                    mExpectedDexoptTrigger, mExpectedIsDebuggable,
+                    mIsSystemUi, mIsLauncher, mIsUseEmbeddedDex, mIsSanboxSdkLib,
+                    mRequestedCompilerFilter, mCallbackReturnedCompilerFilter, mForce,
+                    mShouldDowngrade, mSkipIfStorageLow, mIgnoreProfile, mIsPreReboot,
+                    mForceCompilerFilter, mAlwaysDebuggable, mExpectedCallbackInputCompilerFilter,
+                    mExpectedCompilerFilter, mExpectedDexoptTrigger, mExpectedIsDebuggable,
                     mExpectedIsHiddenApiPolicyEnabled, mExpectedOutputIsPreReboot,
                     mExpectedDeletesRuntimeArtifacts);
         }
