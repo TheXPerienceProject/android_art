@@ -251,17 +251,18 @@ enum AccessContextFlags {
 };
 
 MemberSignature::MemberSignature(ArtField* field) {
+  // Note: `ArtField::GetDeclaringClassDescriptor()` does not support proxy classes.
   class_name_ = field->GetDeclaringClass()->GetDescriptor(&tmp_);
-  member_name_ = field->GetName();
-  type_signature_ = field->GetTypeDescriptor();
+  member_name_ = field->GetNameView();
+  type_signature_ = field->GetTypeDescriptorView();
   type_ = kField;
 }
 
 MemberSignature::MemberSignature(ArtMethod* method) {
   DCHECK(method == method->GetInterfaceMethodIfProxy(kRuntimePointerSize))
       << "Caller should have replaced proxy method with interface method";
-  class_name_ = method->GetDeclaringClass()->GetDescriptor(&tmp_);
-  member_name_ = method->GetName();
+  class_name_ = method->GetDeclaringClassDescriptor();
+  member_name_ = method->GetNameView();
   type_signature_ = method->GetSignature().ToString();
   type_ = kMethod;
 }
