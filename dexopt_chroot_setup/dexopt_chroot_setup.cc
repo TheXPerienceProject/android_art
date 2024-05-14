@@ -431,22 +431,24 @@ Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ot
 }
 
 Result<void> DexoptChrootSetup::TearDownChroot() const {
-  if (OS::FileExists(PathInChroot("/system/bin/apexd").c_str())) {
+  std::vector<FstabEntry> apex_entries =
+      OR_RETURN(GetProcMountsDescendantsOfPath(PathInChroot("/apex")));
+  // If there is only one entry, it's /apex itself.
+  bool has_apex = apex_entries.size() > 1;
+
+  if (has_apex && OS::FileExists(PathInChroot("/system/bin/apexd").c_str())) {
+    // Delegate to apexd to unmount all APEXes. It also cleans up loop devices.
     CmdlineBuilder args = OR_RETURN(GetArtExecCmdlineBuilder());
     args.Add("--")
         .Add("/system/bin/apexd")
         .Add("--unmount-all")
         .Add("--also-include-staged-apexes");
-    if (Result<void> result = Run("apexd", args.Get()); !result.ok()) {
-      // Maybe apexd is not executable because a previous setup/teardown failed halfway (e.g.,
-      // /system is currently mounted but /dev is not). We do a check below to see if there is any
-      // unmounted APEXes.
-      LOG(WARNING) << "Failed to run apexd: " << result.error().message();
-    }
+    OR_RETURN(Run("apexd", args.Get()));
   }
 
-  std::vector<FstabEntry> apex_entries =
-      OR_RETURN(GetProcMountsDescendantsOfPath(PathInChroot("/apex")));
+  // Double check to make sure all APEXes are unmounted, just in case apexd incorrectly reported
+  // success.
+  apex_entries = OR_RETURN(GetProcMountsDescendantsOfPath(PathInChroot("/apex")));
   for (const FstabEntry& entry : apex_entries) {
     if (entry.mount_point != PathInChroot("/apex")) {
       return Errorf("apexd didn't unmount '{}'. See logs for details", entry.mount_point);
