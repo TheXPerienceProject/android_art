@@ -144,7 +144,10 @@ class ProfileCompilationInfoTest : public CommonRuntimeTest {
       profile_methods_map->Put(method, pmi);
     }
 
-    if (!info.AddMethods(profile_methods, flags)
+    if (!info.AddMethods(profile_methods,
+                         flags,
+                         ProfileCompilationInfo::ProfileSampleAnnotation::kNone,
+                         /*is_test=*/ true)
         || info.GetNumberOfMethods() != profile_methods.size()) {
       return false;
     }

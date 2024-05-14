@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -50,7 +51,7 @@ using ::art::testing::GetLibCoreDexLocations;
 constexpr const char* kUsage = R"(
 A commandline tool to generate a primary boot image for testing.
 
-Usage: generate-boot-image --output-dir=OUTPUT_DIR [OPTIONS]...
+Usage: generate-boot-image --output-dir=OUTPUT_DIR [OPTIONS]... [-- [DEX2OAT_OPTIONS]...]
 
 Supported options:
   --help: Print this text.
@@ -79,6 +80,7 @@ Supported options:
       host. The default on target is based on the ISA of this binary.
   --core-only=true|false: If true, only compile ART jars. Otherwise, also compile core-icu4j and
       conscrypt. Default: false
+  --: Arguments following '--' are directly passed to dex2oat.
 )";
 
 struct Options {
@@ -92,6 +94,7 @@ struct Options {
   std::string profile_file = "";
   std::string instruction_set = "";
   bool core_only = false;
+  std::vector<std::string> dex2oat_options;
 };
 
 [[noreturn]] void Usage(const std::string& message) {
@@ -162,6 +165,9 @@ int GenerateBootImage(const Options& options) {
   args.push_back(StringPrintf("--image=%s/boot.art", path.c_str()));
   args.push_back(StringPrintf("--oat-file=%s/boot.oat", path.c_str()));
 
+  std::move(
+      options.dex2oat_options.begin(), options.dex2oat_options.end(), std::back_inserter(args));
+
   int exit_code = system(BuildCommand(args).c_str());
   if (exit_code != 0) {
     LOG(ERROR) << "dex2oat invocation failed. Exit code: " << exit_code;
@@ -203,6 +209,10 @@ int Main(int argc, char** argv) {
         Usage(ART_FORMAT("Unrecognized --core-only value: '{}'", arg));
       }
       options.core_only = result == ParseBoolResult::kTrue;
+    } else if (arg == "--") {
+      for (i++; i < argc; i++) {
+        options.dex2oat_options.push_back(argv[i]);
+      }
     } else {
       Usage(ART_FORMAT("Unrecognized argument: '{}'", argv[i]));
     }

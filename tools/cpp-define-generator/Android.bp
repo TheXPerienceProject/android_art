@@ -54,18 +54,6 @@ soong_config_module_type_import {
 // This extracts the compile-time constants from asm_defines.s and creates the header.
 art_module_cc_genrule {
     name: "cpp-define-generator-asm-support",
-
-    // :asm_defines.s is only available when building ART from source, so do the
-    // same here.
-    // TODO(b/172480617): Clean up when sources are gone from the platform tree
-    // and we no longer need to support sources present when prebuilts are used.
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
-
     host_supported: true,
     device_supported: true,
     srcs: [":asm_defines.s"],

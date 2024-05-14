@@ -5,6 +5,7 @@ package {
     // to get the below license kinds:
     //   SPDX-license-identifier-Apache-2.0
     default_applicable_licenses: ["art_license"],
+    default_team: "trendy_team_art_mainline",
 }
 
 bootstrap_go_package {
@@ -93,16 +94,6 @@ art_module_art_global_defaults {
     name: "art_defaults",
 
     cpp_std: "gnu++17", // TODO(b/311052584): fix C++20 build and revert this line
-
-    // Disable all ART Soong modules by default when ART prebuilts are in use.
-    // TODO(b/172480617): Clean up when sources are gone from the platform tree
-    // and we no longer need to support sources present when prebuilts are used.
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
 
     // This is the default visibility for the //art package, but we repeat it
     // here so that it gets merged with other visibility rules in modules
@@ -382,7 +373,7 @@ java_library {
 // from sources. TODO(b/172480617): Clean up when sources are gone from the
 // platform tree and we no longer need to support sources present when prebuilts
 // are used.
-
+// TODO(b/335854415): Remove the defaults module
 art_module_cc_defaults {
     name: "art_module_source_build_defaults",
     defaults_visibility: [
@@ -390,12 +381,6 @@ art_module_cc_defaults {
         "//libcore:__subpackages__",
         "//libnativehelper:__subpackages__",
     ],
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
     target: {
         windows: {
             // Windows is disabled by default, but if we set enabled:true
@@ -405,6 +390,7 @@ art_module_cc_defaults {
     },
 }
 
+// TODO(b/335854415): Remove the defaults module
 art_module_java_defaults {
     name: "art_module_source_build_java_defaults",
     defaults_visibility: [
@@ -412,12 +398,6 @@ art_module_java_defaults {
         "//libcore:__subpackages__",
         "//libnativehelper:__subpackages__",
     ],
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
     target: {
         windows: {
             enabled: false,
@@ -425,6 +405,7 @@ art_module_java_defaults {
     },
 }
 
+// TODO(b/335854415): Remove the defaults module
 art_module_genrule_defaults {
     name: "art_module_source_build_genrule_defaults",
     defaults_visibility: [
@@ -432,12 +413,6 @@ art_module_genrule_defaults {
         "//libcore:__subpackages__",
         "//libnativehelper:__subpackages__",
     ],
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
     target: {
         windows: {
             enabled: false,
@@ -445,6 +420,7 @@ art_module_genrule_defaults {
     },
 }
 
+// TODO(b/335854415): Remove the defaults module
 art_module_prebuilt_defaults {
     name: "art_module_source_build_prebuilt_defaults",
     defaults_visibility: [
@@ -452,12 +428,6 @@ art_module_prebuilt_defaults {
         "//libcore:__subpackages__",
         "//libnativehelper:__subpackages__",
     ],
-    enabled: false,
-    soong_config_variables: {
-        source_build: {
-            enabled: true,
-        },
-    },
     target: {
         windows: {
             enabled: false,

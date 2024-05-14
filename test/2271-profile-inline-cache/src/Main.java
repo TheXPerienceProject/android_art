@@ -26,6 +26,7 @@ public class Main {
     private static Method sMethod2 = null;
     private static Method sMethod3 = null;
     private static Method sMethod4 = null;
+    private static Method sMethod5 = null;
 
     public static void main(String[] args) throws Exception {
         System.loadLibrary(args[0]);
@@ -39,6 +40,7 @@ public class Main {
         sMethod2 = Main.class.getDeclaredMethod("$noinline$method2", Base.class);
         sMethod3 = Main.class.getDeclaredMethod("$noinline$method3", Base.class);
         sMethod4 = Main.class.getDeclaredMethod("$noinline$method4", Base.class);
+        sMethod5 = Main.class.getDeclaredMethod("$noinline$method5", Base.class);
 
         sFile = createTempFile();
         sFile.deleteOnExit();
@@ -106,6 +108,16 @@ public class Main {
         }
         ensureMethodJitCompiled(sMethod4);
         checkMethodHasInlineCache(sFile, sMethod4, Derived1.class, Derived2.class);
+
+        // This method is above the JIT threshold.
+        ensureJitBaselineCompiled(sMethod5);
+        try (ScopedAssertNoGc noGc = new ScopedAssertNoGc()) {
+            $noinline$method5(derived1);
+            $noinline$method5(derived2);
+        }
+        ensureMethodJitCompiled(sMethod5);
+        // We currently do not encode inlined inline caches.
+        checkMethodHasNoInlineCache(sFile, sMethod5);
     }
 
     private static void reset() {
@@ -129,6 +141,14 @@ public class Main {
 
     public static void $noinline$method4(Base obj) {
         obj.f();
+    }
+
+    public static void $noinline$method5(Base obj) {
+        $inline$callF(obj);
+    }
+
+    public static void $inline$callF(Base obj) {
+      obj.f();
     }
 
     public static class Base {

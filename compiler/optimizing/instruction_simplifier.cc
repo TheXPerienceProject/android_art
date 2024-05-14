@@ -127,7 +127,7 @@ class InstructionSimplifierVisitor final : public HGraphDelegateVisitor {
   void SimplifyAllocationIntrinsic(HInvoke* invoke);
   void SimplifyVarHandleIntrinsic(HInvoke* invoke);
 
-  bool CanUseKnownBootImageVarHandle(HInvoke* invoke);
+  bool CanUseKnownImageVarHandle(HInvoke* invoke);
   static bool CanEnsureNotNullAt(HInstruction* input, HInstruction* at);
 
   CodeGenerator* codegen_;
@@ -3025,15 +3025,15 @@ void InstructionSimplifierVisitor::SimplifyVarHandleIntrinsic(HInvoke* invoke) {
     }
   }
 
-  if (CanUseKnownBootImageVarHandle(invoke)) {
-    optimizations.SetUseKnownBootImageVarHandle();
+  if (CanUseKnownImageVarHandle(invoke)) {
+    optimizations.SetUseKnownImageVarHandle();
   }
 }
 
-bool InstructionSimplifierVisitor::CanUseKnownBootImageVarHandle(HInvoke* invoke) {
-  // If the `VarHandle` comes from a static final field of an initialized class in
-  // the boot image, we can do the checks at compile time. We do this optimization only
-  // for AOT and only for field handles when we can avoid all checks. This avoids the
+bool InstructionSimplifierVisitor::CanUseKnownImageVarHandle(HInvoke* invoke) {
+  // If the `VarHandle` comes from a static final field of an initialized class in an image
+  // (boot image or app image), we can do the checks at compile time. We do this optimization
+  // only for AOT and only for field handles when we can avoid all checks. This avoids the
   // possibility of the code concurrently messing with the `VarHandle` using reflection,
   // we simply perform the operation with the `VarHandle` as seen at compile time.
   // TODO: Extend this to arrays to support the `AtomicIntegerArray` class.
@@ -3066,18 +3066,17 @@ bool InstructionSimplifierVisitor::CanUseKnownBootImageVarHandle(HInvoke* invoke
   }
   HInstruction* load_class = var_handle_instruction->InputAt(0);
   if (kIsDebugBuild) {
-    bool is_in_boot_image = false;
+    bool is_in_image = false;
     if (Runtime::Current()->GetHeap()->ObjectIsInBootImageSpace(declaring_class)) {
-      is_in_boot_image = true;
-    } else if (compiler_options.IsBootImage() || compiler_options.IsBootImageExtension()) {
+      is_in_image = true;
+    } else if (compiler_options.IsGeneratingImage()) {
       std::string storage;
       const char* descriptor = declaring_class->GetDescriptor(&storage);
-      is_in_boot_image = compiler_options.IsImageClass(descriptor);
+      is_in_image = compiler_options.IsImageClass(descriptor);
     }
-    CHECK_EQ(is_in_boot_image,
-             load_class->IsLoadClass() && load_class->AsLoadClass()->IsInBootImage());
+    CHECK_EQ(is_in_image, load_class->IsLoadClass() && load_class->AsLoadClass()->IsInImage());
   }
-  if (!load_class->IsLoadClass() || !load_class->AsLoadClass()->IsInBootImage()) {
+  if (!load_class->IsLoadClass() || !load_class->AsLoadClass()->IsInImage()) {
     return false;
   }
 

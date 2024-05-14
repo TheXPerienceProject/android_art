@@ -422,6 +422,11 @@ class Trace final : public instrumentation::InstrumentationListener, public Clas
   static void FlushThreadBuffer(Thread* thread) REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::trace_lock_) NO_THREAD_SAFETY_ANALYSIS;
 
+  // Removes any listeners installed for method tracing. This is used in non-streaming case
+  // when we no longer record any events once the buffer is full. In other cases listeners are
+  // removed only when tracing stops. This is expected to be called in SuspendAll scope.
+  static void RemoveListeners() REQUIRES(Locks::mutator_lock_);
+
   void MeasureClockOverhead();
   uint32_t GetClockOverheadNanoSeconds();
 

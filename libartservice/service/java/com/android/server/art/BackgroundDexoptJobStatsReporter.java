@@ -29,7 +29,7 @@ public class BackgroundDexoptJobStatsReporter {
         // simplicity.
         ArtStatsLog.write(ArtStatsLog.BACKGROUND_DEXOPT_JOB_ENDED,
                 ArtStatsLog.BACKGROUND_DEXOPT_JOB_ENDED__STATUS__STATUS_FATAL_ERROR,
-                JobParameters.STOP_REASON_UNDEFINED, 0 /* durationMs */, 0 /* deprecated */,
+                JobParameters.STOP_REASON_UNDEFINED, 0L /* durationMs */, 0L /* deprecated */,
                 0 /* optimizedPackagesCount */, 0 /* packagesDependingOnBootClasspathCount */,
                 0 /* totalPackagesCount */,
                 ArtStatsLog.BACKGROUND_DEXOPT_JOB_ENDED__PASS__PASS_MAIN);
@@ -58,7 +58,7 @@ public class BackgroundDexoptJobStatsReporter {
 
         ArtStatsLog.write(ArtStatsLog.BACKGROUND_DEXOPT_JOB_ENDED,
                 getStatusForStats(dexoptResult, stopReason), reportedStopReason, durationMs,
-                0 /* deprecated */, getDexoptedPackagesCount(packageDexoptResults),
+                0L /* deprecated */, getDexoptedPackagesCount(packageDexoptResults),
                 getPackagesDependingOnBootClasspathCount(packageDexoptResults),
                 packageDexoptResults.size(), toStatsdPassEnum(pass));
     }
