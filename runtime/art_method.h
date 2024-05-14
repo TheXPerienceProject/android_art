@@ -907,6 +907,7 @@ class EXPORT ArtMethod final {
   const DexFile* GetDexFile() REQUIRES_SHARED(Locks::mutator_lock_);
 
   const char* GetDeclaringClassDescriptor() REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string_view GetDeclaringClassDescriptorView() REQUIRES_SHARED(Locks::mutator_lock_);
 
   ALWAYS_INLINE const char* GetShorty() REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -941,6 +942,7 @@ class EXPORT ArtMethod final {
   ALWAYS_INLINE size_t GetNumberOfParameters() REQUIRES_SHARED(Locks::mutator_lock_);
 
   const char* GetReturnTypeDescriptor() REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string_view GetReturnTypeDescriptorView() REQUIRES_SHARED(Locks::mutator_lock_);
 
   ALWAYS_INLINE Primitive::Type GetReturnTypePrimitive() REQUIRES_SHARED(Locks::mutator_lock_);
 

@@ -359,11 +359,6 @@ class DexFile {
   // Looks up a string id for a given modified utf8 string.
   const dex::StringId* FindStringId(const char* string) const;
 
-  const dex::TypeId* FindTypeId(const char* string) const;
-  const dex::TypeId* FindTypeId(std::string_view string) const {
-    return FindTypeId(std::string(string).c_str());
-  }
-
   // Returns the number of type identifiers in the .dex file.
   uint32_t NumTypeIds() const {
     DCHECK(header_ != nullptr) << GetLocation();
@@ -393,6 +388,8 @@ class DexFile {
   const char* GetTypeDescriptor(dex::TypeIndex type_idx) const;
   std::string_view GetTypeDescriptorView(const dex::TypeId& type_id) const;
   std::string_view GetTypeDescriptorView(dex::TypeIndex type_idx) const;
+
+  const dex::TypeId* FindTypeId(std::string_view descriptor) const;
 
   // Looks up a type for the given string index
   const dex::TypeId* FindTypeId(dex::StringIndex string_idx) const;
@@ -433,18 +430,22 @@ class DexFile {
   virtual uint32_t GetCodeItemSize(const dex::CodeItem& disk_code_item) const = 0;
 
   // Returns the declaring class descriptor string of a field id.
-  const char* GetFieldDeclaringClassDescriptor(const dex::FieldId& field_id) const {
-    const dex::TypeId& type_id = GetTypeId(field_id.class_idx_);
-    return GetTypeDescriptor(type_id);
-  }
+  const char* GetFieldDeclaringClassDescriptor(const dex::FieldId& field_id) const;
+  const char* GetFieldDeclaringClassDescriptor(uint32_t field_idx) const;
+  std::string_view GetFieldDeclaringClassDescriptorView(const dex::FieldId& field_id) const;
+  std::string_view GetFieldDeclaringClassDescriptorView(uint32_t field_idx) const;
 
   // Returns the class descriptor string of a field id.
   const char* GetFieldTypeDescriptor(const dex::FieldId& field_id) const;
+  const char* GetFieldTypeDescriptor(uint32_t field_idx) const;
   std::string_view GetFieldTypeDescriptorView(const dex::FieldId& field_id) const;
+  std::string_view GetFieldTypeDescriptorView(uint32_t field_idx) const;
 
   // Returns the name of a field id.
   const char* GetFieldName(const dex::FieldId& field_id) const;
+  const char* GetFieldName(uint32_t field_idx) const;
   std::string_view GetFieldNameView(const dex::FieldId& field_id) const;
+  std::string_view GetFieldNameView(uint32_t field_idx) const;
 
   // Returns the number of method identifiers in the .dex file.
   size_t NumMethodIds() const {
@@ -475,6 +476,9 @@ class DexFile {
 
   // Returns the declaring class descriptor string of a method id.
   const char* GetMethodDeclaringClassDescriptor(const dex::MethodId& method_id) const;
+  const char* GetMethodDeclaringClassDescriptor(uint32_t method_idx) const;
+  std::string_view GetMethodDeclaringClassDescriptorView(const dex::MethodId& method_id) const;
+  std::string_view GetMethodDeclaringClassDescriptorView(uint32_t method_idx) const;
 
   // Returns the prototype of a method id.
   const dex::ProtoId& GetMethodPrototype(const dex::MethodId& method_id) const {
@@ -490,10 +494,10 @@ class DexFile {
   // Returns the name of a method id.
   const char* GetMethodName(const dex::MethodId& method_id) const;
   const char* GetMethodName(const dex::MethodId& method_id, uint32_t* utf_length) const;
-  const char* GetMethodName(uint32_t idx) const;
-  const char* GetMethodName(uint32_t idx, uint32_t* utf_length) const;
+  const char* GetMethodName(uint32_t method_idx) const;
+  const char* GetMethodName(uint32_t method_idx, uint32_t* utf_length) const;
   std::string_view GetMethodNameView(const dex::MethodId& method_id) const;
-  std::string_view GetMethodNameView(uint32_t idx) const;
+  std::string_view GetMethodNameView(uint32_t method_idx) const;
 
   // Returns the shorty of a method by its index.
   const char* GetMethodShorty(uint32_t idx) const;

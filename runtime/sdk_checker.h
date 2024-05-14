@@ -59,7 +59,7 @@ class SdkChecker {
   bool ShouldDenyAccess(ArtField* art_field) const REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Similar to ShouldDenyAccess(ArtMethod* art_method).
-  bool ShouldDenyAccess(const char* type_descriptor) const;
+  bool ShouldDenyAccess(std::string_view type_descriptor) const;
 
   // Enabled/Disable the checks.
   void SetEnabled(bool enabled) { enabled_ = enabled; }

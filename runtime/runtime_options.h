@@ -41,8 +41,6 @@ class DexFile;
 struct XGcOption;
 struct BackgroundGcOption;
 
-#define DECLARE_KEY(Type, Name) static const Key<Type> Name
-
 // Define a key that is usable with a RuntimeArgumentMap.
 // This key will *not* work with other subtypes of VariantMap.
 template <typename TValue>
@@ -75,7 +73,7 @@ struct EXPORT RuntimeArgumentMap : VariantMap<RuntimeArgumentMap, RuntimeArgumen
 #include "runtime_options.def"
 };
 
-#undef DECLARE_KEY
+#undef RUNTIME_OPTIONS_KEY
 
   // using RuntimeOptions = RuntimeArgumentMap;
 }  // namespace art

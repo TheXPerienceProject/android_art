@@ -818,6 +818,13 @@ inline const DexFile& Class::GetDexFile() {
   return *GetDexCache<kDefaultVerifyFlags, kWithoutReadBarrier>()->GetDexFile();
 }
 
+inline std::string_view Class::GetDescriptorView() {
+  DCHECK(!IsArrayClass());
+  DCHECK(!IsPrimitive());
+  DCHECK(!IsProxyClass());
+  return GetDexFile().GetTypeDescriptorView(GetDexTypeIndex());
+}
+
 inline bool Class::DescriptorEquals(const char* match) {
   ObjPtr<mirror::Class> klass = this;
   while (klass->IsArrayClass()) {

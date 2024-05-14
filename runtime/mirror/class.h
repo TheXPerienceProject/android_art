@@ -1226,6 +1226,10 @@ class EXPORT MANAGED Class final : public Object {
   void SetSkipAccessChecksFlagOnAllMethods(PointerSize pointer_size)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  // Get the descriptor of the class as `std::string_view`. The class must be directly
+  // backed by a `DexFile` - it must not be primitive, array or proxy class.
+  std::string_view GetDescriptorView() REQUIRES_SHARED(Locks::mutator_lock_);
+
   // Get the descriptor of the class. In a few cases a std::string is required, rather than
   // always create one the storage argument is populated and its internal c_str() returned. We do
   // this to avoid memory allocation in the common case.
