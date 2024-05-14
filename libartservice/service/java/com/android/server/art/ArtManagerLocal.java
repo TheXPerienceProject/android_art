@@ -1447,8 +1447,10 @@ public final class ArtManagerLocal {
          * 1. The default compiler filter for the given reason.
          * 2. The compiler filter set explicitly by {@link DexoptParams.Builder#setCompilerFilter}.
          * 3. ART Service's internal adjustments to upgrade the compiler filter, based on whether
-         *    the package is System UI, etc.
-         * 4. The adjustments made by this callback.
+         *    the package is System UI, etc. (Not applicable if the dexopt is initiated by a shell
+         *    command with an explicit "-m" flag.)
+         * 4. The adjustments made by this callback. (Not applicable if the dexopt is initiated by a
+         *    shell command with an explicit "-m" flag.)
          * 5. ART Service's internal adjustments to downgrade the compiler filter, based on whether
          *    the profile is available, etc.
          *
