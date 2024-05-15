@@ -488,7 +488,7 @@ bool OatWriter::AddVdexDexFilesSource(const VdexFile& vdex_file, const char* loc
 }
 
 // Add dex file source from raw memory.
-bool OatWriter::AddRawDexFileSource(std::shared_ptr<DexFileContainer> container,
+bool OatWriter::AddRawDexFileSource(const std::shared_ptr<DexFileContainer>& container,
                                     const uint8_t* dex_file_begin,
                                     const char* location,
                                     uint32_t location_checksum) {
