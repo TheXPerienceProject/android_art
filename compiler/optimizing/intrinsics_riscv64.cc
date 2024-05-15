@@ -767,8 +767,8 @@ void IntrinsicCodeGeneratorRISCV64::VisitReferenceGetReferent(HInvoke* invoke) {
                                                     out,
                                                     obj.AsRegister<XRegister>(),
                                                     referent_offset,
-                                                    /*maybe_temp=*/ locations->GetTemp(0),
-                                                    /*needs_null_check=*/ false);
+                                                    /*temp=*/locations->GetTemp(0),
+                                                    /*needs_null_check=*/false);
   } else {
     codegen_->GetInstructionVisitor()->Load(
         out, obj.AsRegister<XRegister>(), referent_offset, DataType::Type::kReference);
