@@ -570,13 +570,14 @@ inline bool Object::CasFieldWeakSequentiallyConsistent64(MemberOffset field_offs
                                                          int64_t old_value,
                                                          int64_t new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
-  if (kTransactionActive) {
-    Runtime::Current()->RecordWriteField64(this, field_offset, old_value, true);
-  }
   Verify<kVerifyFlags>();
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
   Atomic<int64_t>* atomic_addr = reinterpret_cast<Atomic<int64_t>*>(raw_addr);
-  return atomic_addr->CompareAndSetWeakSequentiallyConsistent(old_value, new_value);
+  bool success = atomic_addr->CompareAndSetWeakSequentiallyConsistent(old_value, new_value);
+  if (kTransactionActive && success) {
+    Runtime::Current()->RecordWriteField64(this, field_offset, old_value, /*is_volatile=*/ true);
+  }
+  return success;
 }
 
 template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
@@ -584,13 +585,14 @@ inline bool Object::CasFieldStrongSequentiallyConsistent64(MemberOffset field_of
                                                            int64_t old_value,
                                                            int64_t new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
-  if (kTransactionActive) {
-    Runtime::Current()->RecordWriteField64(this, field_offset, old_value, true);
-  }
   Verify<kVerifyFlags>();
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
   Atomic<int64_t>* atomic_addr = reinterpret_cast<Atomic<int64_t>*>(raw_addr);
-  return atomic_addr->CompareAndSetStrongSequentiallyConsistent(old_value, new_value);
+  bool success = atomic_addr->CompareAndSetStrongSequentiallyConsistent(old_value, new_value);
+  if (kTransactionActive && success) {
+    Runtime::Current()->RecordWriteField64(this, field_offset, old_value, /*is_volatile=*/ true);
+  }
+  return success;
 }
 
 /*
@@ -626,13 +628,9 @@ inline void Object::SetFieldObjectWithoutWriteBarrier(MemberOffset field_offset,
                                                       ObjPtr<Object> new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
   if (kTransactionActive) {
-    ObjPtr<Object> obj;
-    if (kIsVolatile) {
-      obj = GetFieldObjectVolatile<Object>(field_offset);
-    } else {
-      obj = GetFieldObject<Object>(field_offset);
-    }
-    Runtime::Current()->RecordWriteFieldReference(this, field_offset, obj, true);
+    ObjPtr<Object> old_value =
+        GetFieldObject<Object, kVerifyFlags, kWithReadBarrier, kIsVolatile>(field_offset);
+    Runtime::Current()->RecordWriteFieldReference(this, field_offset, old_value, kIsVolatile);
   }
   Verify<kVerifyFlags>();
   VerifyWrite<kVerifyFlags>(new_value);
@@ -685,14 +683,16 @@ inline bool Object::CasFieldObjectWithoutWriteBarrier(MemberOffset field_offset,
                                                       std::memory_order memory_order) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
   VerifyCAS<kVerifyFlags>(new_value, old_value);
-  if (kTransactionActive) {
-    Runtime::Current()->RecordWriteFieldReference(this, field_offset, old_value, true);
-  }
   uint32_t old_ref(PtrCompression<kPoisonHeapReferences, Object>::Compress(old_value));
   uint32_t new_ref(PtrCompression<kPoisonHeapReferences, Object>::Compress(new_value));
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
   Atomic<uint32_t>* atomic_addr = reinterpret_cast<Atomic<uint32_t>*>(raw_addr);
-  return atomic_addr->CompareAndSet(old_ref, new_ref, mode, memory_order);
+  bool success = atomic_addr->CompareAndSet(old_ref, new_ref, mode, memory_order);
+  if (kTransactionActive && success) {
+    Runtime::Current()->RecordWriteFieldReference(
+        this, field_offset, old_value, /*is_volatile=*/ true);
+  }
+  return success;
 }
 
 template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
