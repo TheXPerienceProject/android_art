@@ -25,7 +25,7 @@ TEST_F(NativeBridgeTest, V2_Signal) {
     // Init
     ASSERT_TRUE(LoadNativeBridge(kNativeBridgeLibrary2, nullptr));
     ASSERT_TRUE(NativeBridgeAvailable());
-    ASSERT_TRUE(PreInitializeNativeBridge(".", "isa"));
+    ASSERT_TRUE(PreInitializeNativeBridge(appDataDir(), "isa"));
     ASSERT_TRUE(NativeBridgeAvailable());
     ASSERT_TRUE(InitializeNativeBridge(nullptr, nullptr));
     ASSERT_TRUE(NativeBridgeAvailable());
@@ -34,7 +34,7 @@ TEST_F(NativeBridgeTest, V2_Signal) {
     ASSERT_NE(nullptr, NativeBridgeGetSignalHandler(SIGSEGV));
 
     // Clean-up code_cache
-    ASSERT_EQ(0, rmdir(kCodeCache));
+    ASSERT_EQ(0, rmdir(codeCache()));
 }
 
 }  // namespace android
