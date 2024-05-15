@@ -487,19 +487,19 @@ std::ostream& operator<<(std::ostream& os, const FdLogger& fd_logger) {
 }  // namespace
 
 #define RETURN_FATAL_IF_PRE_REBOOT(options)                                 \
-  if (options.is_pre_reboot) {                                              \
+  if ((options).is_pre_reboot) {                                            \
     return Fatal("This method is not supported in Pre-reboot Dexopt mode"); \
   }
 
 #define RETURN_FATAL_IF_NOT_PRE_REBOOT(options)                              \
-  if (!options.is_pre_reboot) {                                              \
+  if (!(options).is_pre_reboot) {                                            \
     return Fatal("This method is only supported in Pre-reboot Dexopt mode"); \
   }
 
 #define RETURN_FATAL_IF_ARG_IS_PRE_REBOOT_IMPL(expected, arg, log_name)                        \
   {                                                                                            \
     auto&& __return_fatal_tmp = PreRebootFlag(arg);                                            \
-    if (expected != __return_fatal_tmp) {                                                      \
+    if ((expected) != __return_fatal_tmp) {                                                    \
       return Fatal(ART_FORMAT("Expected flag 'isPreReboot' in argument '{}' to be {}, got {}", \
                               log_name,                                                        \
                               expected,                                                        \
@@ -508,7 +508,7 @@ std::ostream& operator<<(std::ostream& os, const FdLogger& fd_logger) {
   }
 
 #define RETURN_FATAL_IF_PRE_REBOOT_MISMATCH(options, arg, log_name) \
-  RETURN_FATAL_IF_ARG_IS_PRE_REBOOT_IMPL(options.is_pre_reboot, arg, log_name)
+  RETURN_FATAL_IF_ARG_IS_PRE_REBOOT_IMPL((options).is_pre_reboot, arg, log_name)
 
 #define RETURN_FATAL_IF_ARG_IS_PRE_REBOOT(arg, log_name) \
   RETURN_FATAL_IF_ARG_IS_PRE_REBOOT_IMPL(false, arg, log_name)
