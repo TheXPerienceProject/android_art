@@ -116,7 +116,6 @@ using ::android::base::make_scope_guard;
 using ::android::base::ReadFileToString;
 using ::android::base::Result;
 using ::android::base::Split;
-using ::android::base::StringReplace;
 using ::android::base::Tokenize;
 using ::android::base::WriteStringToFd;
 using ::android::base::WriteStringToFile;
