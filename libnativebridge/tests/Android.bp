@@ -102,7 +102,7 @@ cc_test {
     name: "libnativebridge-tests",
     defaults: [
         "art_defaults",
-        "art_test_defaults",
+        "art_test_internal_library_defaults",
     ],
 
     target: {
