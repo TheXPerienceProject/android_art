@@ -51,6 +51,10 @@ public class SecondaryDexopter extends Dexopter<CheckedSecondaryDexInfo> {
             @NonNull AndroidPackage pkg, @NonNull DexoptParams params,
             @NonNull CancellationSignal cancellationSignal) {
         super(injector, pkgState, pkg, params, cancellationSignal);
+        if (pkgState.getAppId() < 0) {
+            throw new IllegalStateException(
+                    "Package '" + pkgState.getPackageName() + "' has invalid app ID");
+        }
     }
 
     @Override
