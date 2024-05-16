@@ -1416,7 +1416,7 @@ ENTRY art_quick_generic_jni_trampoline
     vmov d0, r0, r1
 
     LOAD_RUNTIME_INSTANCE r2
-    ldr r2, [r2,  #RUN_EXIT_HOOKS_OFFSET_FROM_RUNTIME_INSTANCE]
+    ldrb r2, [r2,  #RUN_EXIT_HOOKS_OFFSET_FROM_RUNTIME_INSTANCE]
     CFI_REMEMBER_STATE
     cbnz r2, .Lcall_method_exit_hook
 .Lcall_method_exit_hook_done:
