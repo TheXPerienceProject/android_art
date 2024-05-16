@@ -74,7 +74,7 @@ class DexoptChrootSetupTest : public CommonArtTest {
       GTEST_SKIP() << "A real Pre-reboot Dexopt is running";
     }
 
-    ASSERT_TRUE(WaitForProperty("dev.bootcomplete", "1", /*timeout=*/std::chrono::minutes(3)));
+    ASSERT_TRUE(WaitForProperty("dev.bootcomplete", "1", /*relative_timeout=*/std::chrono::minutes(3)));
 
     test_skipped = false;
 
