@@ -1066,6 +1066,7 @@ class MarkCompact::ConcurrentCompactionGcTask : public SelfDeletingTask {
 };
 
 void MarkCompact::PrepareForCompaction() {
+  TimingLogger::ScopedTiming t(__FUNCTION__, GetTimings());
   uint8_t* space_begin = bump_pointer_space_->Begin();
   size_t vector_len = (black_allocations_begin_ - space_begin) / kOffsetChunkSize;
   DCHECK_LE(vector_len, vector_length_);
