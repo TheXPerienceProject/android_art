@@ -119,11 +119,12 @@ class VerifierDeps {
 
   EXPORT void Dump(VariableIndentationOutputStream* vios) const;
 
-  // Verify the encoded dependencies of this `VerifierDeps` are still valid.
-  EXPORT bool ValidateDependencies(Thread* self,
-                                   Handle<mirror::ClassLoader> class_loader,
-                                   const std::vector<const DexFile*>& dex_files,
-                                   /* out */ std::string* error_msg) const
+  // Verifies the encoded dependencies of this `VerifierDeps` are still valid.
+  // Returns whether all dependencies were validated.
+  EXPORT bool ValidateDependenciesAndUpdateStatus(
+      Thread* self,
+      Handle<mirror::ClassLoader> class_loader,
+      const std::vector<const DexFile*>& dex_files)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   const std::vector<bool>& GetVerifiedClasses(const DexFile& dex_file) const {
@@ -141,9 +142,6 @@ class VerifierDeps {
   bool ContainsDexFile(const DexFile& dex_file) const {
     return GetDexFileDeps(dex_file) != nullptr;
   }
-
-  // Resets the data related to the given dex files.
-  EXPORT void ClearData(const std::vector<const DexFile*>& dex_files);
 
   // Parses raw VerifierDeps data to extract bitvectors of which class def indices
   // were verified or not. The given `dex_files` must match the order and count of
@@ -234,11 +232,12 @@ class VerifierDeps {
   // Verify `dex_file` according to the `deps`, that is going over each
   // `DexFileDeps` field, and checking that the recorded information still
   // holds.
-  bool VerifyDexFile(Handle<mirror::ClassLoader> class_loader,
-                     const DexFile& dex_file,
-                     const DexFileDeps& deps,
-                     Thread* self,
-                     /* out */ std::string* error_msg) const
+  // Returns whether all dependencies were validated.
+  bool VerifyDexFileAndUpdateStatus(
+      Handle<mirror::ClassLoader> class_loader,
+      const DexFile& dex_file,
+      DexFileDeps& deps,
+      Thread* self)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Iterates over `dex_files` and tries to find a class def matching `descriptor`.
@@ -247,13 +246,6 @@ class VerifierDeps {
                     size_t hash,
                     const std::vector<const DexFile*>& dex_files,
                     /* out */ const DexFile** cp_dex_file) const;
-
-  bool VerifyAssignability(Handle<mirror::ClassLoader> class_loader,
-                           const DexFile& dex_file,
-                           const std::vector<std::set<TypeAssignability>>& assignables,
-                           Thread* self,
-                           /* out */ std::string* error_msg) const
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Map from DexFiles into dependencies collected from verification of their methods.
   std::map<const DexFile*, std::unique_ptr<DexFileDeps>> dex_deps_;
