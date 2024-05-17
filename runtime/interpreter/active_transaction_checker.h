@@ -87,6 +87,9 @@ class ActiveTransactionChecker {
     return GetClassLinker()->IsTransactionAborted();
   }
 
+  static void RecordArrayElementsInTransaction(ObjPtr<mirror::Object> array, int32_t count)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
  private:
   static AotClassLinker* GetClassLinker() {
     return down_cast<AotClassLinker*>(Runtime::Current()->GetClassLinker());

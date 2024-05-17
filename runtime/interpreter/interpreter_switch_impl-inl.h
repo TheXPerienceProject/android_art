@@ -721,11 +721,10 @@ class InstructionHandler {
     const Instruction::ArrayDataPayload* payload =
         reinterpret_cast<const Instruction::ArrayDataPayload*>(payload_addr);
     ObjPtr<mirror::Object> obj = GetVRegReference(A());
+    // If we have an active transaction, record old values before we overwrite them.
+    TransactionChecker::RecordArrayElementsInTransaction(obj, payload->element_count);
     if (!FillArrayData(obj, payload)) {
       return false;  // Pending exception.
-    }
-    if (transaction_active) {
-      RecordArrayElementsInTransaction(obj->AsArray(), payload->element_count);
     }
     return true;
   }
