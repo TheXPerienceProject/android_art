@@ -744,7 +744,8 @@ void Transaction::ArrayLog::UndoArrayWrite(mirror::Array* array,
 Transaction* ScopedAssertNoNewTransactionRecords::InstallAssertion(const char* reason) {
   Transaction* transaction = nullptr;
   if (kIsDebugBuild && Runtime::Current()->IsActiveTransaction()) {
-    transaction = Runtime::Current()->GetTransaction();
+    AotClassLinker* class_linker = down_cast<AotClassLinker*>(Runtime::Current()->GetClassLinker());
+    transaction = class_linker->GetTransaction();
     if (transaction != nullptr) {
       CHECK(transaction->assert_no_new_records_reason_ == nullptr)
           << "old: " << transaction->assert_no_new_records_reason_ << " new: " << reason;
@@ -756,7 +757,8 @@ Transaction* ScopedAssertNoNewTransactionRecords::InstallAssertion(const char* r
 
 void ScopedAssertNoNewTransactionRecords::RemoveAssertion(Transaction* transaction) {
   if (kIsDebugBuild) {
-    CHECK(Runtime::Current()->GetTransaction() == transaction);
+    AotClassLinker* class_linker = down_cast<AotClassLinker*>(Runtime::Current()->GetClassLinker());
+    CHECK(class_linker->GetTransaction() == transaction);
     CHECK(transaction->assert_no_new_records_reason_ != nullptr);
     transaction->assert_no_new_records_reason_ = nullptr;
   }

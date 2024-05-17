@@ -5857,13 +5857,13 @@ bool ClassLinker::InitializeClass(Thread* self,
       WrapExceptionInInitializer(klass);
       mirror::Class::SetStatus(klass, ClassStatus::kErrorResolved, self);
       success = false;
-    } else if (Runtime::Current()->IsTransactionAborted()) {
+    } else if (Runtime::Current()->IsActiveTransaction() && IsTransactionAborted()) {
       // The exception thrown when the transaction aborted has been caught and cleared
       // so we need to throw it again now.
       VLOG(compiler) << "Return from class initializer of "
                      << mirror::Class::PrettyDescriptor(klass.Get())
                      << " without exception while transaction was aborted: re-throw it now.";
-      runtime->ThrowTransactionAbortError(self);
+      ThrowTransactionAbortError(self);
       mirror::Class::SetStatus(klass, ClassStatus::kErrorResolved, self);
       success = false;
     } else {
@@ -11186,6 +11186,146 @@ bool ClassLinker::TransactionAllocationConstraint(
   // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
   LOG(FATAL) << "UNREACHABLE";
   UNREACHABLE();
+}
+
+void ClassLinker::RecordWriteFieldBoolean([[maybe_unused]] mirror::Object* obj,
+                                          [[maybe_unused]] MemberOffset field_offset,
+                                          [[maybe_unused]] uint8_t value,
+                                          [[maybe_unused]] bool is_volatile) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWriteFieldByte([[maybe_unused]] mirror::Object* obj,
+                                       [[maybe_unused]] MemberOffset field_offset,
+                                       [[maybe_unused]] int8_t value,
+                                       [[maybe_unused]] bool is_volatile) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWriteFieldChar([[maybe_unused]] mirror::Object* obj,
+                                       [[maybe_unused]] MemberOffset field_offset,
+                                       [[maybe_unused]] uint16_t value,
+                                       [[maybe_unused]] bool is_volatile) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWriteFieldShort([[maybe_unused]] mirror::Object* obj,
+                                        [[maybe_unused]] MemberOffset field_offset,
+                                        [[maybe_unused]] int16_t value,
+                                        [[maybe_unused]] bool is_volatile) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWriteField32([[maybe_unused]] mirror::Object* obj,
+                                     [[maybe_unused]] MemberOffset field_offset,
+                                     [[maybe_unused]] uint32_t value,
+                                     [[maybe_unused]] bool is_volatile) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWriteField64([[maybe_unused]] mirror::Object* obj,
+                                     [[maybe_unused]] MemberOffset field_offset,
+                                     [[maybe_unused]] uint64_t value,
+                                     [[maybe_unused]] bool is_volatile) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWriteFieldReference([[maybe_unused]] mirror::Object* obj,
+                                            [[maybe_unused]] MemberOffset field_offset,
+                                            [[maybe_unused]] ObjPtr<mirror::Object> value,
+                                            [[maybe_unused]] bool is_volatile) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWriteArray([[maybe_unused]] mirror::Array* array,
+                                   [[maybe_unused]] size_t index,
+                                   [[maybe_unused]] uint64_t value) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordStrongStringInsertion([[maybe_unused]] ObjPtr<mirror::String> s) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWeakStringInsertion([[maybe_unused]] ObjPtr<mirror::String> s) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordStrongStringRemoval([[maybe_unused]] ObjPtr<mirror::String> s) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordWeakStringRemoval([[maybe_unused]] ObjPtr<mirror::String> s) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordResolveString([[maybe_unused]] ObjPtr<mirror::DexCache> dex_cache,
+                                      [[maybe_unused]] dex::StringIndex string_idx) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::RecordResolveMethodType([[maybe_unused]] ObjPtr<mirror::DexCache> dex_cache,
+                                          [[maybe_unused]] dex::ProtoIndex proto_idx) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::ThrowTransactionAbortError([[maybe_unused]] Thread* self) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::AbortTransactionF(
+    [[maybe_unused]] Thread* self, [[maybe_unused]] const char* fmt, ...) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::AbortTransactionV([[maybe_unused]] Thread* self,
+                                    [[maybe_unused]] const char* fmt,
+                                    [[maybe_unused]] va_list args) {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+bool ClassLinker::IsTransactionAborted() const {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
+}
+
+void ClassLinker::VisitTransactionRoots([[maybe_unused]] RootVisitor* visitor) {
+  // Nothing to do for normal `ClassLinker`, only `AotClassLinker` handles transactions.
 }
 
 void ClassLinker::RemoveDexFromCaches(const DexFile& dex_file) {

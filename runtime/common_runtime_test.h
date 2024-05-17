@@ -223,11 +223,6 @@ class CommonRuntimeTestImpl : public CommonArtTestImpl {
   // Returns the directory where the pre-compiled boot.art can be found.
   static std::string GetImageLocation();
   static std::string GetSystemImageFile();
-
-  static void EnterTransactionMode() REQUIRES_SHARED(Locks::mutator_lock_);
-  static void ExitTransactionMode();
-  static void RollbackAndExitTransactionMode() REQUIRES_SHARED(Locks::mutator_lock_);
-  static bool IsTransactionAborted();
 };
 
 template <typename TestType>
