@@ -673,17 +673,18 @@ void VerifierDeps::Dump(VariableIndentationOutputStream* vios) const {
   }
 }
 
-bool VerifierDeps::ValidateDependencies(Thread* self,
-                                        Handle<mirror::ClassLoader> class_loader,
-                                        const std::vector<const DexFile*>& dex_files,
-                                        /* out */ std::string* error_msg) const {
+bool VerifierDeps::ValidateDependenciesAndUpdateStatus(
+    Thread* self,
+    Handle<mirror::ClassLoader> class_loader,
+    const std::vector<const DexFile*>& dex_files) {
+  bool all_validated = true;
   for (const auto* dex_file : dex_files) {
-    const DexFileDeps* my_deps = GetDexFileDeps(*dex_file);
-    if (!VerifyDexFile(class_loader, *dex_file, *my_deps, self, error_msg)) {
-      return false;
+    DexFileDeps* my_deps = GetDexFileDeps(*dex_file);
+    if (!VerifyDexFileAndUpdateStatus(class_loader, *dex_file, *my_deps, self)) {
+      all_validated = false;
     }
   }
-  return true;
+  return all_validated;
 }
 
 // TODO: share that helper with other parts of the compiler that have
@@ -701,16 +702,21 @@ static ObjPtr<mirror::Class> FindClassAndClearException(ClassLinker* class_linke
   return result;
 }
 
-bool VerifierDeps::VerifyAssignability(Handle<mirror::ClassLoader> class_loader,
-                                       const DexFile& dex_file,
-                                       const std::vector<std::set<TypeAssignability>>& assignables,
-                                       Thread* self,
-                                       /* out */ std::string* error_msg) const {
+bool VerifierDeps::VerifyDexFileAndUpdateStatus(
+    Handle<mirror::ClassLoader> class_loader,
+    const DexFile& dex_file,
+    DexFileDeps& deps,
+    Thread* self) {
   StackHandleScope<2> hs(self);
+  const std::vector<std::set<TypeAssignability>>& assignables = deps.assignable_types_;
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   MutableHandle<mirror::Class> source(hs.NewHandle<mirror::Class>(nullptr));
   MutableHandle<mirror::Class> destination(hs.NewHandle<mirror::Class>(nullptr));
 
+  uint32_t class_def_index = 0u;
+  bool all_validated = true;
+  uint32_t number_of_warnings = 0;
+  static constexpr uint32_t kMaxWarnings = 5;
   for (const auto& vec : assignables) {
     for (const auto& entry : vec) {
       const std::string& destination_desc = GetStringFromId(dex_file, entry.GetDestination());
@@ -728,31 +734,20 @@ bool VerifierDeps::VerifyAssignability(Handle<mirror::ClassLoader> class_loader,
 
       DCHECK(destination->IsResolved() && source->IsResolved());
       if (!destination->IsAssignableFrom(source.Get())) {
-        *error_msg = ART_FORMAT("Class {} not assignable from {}", destination_desc, source_desc);
-        return false;
+        deps.verified_classes_[class_def_index] = false;
+        all_validated = false;
+        if (number_of_warnings++ < kMaxWarnings) {
+          LOG(WARNING) << "Class "
+                       << dex_file.PrettyType(dex_file.GetClassDef(class_def_index).class_idx_)
+                       << " could not be fast verified because one of its methods wrongly expected "
+                       << destination_desc << " to be assignable from " << source_desc;
+        }
+        break;
       }
     }
+    class_def_index++;
   }
-  return true;
-}
-
-void VerifierDeps::ClearData(const std::vector<const DexFile*>& dex_files) {
-  for (const DexFile* dex_file : dex_files) {
-    auto it = dex_deps_.find(dex_file);
-    if (it == dex_deps_.end()) {
-      continue;
-    }
-    std::unique_ptr<DexFileDeps> deps(new DexFileDeps(dex_file->NumClassDefs()));
-    it->second.swap(deps);
-  }
-}
-
-bool VerifierDeps::VerifyDexFile(Handle<mirror::ClassLoader> class_loader,
-                                 const DexFile& dex_file,
-                                 const DexFileDeps& deps,
-                                 Thread* self,
-                                 /* out */ std::string* error_msg) const {
-  return VerifyAssignability(class_loader, dex_file, deps.assignable_types_, self, error_msg);
+  return all_validated;
 }
 
 }  // namespace verifier

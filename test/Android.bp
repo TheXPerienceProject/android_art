@@ -110,6 +110,12 @@ art_cc_defaults {
     name: "art_test_internal_library_defaults",
     defaults: ["art_test_defaults"],
     target: {
+        android: {
+            test_for: [
+                "com.android.art",
+                "com.android.art.debug",
+            ],
+        },
         android_arm: {
             relative_install_path: "com.android.art/lib",
         },
@@ -252,12 +258,10 @@ art_cc_defaults {
     // These really are gtests, but the gtest library comes from `libart(d)-gtest.so`.
     gtest: false,
 
+    header_libs: [
+        "libnativeloader-headers",
+    ],
     shared_libs: [
-        // `libnativeloader` must be shared, otherwise host gtests can't load libraries from
-        // "art_common/out/host", which is present in `libnativeloader` RUNPATH.
-        // TODO(b/247108425): modify gtests RUNPATH so that `libnativeloader` can be static linked.
-        "libnativeloader",
-
         // `libart(d)` (`art/runtime/jni/java_vm_ext.cc`) and `libnativehelper`
         // (`libnativehelper/JniInvocation.c`) define symbols with the same name
         // (e.g. `JNI_GetDefaultJavaVMInitArgs`).
@@ -279,6 +283,12 @@ art_cc_defaults {
                 "heapprofd_client_api",
             ],
         },
+        host: {
+            cflags: [
+                "-fsanitize-address-use-after-return=never",
+                "-Wno-unused-command-line-argument",
+            ],
+        },
         linux: {
             ldflags: [
                 // Allow jni_compiler_test to find Java_MyClassNatives_bar
@@ -295,10 +305,17 @@ art_cc_defaults {
                 "-Wno-missing-noreturn",
             ],
         },
-        host: {
-            cflags: [
-                "-fsanitize-address-use-after-return=never",
-                "-Wno-unused-command-line-argument",
+        // Library search path needed for running host tests in CI (from testcases directory).
+        linux_glibc_x86: {
+            ldflags: [
+                "-Wl,-rpath,$ORIGIN/../../art_common/out/host/linux-x86/lib",
+                "-Wl,--enable-new-dtags",
+            ],
+        },
+        linux_glibc_x86_64: {
+            ldflags: [
+                "-Wl,-rpath,$ORIGIN/../../art_common/out/host/linux-x86/lib64",
+                "-Wl,--enable-new-dtags",
             ],
         },
     },
@@ -364,10 +381,6 @@ art_cc_defaults {
         "libart-gtest",
     ],
     version_script: ":art-standalone-gtest-version",
-    test_for: [
-        "com.android.art",
-        "com.android.art.debug",
-    ],
 }
 
 art_cc_defaults {

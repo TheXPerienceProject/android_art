@@ -69,7 +69,11 @@ public class PrimaryDexopter extends Dexopter<DetailedPrimaryDexInfo> {
             @NonNull CancellationSignal cancellationSignal) {
         super(injector, pkgState, pkg, params, cancellationSignal);
 
-        mSharedGid = UserHandle.getSharedAppGid(pkgState.getAppId());
+        if (pkgState.getAppId() < 0) {
+            mSharedGid = Process.SYSTEM_UID;
+        } else {
+            mSharedGid = UserHandle.getSharedAppGid(pkgState.getAppId());
+        }
         if (mSharedGid < 0) {
             throw new IllegalStateException(
                     String.format("Unable to get shared gid for package '%s' (app ID: %d)",

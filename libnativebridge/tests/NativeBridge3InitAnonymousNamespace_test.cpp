@@ -22,7 +22,7 @@ TEST_F(NativeBridgeTest, V3_InitAnonymousNamespace) {
   // Init
   ASSERT_TRUE(LoadNativeBridge(kNativeBridgeLibrary3, nullptr));
   ASSERT_TRUE(NativeBridgeAvailable());
-  ASSERT_TRUE(PreInitializeNativeBridge(".", "isa"));
+  ASSERT_TRUE(PreInitializeNativeBridge(appDataDir(), "isa"));
   ASSERT_TRUE(NativeBridgeAvailable());
   ASSERT_TRUE(InitializeNativeBridge(nullptr, nullptr));
   ASSERT_TRUE(NativeBridgeAvailable());
@@ -31,7 +31,7 @@ TEST_F(NativeBridgeTest, V3_InitAnonymousNamespace) {
   ASSERT_EQ(true, NativeBridgeInitAnonymousNamespace(nullptr, nullptr));
 
   // Clean-up code_cache
-  ASSERT_EQ(0, rmdir(kCodeCache));
+  ASSERT_EQ(0, rmdir(codeCache()));
 }
 
 }  // namespace android

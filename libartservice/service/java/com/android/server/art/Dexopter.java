@@ -86,10 +86,6 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         mPkg = pkg;
         mParams = params;
         mCancellationSignal = cancellationSignal;
-        if (pkgState.getAppId() < 0) {
-            throw new IllegalStateException(
-                    "Package '" + pkgState.getPackageName() + "' has invalid app ID");
-        }
     }
 
     /**
