@@ -17,6 +17,8 @@
 #ifndef ART_RUNTIME_INTERPRETER_ACTIVE_TRANSACTION_CHECKER_H_
 #define ART_RUNTIME_INTERPRETER_ACTIVE_TRANSACTION_CHECKER_H_
 
+#include "oat/aot_class_linker.h"
+#include "base/casts.h"
 #include "base/macros.h"
 #include "gc/heap.h"
 #include "mirror/object-inl.h"
@@ -31,10 +33,11 @@ class ActiveTransactionChecker {
   static inline bool WriteConstraint(Thread* self, ObjPtr<mirror::Object> obj)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     Runtime* runtime = Runtime::Current();
-    if (runtime->GetTransaction()->WriteConstraint(obj)) {
+    AotClassLinker* class_linker = GetClassLinker();
+    if (class_linker->GetTransaction()->WriteConstraint(obj)) {
       DCHECK(runtime->GetHeap()->ObjectIsInBootImageSpace(obj) || obj->IsClass());
       const char* extra = runtime->GetHeap()->ObjectIsInBootImageSpace(obj) ? "boot image " : "";
-      runtime->AbortTransactionF(
+      class_linker->AbortTransactionF(
           self, "Can't set fields of %s%s", extra, obj->PrettyTypeOf().c_str());
       return true;
     }
@@ -43,12 +46,12 @@ class ActiveTransactionChecker {
 
   static inline bool WriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-    Runtime* runtime = Runtime::Current();
-    if (runtime->GetTransaction()->WriteValueConstraint(value)) {
+    AotClassLinker* class_linker = GetClassLinker();
+    if (class_linker->GetTransaction()->WriteValueConstraint(value)) {
       DCHECK(value != nullptr);
       const char* description = value->IsClass() ? "class" : "instance of";
       ObjPtr<mirror::Class> klass = value->IsClass() ? value->AsClass() : value->GetClass();
-      runtime->AbortTransactionF(
+      class_linker->AbortTransactionF(
           self, "Can't store reference to %s %s", description, klass->PrettyDescriptor().c_str());
       return true;
     }
@@ -58,9 +61,9 @@ class ActiveTransactionChecker {
   static inline bool ReadConstraint(Thread* self, ObjPtr<mirror::Object> obj)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     DCHECK(obj->IsClass());
-    Runtime* runtime = Runtime::Current();
-    if (runtime->GetTransaction()->ReadConstraint(obj)) {
-      runtime->AbortTransactionF(
+    AotClassLinker* class_linker = GetClassLinker();
+    if (class_linker->GetTransaction()->ReadConstraint(obj)) {
+      class_linker->AbortTransactionF(
           self,
           "Can't read static fields of %s since it does not belong to clinit's class.",
           obj->PrettyTypeOf().c_str());
@@ -72,12 +75,21 @@ class ActiveTransactionChecker {
   static inline bool AllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     if (klass->IsFinalizable()) {
-      Runtime::Current()->AbortTransactionF(self,
-                                            "Allocating finalizable object in transaction: %s",
-                                            klass->PrettyDescriptor().c_str());
+      GetClassLinker()->AbortTransactionF(self,
+                                          "Allocating finalizable object in transaction: %s",
+                                          klass->PrettyDescriptor().c_str());
       return true;
     }
     return false;
+  }
+
+  static inline bool IsTransactionAborted() {
+    return GetClassLinker()->IsTransactionAborted();
+  }
+
+ private:
+  static AotClassLinker* GetClassLinker() {
+    return down_cast<AotClassLinker*>(Runtime::Current()->GetClassLinker());
   }
 };
 

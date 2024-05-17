@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "unstarted_runtime.h"
+#include "unstarted_runtime_test.h"
 
 #include <limits>
 #include <locale>
@@ -30,7 +30,7 @@
 #include "dex/dex_instruction.h"
 #include "handle.h"
 #include "handle_scope-inl.h"
-#include "interpreter/interpreter_common.h"
+#include "interpreter_common.h"
 #include "mirror/array-alloc-inl.h"
 #include "mirror/class-alloc-inl.h"
 #include "mirror/class_loader.h"
@@ -48,55 +48,8 @@
 namespace art HIDDEN {
 namespace interpreter {
 
-// Deleter to be used with ShadowFrame::CreateDeoptimizedFrame objects.
-struct DeoptShadowFrameDelete {
-  // NOTE: Deleting a const object is valid but free() takes a non-const pointer.
-  void operator()(ShadowFrame* ptr) const {
-    if (ptr != nullptr) {
-      ShadowFrame::DeleteDeoptimizedFrame(ptr);
-    }
-  }
-};
-// Alias for std::unique_ptr<> that uses the above deleter.
-using UniqueDeoptShadowFramePtr = std::unique_ptr<ShadowFrame, DeoptShadowFrameDelete>;
-
-class UnstartedRuntimeTest : public CommonRuntimeTest {
+class UnstartedRuntimeTest : public UnstartedRuntimeTestBase {
  protected:
-  // Re-expose all UnstartedRuntime implementations so we don't need to declare a million
-  // test friends.
-
-  // Methods that intercept available libcore implementations.
-#define UNSTARTED_DIRECT(Name, DescriptorIgnored, NameIgnored, SignatureIgnored)              \
-  static void Unstarted ## Name(Thread* self,                                                 \
-                                ShadowFrame* shadow_frame,                                    \
-                                JValue* result,                                               \
-                                size_t arg_offset)                                            \
-      REQUIRES_SHARED(Locks::mutator_lock_) {                                                 \
-    interpreter::UnstartedRuntime::Unstarted ## Name(self, shadow_frame, result, arg_offset); \
-  }
-  UNSTARTED_RUNTIME_DIRECT_LIST(UNSTARTED_DIRECT)
-#undef UNSTARTED_DIRECT
-
-  // Methods that are native.
-#define UNSTARTED_JNI(Name, DescriptorIgnored, NameIgnored, SignatureIgnored)                  \
-  static void UnstartedJNI ## Name(Thread* self,                                               \
-                                   ArtMethod* method,                                          \
-                                   mirror::Object* receiver,                                   \
-                                   uint32_t* args,                                             \
-                                   JValue* result)                                             \
-      REQUIRES_SHARED(Locks::mutator_lock_) {                                                  \
-    interpreter::UnstartedRuntime::UnstartedJNI ## Name(self, method, receiver, args, result); \
-  }
-  UNSTARTED_RUNTIME_JNI_LIST(UNSTARTED_JNI)
-#undef UNSTARTED_JNI
-
-  UniqueDeoptShadowFramePtr CreateShadowFrame(uint32_t num_vregs,
-                                              ArtMethod* method,
-                                              uint32_t dex_pc) {
-    return UniqueDeoptShadowFramePtr(
-        ShadowFrame::CreateDeoptimizedFrame(num_vregs, method, dex_pc));
-  }
-
   // Helpers for ArrayCopy.
   //
   // Note: as we have to use handles, we use StackHandleScope to transfer data. Hardcode a size
@@ -209,16 +162,6 @@ class UnstartedRuntimeTest : public CommonRuntimeTest {
       int64_t expect_int64t = bit_cast<int64_t, double>(test_pairs[i][1]);
       EXPECT_EQ(expect_int64t, result_int64t) << result.GetD() << " vs " << test_pairs[i][1];
     }
-  }
-
-  // Prepare for aborts. Aborts assume that the exception class is already resolved, as the
-  // loading code doesn't work under transactions.
-  void PrepareForAborts() REQUIRES_SHARED(Locks::mutator_lock_) {
-    ObjPtr<mirror::Object> result = Runtime::Current()->GetClassLinker()->FindClass(
-        Thread::Current(),
-        kTransactionAbortErrorDescriptor,
-        ScopedNullHandle<mirror::ClassLoader>());
-    CHECK(result != nullptr);
   }
 };
 
@@ -396,8 +339,7 @@ TEST_F(UnstartedRuntimeTest, StringInit) {
   ScopedObjectAccess soa(self);
   ObjPtr<mirror::Class> klass = GetClassRoot<mirror::String>();
   ArtMethod* method =
-      klass->FindConstructor("(Ljava/lang/String;)V",
-                             Runtime::Current()->GetClassLinker()->GetImagePointerSize());
+      klass->FindConstructor("(Ljava/lang/String;)V", class_linker_->GetImagePointerSize());
   ASSERT_TRUE(method != nullptr);
 
   // create instruction data for invoke-direct {v0, v1} of method with fake index
@@ -483,9 +425,6 @@ TEST_F(UnstartedRuntimeTest, SystemArrayCopyObjectArrayTest) {
   JValue result;
   UniqueDeoptShadowFramePtr tmp = CreateShadowFrame(10, nullptr, 0);
 
-  StackHandleScope<1> hs_object(self);
-  Handle<mirror::Class> object_class(hs_object.NewHandle(GetClassRoot<mirror::Object>()));
-
   // Simple test:
   // [1,2,3]{1 @ 2} into [4,5,6] = [4,2,6]
   {
@@ -507,8 +446,8 @@ TEST_F(UnstartedRuntimeTest, SystemArrayCopyObjectArrayTest) {
     RunArrayCopy(self,
                  tmp.get(),
                  false,
-                 object_class.Get(),
-                 object_class.Get(),
+                 GetClassRoot<mirror::Object>(),
+                 GetClassRoot<mirror::Object>(),
                  hs_src,
                  1,
                  hs_dst,
@@ -538,7 +477,7 @@ TEST_F(UnstartedRuntimeTest, SystemArrayCopyObjectArrayTest) {
     RunArrayCopy(self,
                  tmp.get(),
                  false,
-                 object_class.Get(),
+                 GetClassRoot<mirror::Object>(),
                  GetClassRoot<mirror::String>(),
                  hs_src,
                  1,
@@ -569,7 +508,7 @@ TEST_F(UnstartedRuntimeTest, SystemArrayCopyObjectArrayTest) {
     RunArrayCopy(self,
                  tmp.get(),
                  true,
-                 object_class.Get(),
+                 GetClassRoot<mirror::Object>(),
                  GetClassRoot<mirror::String>(),
                  hs_src,
                  0,
@@ -773,51 +712,6 @@ TEST_F(UnstartedRuntimeTest, ToLowerUpper) {
       }
     }
   }
-
-  // Check abort for other things. Can't test all.
-
-  PrepareForAborts();
-
-  for (uint32_t i = 128; i < 256; ++i) {
-    {
-      JValue result;
-      tmp->SetVReg(0, static_cast<int32_t>(i));
-      EnterTransactionMode();
-      UnstartedCharacterToLowerCase(self, tmp.get(), &result, 0);
-      ASSERT_TRUE(IsTransactionAborted());
-      ExitTransactionMode();
-      ASSERT_TRUE(self->IsExceptionPending());
-    }
-    {
-      JValue result;
-      tmp->SetVReg(0, static_cast<int32_t>(i));
-      EnterTransactionMode();
-      UnstartedCharacterToUpperCase(self, tmp.get(), &result, 0);
-      ASSERT_TRUE(IsTransactionAborted());
-      ExitTransactionMode();
-      ASSERT_TRUE(self->IsExceptionPending());
-    }
-  }
-  for (uint64_t i = 256; i <= std::numeric_limits<uint32_t>::max(); i <<= 1) {
-    {
-      JValue result;
-      tmp->SetVReg(0, static_cast<int32_t>(i));
-      EnterTransactionMode();
-      UnstartedCharacterToLowerCase(self, tmp.get(), &result, 0);
-      ASSERT_TRUE(IsTransactionAborted());
-      ExitTransactionMode();
-      ASSERT_TRUE(self->IsExceptionPending());
-    }
-    {
-      JValue result;
-      tmp->SetVReg(0, static_cast<int32_t>(i));
-      EnterTransactionMode();
-      UnstartedCharacterToUpperCase(self, tmp.get(), &result, 0);
-      ASSERT_TRUE(IsTransactionAborted());
-      ExitTransactionMode();
-      ASSERT_TRUE(self->IsExceptionPending());
-    }
-  }
 }
 
 TEST_F(UnstartedRuntimeTest, Sin) {
@@ -937,21 +831,20 @@ TEST_F(UnstartedRuntimeTest, ThreadLocalGet) {
   UniqueDeoptShadowFramePtr shadow_frame = CreateShadowFrame(10, nullptr, 0);
 
   StackHandleScope<1> hs(self);
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
 
   // Positive test. See that We get something for float conversion.
   {
     Handle<mirror::Class> floating_decimal = hs.NewHandle(
-        class_linker->FindClass(self,
-                                "Ljdk/internal/math/FloatingDecimal;",
-                                ScopedNullHandle<mirror::ClassLoader>()));
+        class_linker_->FindClass(self,
+                                 "Ljdk/internal/math/FloatingDecimal;",
+                                 ScopedNullHandle<mirror::ClassLoader>()));
     ASSERT_TRUE(floating_decimal != nullptr);
-    ASSERT_TRUE(class_linker->EnsureInitialized(self, floating_decimal, true, true));
+    ASSERT_TRUE(class_linker_->EnsureInitialized(self, floating_decimal, true, true));
 
     ArtMethod* caller_method = floating_decimal->FindClassMethod(
         "getBinaryToASCIIBuffer",
         "()Ljdk/internal/math/FloatingDecimal$BinaryToASCIIBuffer;",
-        class_linker->GetImagePointerSize());
+        class_linker_->GetImagePointerSize());
     // floating_decimal->DumpClass(LOG_STREAM(ERROR), mirror::Class::kDumpClassFullDetail);
     ASSERT_TRUE(caller_method != nullptr);
     ASSERT_TRUE(caller_method->IsDirect());
@@ -965,27 +858,6 @@ TEST_F(UnstartedRuntimeTest, ThreadLocalGet) {
 
     shadow_frame->ClearLink();
   }
-
-  // Negative test.
-  PrepareForAborts();
-
-  {
-    // Just use a method in Class.
-    ObjPtr<mirror::Class> class_class = GetClassRoot<mirror::Class>();
-    ArtMethod* caller_method =
-        &*class_class->GetDeclaredMethods(class_linker->GetImagePointerSize()).begin();
-    UniqueDeoptShadowFramePtr caller_frame = CreateShadowFrame(10, caller_method, 0);
-    shadow_frame->SetLink(caller_frame.get());
-
-    EnterTransactionMode();
-    UnstartedThreadLocalGet(self, shadow_frame.get(), &result, 0);
-    ASSERT_TRUE(IsTransactionAborted());
-    ExitTransactionMode();
-    ASSERT_TRUE(self->IsExceptionPending());
-    self->ClearException();
-
-    shadow_frame->ClearLink();
-  }
 }
 
 TEST_F(UnstartedRuntimeTest, FloatConversion) {
@@ -993,17 +865,16 @@ TEST_F(UnstartedRuntimeTest, FloatConversion) {
   ScopedObjectAccess soa(self);
 
   StackHandleScope<1> hs(self);
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   Handle<mirror::Class> double_class = hs.NewHandle(
-          class_linker->FindClass(self,
-                                  "Ljava/lang/Double;",
-                                  ScopedNullHandle<mirror::ClassLoader>()));
+          class_linker_->FindClass(self,
+                                   "Ljava/lang/Double;",
+                                   ScopedNullHandle<mirror::ClassLoader>()));
   ASSERT_TRUE(double_class != nullptr);
-  ASSERT_TRUE(class_linker->EnsureInitialized(self, double_class, true, true));
+  ASSERT_TRUE(class_linker_->EnsureInitialized(self, double_class, true, true));
 
   ArtMethod* method = double_class->FindClassMethod("toString",
                                                     "(D)Ljava/lang/String;",
-                                                    class_linker->GetImagePointerSize());
+                                                    class_linker_->GetImagePointerSize());
   ASSERT_TRUE(method != nullptr);
   ASSERT_TRUE(method->IsDirect());
   ASSERT_TRUE(method->GetDeclaringClass() == double_class.Get());
@@ -1029,62 +900,26 @@ TEST_F(UnstartedRuntimeTest, FloatConversion) {
   EXPECT_EQ("1.23", mod_utf);
 }
 
-TEST_F(UnstartedRuntimeTest, ThreadCurrentThread) {
-  Thread* self = Thread::Current();
-  ScopedObjectAccess soa(self);
-
-  JValue result;
-  UniqueDeoptShadowFramePtr shadow_frame = CreateShadowFrame(10, nullptr, 0);
-
-  StackHandleScope<1> hs(self);
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  Handle<mirror::Class> thread_class = hs.NewHandle(
-      class_linker->FindClass(self, "Ljava/lang/Thread;", ScopedNullHandle<mirror::ClassLoader>()));
-  ASSERT_TRUE(thread_class.Get() != nullptr);
-  ASSERT_TRUE(class_linker->EnsureInitialized(self, thread_class, true, true));
-
-  // Negative test. In general, currentThread should fail (as we should not leak a peer that will
-  // be recreated at runtime).
-  PrepareForAborts();
-
-  {
-    EnterTransactionMode();
-    UnstartedThreadCurrentThread(self, shadow_frame.get(), &result, 0);
-    ASSERT_TRUE(IsTransactionAborted());
-    ExitTransactionMode();
-    ASSERT_TRUE(self->IsExceptionPending());
-    self->ClearException();
-  }
-}
-
 TEST_F(UnstartedRuntimeTest, LogManager) {
   Thread* self = Thread::Current();
   ScopedObjectAccess soa(self);
 
   StackHandleScope<1> hs(self);
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  Handle<mirror::Class> log_manager_class = hs.NewHandle(
-      class_linker->FindClass(self,
-                              "Ljava/util/logging/LogManager;",
-                              ScopedNullHandle<mirror::ClassLoader>()));
+  Handle<mirror::Class> log_manager_class = hs.NewHandle(class_linker_->FindClass(
+      self, "Ljava/util/logging/LogManager;", ScopedNullHandle<mirror::ClassLoader>()));
   ASSERT_TRUE(log_manager_class.Get() != nullptr);
-  ASSERT_TRUE(class_linker->EnsureInitialized(self, log_manager_class, true, true));
+  ASSERT_TRUE(class_linker_->EnsureInitialized(self, log_manager_class, true, true));
 }
 
 class UnstartedClassForNameTest : public UnstartedRuntimeTest {
  public:
   template <typename T>
-  void RunTest(T& runner, bool in_transaction, bool should_succeed) {
+  void RunTest(T&& runner) {
     Thread* self = Thread::Current();
     ScopedObjectAccess soa(self);
 
     // Ensure that Class is initialized.
-    {
-      ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-      StackHandleScope<1> hs(self);
-      Handle<mirror::Class> h_class = hs.NewHandle(GetClassRoot<mirror::Class>());
-      CHECK(class_linker->EnsureInitialized(self, h_class, true, true));
-    }
+    CHECK(GetClassRoot<mirror::Class>()->IsInitialized());
 
     // A selection of classes from different core classpath components.
     constexpr const char* kTestCases[] = {
@@ -1092,98 +927,19 @@ class UnstartedClassForNameTest : public UnstartedRuntimeTest {
         "dalvik.system.ClassExt",  // From libart.
     };
 
-    if (in_transaction) {
-      // For transaction mode, we cannot load any classes, as the pre-fence initialization of
-      // classes isn't transactional. Load them ahead of time.
-      ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-      for (const char* name : kTestCases) {
-        class_linker->FindClass(self,
-                                DotToDescriptor(name).c_str(),
-                                ScopedNullHandle<mirror::ClassLoader>());
-        CHECK(!self->IsExceptionPending()) << self->GetException()->Dump();
-      }
-    }
-
-    if (!should_succeed) {
-      // Negative test. In general, currentThread should fail (as we should not leak a peer that will
-      // be recreated at runtime).
-      PrepareForAborts();
-    }
-
     JValue result;
     UniqueDeoptShadowFramePtr shadow_frame = CreateShadowFrame(10, nullptr, 0);
 
     for (const char* name : kTestCases) {
       ObjPtr<mirror::String> name_string = mirror::String::AllocFromModifiedUtf8(self, name);
       CHECK(name_string != nullptr);
-
-      if (in_transaction) {
-        StackHandleScope<1> hs(self);
-        HandleWrapperObjPtr<mirror::String> h(hs.NewHandleWrapper(&name_string));
-        EnterTransactionMode();
-      }
       CHECK(!self->IsExceptionPending());
 
       runner(self, shadow_frame.get(), name_string, &result);
 
-      if (should_succeed) {
-        CHECK(!self->IsExceptionPending()) << name << " " << self->GetException()->Dump();
-        CHECK(result.GetL() != nullptr) << name;
-      } else {
-        CHECK(self->IsExceptionPending()) << name;
-        if (in_transaction) {
-          ASSERT_TRUE(IsTransactionAborted());
-        }
-        self->ClearException();
-      }
-
-      if (in_transaction) {
-        ExitTransactionMode();
-      }
+      CHECK(!self->IsExceptionPending()) << name << " " << self->GetException()->Dump();
+      CHECK(result.GetL() != nullptr) << name;
     }
-  }
-
-  mirror::ClassLoader* GetBootClassLoader() REQUIRES_SHARED(Locks::mutator_lock_) {
-    Thread* self = Thread::Current();
-    StackHandleScope<2> hs(self);
-    MutableHandle<mirror::ClassLoader> boot_cp = hs.NewHandle<mirror::ClassLoader>(nullptr);
-
-    {
-      ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-
-      // Create the fake boot classloader. Any instance is fine, they are technically interchangeable.
-      Handle<mirror::Class> boot_cp_class = hs.NewHandle(
-          class_linker->FindClass(self,
-                                  "Ljava/lang/BootClassLoader;",
-                                  ScopedNullHandle<mirror::ClassLoader>()));
-      CHECK(boot_cp_class != nullptr);
-      CHECK(class_linker->EnsureInitialized(self, boot_cp_class, true, true));
-
-      boot_cp.Assign(boot_cp_class->AllocObject(self)->AsClassLoader());
-      CHECK(boot_cp != nullptr);
-
-      ArtMethod* boot_cp_init = boot_cp_class->FindConstructor(
-          "()V", class_linker->GetImagePointerSize());
-      CHECK(boot_cp_init != nullptr);
-
-      JValue result;
-      UniqueDeoptShadowFramePtr shadow_frame = CreateShadowFrame(10, boot_cp_init, 0);
-      shadow_frame->SetVRegReference(0, boot_cp.Get());
-
-      // create instruction data for invoke-direct {v0} of method with fake index
-      uint16_t inst_data[3] = { 0x1070, 0x0000, 0x0010 };
-
-      interpreter::DoCall<false>(boot_cp_init,
-                                 self,
-                                 *shadow_frame,
-                                 Instruction::At(inst_data),
-                                 inst_data[0],
-                                 /* string_init= */ false,
-                                 &result);
-      CHECK(!self->IsExceptionPending());
-    }
-
-    return boot_cp.Get();
   }
 };
 
@@ -1195,7 +951,7 @@ TEST_F(UnstartedClassForNameTest, ClassForName) {
     shadow_frame->SetVRegReference(0, name);
     UnstartedClassForName(self, shadow_frame, result, 0);
   };
-  RunTest(runner, false, true);
+  RunTest(runner);
 }
 
 TEST_F(UnstartedClassForNameTest, ClassForNameLong) {
@@ -1208,7 +964,7 @@ TEST_F(UnstartedClassForNameTest, ClassForNameLong) {
     shadow_frame->SetVRegReference(2, nullptr);
     UnstartedClassForNameLong(self, shadow_frame, result, 0);
   };
-  RunTest(runner, false, true);
+  RunTest(runner);
 }
 
 TEST_F(UnstartedClassForNameTest, ClassForNameLongWithClassLoader) {
@@ -1227,50 +983,7 @@ TEST_F(UnstartedClassForNameTest, ClassForNameLongWithClassLoader) {
     shadow_frame->SetVRegReference(2, boot_cp.Get());
     UnstartedClassForNameLong(th, shadow_frame, result, 0);
   };
-  RunTest(runner, false, true);
-}
-
-TEST_F(UnstartedClassForNameTest, ClassForNameLongWithClassLoaderTransaction) {
-  Thread* self = Thread::Current();
-  ScopedObjectAccess soa(self);
-
-  StackHandleScope<1> hs(self);
-  Handle<mirror::ClassLoader> boot_cp = hs.NewHandle(GetBootClassLoader());
-
-  auto runner = [&](Thread* th,
-                    ShadowFrame* shadow_frame,
-                    ObjPtr<mirror::String> name,
-                    JValue* result)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    shadow_frame->SetVRegReference(0, name);
-    shadow_frame->SetVReg(1, 0);
-    shadow_frame->SetVRegReference(2, boot_cp.Get());
-    UnstartedClassForNameLong(th, shadow_frame, result, 0);
-  };
-  RunTest(runner, true, true);
-}
-
-TEST_F(UnstartedClassForNameTest, ClassForNameLongWithClassLoaderFail) {
-  Thread* self = Thread::Current();
-  ScopedObjectAccess soa(self);
-
-  StackHandleScope<2> hs(self);
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  jobject path_jobj = class_linker->CreatePathClassLoader(self, {});
-  ASSERT_TRUE(path_jobj != nullptr);
-  Handle<mirror::ClassLoader> path_cp = hs.NewHandle<mirror::ClassLoader>(
-      self->DecodeJObject(path_jobj)->AsClassLoader());
-
-  auto runner = [&](Thread* th,
-                    ShadowFrame* shadow_frame,
-                    ObjPtr<mirror::String> name,
-                    JValue* result) REQUIRES_SHARED(Locks::mutator_lock_) {
-    shadow_frame->SetVRegReference(0, name);
-    shadow_frame->SetVReg(1, 0);
-    shadow_frame->SetVRegReference(2, path_cp.Get());
-    UnstartedClassForNameLong(th, shadow_frame, result, 0);
-  };
-  RunTest(runner, true, false);
+  RunTest(runner);
 }
 
 TEST_F(UnstartedRuntimeTest, ClassGetSignatureAnnotation) {
@@ -1278,13 +991,12 @@ TEST_F(UnstartedRuntimeTest, ClassGetSignatureAnnotation) {
   ScopedObjectAccess soa(self);
 
   StackHandleScope<1> hs(self);
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   Handle<mirror::Class> list_class = hs.NewHandle(
-      class_linker->FindClass(self,
-                              "Ljava/util/List;",
-                              ScopedNullHandle<mirror::ClassLoader>()));
+      class_linker_->FindClass(self,
+                               "Ljava/util/List;",
+                               ScopedNullHandle<mirror::ClassLoader>()));
   ASSERT_TRUE(list_class.Get() != nullptr);
-  ASSERT_TRUE(class_linker->EnsureInitialized(self, list_class, true, true));
+  ASSERT_TRUE(class_linker_->EnsureInitialized(self, list_class, true, true));
 
   JValue result;
   UniqueDeoptShadowFramePtr shadow_frame = CreateShadowFrame(10, nullptr, 0);
@@ -1315,17 +1027,16 @@ TEST_F(UnstartedRuntimeTest, ConstructorNewInstance0) {
   ScopedObjectAccess soa(self);
 
   StackHandleScope<4> hs(self);
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
 
   // Get Throwable.
   Handle<mirror::Class> throw_class = hs.NewHandle(GetClassRoot<mirror::Throwable>());
-  ASSERT_TRUE(class_linker->EnsureInitialized(self, throw_class, true, true));
+  ASSERT_TRUE(class_linker_->EnsureInitialized(self, throw_class, true, true));
 
   // Get an input object.
   Handle<mirror::String> input = hs.NewHandle(mirror::String::AllocFromModifiedUtf8(self, "abd"));
 
   // Find the constructor.
-  PointerSize pointer_size = class_linker->GetImagePointerSize();
+  PointerSize pointer_size = class_linker_->GetImagePointerSize();
   ArtMethod* throw_cons = throw_class->FindConstructor("(Ljava/lang/String;)V", pointer_size);
   ASSERT_TRUE(throw_cons != nullptr);
   Handle<mirror::Constructor> cons = hs.NewHandle((pointer_size == PointerSize::k64)

@@ -60,7 +60,7 @@ class InstructionHandler {
 #define HANDLER_ATTRIBUTES ALWAYS_INLINE FLATTEN WARN_UNUSED REQUIRES_SHARED(Locks::mutator_lock_)
 
   HANDLER_ATTRIBUTES bool CheckTransactionAbort() {
-    if (transaction_active && Runtime::Current()->IsTransactionAborted()) {
+    if (TransactionChecker::IsTransactionAborted()) {
       // Transaction abort cannot be caught by catch handlers.
       // Preserve the abort exception while doing non-standard return.
       StackHandleScope<1u> hs(Self());

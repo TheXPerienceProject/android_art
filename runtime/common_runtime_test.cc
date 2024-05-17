@@ -58,6 +58,7 @@
 #include "mirror/object_array-alloc-inl.h"
 #include "native/dalvik_system_DexFile.h"
 #include "noop_compiler_callbacks.h"
+#include "oat/aot_class_linker.h"
 #include "profile/profile_compilation_info.h"
 #include "runtime-inl.h"
 #include "runtime_intrinsics.h"
@@ -541,25 +542,6 @@ std::string CommonRuntimeTestImpl::GetImageLocation() {
 std::string CommonRuntimeTestImpl::GetSystemImageFile() {
   std::string isa = GetInstructionSetString(kRuntimeISA);
   return GetImageDirectory() + "/" + isa + "/boot.art";
-}
-
-void CommonRuntimeTestImpl::EnterTransactionMode() {
-  CHECK(!Runtime::Current()->IsActiveTransaction());
-  Runtime::Current()->EnterTransactionMode(/*strict=*/ false, /*root=*/ nullptr);
-}
-
-void CommonRuntimeTestImpl::ExitTransactionMode() {
-  Runtime::Current()->ExitTransactionMode();
-  CHECK(!Runtime::Current()->IsActiveTransaction());
-}
-
-void CommonRuntimeTestImpl::RollbackAndExitTransactionMode() {
-  Runtime::Current()->RollbackAndExitTransactionMode();
-  CHECK(!Runtime::Current()->IsActiveTransaction());
-}
-
-bool CommonRuntimeTestImpl::IsTransactionAborted() {
-  return Runtime::Current()->IsTransactionAborted();
 }
 
 void CommonRuntimeTestImpl::VisitDexes(ArrayRef<const std::string> dexes,
