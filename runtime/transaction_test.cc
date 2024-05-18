@@ -19,7 +19,7 @@
 #include "art_field-inl.h"
 #include "art_method-inl.h"
 #include "class_linker-inl.h"
-#include "common_runtime_test.h"
+#include "common_transaction_test.h"
 #include "common_throws.h"
 #include "dex/dex_file.h"
 #include "mirror/array-alloc-inl.h"
@@ -28,7 +28,7 @@
 
 namespace art HIDDEN {
 
-class TransactionTest : public CommonRuntimeTest {
+class TransactionTest : public CommonTransactionTest {
  protected:
   TransactionTest() {
     this->use_boot_image_ = true;  // We need the boot image for this test.

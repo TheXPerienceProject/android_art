@@ -20,6 +20,7 @@
 
 #include "base/casts.h"
 #include "base/pointer_size.h"
+#include "class_linker.h"
 #include "class_root-inl.h"
 #include "debugger.h"
 #include "dex/dex_file_types.h"
@@ -1514,7 +1515,7 @@ static void RecordArrayElementsInTransactionImpl(ObjPtr<mirror::PrimitiveArray<T
     REQUIRES_SHARED(Locks::mutator_lock_) {
   Runtime* runtime = Runtime::Current();
   for (int32_t i = 0; i < count; ++i) {
-    runtime->RecordWriteArray(array.Ptr(), i, array->GetWithoutChecks(i));
+    runtime->GetClassLinker()->RecordWriteArray(array.Ptr(), i, array->GetWithoutChecks(i));
   }
 }
 
@@ -1558,7 +1559,9 @@ void RecordArrayElementsInTransaction(ObjPtr<mirror::Array> array, int32_t count
 
 void UnlockHeldMonitors(Thread* self, ShadowFrame* shadow_frame)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  DCHECK(shadow_frame->GetForcePopFrame() || Runtime::Current()->IsTransactionAborted());
+  DCHECK(shadow_frame->GetForcePopFrame() ||
+         (Runtime::Current()->IsActiveTransaction() &&
+             Runtime::Current()->GetClassLinker()->IsTransactionAborted()));
   // Unlock all monitors.
   if (shadow_frame->GetMethod()->MustCountLocks()) {
     DCHECK(!shadow_frame->GetMethod()->SkipAccessChecks());

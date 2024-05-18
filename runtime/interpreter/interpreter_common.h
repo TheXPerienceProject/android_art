@@ -96,6 +96,10 @@ class InactiveTransactionChecker {
       REQUIRES_SHARED(Locks::mutator_lock_) {
     return false;
   }
+
+  ALWAYS_INLINE static bool IsTransactionAborted() {
+    return false;
+  }
 };
 
 void ThrowNullPointerExceptionFromInterpreter()

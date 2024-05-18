@@ -99,7 +99,7 @@ class UnstartedRuntime {
   static void InitializeInvokeHandlers(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
   static void InitializeJNIHandlers(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
 
-  friend class UnstartedRuntimeTest;
+  friend class UnstartedRuntimeTestBase;
 
   DISALLOW_ALLOCATION();
   DISALLOW_COPY_AND_ASSIGN(UnstartedRuntime);

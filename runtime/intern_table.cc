@@ -18,6 +18,7 @@
 
 #include <memory>
 
+#include "class_linker.h"
 #include "dex/utf.h"
 #include "gc/collector/garbage_collector.h"
 #include "gc/space/image_space.h"
@@ -149,7 +150,7 @@ void InternTable::AddNewTable() {
 ObjPtr<mirror::String> InternTable::InsertStrong(ObjPtr<mirror::String> s, uint32_t hash) {
   Runtime* runtime = Runtime::Current();
   if (runtime->IsActiveTransaction()) {
-    runtime->RecordStrongStringInsertion(s);
+    runtime->GetClassLinker()->RecordStrongStringInsertion(s);
   }
   if (log_new_roots_) {
     new_strong_intern_roots_.push_back(GcRoot<mirror::String>(s));
@@ -161,7 +162,7 @@ ObjPtr<mirror::String> InternTable::InsertStrong(ObjPtr<mirror::String> s, uint3
 ObjPtr<mirror::String> InternTable::InsertWeak(ObjPtr<mirror::String> s, uint32_t hash) {
   Runtime* runtime = Runtime::Current();
   if (runtime->IsActiveTransaction()) {
-    runtime->RecordWeakStringInsertion(s);
+    runtime->GetClassLinker()->RecordWeakStringInsertion(s);
   }
   weak_interns_.Insert(s, hash);
   return s;
@@ -174,7 +175,7 @@ void InternTable::RemoveStrong(ObjPtr<mirror::String> s, uint32_t hash) {
 void InternTable::RemoveWeak(ObjPtr<mirror::String> s, uint32_t hash) {
   Runtime* runtime = Runtime::Current();
   if (runtime->IsActiveTransaction()) {
-    runtime->RecordWeakStringRemoval(s);
+    runtime->GetClassLinker()->RecordWeakStringRemoval(s);
   }
   weak_interns_.Remove(s, hash);
 }

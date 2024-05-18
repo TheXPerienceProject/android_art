@@ -24,6 +24,7 @@
 #include "base/bit_utils.h"
 #include "base/casts.h"
 #include "class.h"
+#include "class_linker.h"
 #include "obj_ptr-inl.h"
 #include "runtime.h"
 #include "thread-current-inl.h"
@@ -99,7 +100,7 @@ inline void PrimitiveArray<T>::SetWithoutChecks(int32_t i, T value) {
     DCHECK_EQ(kTransactionActive, Runtime::Current()->IsActiveTransaction());
   }
   if (kTransactionActive) {
-    Runtime::Current()->RecordWriteArray(this, i, GetWithoutChecks(i));
+    Runtime::Current()->GetClassLinker()->RecordWriteArray(this, i, GetWithoutChecks(i));
   }
   DCHECK(CheckIsValidIndex<kVerifyFlags>(i)) << i << " " << GetLength<kVerifyFlags>();
   GetData()[i] = value;
