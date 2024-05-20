@@ -19,10 +19,45 @@
 
 #include "interpreter_switch_impl-inl.h"
 
-#include "active_transaction_checker.h"
+#include "oat/aot_class_linker.h"
 
 namespace art HIDDEN {
 namespace interpreter {
+
+class ActiveTransactionChecker {
+ public:
+  static inline bool WriteConstraint(Thread* self, ObjPtr<mirror::Object> obj)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return GetClassLinker()->TransactionWriteConstraint(self, obj);
+  }
+
+  static inline bool WriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return GetClassLinker()->TransactionWriteValueConstraint(self, value);
+  }
+
+  static inline bool ReadConstraint(Thread* self, ObjPtr<mirror::Object> obj)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return GetClassLinker()->TransactionReadConstraint(self, obj);
+  }
+
+  static inline bool AllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return GetClassLinker()->TransactionAllocationConstraint(self, klass);
+  }
+
+  static inline bool IsTransactionAborted() {
+    return GetClassLinker()->IsTransactionAborted();
+  }
+
+  static void RecordArrayElementsInTransaction(ObjPtr<mirror::Object> array, int32_t count)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  static AotClassLinker* GetClassLinker() {
+    return down_cast<AotClassLinker*>(Runtime::Current()->GetClassLinker());
+  }
+};
 
 // TODO: Use ObjPtr here.
 template<typename T>
