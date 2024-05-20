@@ -84,9 +84,8 @@ void RegTypeCache::FillPrimitiveAndSmallConstantTypes() {
       new (&allocator_) NullType(null_handle_, "", kNullCacheId);
 }
 
-const RegType& RegTypeCache::FromDescriptor(ObjPtr<mirror::ClassLoader> loader,
-                                            const char* descriptor,
-                                            bool precise) {
+const RegType& RegTypeCache::FromDescriptor(Handle<mirror::ClassLoader> loader,
+                                            const char* descriptor) {
   if (descriptor[1] == '\0') {
     switch (descriptor[0]) {
       case 'Z':
@@ -110,7 +109,7 @@ const RegType& RegTypeCache::FromDescriptor(ObjPtr<mirror::ClassLoader> loader,
         return Conflict();
     }
   } else if (descriptor[0] == 'L' || descriptor[0] == '[') {
-    return From(loader, descriptor, precise);
+    return From(loader, descriptor);
   } else {
     return Conflict();
   }
@@ -156,17 +155,15 @@ bool RegTypeCache::MatchDescriptor(size_t idx, const std::string_view& descripto
 }
 
 ObjPtr<mirror::Class> RegTypeCache::ResolveClass(const char* descriptor,
-                                                 ObjPtr<mirror::ClassLoader> loader) {
+                                                 Handle<mirror::ClassLoader> loader) {
   // Class was not found, must create new type.
   // Try resolving class
   Thread* self = Thread::Current();
-  StackHandleScope<1> hs(self);
-  Handle<mirror::ClassLoader> class_loader(hs.NewHandle(loader));
   ObjPtr<mirror::Class> klass = nullptr;
   if (can_load_classes_) {
-    klass = class_linker_->FindClass(self, descriptor, class_loader);
+    klass = class_linker_->FindClass(self, descriptor, loader);
   } else {
-    klass = class_linker_->LookupClass(self, descriptor, loader);
+    klass = class_linker_->LookupClass(self, descriptor, loader.Get());
     if (klass != nullptr && !klass->IsResolved()) {
       // We found the class but without it being loaded its not safe for use.
       klass = nullptr;
@@ -181,14 +178,12 @@ std::string_view RegTypeCache::AddString(const std::string_view& str) {
   return std::string_view(ptr, str.length());
 }
 
-const RegType& RegTypeCache::From(ObjPtr<mirror::ClassLoader> loader,
-                                  const char* descriptor,
-                                  bool precise) {
+const RegType& RegTypeCache::From(Handle<mirror::ClassLoader> loader, const char* descriptor) {
   std::string_view sv_descriptor(descriptor);
   // Try looking up the class in the cache first. We use a std::string_view to avoid
   // repeated strlen operations on the descriptor.
   for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
-    if (MatchDescriptor(i, sv_descriptor, precise)) {
+    if (MatchDescriptor(i, sv_descriptor, /* precise= */ false)) {
       return *(entries_[i]);
     }
   }
@@ -196,17 +191,14 @@ const RegType& RegTypeCache::From(ObjPtr<mirror::ClassLoader> loader,
   // Try resolving class.
   ObjPtr<mirror::Class> klass = ResolveClass(descriptor, loader);
   if (klass != nullptr) {
-    // Class resolved, first look for the class in the list of entries
-    // Class was not found, must create new type.
-    // To pass the verification, the type should be imprecise,
-    // instantiable or an interface with the precise type set to false.
-    DCHECK_IMPLIES(precise, klass->IsInstantiable());
-    // Create a precise type if:
-    // 1- Class is final and NOT an interface. a precise interface is meaningless !!
-    // 2- Precise Flag passed as true.
+    // Create a precise type if the class cannot be assigned from other types
+    // (final classes, arrays of final classes and primitive arrays, see
+    // `Class::CannotBeAssignedFromOtherTypes()`; primitive types should not
+    // reach this code).
+    DCHECK(!klass->IsPrimitive());
     RegType* entry;
     // Create an imprecise type if we can't tell for a fact that it is precise.
-    if (klass->CannotBeAssignedFromOtherTypes() || precise) {
+    if (klass->CannotBeAssignedFromOtherTypes()) {
       DCHECK_IMPLIES(klass->IsAbstract(), klass->IsArrayClass());
       DCHECK(!klass->IsInterface());
       entry = new (&allocator_) PreciseReferenceType(handles_.NewHandle(klass),
@@ -587,13 +579,13 @@ const ConstantType& RegTypeCache::FromCat2ConstHi(int32_t value, bool precise) {
 }
 
 const RegType& RegTypeCache::GetComponentType(const RegType& array,
-                                              ObjPtr<mirror::ClassLoader> loader) {
+                                              Handle<mirror::ClassLoader> loader) {
   if (!array.IsArrayTypes()) {
     return Conflict();
   } else if (array.IsUnresolvedTypes()) {
     DCHECK(!array.IsUnresolvedMergedReference());  // Caller must make sure not to ask for this.
     const std::string descriptor(array.GetDescriptor());
-    return FromDescriptor(loader, descriptor.c_str() + 1, false);
+    return FromDescriptor(loader, descriptor.c_str() + 1);
   } else {
     ObjPtr<mirror::Class> klass = array.GetClass()->GetComponentType();
     std::string temp;
@@ -602,7 +594,7 @@ const RegType& RegTypeCache::GetComponentType(const RegType& array,
       // Arrays may have erroneous component types, use unresolved in that case.
       // We assume that the primitive classes are not erroneous, so we know it is a
       // reference type.
-      return FromDescriptor(loader, descriptor, false);
+      return FromDescriptor(loader, descriptor);
     } else {
       return FromClass(descriptor, klass, klass->CannotBeAssignedFromOtherTypes());
     }

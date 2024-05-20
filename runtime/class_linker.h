@@ -64,7 +64,6 @@ class OatFile;
 template<class T> class ObjectLock;
 class Runtime;
 class ScopedObjectAccessAlreadyRunnable;
-class SdkChecker;
 template<size_t kNumReferences> class PACKED(4) StackHandleScope;
 class Thread;
 class VariableSizedHandleScope;
@@ -339,8 +338,8 @@ class EXPORT ClassLinker {
 
   // Look up a previously resolved method with the given index.
   ArtMethod* LookupResolvedMethod(uint32_t method_idx,
-                                  Handle<mirror::DexCache> dex_cache,
-                                  Handle<mirror::ClassLoader> class_loader)
+                                  ObjPtr<mirror::DexCache> dex_cache,
+                                  ObjPtr<mirror::ClassLoader> class_loader)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Find a method with the given index from class `klass`, and update the dex cache.
@@ -887,7 +886,7 @@ class EXPORT ClassLinker {
   virtual bool DenyAccessBasedOnPublicSdk(ArtField* art_field) const
       REQUIRES_SHARED(Locks::mutator_lock_);
   // Verifies if the descriptor is accesible according to the SdkChecker (if installed).
-  virtual bool DenyAccessBasedOnPublicSdk(const char* type_descriptor) const;
+  virtual bool DenyAccessBasedOnPublicSdk(std::string_view type_descriptor) const;
   // Enable or disable public sdk checks.
   virtual void SetEnablePublicSdkChecks(bool enabled);
 

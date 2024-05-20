@@ -60,6 +60,7 @@ std::string ArtField::PrettyField(bool with_type) {
     result += PrettyDescriptor(GetTypeDescriptor());
     result += ' ';
   }
+  // Note: `GetDeclaringClassDescriptor()` does not support proxy classes.
   std::string temp;
   result += PrettyDescriptor(GetDeclaringClass()->GetDescriptor(&temp));
   result += '.';

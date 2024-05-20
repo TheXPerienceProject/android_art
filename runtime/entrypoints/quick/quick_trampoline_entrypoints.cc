@@ -1114,10 +1114,9 @@ static void DumpB74410240DebugData(ArtMethod** sp) REQUIRES_SHARED(Locks::mutato
         caller = WellKnownClasses::java_lang_String_charAt;
         CHECK_EQ(caller->GetDexMethodIndex(), method_index);
       } else {
-        StackHandleScope<2> hs(Thread::Current());
-        Handle<mirror::DexCache> h_dex_cache(hs.NewHandle(caller->GetDexCache()));
-        Handle<mirror::ClassLoader> h_class_loader(hs.NewHandle(caller->GetClassLoader()));
-        caller = class_linker->LookupResolvedMethod(method_index, h_dex_cache, h_class_loader);
+        ObjPtr<mirror::DexCache> dex_cache = caller->GetDexCache();
+        ObjPtr<mirror::ClassLoader> class_loader = caller->GetClassLoader();
+        caller = class_linker->LookupResolvedMethod(method_index, dex_cache, class_loader);
         CHECK(caller != nullptr);
       }
     }

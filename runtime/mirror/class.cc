@@ -793,7 +793,7 @@ static std::tuple<bool, ArtMethod*> FindDeclaredClassMethod(ObjPtr<mirror::Class
     // Do not use ArtMethod::GetNameView() to avoid reloading dex file through the same
     // declaring class from different methods and also avoid the runtime method check.
     const dex::MethodId& method_id = get_method_id(mid);
-    return name.compare(dex_file.GetMethodNameView(method_id));
+    return DexFile::CompareMemberNames(name, dex_file.GetMethodNameView(method_id));
   };
   auto signature_cmp = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE {
     // Do not use ArtMethod::GetSignature() to avoid reloading dex file through the same
@@ -1054,11 +1054,12 @@ static std::tuple<bool, ArtField*> FindFieldByNameAndType(const DexFile& dex_fil
   };
   auto name_cmp = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE {
     const dex::FieldId& field_id = get_field_id(mid);
-    return name.compare(dex_file.GetFieldNameView(field_id));
+    return DexFile::CompareMemberNames(name, dex_file.GetFieldNameView(field_id));
   };
   auto type_cmp = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE {
     const dex::FieldId& field_id = get_field_id(mid);
-    return type.compare(dex_file.GetTypeDescriptorView(dex_file.GetTypeId(field_id.type_idx_)));
+    return DexFile::CompareDescriptors(
+        type, dex_file.GetTypeDescriptorView(dex_file.GetTypeId(field_id.type_idx_)));
   };
   auto get_name_idx = [&](uint32_t mid) REQUIRES_SHARED(Locks::mutator_lock_) ALWAYS_INLINE {
     const dex::FieldId& field_id = get_field_id(mid);
@@ -1691,6 +1692,68 @@ ObjPtr<Class> Class::CopyOf(Handle<Class> h_this,
   return new_class->AsClass();
 }
 
+bool Class::DescriptorEquals(ObjPtr<mirror::Class> match) {
+  DCHECK(match != nullptr);
+  ObjPtr<mirror::Class> klass = this;
+  while (klass->IsArrayClass()) {
+    // No read barrier needed, we're reading a chain of constant references for comparison
+    // with null. Then we follow up below with reading constant references to read constant
+    // primitive data in both proxy and non-proxy paths. See ReadBarrierOption.
+    klass = klass->GetComponentType<kDefaultVerifyFlags, kWithoutReadBarrier>();
+    DCHECK(klass != nullptr);
+    match = match->GetComponentType<kDefaultVerifyFlags, kWithoutReadBarrier>();
+    if (match == nullptr){
+      return false;
+    }
+  }
+  if (match->IsArrayClass()) {
+    return false;
+  }
+
+  if (UNLIKELY(klass->IsPrimitive()) || UNLIKELY(match->IsPrimitive())) {
+    return klass->GetPrimitiveType() == match->GetPrimitiveType();
+  }
+
+  if (UNLIKELY(klass->IsProxyClass())) {
+    return klass->ProxyDescriptorEquals(match);
+  }
+  if (UNLIKELY(match->IsProxyClass())) {
+    return match->ProxyDescriptorEquals(klass);
+  }
+
+  const DexFile& klass_dex_file = klass->GetDexFile();
+  const DexFile& match_dex_file = match->GetDexFile();
+  dex::TypeIndex klass_type_index = klass->GetDexTypeIndex();
+  dex::TypeIndex match_type_index = match->GetDexTypeIndex();
+  if (&klass_dex_file == &match_dex_file) {
+    return klass_type_index == match_type_index;
+  }
+  std::string_view klass_descriptor = klass_dex_file.GetTypeDescriptorView(klass_type_index);
+  std::string_view match_descriptor = match_dex_file.GetTypeDescriptorView(match_type_index);
+  return klass_descriptor == match_descriptor;
+}
+
+bool Class::ProxyDescriptorEquals(ObjPtr<mirror::Class> match) {
+  DCHECK(IsProxyClass());
+  ObjPtr<mirror::String> name = GetName<kVerifyNone, kWithoutReadBarrier>();
+  DCHECK(name != nullptr);
+
+  DCHECK(match != nullptr);
+  DCHECK(!match->IsArrayClass());
+  DCHECK(!match->IsPrimitive());
+  if (match->IsProxyClass()) {
+    ObjPtr<mirror::String> match_name = match->GetName<kVerifyNone, kWithoutReadBarrier>();
+    DCHECK(name != nullptr);
+    return name->Equals(match_name);
+  }
+
+  // Note: Proxy descriptor should never match a non-proxy descriptor but ART does not enforce that.
+  std::string descriptor = DotToDescriptor(name->ToModifiedUtf8().c_str());
+  std::string_view match_descriptor =
+      match->GetDexFile().GetTypeDescriptorView(match->GetDexTypeIndex());
+  return descriptor == match_descriptor;
+}
+
 bool Class::ProxyDescriptorEquals(const char* match) {
   DCHECK(IsProxyClass());
   std::string storage;
@@ -1754,8 +1817,15 @@ uint32_t Class::Depth() {
 }
 
 dex::TypeIndex Class::FindTypeIndexInOtherDexFile(const DexFile& dex_file) {
-  std::string temp;
-  const dex::TypeId* type_id = dex_file.FindTypeId(GetDescriptor(&temp));
+  std::string_view descriptor;
+  std::optional<std::string> temp;
+  if (IsPrimitive() || IsArrayClass() || IsProxyClass()) {
+    temp.emplace();
+    descriptor = GetDescriptor(&temp.value());
+  } else {
+    descriptor = GetDescriptorView();
+  }
+  const dex::TypeId* type_id = dex_file.FindTypeId(descriptor);
   return (type_id == nullptr) ? dex::TypeIndex() : dex_file.GetIndexForTypeId(*type_id);
 }
 

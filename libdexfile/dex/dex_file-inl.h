@@ -32,7 +32,22 @@
 
 namespace art {
 
-inline std::string_view StringViewFromUtf16Length(const char* utf8_data, size_t utf16_length) {
+inline int DexFile::CompareDescriptors(std::string_view lhs, std::string_view rhs) {
+  // Note: `std::string_view::compare()` uses lexicographical comparison and treats the `char`
+  // as unsigned; for Modified-UTF-8 without embedded nulls this is consistent with the
+  // `CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues()` ordering.
+  return lhs.compare(rhs);
+}
+
+inline int DexFile::CompareMemberNames(std::string_view lhs, std::string_view rhs) {
+  // Note: `std::string_view::compare()` uses lexicographical comparison and treats the `char`
+  // as unsigned; for Modified-UTF-8 without embedded nulls this is consistent with the
+  // `CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues()` ordering.
+  return lhs.compare(rhs);
+}
+
+inline std::string_view DexFile::StringViewFromUtf16Length(const char* utf8_data,
+                                                           size_t utf16_length) {
   size_t utf8_length = LIKELY(utf8_data[utf16_length] == 0)  // Is ASCII?
                            ? utf16_length
                            : utf16_length + strlen(utf8_data + utf16_length);
@@ -100,28 +115,71 @@ inline std::string_view DexFile::GetTypeDescriptorView(dex::TypeIndex type_idx) 
   return GetTypeDescriptorView(GetTypeId(type_idx));
 }
 
+inline const char* DexFile::GetFieldDeclaringClassDescriptor(const dex::FieldId& field_id) const {
+  return GetTypeDescriptor(field_id.class_idx_);
+}
+
+inline const char* DexFile::GetFieldDeclaringClassDescriptor(uint32_t field_idx) const {
+  return GetFieldDeclaringClassDescriptor(GetFieldId(field_idx));
+}
+
+inline std::string_view DexFile::GetFieldDeclaringClassDescriptorView(
+    const dex::FieldId& field_id) const {
+  return GetTypeDescriptorView(field_id.class_idx_);
+}
+
+inline std::string_view DexFile::GetFieldDeclaringClassDescriptorView(uint32_t field_idx) const {
+  return GetFieldDeclaringClassDescriptorView(GetFieldId(field_idx));
+}
+
 inline const char* DexFile::GetFieldTypeDescriptor(const dex::FieldId& field_id) const {
-  const dex::TypeId& type_id = GetTypeId(field_id.type_idx_);
-  return GetTypeDescriptor(type_id);
+  return GetTypeDescriptor(field_id.type_idx_);
+}
+
+inline const char* DexFile::GetFieldTypeDescriptor(uint32_t field_idx) const {
+  return GetFieldTypeDescriptor(GetFieldId(field_idx));
 }
 
 inline std::string_view DexFile::GetFieldTypeDescriptorView(const dex::FieldId& field_id) const {
-  const dex::TypeId& type_id = GetTypeId(field_id.type_idx_);
-  return GetTypeDescriptorView(type_id);
+  return GetTypeDescriptorView(field_id.type_idx_);
+}
+
+inline std::string_view DexFile::GetFieldTypeDescriptorView(uint32_t field_idx) const {
+  return GetFieldTypeDescriptorView(GetFieldId(field_idx));
 }
 
 inline const char* DexFile::GetFieldName(const dex::FieldId& field_id) const {
   return GetStringData(field_id.name_idx_);
 }
 
+inline const char* DexFile::GetFieldName(uint32_t field_idx) const {
+  return GetFieldName(GetFieldId(field_idx));
+}
+
 inline std::string_view DexFile::GetFieldNameView(const dex::FieldId& field_id) const {
   return GetStringView(field_id.name_idx_);
 }
 
-inline const char* DexFile::GetMethodDeclaringClassDescriptor(const dex::MethodId& method_id)
-    const {
-  const dex::TypeId& type_id = GetTypeId(method_id.class_idx_);
-  return GetTypeDescriptor(type_id);
+inline std::string_view DexFile::GetFieldNameView(uint32_t field_idx) const {
+  return GetFieldNameView(GetFieldId(field_idx));
+}
+
+inline const char* DexFile::GetMethodDeclaringClassDescriptor(
+    const dex::MethodId& method_id) const {
+  return GetTypeDescriptor(method_id.class_idx_);
+}
+
+inline const char* DexFile::GetMethodDeclaringClassDescriptor(uint32_t method_idx) const {
+  return GetMethodDeclaringClassDescriptor(GetMethodId(method_idx));
+}
+
+inline std::string_view DexFile::GetMethodDeclaringClassDescriptorView(
+    const dex::MethodId& method_id) const {
+  return GetTypeDescriptorView(method_id.class_idx_);
+}
+
+inline std::string_view DexFile::GetMethodDeclaringClassDescriptorView(uint32_t method_idx) const {
+  return GetMethodDeclaringClassDescriptorView(GetMethodId(method_idx));
 }
 
 inline const Signature DexFile::GetMethodSignature(const dex::MethodId& method_id) const {
@@ -141,8 +199,8 @@ inline const char* DexFile::GetMethodName(const dex::MethodId& method_id, uint32
   return GetStringDataAndUtf16Length(method_id.name_idx_, utf_length);
 }
 
-inline const char* DexFile::GetMethodName(uint32_t idx) const {
-  return GetStringData(GetMethodId(idx).name_idx_);
+inline const char* DexFile::GetMethodName(uint32_t method_idx) const {
+  return GetStringData(GetMethodId(method_idx).name_idx_);
 }
 
 inline const char* DexFile::GetMethodName(uint32_t idx, uint32_t* utf_length) const {
@@ -155,8 +213,8 @@ inline std::string_view DexFile::GetMethodNameView(const dex::MethodId& method_i
 }
 
 ALWAYS_INLINE
-inline std::string_view DexFile::GetMethodNameView(uint32_t idx) const {
-  return GetMethodNameView(GetMethodId(idx));
+inline std::string_view DexFile::GetMethodNameView(uint32_t method_idx) const {
+  return GetMethodNameView(GetMethodId(method_idx));
 }
 
 inline const char* DexFile::GetMethodShorty(uint32_t idx) const {

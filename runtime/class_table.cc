@@ -38,30 +38,30 @@ void ClassTable::FreezeSnapshot() {
   classes_.push_back(std::move(new_set));
 }
 
-ObjPtr<mirror::Class> ClassTable::UpdateClass(const char* descriptor,
-                                              ObjPtr<mirror::Class> klass,
-                                              size_t hash) {
+ObjPtr<mirror::Class> ClassTable::UpdateClass(ObjPtr<mirror::Class> klass, size_t hash) {
   WriterMutexLock mu(Thread::Current(), lock_);
   // Should only be updating latest table.
-  DescriptorHashPair pair(descriptor, hash);
-  auto existing_it = classes_.back().FindWithHash(pair, hash);
-  if (existing_it == classes_.back().end()) {
+  TableSlot slot(klass, hash);
+  auto existing_it = classes_.back().FindWithHash(slot, hash);
+  if (UNLIKELY(existing_it == classes_.back().end())) {
     for (const ClassSet& class_set : classes_) {
-      if (class_set.FindWithHash(pair, hash) != class_set.end()) {
-        LOG(FATAL) << "Updating class found in frozen table " << descriptor;
+      if (class_set.FindWithHash(slot, hash) != class_set.end()) {
+        LOG(FATAL) << "Updating class found in frozen table " << klass->PrettyDescriptor();
+        UNREACHABLE();
       }
     }
-    LOG(FATAL) << "Updating class not found " << descriptor;
+    LOG(FATAL) << "Updating class not found " << klass->PrettyDescriptor();
+    UNREACHABLE();
   }
   const ObjPtr<mirror::Class> existing = existing_it->Read();
-  CHECK_NE(existing, klass) << descriptor;
-  CHECK(!existing->IsResolved()) << descriptor;
-  CHECK_EQ(klass->GetStatus(), ClassStatus::kResolving) << descriptor;
-  CHECK(!klass->IsTemp()) << descriptor;
+  CHECK_NE(existing, klass) << klass->PrettyDescriptor();
+  CHECK(!existing->IsResolved()) << klass->PrettyDescriptor();
+  CHECK_EQ(klass->GetStatus(), ClassStatus::kResolving) << klass->PrettyDescriptor();
+  CHECK(!klass->IsTemp()) << klass->PrettyDescriptor();
   VerifyObject(klass);
   // Update the element in the hash set with the new class. This is safe to do since the descriptor
   // doesn't change.
-  *existing_it = TableSlot(klass, hash);
+  *existing_it = slot;
   return existing;
 }
 

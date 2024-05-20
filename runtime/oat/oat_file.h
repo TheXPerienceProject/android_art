@@ -604,7 +604,7 @@ class OatDexFile final {
   // Looks up a class definition by its class descriptor. Hash must be
   // ComputeModifiedUtf8Hash(descriptor).
   EXPORT static const dex::ClassDef* FindClassDef(const DexFile& dex_file,
-                                                  const char* descriptor,
+                                                  std::string_view descriptor,
                                                   size_t hash);
 
   const TypeLookupTable& GetTypeLookupTable() const {

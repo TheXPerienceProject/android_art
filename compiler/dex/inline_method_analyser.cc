@@ -147,11 +147,8 @@ ArtMethod* GetTargetConstructor(ArtMethod* method, const Instruction* invoke_dir
               accessor.RegistersSize() - accessor.InsSize());
   }
   uint32_t method_index = invoke_direct->VRegB_35c();
-  StackHandleScope<2> hs(Thread::Current());
-  Handle<mirror::DexCache> h_dex_cache = hs.NewHandle(method->GetDexCache());
-  Handle<mirror::ClassLoader> h_class_loader = hs.NewHandle(method->GetClassLoader());
   ArtMethod* target_method = Runtime::Current()->GetClassLinker()->LookupResolvedMethod(
-      method_index, h_dex_cache, h_class_loader);
+      method_index, method->GetDexCache(), method->GetClassLoader());
   if (kIsDebugBuild && target_method != nullptr) {
     CHECK(!target_method->IsStatic());
     CHECK(target_method->IsConstructor());

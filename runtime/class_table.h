@@ -187,9 +187,7 @@ class ClassTable {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Update a class in the table with the new class. Returns the existing class which was replaced.
-  ObjPtr<mirror::Class> UpdateClass(const char* descriptor,
-                                    ObjPtr<mirror::Class> new_klass,
-                                    size_t hash)
+  ObjPtr<mirror::Class> UpdateClass(ObjPtr<mirror::Class> new_klass, size_t hash)
       REQUIRES(!lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 

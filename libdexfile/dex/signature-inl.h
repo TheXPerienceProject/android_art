@@ -86,7 +86,7 @@ inline int Signature::Compare(const Signature& rhs) const {
         dex_file_->GetTypeId(proto_id_->return_type_idx_));
     std::string_view rhs_return_type = rhs.dex_file_->GetTypeDescriptorView(
         rhs.dex_file_->GetTypeId(rhs.proto_id_->return_type_idx_));
-    int cmp_result = lhs_return_type.compare(rhs_return_type);
+    int cmp_result = DexFile::CompareDescriptors(lhs_return_type, rhs_return_type);
     if (cmp_result != 0) {
       return cmp_result;
     }
@@ -105,7 +105,7 @@ inline int Signature::Compare(const Signature& rhs) const {
             dex_file_->GetTypeId(lhs_params->GetTypeItem(i - 1u).type_idx_));
         std::string_view rhs_param_type = rhs.dex_file_->GetTypeDescriptorView(
             rhs.dex_file_->GetTypeId(rhs_params->GetTypeItem(i - 1u).type_idx_));
-        int cmp_result = lhs_param_type.compare(rhs_param_type);
+        int cmp_result = DexFile::CompareDescriptors(lhs_param_type, rhs_param_type);
         if (cmp_result != 0) {
           return cmp_result;
         }
