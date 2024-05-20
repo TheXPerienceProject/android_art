@@ -24,6 +24,62 @@
 namespace art HIDDEN {
 namespace interpreter {
 
+// TODO: Use ObjPtr here.
+template<typename T>
+static void RecordArrayElementsInTransactionImpl(ObjPtr<mirror::PrimitiveArray<T>> array,
+                                                 int32_t count)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  Runtime* runtime = Runtime::Current();
+  for (int32_t i = 0; i < count; ++i) {
+    runtime->GetClassLinker()->RecordWriteArray(array.Ptr(), i, array->GetWithoutChecks(i));
+  }
+}
+
+void ActiveTransactionChecker::RecordArrayElementsInTransaction(ObjPtr<mirror::Object> array,
+                                                                int32_t count) {
+  DCHECK(Runtime::Current()->IsActiveTransaction());
+  if (array == nullptr) {
+    return;  // The interpreter shall throw NPE.
+  }
+  DCHECK(array->IsArrayInstance());
+  DCHECK_LE(count, array->AsArray()->GetLength());
+  // No read barrier is needed for reading a chain of constant references
+  // for reading a constant primitive value, see `ReadBarrierOption`.
+  Primitive::Type primitive_component_type =
+      array->GetClass<kDefaultVerifyFlags, kWithoutReadBarrier>()
+          ->GetComponentType<kDefaultVerifyFlags, kWithoutReadBarrier>()->GetPrimitiveType();
+  switch (primitive_component_type) {
+    case Primitive::kPrimBoolean:
+      RecordArrayElementsInTransactionImpl(array->AsBooleanArray(), count);
+      break;
+    case Primitive::kPrimByte:
+      RecordArrayElementsInTransactionImpl(array->AsByteArray(), count);
+      break;
+    case Primitive::kPrimChar:
+      RecordArrayElementsInTransactionImpl(array->AsCharArray(), count);
+      break;
+    case Primitive::kPrimShort:
+      RecordArrayElementsInTransactionImpl(array->AsShortArray(), count);
+      break;
+    case Primitive::kPrimInt:
+      RecordArrayElementsInTransactionImpl(array->AsIntArray(), count);
+      break;
+    case Primitive::kPrimFloat:
+      RecordArrayElementsInTransactionImpl(array->AsFloatArray(), count);
+      break;
+    case Primitive::kPrimLong:
+      RecordArrayElementsInTransactionImpl(array->AsLongArray(), count);
+      break;
+    case Primitive::kPrimDouble:
+      RecordArrayElementsInTransactionImpl(array->AsDoubleArray(), count);
+      break;
+    default:
+      LOG(FATAL) << "Unsupported primitive type " << primitive_component_type
+                 << " in fill-array-data";
+      UNREACHABLE();
+  }
+}
+
 // Explicit definition of ExecuteSwitchImplCpp.
 template
 void ExecuteSwitchImplCpp<true>(SwitchImplContext* ctx);
