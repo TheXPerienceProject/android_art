@@ -11168,21 +11168,21 @@ void ClassLinker::SetEnablePublicSdkChecks([[maybe_unused]] bool enabled) {
 }
 
 bool ClassLinker::TransactionWriteConstraint(
-    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Object> obj) const {
+    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Object> obj) {
   // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
   LOG(FATAL) << "UNREACHABLE";
   UNREACHABLE();
 }
 
 bool ClassLinker::TransactionWriteValueConstraint(
-    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Object> value) const {
+    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Object> value) {
   // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
   LOG(FATAL) << "UNREACHABLE";
   UNREACHABLE();
 }
 
 bool ClassLinker::TransactionAllocationConstraint(
-    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Class> klass) const {
+    [[maybe_unused]] Thread* self, [[maybe_unused]] ObjPtr<mirror::Class> klass) {
   // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
   LOG(FATAL) << "UNREACHABLE";
   UNREACHABLE();

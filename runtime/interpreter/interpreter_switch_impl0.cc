@@ -22,6 +22,42 @@
 namespace art HIDDEN {
 namespace interpreter {
 
+// Define the helper class that does not do any transaction checks.
+class InactiveTransactionChecker {
+ public:
+  ALWAYS_INLINE static bool WriteConstraint([[maybe_unused]] Thread* self,
+                                            [[maybe_unused]] ObjPtr<mirror::Object> obj)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+
+  ALWAYS_INLINE static bool WriteValueConstraint([[maybe_unused]] Thread* self,
+                                                 [[maybe_unused]] ObjPtr<mirror::Object> value)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+
+  ALWAYS_INLINE static bool ReadConstraint([[maybe_unused]] Thread* self,
+                                           [[maybe_unused]] ObjPtr<mirror::Object> value)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+
+  ALWAYS_INLINE static bool AllocationConstraint([[maybe_unused]] Thread* self,
+                                                 [[maybe_unused]] ObjPtr<mirror::Class> klass)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return false;
+  }
+
+  ALWAYS_INLINE static bool IsTransactionAborted() {
+    return false;
+  }
+
+  static void RecordArrayElementsInTransaction([[maybe_unused]] ObjPtr<mirror::Object> array,
+                                               [[maybe_unused]] int32_t count)
+      REQUIRES_SHARED(Locks::mutator_lock_) {}
+};
+
 // Explicit definition of ExecuteSwitchImplCpp.
 template HOT_ATTR
 void ExecuteSwitchImplCpp<false>(SwitchImplContext* ctx);

@@ -44,6 +44,206 @@
 namespace art HIDDEN {
 namespace interpreter {
 
+// We declare the helpers classes for transaction checks here but they shall be defined
+// only when compiling the transactional and non-transactional interpreter.
+class ActiveTransactionChecker;  // For transactional interpreter.
+class InactiveTransactionChecker;  // For non-transactional interpreter.
+
+// Handles iget-XXX and sget-XXX instructions.
+// Returns true on success, otherwise throws an exception and returns false.
+template<FindFieldType find_type,
+         Primitive::Type field_type,
+         bool transaction_active = false>
+ALWAYS_INLINE bool DoFieldGet(Thread* self,
+                              ShadowFrame& shadow_frame,
+                              const Instruction* inst,
+                              uint16_t inst_data) REQUIRES_SHARED(Locks::mutator_lock_) {
+  const bool is_static = (find_type == StaticObjectRead) || (find_type == StaticPrimitiveRead);
+  bool should_report = Runtime::Current()->GetInstrumentation()->HasFieldReadListeners();
+  ArtField* field = nullptr;
+  MemberOffset offset(0u);
+  bool is_volatile;
+  GetFieldInfo(self,
+               shadow_frame.GetMethod(),
+               reinterpret_cast<const uint16_t*>(inst),
+               is_static,
+               /*resolve_field_type=*/ false,
+               &field,
+               &is_volatile,
+               &offset);
+  if (self->IsExceptionPending()) {
+    return false;
+  }
+
+  ObjPtr<mirror::Object> obj;
+  if (is_static) {
+    obj = field->GetDeclaringClass();
+    using TransactionChecker = typename std::conditional_t<
+        transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
+    if (TransactionChecker::ReadConstraint(self, obj)) {
+      return false;
+    }
+  } else {
+    obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
+    if (should_report || obj == nullptr) {
+      field = ResolveFieldWithAccessChecks(self,
+                                           Runtime::Current()->GetClassLinker(),
+                                           inst->VRegC_22c(),
+                                           shadow_frame.GetMethod(),
+                                           /* is_static= */ false,
+                                           /* is_put= */ false,
+                                           /* resolve_field_type= */ false);
+      if (obj == nullptr) {
+        ThrowNullPointerExceptionForFieldAccess(
+            field, shadow_frame.GetMethod(), /* is_read= */ true);
+        return false;
+      }
+      // Reload in case suspension happened during field resolution.
+      obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
+    }
+  }
+
+  uint32_t vregA = is_static ? inst->VRegA_21c(inst_data) : inst->VRegA_22c(inst_data);
+  JValue result;
+  if (should_report) {
+    DCHECK(field != nullptr);
+    if (UNLIKELY(!DoFieldGetCommon<field_type>(self, shadow_frame, obj, field, &result))) {
+      // Instrumentation threw an error!
+      CHECK(self->IsExceptionPending());
+      return false;
+    }
+  }
+
+#define FIELD_GET(prim, type, jtype, vreg)                                      \
+  case Primitive::kPrim ##prim:                                                 \
+    shadow_frame.SetVReg ##vreg(vregA,                                          \
+        should_report ? result.Get ##jtype()                                    \
+                      : is_volatile ? obj->GetField ## type ## Volatile(offset) \
+                                    : obj->GetField ##type(offset));            \
+    break;
+
+  switch (field_type) {
+    FIELD_GET(Boolean, Boolean, Z, )
+    FIELD_GET(Byte, Byte, B, )
+    FIELD_GET(Char, Char, C, )
+    FIELD_GET(Short, Short, S, )
+    FIELD_GET(Int, 32, I, )
+    FIELD_GET(Long, 64, J, Long)
+#undef FIELD_GET
+    case Primitive::kPrimNot:
+      shadow_frame.SetVRegReference(
+          vregA,
+          should_report ? result.GetL()
+                        : is_volatile ? obj->GetFieldObjectVolatile<mirror::Object>(offset)
+                                      : obj->GetFieldObject<mirror::Object>(offset));
+      break;
+    default:
+      LOG(FATAL) << "Unreachable: " << field_type;
+      UNREACHABLE();
+  }
+  return true;
+}
+
+// Handles iput-XXX and sput-XXX instructions.
+// Returns true on success, otherwise throws an exception and returns false.
+template<FindFieldType find_type, Primitive::Type field_type, bool transaction_active>
+ALWAYS_INLINE bool DoFieldPut(Thread* self,
+                              const ShadowFrame& shadow_frame,
+                              const Instruction* inst,
+                              uint16_t inst_data)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  bool should_report = Runtime::Current()->GetInstrumentation()->HasFieldWriteListeners();
+  bool is_static = (find_type == StaticObjectWrite) || (find_type == StaticPrimitiveWrite);
+  uint32_t vregA = is_static ? inst->VRegA_21c(inst_data) : inst->VRegA_22c(inst_data);
+  bool resolve_field_type = (shadow_frame.GetVRegReference(vregA) != nullptr);
+  ArtField* field = nullptr;
+  MemberOffset offset(0u);
+  bool is_volatile;
+  GetFieldInfo(self,
+               shadow_frame.GetMethod(),
+               reinterpret_cast<const uint16_t*>(inst),
+               is_static,
+               resolve_field_type,
+               &field,
+               &is_volatile,
+               &offset);
+  if (self->IsExceptionPending()) {
+    return false;
+  }
+
+  ObjPtr<mirror::Object> obj;
+  if (is_static) {
+    obj = field->GetDeclaringClass();
+  } else {
+    obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
+    if (should_report || obj == nullptr) {
+      field = ResolveFieldWithAccessChecks(self,
+                                           Runtime::Current()->GetClassLinker(),
+                                           inst->VRegC_22c(),
+                                           shadow_frame.GetMethod(),
+                                           /* is_static= */ false,
+                                           /* is_put= */ true,
+                                           resolve_field_type);
+      if (UNLIKELY(obj == nullptr)) {
+        ThrowNullPointerExceptionForFieldAccess(
+            field, shadow_frame.GetMethod(), /* is_read= */ false);
+        return false;
+      }
+      // Reload in case suspension happened during field resolution.
+      obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
+    }
+  }
+  using TransactionChecker = typename std::conditional_t<
+      transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
+  if (TransactionChecker::WriteConstraint(self, obj)) {
+    return false;
+  }
+
+  JValue value = GetFieldValue<field_type>(shadow_frame, vregA);
+
+  if (field_type == Primitive::kPrimNot &&
+      TransactionChecker::WriteValueConstraint(self, value.GetL())) {
+    return false;
+  }
+  if (should_report) {
+    return DoFieldPutCommon<field_type, transaction_active>(self,
+                                                            shadow_frame,
+                                                            obj,
+                                                            field,
+                                                            value);
+  }
+#define FIELD_SET(prim, type, jtype) \
+  case Primitive::kPrim ## prim: \
+    if (is_volatile) { \
+      obj->SetField ## type ## Volatile<transaction_active>(offset, value.Get ## jtype()); \
+    } else { \
+      obj->SetField ## type<transaction_active>(offset, value.Get ## jtype()); \
+    } \
+    break;
+
+  switch (field_type) {
+    FIELD_SET(Boolean, Boolean, Z)
+    FIELD_SET(Byte, Byte, B)
+    FIELD_SET(Char, Char, C)
+    FIELD_SET(Short, Short, S)
+    FIELD_SET(Int, 32, I)
+    FIELD_SET(Long, 64, J)
+    FIELD_SET(Not, Object, L)
+    case Primitive::kPrimVoid: {
+      LOG(FATAL) << "Unreachable " << field_type;
+      break;
+    }
+  }
+#undef FIELD_SET
+
+  if (transaction_active) {
+    if (UNLIKELY(self->IsExceptionPending())) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Short-lived helper class which executes single DEX bytecode.  It is inlined by compiler.
 // Any relevant execution information is stored in the fields - it should be kept to minimum.
 // All instance functions must be inlined so that the fields can be stored in registers.
