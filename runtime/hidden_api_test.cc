@@ -42,20 +42,26 @@ static constexpr uint64_t kHideMaxtargetsdkQHiddenApis = 149994052;
 static constexpr uint64_t kAllowTestApiAccess = 166236554;
 
 
-static bool Copy(const std::string& src, const std::string& dst, /*out*/ std::string* error_msg) {
-  std::ifstream  src_stream(src, std::ios::binary);
-  std::ofstream  dst_stream(dst, std::ios::binary);
-  dst_stream << src_stream.rdbuf();
-  src_stream.close();
-  dst_stream.close();
-  if (src_stream.good() && dst_stream.good()) {
-    return true;
-  } else {
-    *error_msg = "Copy " + src + " => " + dst + " (src_good="
-        + (src_stream.good() ? "true" : "false") + ", dst_good="
-        + (dst_stream.good() ? "true" : "false") + ")";
+static bool Copy(const char* src_filename, File* dst, /*out*/ std::string* error_msg) {
+  std::unique_ptr<File> src(OS::OpenFileForReading(src_filename));
+  if (src == nullptr) {
+    *error_msg = StringPrintf("Failed to open for reading: %s", src_filename);
     return false;
   }
+  int64_t length = src->GetLength();
+  if (length < 0) {
+    *error_msg = "Failed to get file length.";
+    return false;
+  }
+  if (!dst->Copy(src.get(), /*offset=*/ 0, length)) {
+    *error_msg = "Failed to copy file contents.";
+    return false;
+  }
+  if (dst->Flush() != 0) {
+    *error_msg = "Failed to flush.";
+    return false;
+  }
+  return true;
 }
 
 static bool LoadDexFiles(const std::string& path,
@@ -91,11 +97,11 @@ static bool LoadDexFiles(const std::string& path,
   return true;
 }
 
-static bool Remove(const std::string& path, /*out*/ std::string* error_msg) {
-  if (TEMP_FAILURE_RETRY(remove(path.c_str())) == 0) {
+static bool Remove(const char* path, /*out*/ std::string* error_msg) {
+  if (TEMP_FAILURE_RETRY(remove(path)) == 0) {
     return true;
   }
-  *error_msg = StringPrintf("Unable to remove(\"%s\"): %s", path.c_str(), strerror(errno));
+  *error_msg = StringPrintf("Unable to remove(\"%s\"): %s", path, strerror(errno));
   return false;
 }
 
@@ -191,13 +197,43 @@ class HiddenApiTest : public CommonRuntimeTest {
   }
 
   void TestLocation(const std::string& location, hiddenapi::Domain expected_domain) {
+    // Create a temp file with a unique name based on `location` to isolate tests
+    // that may run in parallel. b/238730923
+    const std::string_view suffix = ".jar";
+    const std::string_view placeholder = "XXXXXX";  // See `mkstemps()`.
+    ASSERT_TRUE(EndsWith(location, suffix));
+    std::unique_ptr<char[]> unique_location(new char[location.length() + placeholder.length() + 1]);
+    ASSERT_TRUE(unique_location != nullptr);
+    size_t stem_length = location.length() - suffix.length();
+    memcpy(unique_location.get(), location.data(), stem_length);
+    memcpy(unique_location.get() + stem_length, placeholder.data(), placeholder.length());
+    memcpy(unique_location.get() + stem_length + placeholder.length(),
+           location.data() + stem_length,
+           suffix.length());
+    unique_location[location.length() + placeholder.length()] = 0;
+    int fd = mkstemps(unique_location.get(), suffix.length());
+    ASSERT_TRUE(fd != -1) << strerror(errno);
+
+    // Copy "Main" to the temp file.
+    std::string error_msg;
+    {
+      File file(fd, /*check_usage=*/ true);
+      bool copied = Copy(GetTestDexFileName("Main").c_str(), &file, &error_msg);
+      int flush_close_result = file.FlushCloseOrErase();
+      if (!copied && flush_close_result == 0) {
+        // Silently remove the temp file before reporting the `Copy()` failure.
+        std::string ignored_error_msg;
+        Remove(unique_location.get(), &ignored_error_msg);
+      }
+      ASSERT_TRUE(copied) << error_msg;
+      ASSERT_EQ(flush_close_result, 0);
+    }
+
     ScopedObjectAccess soa(Thread::Current());
     std::vector<std::unique_ptr<const DexFile>> dex_files;
-    std::string error_msg;
     ObjPtr<mirror::ClassLoader> class_loader;
-
-    ASSERT_TRUE(Copy(GetTestDexFileName("Main"), location, &error_msg)) << error_msg;
-    ASSERT_TRUE(LoadDexFiles(location, soa.Self(), &dex_files, &class_loader, &error_msg))
+    ASSERT_TRUE(
+        LoadDexFiles(unique_location.get(), soa.Self(), &dex_files, &class_loader, &error_msg))
         << error_msg;
     ASSERT_GE(dex_files.size(), 1u);
     ASSERT_TRUE(CheckAllDexFilesInDomain(class_loader,
@@ -206,7 +242,7 @@ class HiddenApiTest : public CommonRuntimeTest {
                                          &error_msg)) << error_msg;
 
     dex_files.clear();
-    ASSERT_TRUE(Remove(location, &error_msg)) << error_msg;
+    ASSERT_TRUE(Remove(unique_location.get(), &error_msg)) << error_msg;
   }
 
  protected:

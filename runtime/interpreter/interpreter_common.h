@@ -100,6 +100,10 @@ class InactiveTransactionChecker {
   ALWAYS_INLINE static bool IsTransactionAborted() {
     return false;
   }
+
+  static void RecordArrayElementsInTransaction([[maybe_unused]] ObjPtr<mirror::Object> array,
+                                               [[maybe_unused]] int32_t count)
+      REQUIRES_SHARED(Locks::mutator_lock_) {}
 };
 
 void ThrowNullPointerExceptionFromInterpreter()
@@ -145,9 +149,6 @@ static inline bool DoMonitorCheckOnExit(Thread* self, ShadowFrame* frame)
   }
   return true;
 }
-
-void RecordArrayElementsInTransaction(ObjPtr<mirror::Array> array, int32_t count)
-    REQUIRES_SHARED(Locks::mutator_lock_);
 
 // Invokes the given method. This is part of the invocation support and is used by DoInvoke,
 // DoFastInvoke and DoInvokeVirtualQuick functions.
