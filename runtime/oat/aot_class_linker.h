@@ -73,11 +73,14 @@ class AotClassLinker : public ClassLinker {
   bool IsActiveStrictTransactionMode() const;
 
   // Transaction constraint checks for AOT compilation.
-  bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const override
+  bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) override
       REQUIRES_SHARED(Locks::mutator_lock_);
-  bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) const override
+  bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) override
       REQUIRES_SHARED(Locks::mutator_lock_);
-  bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) const override
+  // Note: The read constraint check is non-virtual because it's not needed by `UnstartedRuntime`.
+  bool TransactionReadConstraint(Thread* self, ObjPtr<mirror::Object> obj)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) override
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Transaction bookkeeping for AOT compilation.

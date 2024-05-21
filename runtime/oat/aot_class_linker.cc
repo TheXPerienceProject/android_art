@@ -22,7 +22,6 @@
 #include "dex/class_reference.h"
 #include "gc/heap.h"
 #include "handle_scope-inl.h"
-#include "interpreter/active_transaction_checker.h"
 #include "mirror/class-inl.h"
 #include "runtime.h"
 #include "scoped_thread_state_change-inl.h"
@@ -331,21 +330,52 @@ bool AotClassLinker::IsActiveStrictTransactionMode() const {
   return IsActiveTransaction() && GetTransaction()->IsStrict();
 }
 
-bool AotClassLinker::TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const {
+bool AotClassLinker::TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) {
   DCHECK(IsActiveTransaction());
-  return interpreter::ActiveTransactionChecker::WriteConstraint(self, obj);
+  if (GetTransaction()->WriteConstraint(obj)) {
+    Runtime* runtime = Runtime::Current();
+    DCHECK(runtime->GetHeap()->ObjectIsInBootImageSpace(obj) || obj->IsClass());
+    const char* extra = runtime->GetHeap()->ObjectIsInBootImageSpace(obj) ? "boot image " : "";
+    AbortTransactionF(
+        self, "Can't set fields of %s%s", extra, obj->PrettyTypeOf().c_str());
+    return true;
+  }
+  return false;
 }
 
-bool AotClassLinker::TransactionWriteValueConstraint(
-    Thread* self, ObjPtr<mirror::Object> value) const {
+bool AotClassLinker::TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) {
   DCHECK(IsActiveTransaction());
-  return interpreter::ActiveTransactionChecker::WriteValueConstraint(self, value);
+  if (GetTransaction()->WriteValueConstraint(value)) {
+    DCHECK(value != nullptr);
+    const char* description = value->IsClass() ? "class" : "instance of";
+    ObjPtr<mirror::Class> klass = value->IsClass() ? value->AsClass() : value->GetClass();
+    AbortTransactionF(
+        self, "Can't store reference to %s %s", description, klass->PrettyDescriptor().c_str());
+    return true;
+  }
+  return false;
 }
 
-bool AotClassLinker::TransactionAllocationConstraint(Thread* self,
-                                                     ObjPtr<mirror::Class> klass) const {
+bool AotClassLinker::TransactionReadConstraint(Thread* self, ObjPtr<mirror::Object> obj) {
+  DCHECK(obj->IsClass());
+  if (GetTransaction()->ReadConstraint(obj)) {
+    AbortTransactionF(self,
+                      "Can't read static fields of %s since it does not belong to clinit's class.",
+                      obj->PrettyTypeOf().c_str());
+    return true;
+  }
+  return false;
+}
+
+bool AotClassLinker::TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) {
   DCHECK(IsActiveTransaction());
-  return interpreter::ActiveTransactionChecker::AllocationConstraint(self, klass);
+  if (klass->IsFinalizable()) {
+    AbortTransactionF(self,
+                      "Allocating finalizable object in transaction: %s",
+                      klass->PrettyDescriptor().c_str());
+    return true;
+  }
+  return false;
 }
 
 void AotClassLinker::RecordWriteFieldBoolean(mirror::Object* obj,

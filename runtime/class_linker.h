@@ -891,11 +891,11 @@ class EXPORT ClassLinker {
   virtual void SetEnablePublicSdkChecks(bool enabled);
 
   // Transaction constraint checks for AOT compilation.
-  virtual bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const
+  virtual bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  virtual bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) const
+  virtual bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  virtual bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) const
+  virtual bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Transaction bookkeeping for AOT compilation.
