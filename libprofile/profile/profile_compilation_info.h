@@ -336,7 +336,7 @@ class ProfileCompilationInfo {
   // The returned type index can be used, if valid, for `AddClass()` or (TODO) as
   // a type index for inline caches.
   dex::TypeIndex FindOrCreateTypeIndex(const DexFile& dex_file, TypeReference class_ref);
-  dex::TypeIndex FindOrCreateTypeIndex(const DexFile& dex_file, const char* descriptor);
+  dex::TypeIndex FindOrCreateTypeIndex(const DexFile& dex_file, std::string_view descriptor);
 
   // Add a class with the specified `type_index` to the profile. The `type_index`
   // can be either a normal index for a `TypeId` in the dex file, or an artificial
@@ -371,18 +371,8 @@ class ProfileCompilationInfo {
   // Add a class with the specified `descriptor` to the profile.
   // Returns `true` on success, `false` on failure.
   bool AddClass(const DexFile& dex_file,
-                const char* descriptor,
-                const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone);
-  bool AddClass(const DexFile& dex_file,
-                const std::string& descriptor,
-                const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone) {
-    return AddClass(dex_file, descriptor.c_str(), annotation);
-  }
-  bool AddClass(const DexFile& dex_file,
                 std::string_view descriptor,
-                const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone) {
-    return AddClass(dex_file, std::string(descriptor).c_str(), annotation);
-  }
+                const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone);
 
   // Add multiple type ids for classes in a single dex file. Iterator is for type_ids not
   // class_defs.

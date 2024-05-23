@@ -22,6 +22,7 @@ java_test {
         ":art-run-test-018-stack-overflow-expected-stderr",
     ],
     test_suites: [
+        "cts",
         "mcts-art",
     ],
 }

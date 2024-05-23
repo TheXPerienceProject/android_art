@@ -199,11 +199,14 @@ public class PreRebootDexoptJobTest {
         });
 
         var unused = mPreRebootDexoptJob.start();
-        Future<Void> future = new CompletableFuture().runAsync(
-                () -> { mPreRebootDexoptJob.cancel(true /* blocking */); });
-        dexoptCancelled.release();
+        Future<Void> future = new CompletableFuture().runAsync(() -> {
+            mPreRebootDexoptJob.cancel(false /* blocking */);
+            dexoptCancelled.release();
+            mPreRebootDexoptJob.cancel(true /* blocking */);
+        });
         Utils.getFuture(future);
-        // Check that `cancel` is really blocking.
+        // Check that `cancel(true)` is really blocking. If it wasn't, the check below might still
+        // pass due to a race, but we would have a flaky test.
         assertThat(jobExited.tryAcquire()).isTrue();
     }
 

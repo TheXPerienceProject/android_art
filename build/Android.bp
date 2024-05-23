@@ -80,15 +80,10 @@ soong_config_module_type_import {
     from: "art/build/SoongConfig.bp",
     module_types: [
         "art_debug_defaults",
-        "art_module_art_global_defaults",
-        "art_module_cc_defaults",
-        "art_module_java_defaults",
-        "art_module_genrule_defaults",
-        "art_module_prebuilt_defaults",
     ],
 }
 
-art_module_art_global_defaults {
+art_global_defaults {
     // Additional flags are computed by art.go
 
     name: "art_defaults",
@@ -365,72 +360,6 @@ java_library {
     target: {
         hostdex: {
             required: ["libicu_jni"],
-        },
-    },
-}
-
-// Defaults for different module types to enable them only when building ART
-// from sources. TODO(b/172480617): Clean up when sources are gone from the
-// platform tree and we no longer need to support sources present when prebuilts
-// are used.
-// TODO(b/335854415): Remove the defaults module
-art_module_cc_defaults {
-    name: "art_module_source_build_defaults",
-    defaults_visibility: [
-        "//art:__subpackages__",
-        "//libcore:__subpackages__",
-        "//libnativehelper:__subpackages__",
-    ],
-    target: {
-        windows: {
-            // Windows is disabled by default, but if we set enabled:true
-            // globally above we need to disable it explicitly.
-            enabled: false,
-        },
-    },
-}
-
-// TODO(b/335854415): Remove the defaults module
-art_module_java_defaults {
-    name: "art_module_source_build_java_defaults",
-    defaults_visibility: [
-        "//art:__subpackages__",
-        "//libcore:__subpackages__",
-        "//libnativehelper:__subpackages__",
-    ],
-    target: {
-        windows: {
-            enabled: false,
-        },
-    },
-}
-
-// TODO(b/335854415): Remove the defaults module
-art_module_genrule_defaults {
-    name: "art_module_source_build_genrule_defaults",
-    defaults_visibility: [
-        "//art:__subpackages__",
-        "//libcore:__subpackages__",
-        "//libnativehelper:__subpackages__",
-    ],
-    target: {
-        windows: {
-            enabled: false,
-        },
-    },
-}
-
-// TODO(b/335854415): Remove the defaults module
-art_module_prebuilt_defaults {
-    name: "art_module_source_build_prebuilt_defaults",
-    defaults_visibility: [
-        "//art:__subpackages__",
-        "//libcore:__subpackages__",
-        "//libnativehelper:__subpackages__",
-    ],
-    target: {
-        windows: {
-            enabled: false,
         },
     },
 }

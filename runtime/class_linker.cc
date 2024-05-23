@@ -6403,7 +6403,7 @@ bool ClassLinker::LinkClass(Thread* self,
       const ObjPtr<mirror::ClassLoader> class_loader = h_new_class.Get()->GetClassLoader();
       ClassTable* const table = InsertClassTableForClassLoader(class_loader);
       const ObjPtr<mirror::Class> existing =
-          table->UpdateClass(descriptor, h_new_class.Get(), ComputeModifiedUtf8Hash(descriptor));
+          table->UpdateClass(h_new_class.Get(), ComputeModifiedUtf8Hash(descriptor));
       CHECK_EQ(existing, klass.Get());
       WriteBarrierOnClassLoaderLocked(class_loader, h_new_class.Get());
     }
@@ -11154,7 +11154,8 @@ bool ClassLinker::DenyAccessBasedOnPublicSdk([[maybe_unused]] ArtField* art_fiel
   UNREACHABLE();
 }
 
-bool ClassLinker::DenyAccessBasedOnPublicSdk([[maybe_unused]] const char* type_descriptor) const {
+bool ClassLinker::DenyAccessBasedOnPublicSdk(
+    [[maybe_unused]] std::string_view type_descriptor) const {
   // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
   LOG(FATAL) << "UNREACHABLE";
   UNREACHABLE();

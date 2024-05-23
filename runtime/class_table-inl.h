@@ -32,8 +32,9 @@ inline ClassTable::TableSlot::TableSlot(ObjPtr<mirror::Class> klass)
     : TableSlot(klass, klass->DescriptorHash()) {}
 
 inline uint32_t ClassTable::ClassDescriptorHash::operator()(const TableSlot& slot) const {
-  // No read barriers needed, we're reading a chain of constant references for comparison with null
-  // and retrieval of constant primitive data. See `ReadBarrierOption` and `Class::DescriptorHash()`.
+  // No read barriers needed, we're reading a chain of constant references
+  // for comparison with null and retrieval of constant primitive data.
+  // See `ReadBarrierOption` and `Class::DescriptorHash()`.
   return slot.Read<kWithoutReadBarrier>()->DescriptorHash();
 }
 
@@ -44,17 +45,14 @@ inline uint32_t ClassTable::ClassDescriptorHash::operator()(const DescriptorHash
 
 inline bool ClassTable::ClassDescriptorEquals::operator()(const TableSlot& a,
                                                           const TableSlot& b) const {
-  // No read barrier needed, we're reading a chain of constant references for comparison
-  // with null and retrieval of constant primitive data. See ReadBarrierOption.
+  // No read barrier needed, we're reading a chain of constant references
+  // for comparison with null and retrieval of constant primitive data.
+  // See ReadBarrierOption and `Class::DescriptorEquals()`.
   if (a.Hash() != b.Hash()) {
-    std::string temp;
-    DCHECK(!a.Read<kWithoutReadBarrier>()->DescriptorEquals(
-        b.Read<kWithoutReadBarrier>()->GetDescriptor(&temp)));
+    DCHECK(!a.Read<kWithoutReadBarrier>()->DescriptorEquals(b.Read<kWithoutReadBarrier>()));
     return false;
   }
-  std::string temp;
-  return a.Read<kWithoutReadBarrier>()->DescriptorEquals(
-      b.Read<kWithoutReadBarrier>()->GetDescriptor(&temp));
+  return a.Read<kWithoutReadBarrier>()->DescriptorEquals(b.Read<kWithoutReadBarrier>());
 }
 
 inline bool ClassTable::ClassDescriptorEquals::operator()(const TableSlot& a,

@@ -463,15 +463,14 @@ const StringId* DexFile::FindStringId(const char* string) const {
   return nullptr;
 }
 
-const TypeId* DexFile::FindTypeId(const char* string) const {
+const TypeId* DexFile::FindTypeId(std::string_view descriptor) const {
   int32_t lo = 0;
   int32_t hi = NumTypeIds() - 1;
   while (hi >= lo) {
     int32_t mid = (hi + lo) / 2;
     const TypeId& type_id = GetTypeId(dex::TypeIndex(mid));
-    const StringId& str_id = GetStringId(type_id.descriptor_idx_);
-    const char* str = GetStringData(str_id);
-    int compare = CompareModifiedUtf8ToModifiedUtf8AsUtf16CodePointValues(string, str);
+    std::string_view mid_descriptor = GetTypeDescriptorView(type_id);
+    int compare = CompareDescriptors(descriptor, mid_descriptor);
     if (compare > 0) {
       lo = mid + 1;
     } else if (compare < 0) {
@@ -571,9 +570,8 @@ bool DexFile::CreateTypeList(std::string_view signature,
         offset++;
       } while (c != ';');
     }
-    // TODO: avoid creating a std::string just to get a 0-terminated char array
-    std::string descriptor(signature.data() + start_offset, offset - start_offset);
-    const TypeId* type_id = FindTypeId(descriptor.c_str());
+    std::string_view descriptor(signature.data() + start_offset, offset - start_offset);
+    const TypeId* type_id = FindTypeId(descriptor);
     if (type_id == nullptr) {
       return false;
     }
