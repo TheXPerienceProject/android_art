@@ -166,8 +166,8 @@ static std::string InitDefaultPublicLibraries(bool for_preload) {
   if (!for_preload) {
     // Remove the public libs provided by apexes because these libs are available
     // from apex namespaces.
-    for (const std::pair<std::string, std::string>& p : apex_public_libraries()) {
-      std::vector<std::string> public_libs = base::Split(p.second, ":");
+    for (const auto& [_, library_list] : apex_public_libraries()) {
+      std::vector<std::string> public_libs = base::Split(library_list, ":");
       sonames->erase(std::remove_if(sonames->begin(),
                                     sonames->end(),
                                     [&public_libs](const std::string& v) {

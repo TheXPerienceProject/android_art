@@ -38,6 +38,7 @@ import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.ArtServiceJobInterface;
 import com.android.server.art.prereboot.PreRebootDriver;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
@@ -140,6 +141,8 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
                                .setRequiresDeviceIdle(true)
                                .setRequiresCharging(true)
                                .setRequiresBatteryNotLow(true)
+                               // The latency is to wait for update_engine to finish.
+                               .setMinimumLatency(Duration.ofMinutes(10).toMillis())
                                .build();
 
         /* @JobScheduler.Result */ int result = mInjector.getJobScheduler().schedule(info);

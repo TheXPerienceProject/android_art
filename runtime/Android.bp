@@ -652,6 +652,7 @@ cc_defaults {
         "liblz4",
         "liblzma", // libelffile dependency; must be repeated here since it's a static lib.
         "libnativebridge",
+        "libnativeloader",
         "libodrstatslog",
     ],
     target: {
@@ -659,6 +660,11 @@ cc_defaults {
             cflags: [
                 "-fsanitize-address-use-after-return=never",
                 "-Wno-unused-command-line-argument",
+            ],
+        },
+        android: {
+            whole_static_libs: [
+                "libPlatformProperties", // libnativeloader dependency.
             ],
         },
     },
@@ -677,7 +683,6 @@ cc_defaults {
         "libart-runtime",
         "libelffile",
         "libsigchain_fake",
-        "libnativeloader",
     ],
 }
 
@@ -694,7 +699,6 @@ cc_defaults {
         "libartd-runtime",
         "libelffiled",
         "libsigchain_fake",
-        "libnativeloader",
     ],
 }
 

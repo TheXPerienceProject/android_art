@@ -60,6 +60,7 @@ import java.util.Set;
 public class DumpHelperTest {
     private static final String PKG_NAME_FOO = "com.example1.foo";
     private static final String PKG_NAME_BAR = "com.example2.bar";
+    private static final String PKG_NAME_SDK = "com.example3.sdk";
 
     @Rule
     public StaticMockitoRule mockitoRule =
@@ -96,6 +97,7 @@ public class DumpHelperTest {
 
         setUpForFoo();
         setUpForBar();
+        setUpForSdk();
 
         mDumpHelper = new DumpHelper(mInjector);
     }
@@ -134,6 +136,12 @@ public class DumpHelperTest {
                 + "      [location is /somewhere/app/bar/oat/arm/base.odex]\n"
                 + "    arm64: [status=verify] [reason=install]\n"
                 + "      [location is /somewhere/app/bar/oat/arm64/base.odex]\n"
+                + "[com.example3.sdk]\n"
+                + "  path: /somewhere/app/sdk/base.apk\n"
+                + "    arm: [status=verify] [reason=install] [primary-abi]\n"
+                + "      [location is /somewhere/app/sdk/oat/arm/base.odex]\n"
+                + "    arm64: [status=verify] [reason=install]\n"
+                + "      [location is /somewhere/app/sdk/oat/arm64/base.odex]\n"
                 + "\n"
                 + "Current GC: CollectorTypeCMC\n";
 
@@ -142,11 +150,12 @@ public class DumpHelperTest {
         assertThat(stringWriter.toString()).isEqualTo(expected);
     }
 
-    private PackageState createPackageState(@NonNull String packageName, int appId,
+    private PackageState createPackageState(@NonNull String packageName, int appId, boolean isApex,
             boolean hasPackage, @NonNull String primaryAbi, @NonNull String secondaryAbi) {
         var pkgState = mock(PackageState.class);
         lenient().when(pkgState.getPackageName()).thenReturn(packageName);
         lenient().when(pkgState.getAppId()).thenReturn(appId);
+        lenient().when(pkgState.isApex()).thenReturn(isApex);
         lenient()
                 .when(pkgState.getAndroidPackage())
                 .thenReturn(hasPackage ? mock(AndroidPackage.class) : null);
@@ -158,19 +167,22 @@ public class DumpHelperTest {
     private Map<String, PackageState> createPackageStates() {
         var pkgStates = new HashMap<String, PackageState>();
         pkgStates.put(PKG_NAME_FOO,
-                createPackageState(PKG_NAME_FOO, 10001 /* appId */, true /* hasPackage */,
-                        "arm64-v8a", "armeabi-v7a"));
+                createPackageState(PKG_NAME_FOO, 10001 /* appId */, false /* isApex */,
+                        true /* hasPackage */, "arm64-v8a", "armeabi-v7a"));
         pkgStates.put(PKG_NAME_BAR,
-                createPackageState(PKG_NAME_BAR, 10003 /* appId */, true /* hasPackage */,
-                        "armeabi-v7a", "arm64-v8a"));
-        // This should not be included in the output because it has a negative app id.
+                createPackageState(PKG_NAME_BAR, 10003 /* appId */, false /* isApex */,
+                        true /* hasPackage */, "armeabi-v7a", "arm64-v8a"));
+        pkgStates.put(PKG_NAME_SDK,
+                createPackageState(PKG_NAME_SDK, -1 /* appId */, false /* isApex */,
+                        true /* hasPackage */, "armeabi-v7a", "arm64-v8a"));
+        // This should not be included in the output because it is APEX.
         pkgStates.put("com.android.art",
-                createPackageState("com.android.art", -1 /* appId */, true /* hasPackage */,
-                        "arm64-v8a", "armeabi-v7a"));
+                createPackageState("com.android.art", -1 /* appId */, true /* isApex */,
+                        true /* hasPackage */, "arm64-v8a", "armeabi-v7a"));
         // This should not be included in the output because it does't have AndroidPackage.
         pkgStates.put("com.example.null",
-                createPackageState("com.example.null", 10010 /* appId */, false /* hasPackage */,
-                        "arm64-v8a", "armeabi-v7a"));
+                createPackageState("com.example.null", 10010 /* appId */, false /* isApex */,
+                        false /* hasPackage */, "arm64-v8a", "armeabi-v7a"));
         return pkgStates;
     }
 
@@ -284,6 +296,25 @@ public class DumpHelperTest {
         lenient()
                 .when(mDexUseManagerLocal.getPrimaryDexLoaders(
                         PKG_NAME_BAR, "/somewhere/app/bar/base.apk"))
+                .thenReturn(Set.of());
+    }
+
+    private void setUpForSdk() {
+        var status = DexoptStatus.create(
+                List.of(DexContainerFileDexoptStatus.create("/somewhere/app/sdk/base.apk",
+                                true /* isPrimaryDex */, true /* isPrimaryAbi */, "armeabi-v7a",
+                                "verify", "install", "/somewhere/app/sdk/oat/arm/base.odex"),
+                        DexContainerFileDexoptStatus.create("/somewhere/app/sdk/base.apk",
+                                true /* isPrimaryDex */, false /* isPrimaryAbi */, "arm64-v8a",
+                                "verify", "install", "/somewhere/app/sdk/oat/arm64/base.odex")));
+
+        lenient()
+                .when(mArtManagerLocal.getDexoptStatus(any(), eq(PKG_NAME_SDK)))
+                .thenReturn(status);
+
+        lenient()
+                .when(mDexUseManagerLocal.getPrimaryDexLoaders(
+                        PKG_NAME_SDK, "/somewhere/app/sdk/base.apk"))
                 .thenReturn(Set.of());
     }
 }

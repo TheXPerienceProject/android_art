@@ -116,7 +116,6 @@ using ::android::base::make_scope_guard;
 using ::android::base::ReadFileToString;
 using ::android::base::Result;
 using ::android::base::Split;
-using ::android::base::StringReplace;
 using ::android::base::Tokenize;
 using ::android::base::WriteStringToFd;
 using ::android::base::WriteStringToFile;
@@ -446,8 +445,11 @@ Result<File> ExtractEmbeddedProfileToFd(const std::string& dex_path) {
   // Reopen the memfd with readonly to make SELinux happy when the fd is passed to a child process
   // who doesn't have write permission. (b/303909581)
   std::string path = ART_FORMAT("/proc/self/fd/{}", memfd.Fd());
-  File memfd_readonly(
-      open(path.c_str(), O_RDONLY), memfd_name, /*check_usage=*/false, /*read_only_mode=*/true);
+  // NOLINTNEXTLINE - O_CLOEXEC is omitted on purpose
+  File memfd_readonly(open(path.c_str(), O_RDONLY),
+                      memfd_name,
+                      /*check_usage=*/false,
+                      /*read_only_mode=*/true);
   if (!memfd_readonly.IsOpened()) {
     return ErrnoErrorf("Failed to open file '{}' ('{}')", path, memfd_name);
   }
@@ -485,19 +487,19 @@ std::ostream& operator<<(std::ostream& os, const FdLogger& fd_logger) {
 }  // namespace
 
 #define RETURN_FATAL_IF_PRE_REBOOT(options)                                 \
-  if (options.is_pre_reboot) {                                              \
+  if ((options).is_pre_reboot) {                                            \
     return Fatal("This method is not supported in Pre-reboot Dexopt mode"); \
   }
 
 #define RETURN_FATAL_IF_NOT_PRE_REBOOT(options)                              \
-  if (!options.is_pre_reboot) {                                              \
+  if (!(options).is_pre_reboot) {                                            \
     return Fatal("This method is only supported in Pre-reboot Dexopt mode"); \
   }
 
 #define RETURN_FATAL_IF_ARG_IS_PRE_REBOOT_IMPL(expected, arg, log_name)                        \
   {                                                                                            \
     auto&& __return_fatal_tmp = PreRebootFlag(arg);                                            \
-    if (expected != __return_fatal_tmp) {                                                      \
+    if ((expected) != __return_fatal_tmp) {                                                    \
       return Fatal(ART_FORMAT("Expected flag 'isPreReboot' in argument '{}' to be {}, got {}", \
                               log_name,                                                        \
                               expected,                                                        \
@@ -506,7 +508,7 @@ std::ostream& operator<<(std::ostream& os, const FdLogger& fd_logger) {
   }
 
 #define RETURN_FATAL_IF_PRE_REBOOT_MISMATCH(options, arg, log_name) \
-  RETURN_FATAL_IF_ARG_IS_PRE_REBOOT_IMPL(options.is_pre_reboot, arg, log_name)
+  RETURN_FATAL_IF_ARG_IS_PRE_REBOOT_IMPL((options).is_pre_reboot, arg, log_name)
 
 #define RETURN_FATAL_IF_ARG_IS_PRE_REBOOT(arg, log_name) \
   RETURN_FATAL_IF_ARG_IS_PRE_REBOOT_IMPL(false, arg, log_name)

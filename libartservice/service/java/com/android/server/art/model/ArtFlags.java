@@ -95,6 +95,15 @@ public class ArtFlags {
      * @hide
      */
     public static final int FLAG_FORCE_MERGE_PROFILE = 1 << 8;
+    /**
+     * Whether to force the specified compiler filter. If true, the compiler filter cannot be
+     * overridden through {@link ArtManagerLocal#setAdjustCompilerFilterCallback}. ART Service will
+     * not adjust the compiler filter either, unless dexopt cannot be performed with the specified
+     * compiler filter (e.g., the filter is "speed-profile" while no profile is available).
+     *
+     * @hide
+     */
+    public static final int FLAG_FORCE_COMPILER_FILTER = 1 << 9;
 
     /**
      * Flags for {@link
@@ -137,6 +146,7 @@ public class ArtFlags {
         FLAG_SKIP_IF_STORAGE_LOW,
         FLAG_IGNORE_PROFILE,
         FLAG_FORCE_MERGE_PROFILE,
+        FLAG_FORCE_COMPILER_FILTER,
     })
     // clang-format on
     @Retention(RetentionPolicy.SOURCE)

@@ -636,27 +636,26 @@ void IntrinsicCodeGeneratorRISCV64::VisitLongDivideUnsigned(HInvoke* invoke) {
   GenerateDivideUnsigned(invoke, codegen_);
 }
 
-#define VISIT_INTRINSIC(name, low, high, type, start_index) \
-  void IntrinsicLocationsBuilderRISCV64::Visit ##name ##ValueOf(HInvoke* invoke) { \
-    InvokeRuntimeCallingConvention calling_convention; \
-    IntrinsicVisitor::ComputeValueOfLocations( \
-        invoke, \
-        codegen_, \
-        low, \
-        high - low + 1, \
-        calling_convention.GetReturnLocation(DataType::Type::kReference), \
-        Location::RegisterLocation(calling_convention.GetRegisterAt(0))); \
-  } \
-  void IntrinsicCodeGeneratorRISCV64::Visit ##name ##ValueOf(HInvoke* invoke) { \
-    IntrinsicVisitor::ValueOfInfo info = \
-        IntrinsicVisitor::ComputeValueOfInfo( \
-            invoke, \
-            codegen_->GetCompilerOptions(), \
-            WellKnownClasses::java_lang_ ##name ##_value, \
-            low, \
-            high - low + 1, \
-            start_index); \
-    HandleValueOf(invoke, info, type); \
+#define VISIT_INTRINSIC(name, low, high, type, start_index)                              \
+  void IntrinsicLocationsBuilderRISCV64::Visit##name##ValueOf(HInvoke* invoke) {         \
+    InvokeRuntimeCallingConvention calling_convention;                                   \
+    IntrinsicVisitor::ComputeValueOfLocations(                                           \
+        invoke,                                                                          \
+        codegen_,                                                                        \
+        low,                                                                             \
+        (high) - (low) + 1,                                                              \
+        calling_convention.GetReturnLocation(DataType::Type::kReference),                \
+        Location::RegisterLocation(calling_convention.GetRegisterAt(0)));                \
+  }                                                                                      \
+  void IntrinsicCodeGeneratorRISCV64::Visit##name##ValueOf(HInvoke* invoke) {            \
+    IntrinsicVisitor::ValueOfInfo info =                                                 \
+        IntrinsicVisitor::ComputeValueOfInfo(invoke,                                     \
+                                             codegen_->GetCompilerOptions(),             \
+                                             WellKnownClasses::java_lang_##name##_value, \
+                                             low,                                        \
+                                             (high) - (low) + 1,                         \
+                                             start_index);                               \
+    HandleValueOf(invoke, info, type);                                                   \
   }
   BOXED_TYPES(VISIT_INTRINSIC)
 #undef VISIT_INTRINSIC
@@ -767,8 +766,8 @@ void IntrinsicCodeGeneratorRISCV64::VisitReferenceGetReferent(HInvoke* invoke) {
                                                     out,
                                                     obj.AsRegister<XRegister>(),
                                                     referent_offset,
-                                                    /*maybe_temp=*/ locations->GetTemp(0),
-                                                    /*needs_null_check=*/ false);
+                                                    /*temp=*/locations->GetTemp(0),
+                                                    /*needs_null_check=*/false);
   } else {
     codegen_->GetInstructionVisitor()->Load(
         out, obj.AsRegister<XRegister>(), referent_offset, DataType::Type::kReference);

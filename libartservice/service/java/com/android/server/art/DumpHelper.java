@@ -82,9 +82,7 @@ public class DumpHelper {
     public void dumpPackage(@NonNull PrintWriter pw,
             @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
             @NonNull PackageState pkgState) {
-        // An APEX has a uid of -1.
-        // TODO(b/256637152): Consider using `isApex` instead.
-        if (pkgState.getAppId() <= 0 || pkgState.getAndroidPackage() == null) {
+        if (pkgState.isApex() || pkgState.getAndroidPackage() == null) {
             return;
         }
 
