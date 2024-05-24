@@ -300,11 +300,6 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
         Utils.executeAndWait(mSerializedExecutor, () -> { mInjector.getPreRebootDriver().test(); });
     }
 
-    public void test() {
-        unschedule();
-        Utils.executeAndWait(mSerializedExecutor, () -> { mInjector.getPreRebootDriver().test(); });
-    }
-
     /**
      * Injector pattern for testing purpose.
      *
