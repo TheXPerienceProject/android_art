@@ -2509,6 +2509,7 @@ TEST_F(ArtdTest, commitPreRebootStagedFiles) {
 
   CreateFile(android_data_ + "/misc/profiles/ref/com.android.bar/primary.prof", "old_prof_2");
 
+  bool aidl_return;
   ASSERT_STATUS_OK(artd_->commitPreRebootStagedFiles(
       {
           // Has all new files. All old files should be replaced.
@@ -2529,7 +2530,9 @@ TEST_F(ArtdTest, commitPreRebootStagedFiles) {
           PrimaryRefProfilePath{.packageName = "com.android.foo", .profileName = "primary"},
           // Has no new file.
           PrimaryRefProfilePath{.packageName = "com.android.bar", .profileName = "primary"},
-      }));
+      },
+      &aidl_return));
+  EXPECT_TRUE(aidl_return);
 
   CheckContent(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex",
                "new_odex_1");
@@ -2563,6 +2566,62 @@ TEST_F(ArtdTest, commitPreRebootStagedFiles) {
       std::filesystem::exists(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex.staged"));
   EXPECT_FALSE(std::filesystem::exists(android_data_ +
                                        "/misc/profiles/ref/com.android.foo/primary.prof.staged"));
+}
+
+TEST_F(ArtdTest, commitPreRebootStagedFilesNoNewFile) {
+  bool aidl_return;
+  ASSERT_STATUS_OK(artd_->commitPreRebootStagedFiles(
+      {
+          ArtifactsPath{.dexPath = android_data_ + "/app/com.android.foo/base.apk",
+                        .isa = "arm",
+                        .isInDalvikCache = false},
+      },
+      {},
+      &aidl_return));
+  EXPECT_FALSE(aidl_return);
+}
+
+TEST_F(ArtdTest, checkPreRebootSystemRequirements) {
+  EXPECT_CALL(*mock_props_, GetProperty("ro.build.version.release")).WillRepeatedly(Return("15"));
+  std::string chroot_dir = scratch_path_ + "/chroot";
+  bool aidl_return;
+
+  constexpr const char* kTemplate = R"(
+    # Comment.
+    unrelated.system.property=abc
+
+    ro.build.version.release={}
+  )";
+
+  CreateFile(chroot_dir + "/system/build.prop", ART_FORMAT(kTemplate, 15));
+  ASSERT_STATUS_OK(artd_->checkPreRebootSystemRequirements(chroot_dir, &aidl_return));
+  EXPECT_TRUE(aidl_return);
+
+  CreateFile(chroot_dir + "/system/build.prop", ART_FORMAT(kTemplate, 16));
+  ASSERT_STATUS_OK(artd_->checkPreRebootSystemRequirements(chroot_dir, &aidl_return));
+  EXPECT_TRUE(aidl_return);
+
+  CreateFile(chroot_dir + "/system/build.prop", ART_FORMAT(kTemplate, 17));
+  ASSERT_STATUS_OK(artd_->checkPreRebootSystemRequirements(chroot_dir, &aidl_return));
+  EXPECT_FALSE(aidl_return);
+}
+
+TEST_F(ArtdTest, BuildSystemProperties) {
+  constexpr const char* kContent = R"(
+    # Comment.
+    property.foo=123
+    property.foo?=456
+    property.bar?=000
+    property.bar=789
+    property.baz?=111
+  )";
+
+  CreateFile(scratch_path_ + "/build.prop", kContent);
+  BuildSystemProperties props =
+      OR_FAIL(BuildSystemProperties::Create(scratch_path_ + "/build.prop"));
+  EXPECT_EQ(props.GetOrEmpty("property.foo"), "123");
+  EXPECT_EQ(props.GetOrEmpty("property.bar"), "789");
+  EXPECT_EQ(props.GetOrEmpty("property.baz"), "111");
 }
 
 class ArtdPreRebootTest : public ArtdTest {
