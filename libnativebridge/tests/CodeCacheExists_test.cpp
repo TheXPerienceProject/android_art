@@ -27,26 +27,26 @@ namespace android {
 TEST_F(NativeBridgeTest, CodeCacheExists) {
     // Make sure that code_cache does not exists
     struct stat st;
-    ASSERT_EQ(-1, stat(kCodeCache, &st));
+    ASSERT_EQ(-1, stat(codeCache(), &st));
     ASSERT_EQ(ENOENT, errno);
 
     // Create the code_cache
-    ASSERT_EQ(0, mkdir(kCodeCache, S_IRWXU | S_IRWXG | S_IXOTH));
+    ASSERT_EQ(0, mkdir(codeCache(), S_IRWXU | S_IRWXG | S_IXOTH));
 
     // Init
     ASSERT_TRUE(LoadNativeBridge(kNativeBridgeLibrary, nullptr));
-    ASSERT_TRUE(PreInitializeNativeBridge(".", "isa"));
+    ASSERT_TRUE(PreInitializeNativeBridge(appDataDir(), "isa"));
     ASSERT_TRUE(InitializeNativeBridge(nullptr, nullptr));
     ASSERT_TRUE(NativeBridgeAvailable());
     ASSERT_FALSE(NativeBridgeError());
 
     // Check that the code cache is still there
-    ASSERT_EQ(0, stat(kCodeCache, &st));
+    ASSERT_EQ(0, stat(codeCache(), &st));
     ASSERT_TRUE(S_ISDIR(st.st_mode));
 
     // Clean up
     UnloadNativeBridge();
-    ASSERT_EQ(0, rmdir(kCodeCache));
+    ASSERT_EQ(0, rmdir(codeCache()));
 
     ASSERT_FALSE(NativeBridgeError());
 }

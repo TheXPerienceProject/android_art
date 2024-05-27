@@ -113,7 +113,7 @@ TEST_F(FuzzerCorpusTest, VerifyCorpusDexFiles) {
 
     const bool expected_success = valid_dex_files.find(name) != valid_dex_files.end();
     VerifyDexFile(
-        reinterpret_cast<const uint8_t*>(data.data()), data.size(), name.c_str(), expected_success);
+        reinterpret_cast<const uint8_t*>(data.data()), data.size(), name, expected_success);
   }
 
   ASSERT_TRUE(error >= -1) << "failed iterating " << filename << " : " << ErrorCodeString(error);

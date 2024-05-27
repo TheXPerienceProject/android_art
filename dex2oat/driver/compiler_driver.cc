@@ -1844,17 +1844,10 @@ bool CompilerDriver::FastVerify(jobject jclass_loader,
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
   std::string error_msg;
 
-  if (!verifier_deps->ValidateDependencies(
+  verifier_deps->ValidateDependenciesAndUpdateStatus(
       soa.Self(),
       class_loader,
-      dex_files,
-      &error_msg)) {
-    // Clear the information we have as we are going to re-verify and we do not
-    // want to keep that a class is verified.
-    verifier_deps->ClearData(dex_files);
-    LOG(WARNING) << "Fast verification failed: " << error_msg;
-    return false;
-  }
+      dex_files);
 
   bool compiler_only_verifies =
       !GetCompilerOptions().IsAnyCompilationEnabled() &&

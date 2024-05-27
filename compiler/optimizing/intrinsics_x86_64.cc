@@ -3180,27 +3180,26 @@ void IntrinsicCodeGeneratorX86_64::VisitLongNumberOfTrailingZeros(HInvoke* invok
   GenTrailingZeros(GetAssembler(), codegen_, invoke, /* is_long= */ true);
 }
 
-#define VISIT_INTRINSIC(name, low, high, type, start_index) \
-  void IntrinsicLocationsBuilderX86_64::Visit ##name ##ValueOf(HInvoke* invoke) { \
-    InvokeRuntimeCallingConvention calling_convention; \
-    IntrinsicVisitor::ComputeValueOfLocations( \
-        invoke, \
-        codegen_, \
-        low, \
-        high - low + 1, \
-        Location::RegisterLocation(RAX), \
-        Location::RegisterLocation(calling_convention.GetRegisterAt(0))); \
-  } \
-  void IntrinsicCodeGeneratorX86_64::Visit ##name ##ValueOf(HInvoke* invoke) { \
-    IntrinsicVisitor::ValueOfInfo info = \
-        IntrinsicVisitor::ComputeValueOfInfo( \
-            invoke, \
-            codegen_->GetCompilerOptions(), \
-            WellKnownClasses::java_lang_ ##name ##_value, \
-            low, \
-            high - low + 1, \
-            start_index); \
-    HandleValueOf(invoke, info, type); \
+#define VISIT_INTRINSIC(name, low, high, type, start_index)                              \
+  void IntrinsicLocationsBuilderX86_64::Visit##name##ValueOf(HInvoke* invoke) {          \
+    InvokeRuntimeCallingConvention calling_convention;                                   \
+    IntrinsicVisitor::ComputeValueOfLocations(                                           \
+        invoke,                                                                          \
+        codegen_,                                                                        \
+        low,                                                                             \
+        (high) - (low) + 1,                                                              \
+        Location::RegisterLocation(RAX),                                                 \
+        Location::RegisterLocation(calling_convention.GetRegisterAt(0)));                \
+  }                                                                                      \
+  void IntrinsicCodeGeneratorX86_64::Visit##name##ValueOf(HInvoke* invoke) {             \
+    IntrinsicVisitor::ValueOfInfo info =                                                 \
+        IntrinsicVisitor::ComputeValueOfInfo(invoke,                                     \
+                                             codegen_->GetCompilerOptions(),             \
+                                             WellKnownClasses::java_lang_##name##_value, \
+                                             low,                                        \
+                                             (high) - (low) + 1,                         \
+                                             start_index);                               \
+    HandleValueOf(invoke, info, type);                                                   \
   }
   BOXED_TYPES(VISIT_INTRINSIC)
 #undef VISIT_INTRINSIC

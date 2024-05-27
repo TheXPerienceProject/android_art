@@ -280,11 +280,14 @@ inline bool MarkCompact::VerifyRootSingleUpdate(void* root,
       stack_high_addr = reinterpret_cast<char*>(stack_low_addr) + self->GetStackSize();
     }
     if (root < stack_low_addr || root > stack_high_addr) {
-      MutexLock mu(self, lock_);
-      auto ret = updated_roots_->insert(root);
-      DCHECK(ret.second) << "root=" << root << " old_ref=" << old_ref
-                         << " stack_low_addr=" << stack_low_addr
-                         << " stack_high_addr=" << stack_high_addr;
+      bool inserted;
+      {
+        MutexLock mu(self, lock_);
+        inserted = updated_roots_->insert(root).second;
+      }
+      DCHECK(inserted) << "root=" << root << " old_ref=" << old_ref
+                       << " stack_low_addr=" << stack_low_addr
+                       << " stack_high_addr=" << stack_high_addr;
     }
     DCHECK(reinterpret_cast<uint8_t*>(old_ref) >= black_allocations_begin_ ||
            live_words_bitmap_->Test(old_ref))

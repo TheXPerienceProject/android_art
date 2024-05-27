@@ -27,8 +27,9 @@ cc_defaults {
     name: "libnativebridge-test-case-defaults",
     defaults: [
         "art_defaults",
-        "art_test_defaults",
+        "art_test_common_defaults",
     ],
+    host_supported: true,
     // TODO(mast): Split up art_gtest_defaults so that it can be used for the
     // following without pulling in lots of libs.
     target: {
@@ -101,7 +102,7 @@ cc_test {
     name: "libnativebridge-tests",
     defaults: [
         "art_defaults",
-        "art_test_defaults",
+        "art_test_internal_library_defaults",
     ],
 
     target: {
@@ -115,19 +116,10 @@ cc_test {
         },
     },
 
-    // native_bridge.cc doesn't support reloading the native bridge after
-    // unloading, so each test needs to be its own process.
-    test_per_src: true,
-
-    // Disable pre-submit host unit-testing for this test module, as
-    // it is not compatible with TradeFed (because of the use of the
-    // `test_per_src` feature above) and meant to be executed with the
-    // `runtests.sh` script instead.
-    test_options: {
-        unit_test: false,
-    },
+    isolated: true,
 
     srcs: [
+        "NativeBridgeTest.cpp",
         "NativeBridgeApi.c",
         "CodeCacheCreate_test.cpp",
         "CodeCacheExists_test.cpp",
@@ -153,8 +145,25 @@ cc_test {
     ],
 
     shared_libs: [
+        "libbase",
         "liblog",
         "libnativebridge",
+        "libnativebridge6prezygotefork",
+        "libnativebridge7criticalnative",
+
+        // Ideally these would only need to be listed in data_libs, but they
+        // are dlopen'd by libnativebridge, not by libnativebridge-tests,
+        // and the linker can't find them relative to /system/lib64/libnativebridge.so.
+        // Linking them here causes them to be loaded from alongside
+        // libnativebridge-tests when it is executed, and then the later dlopen
+        // returns the handle to the already-loaded library.
+        "libnativebridge-test-case",
+        "libnativebridge2-test-case",
+        "libnativebridge3-test-case",
+        "libnativebridge6-test-case",
+        "libnativebridge7-test-case",
+    ],
+    data_libs: [
         "libnativebridge-test-case",
         "libnativebridge2-test-case",
         "libnativebridge3-test-case",
@@ -163,7 +172,10 @@ cc_test {
         "libnativebridge6prezygotefork",
         "libnativebridge7criticalnative",
     ],
-    header_libs: ["libbase_headers"],
+
+    test_suites: [
+        "general-tests",
+    ],
 }
 
 // Very basic tests in CTS to verify backed-by API coverage of the exported API

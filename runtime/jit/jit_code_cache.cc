@@ -445,8 +445,7 @@ void JitCodeCache::SweepRootTables(IsMarkedVisitor* visitor) {
     }
   }
   // Walk over inline caches to clear entries containing unloaded classes.
-  for (auto it : profiling_infos_) {
-    ProfilingInfo* info = it.second;
+  for (const auto& [_, info] : profiling_infos_) {
     InlineCache* caches = info->GetInlineCaches();
     for (size_t i = 0; i < info->number_of_inline_caches_; ++i) {
       InlineCache* cache = &caches[i];
@@ -514,8 +513,8 @@ void JitCodeCache::FreeAllMethodHeaders(
       CHECK_EQ(compiled_methods.count(addr), 1u) << "Extra debug info: " << addr << " " << name;
     });
     if (!debug_info.empty()) {  // If debug-info generation is enabled.
-      for (auto it : compiled_methods) {
-        CHECK_EQ(debug_info.count(it.first), 1u) << "No debug info: " << it.second->PrettyMethod();
+      for (const auto& [addr, method] : compiled_methods) {
+        CHECK_EQ(debug_info.count(addr), 1u) << "No debug info: " << method->PrettyMethod();
       }
       CHECK_EQ(compiled_methods.size(), debug_info.size());
     }
@@ -1774,23 +1773,21 @@ void JitCodeCache::Dump(std::ostream& os) {
 
 void JitCodeCache::DumpAllCompiledMethods(std::ostream& os) {
   MutexLock mu(Thread::Current(), *Locks::jit_lock_);
-  for (auto it : method_code_map_) {  // Includes OSR methods.
-    ArtMethod* meth = it.second;
-    const void* code_ptr = it.first;
+  for (const auto& [code_ptr, meth] : method_code_map_) {  // Includes OSR methods.
     OatQuickMethodHeader* header = OatQuickMethodHeader::FromCodePointer(code_ptr);
     os << meth->PrettyMethod() << "@"  << std::hex
        << code_ptr << "-" << reinterpret_cast<uintptr_t>(code_ptr) + header->GetCodeSize() << '\n';
   }
   os << "JNIStubs: \n";
-  for (auto it : jni_stubs_map_) {
-    const void* code_ptr = it.second.GetCode();
+  for (const auto& [_, data] : jni_stubs_map_) {
+    const void* code_ptr = data.GetCode();
     if (code_ptr == nullptr) {
       continue;
     }
     OatQuickMethodHeader* header = OatQuickMethodHeader::FromCodePointer(code_ptr);
     os << std::hex << code_ptr << "-"
        << reinterpret_cast<uintptr_t>(code_ptr) + header->GetCodeSize() << " ";
-    for (ArtMethod* m : it.second.GetMethods()) {
+    for (ArtMethod* m : data.GetMethods()) {
       os << m->PrettyMethod() << ";";
     }
     os << "\n";
@@ -1860,13 +1857,13 @@ void JitCodeCache::VisitAllMethods(const std::function<void(const void*, ArtMeth
       }
     }
   }
-  for (auto it : method_code_map_) {  // Includes OSR methods.
+  for (const auto& it : method_code_map_) {  // Includes OSR methods.
     cb(it.first, it.second);
   }
-  for (auto it : saved_compiled_methods_map_) {
+  for (const auto& it : saved_compiled_methods_map_) {
     cb(it.second, it.first);
   }
-  for (auto it : zygote_map_) {
+  for (const auto& it : zygote_map_) {
     if (it.code_ptr != nullptr && it.method != nullptr) {
       cb(it.code_ptr, it.method);
     }

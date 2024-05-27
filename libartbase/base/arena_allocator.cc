@@ -160,9 +160,7 @@ void ArenaAllocatorStatsImpl<kCount>::Dump(std::ostream& os, const Arena* first,
 }
 
 #pragma GCC diagnostic push
-#if __clang_major__ >= 4
 #pragma GCC diagnostic ignored "-Winstantiation-after-specialization"
-#endif
 // We're going to use ArenaAllocatorStatsImpl<kArenaAllocatorCountAllocations> which needs
 // to be explicitly instantiated if kArenaAllocatorCountAllocations is true. Explicit
 // instantiation of the specialization ArenaAllocatorStatsImpl<false> does not do anything
