@@ -832,10 +832,8 @@ struct CmdlineType<ProfileSaverOptions> : CmdlineTypeParser<ProfileSaverOptions>
              type_parser.Parse(suffix));
     }
     if (android::base::StartsWith(option, "hot-startup-method-samples:")) {
-      CmdlineType<unsigned int> type_parser;
-      return ParseInto(existing,
-             &ProfileSaverOptions::hot_startup_method_samples_,
-             type_parser.Parse(suffix));
+      LOG(WARNING) << "-Xps-hot-startup-method-samples option is deprecated";
+      return Result::SuccessNoValue();
     }
     if (android::base::StartsWith(option, "min-methods-to-save:")) {
       CmdlineType<unsigned int> type_parser;
