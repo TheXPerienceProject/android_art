@@ -63,13 +63,15 @@ public class PreRebootManager implements PreRebootManagerInterface {
             @NonNull Context context, @NonNull CancellationSignal cancellationSignal) {
         ExecutorService callbackExecutor = Executors.newSingleThreadExecutor();
         try {
-            PreRebootGlobalInjector.init(artModuleServiceManager, context);
+            if (!PreRebootGlobalInjector.init(
+                        artModuleServiceManager, context, cancellationSignal)) {
+                return;
+            }
             ArtManagerLocal artManagerLocal = new ArtManagerLocal(context);
             PackageManagerLocal packageManagerLocal = Objects.requireNonNull(
                     LocalManagerRegistry.getManager(PackageManagerLocal.class));
 
-            var statsReporter = new PreRebootStatsReporter();
-            statsReporter.load();
+            var progressSession = new PreRebootStatsReporter().new ProgressSession();
 
             // Contains three values: skipped, performed, failed.
             List<Integer> values = new ArrayList(List.of(0, 0, 0));
@@ -82,7 +84,11 @@ public class PreRebootManager implements PreRebootManagerInterface {
                 }
                 switch (result.getStatus()) {
                     case DexoptResult.DEXOPT_SKIPPED:
-                        values.set(0, values.get(0) + 1);
+                        if (hasExistingArtifacts(result)) {
+                            values.set(1, values.get(1) + 1);
+                        } else {
+                            values.set(0, values.get(0) + 1);
+                        }
                         break;
                     case DexoptResult.DEXOPT_PERFORMED:
                         values.set(1, values.get(1) + 1);
@@ -96,19 +102,9 @@ public class PreRebootManager implements PreRebootManagerInterface {
                         throw new IllegalStateException("Unknown status: " + result.getStatus());
                 }
 
-                statsReporter.recordProgress(
+                progressSession.recordProgress(
                         values.get(0), values.get(1), values.get(2), progress.getTotal());
             };
-
-            // Record `STATUS_FINISHED` even if the result is `DEXOPT_FAILED`. This is because
-            // `DEXOPT_FAILED` means dexopt failed for some packages, while the job is considered
-            // successful overall.
-            artManagerLocal.addDexoptDoneCallback(false /* onlyIncludeUpdates */, callbackExecutor,
-                    (result)
-                            -> statsReporter.recordJobEnded(
-                                    result.getFinalStatus() == DexoptResult.DEXOPT_CANCELLED
-                                            ? Status.STATUS_CANCELLED
-                                            : Status.STATUS_FINISHED));
 
             try (var snapshot = packageManagerLocal.withFilteredSnapshot()) {
                 artManagerLocal.dexoptPackages(snapshot, ReasonMapping.REASON_PRE_REBOOT_DEXOPT,
@@ -125,5 +121,12 @@ public class PreRebootManager implements PreRebootManagerInterface {
                 AsLog.wtf("Interrupted", e);
             }
         }
+    }
+
+    private boolean hasExistingArtifacts(@NonNull PackageDexoptResult result) {
+        return result.getDexContainerFileDexoptResults().stream().anyMatch(fileResult
+                -> (fileResult.getExtendedStatusFlags()
+                           & DexoptResult.EXTENDED_SKIPPED_PRE_REBOOT_ALREADY_EXIST)
+                        != 0);
     }
 }
