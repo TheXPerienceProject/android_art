@@ -78,10 +78,13 @@ public class PreRebootStatsReporter {
         mInjector = injector;
     }
 
-    public void recordJobScheduled() {
+    public void recordJobScheduled(boolean isAsync) {
         PreRebootStats.Builder statsBuilder = PreRebootStats.newBuilder();
-        statsBuilder.setStatus(Status.STATUS_SCHEDULED)
-                .setJobScheduledTimestampMillis(mInjector.getCurrentTimeMillis());
+        statsBuilder.setStatus(Status.STATUS_SCHEDULED);
+        // Omit job_scheduled_timestamp_millis to indicate a synchronous job.
+        if (isAsync) {
+            statsBuilder.setJobScheduledTimestampMillis(mInjector.getCurrentTimeMillis());
+        }
         save(statsBuilder);
     }
 

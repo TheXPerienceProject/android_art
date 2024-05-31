@@ -60,11 +60,15 @@ import com.android.server.pm.pkg.PackageState;
 import libcore.io.Streams;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.nio.ByteBuffer;
+import java.nio.channels.ClosedByInterruptException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -675,21 +679,10 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
             return 1;
         }
 
-        int code = mArtManagerLocal.getPreRebootDexoptJob().onUpdateReady(otaSlot);
-
-        switch (code) {
-            case ArtFlags.SCHEDULE_SUCCESS:
-                pw.println("Job scheduled");
-                return 0;
-            case ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP:
-                pw.println("Job disabled by system property");
-                return 1;
-            case ArtFlags.SCHEDULE_JOB_SCHEDULER_FAILURE:
-                pw.println("Failed to schedule job");
-                return 1;
-            default:
-                // Can't happen.
-                throw new IllegalStateException("Unknown result code: " + code);
+        if (mArtManagerLocal.getPreRebootDexoptJob().isAsyncForOta()) {
+            return handleSchedulePrDexoptJob(pw, otaSlot);
+        } else {
+            return handleRunPrDexoptJob(pw, otaSlot);
         }
     }
 
@@ -723,6 +716,78 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
 
         pw.println("Error: No option specified");
         return 1;
+    }
+
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private int handleRunPrDexoptJob(@NonNull PrintWriter pw, @Nullable String otaSlot) {
+        PreRebootDexoptJob job = mArtManagerLocal.getPreRebootDexoptJob();
+
+        CompletableFuture<Void> future = job.onUpdateReadyStartNow(otaSlot);
+        if (future == null) {
+            pw.println("Job disabled by system property");
+            return 1;
+        }
+
+        // Put the read in a separate thread because there isn't an easy way in Java to wait for
+        // both the `Future` and the read.
+        var readThread = new Thread(() -> {
+            try (var in = new FileInputStream(getInFileDescriptor())) {
+                ByteBuffer buffer = ByteBuffer.allocate(128 /* capacity */);
+                FileChannel channel = in.getChannel();
+                while (channel.read(buffer) >= 0) {
+                    buffer.clear();
+                }
+                // Broken pipe.
+                job.cancelGiven(future, true /* expectInterrupt */);
+            } catch (ClosedByInterruptException e) {
+                // Job finished normally.
+            } catch (IOException e) {
+                AsLog.e("Unexpected exception", e);
+                job.cancelGiven(future, true /* expectInterrupt */);
+            } catch (RuntimeException e) {
+                AsLog.wtf("Unexpected exception", e);
+                job.cancelGiven(future, true /* expectInterrupt */);
+            }
+        });
+        readThread.start();
+        pw.println("Job running...  To cancel it, press Ctrl+C.");
+        pw.flush();
+
+        try {
+            Utils.getFuture(future);
+            pw.println("Job finished. See logs for details");
+        } catch (RuntimeException e) {
+            pw.println("Job encountered a fatal error");
+            e.printStackTrace(pw);
+        } finally {
+            readThread.interrupt();
+            try {
+                readThread.join();
+            } catch (InterruptedException e) {
+                AsLog.wtf("Interrupted", e);
+            }
+        }
+
+        return 0;
+    }
+
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private int handleSchedulePrDexoptJob(@NonNull PrintWriter pw, @Nullable String otaSlot) {
+        int code = mArtManagerLocal.getPreRebootDexoptJob().onUpdateReady(otaSlot);
+        switch (code) {
+            case ArtFlags.SCHEDULE_SUCCESS:
+                pw.println("Pre-reboot Dexopt job scheduled");
+                return 0;
+            case ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP:
+                pw.println("Pre-reboot Dexopt job disabled by system property");
+                return 1;
+            case ArtFlags.SCHEDULE_JOB_SCHEDULER_FAILURE:
+                pw.println("Failed to schedule Pre-reboot Dexopt job");
+                return 1;
+            default:
+                // Can't happen.
+                throw new IllegalStateException("Unknown result code: " + code);
+        }
     }
 
     @Override
@@ -876,8 +941,16 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         pw.println("    API documentation for 'ArtManagerLocal.dexoptPackages' for details.");
         pw.println();
         pw.println("  on-ota-staged --slot SLOT");
-        pw.println("    Notifies ART Service that an OTA update is staged. A Pre-reboot Dexopt");
-        pw.println("    job is scheduled for it.");
+        pw.println("    Notifies ART Service that an OTA update is staged. ART Service decides");
+        pw.println("    what to do with this notification:");
+        pw.println("    - If Pre-reboot Dexopt is disabled or unsupported, the command returns");
+        pw.println("      non-zero.");
+        pw.println("    - If Pre-reboot Dexopt is enabled in synchronous mode, the command blocks");
+        pw.println("      until Pre-reboot Dexopt finishes, and returns zero no matter it");
+        pw.println("      succeeds or not.");
+        pw.println("    - If Pre-reboot Dexopt is enabled in asynchronous mode, the command");
+        pw.println("      schedules an asynchronous job and returns 0 immediately. The job will");
+        pw.println("      then run by the job scheduler when the device is idle and charging.");
         pw.println("    Options:");
         pw.println("      --slot SLOT The slot that contains the OTA update, '_a' or '_b'.");
     }

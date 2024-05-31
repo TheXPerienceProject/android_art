@@ -102,7 +102,8 @@ class DexoptChrootSetupTest : public CommonArtTest {
 TEST_F(DexoptChrootSetupTest, Run) {
   // We only test the Mainline update case here. There isn't an easy way to test the OTA update case
   // in such a unit test. The OTA update case is assumed to be covered by the E2E test.
-  ASSERT_STATUS_OK(dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt));
+  ASSERT_STATUS_OK(
+      dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt, /*in_mapSnapshotsForOta=*/false));
   ASSERT_STATUS_OK(dexopt_chroot_setup_->init());
 
   // Some important dirs that should be the same as outside.
@@ -173,7 +174,8 @@ TEST_F(DexoptChrootSetupTest, Run) {
   // Check that `setUp` can be repetitively called, to simulate the case where an instance of the
   // caller (typically system_server) called `setUp` and crashed later, and a new instance called
   // `setUp` again.
-  ASSERT_STATUS_OK(dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt));
+  ASSERT_STATUS_OK(
+      dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt, /*in_mapSnapshotsForOta=*/false));
   ASSERT_STATUS_OK(dexopt_chroot_setup_->init());
 
   ASSERT_STATUS_OK(dexopt_chroot_setup_->tearDown());
@@ -184,7 +186,8 @@ TEST_F(DexoptChrootSetupTest, Run) {
   ASSERT_STATUS_OK(dexopt_chroot_setup_->tearDown());
 
   // Check that `setUp` can be followed directly by a `tearDown`.
-  ASSERT_STATUS_OK(dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt));
+  ASSERT_STATUS_OK(
+      dexopt_chroot_setup_->setUp(/*in_otaSlot=*/std::nullopt, /*in_mapSnapshotsForOta=*/false));
   ASSERT_STATUS_OK(dexopt_chroot_setup_->tearDown());
   EXPECT_FALSE(std::filesystem::exists(DexoptChrootSetup::CHROOT_DIR));
 }

@@ -53,6 +53,7 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 
 import java.io.File;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -154,6 +155,18 @@ public class PreRebootDexoptJobTest {
     }
 
     @Test
+    public void testSyncStartDisabled() throws Exception {
+        when(SystemProperties.getBoolean(eq("pm.dexopt.disable_bg_dexopt"), anyBoolean()))
+                .thenReturn(true);
+
+        CompletableFuture<Void> future =
+                mPreRebootDexoptJob.onUpdateReadyStartNow(null /* otaSlot */);
+
+        assertThat(future).isNull();
+        verify(mPreRebootDriver, never()).run(any(), anyBoolean(), any());
+    }
+
+    @Test
     public void testScheduleNotEnabled() {
         when(SystemProperties.getBoolean(eq("dalvik.vm.enable_pr_dexopt"), anyBoolean()))
                 .thenReturn(false);
@@ -162,6 +175,18 @@ public class PreRebootDexoptJobTest {
                 .isEqualTo(ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP);
 
         verify(mJobScheduler, never()).schedule(any());
+    }
+
+    @Test
+    public void testSyncStartNotEnabled() throws Exception {
+        when(SystemProperties.getBoolean(eq("dalvik.vm.enable_pr_dexopt"), anyBoolean()))
+                .thenReturn(false);
+
+        CompletableFuture<Void> future =
+                mPreRebootDexoptJob.onUpdateReadyStartNow(null /* otaSlot */);
+
+        assertThat(future).isNull();
+        verify(mPreRebootDriver, never()).run(any(), anyBoolean(), any());
     }
 
     @Test
@@ -208,10 +233,11 @@ public class PreRebootDexoptJobTest {
     @Test
     public void testStart() throws Exception {
         var jobStarted = new Semaphore(0);
-        when(mPreRebootDriver.run(any(), any())).thenAnswer(invocation -> {
-            jobStarted.release();
-            return true;
-        });
+        when(mPreRebootDriver.run(any(), eq(true) /* mapSnapshotsForOta */, any()))
+                .thenAnswer(invocation -> {
+                    jobStarted.release();
+                    return true;
+                });
 
         when(ArtJni.setProperty("dalvik.vm.pre-reboot.has-started", "true"))
                 .thenAnswer(invocation -> {
@@ -231,11 +257,22 @@ public class PreRebootDexoptJobTest {
     }
 
     @Test
+    public void testSyncStart() throws Exception {
+        when(mPreRebootDriver.run(any(), eq(false) /* mapSnapshotsForOta */, any()))
+                .thenReturn(true);
+
+        CompletableFuture<Void> future =
+                mPreRebootDexoptJob.onUpdateReadyStartNow(null /* otaSlot */);
+
+        Utils.getFuture(future);
+    }
+
+    @Test
     public void testCancel() {
         Semaphore dexoptCancelled = new Semaphore(0);
         Semaphore jobExited = new Semaphore(0);
-        when(mPreRebootDriver.run(any(), any())).thenAnswer(invocation -> {
-            var cancellationSignal = invocation.<CancellationSignal>getArgument(1);
+        when(mPreRebootDriver.run(any(), anyBoolean(), any())).thenAnswer(invocation -> {
+            var cancellationSignal = invocation.<CancellationSignal>getArgument(2);
             cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
             assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
             jobExited.release();
@@ -252,11 +289,32 @@ public class PreRebootDexoptJobTest {
     }
 
     @Test
+    public void testSyncCancel() throws Exception {
+        Semaphore dexoptCancelled = new Semaphore(0);
+        Semaphore jobExited = new Semaphore(0);
+        when(mPreRebootDriver.run(any(), anyBoolean(), any())).thenAnswer(invocation -> {
+            var cancellationSignal = invocation.<CancellationSignal>getArgument(2);
+            cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
+            assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
+            jobExited.release();
+            return true;
+        });
+
+        CompletableFuture<Void> future =
+                mPreRebootDexoptJob.onUpdateReadyStartNow(null /* otaSlot */);
+        mPreRebootDexoptJob.cancelGiven(future, false /* expectInterrupt */);
+
+        // Check that `cancelGiven` is really blocking. If it wasn't, the check below might still
+        // pass due to a race, but we would have a flaky test.
+        assertThat(jobExited.tryAcquire()).isTrue();
+    }
+
+    @Test
     public void testUpdateOtaSlotOtaThenMainline() {
         mPreRebootDexoptJob.onUpdateReady("_b" /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_b"), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any())).thenReturn(true);
 
         mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -267,7 +325,7 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReady("_a" /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_a"), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_a"), anyBoolean(), any())).thenReturn(true);
 
         mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -278,7 +336,7 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
 
-        when(mPreRebootDriver.run(isNull(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(isNull(), anyBoolean(), any())).thenReturn(true);
 
         mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -289,7 +347,7 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReady("_b" /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReady("_b" /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_b"), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any())).thenReturn(true);
 
         mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -314,7 +372,7 @@ public class PreRebootDexoptJobTest {
     public void testRace1() throws Exception {
         var jobBlocker = new Semaphore(0);
 
-        when(mPreRebootDriver.run(any(), any())).thenAnswer(invocation -> {
+        when(mPreRebootDriver.run(any(), anyBoolean(), any())).thenAnswer(invocation -> {
             // Simulate that the job takes a while to exit, no matter it's cancelled or not.
             assertThat(jobBlocker.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
             return true;
@@ -387,5 +445,52 @@ public class PreRebootDexoptJobTest {
 
         // The job scheduler starts the new job. This request should succeed.
         assertThat(mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters)).isTrue();
+    }
+
+    /**
+     * Verifies that `onStopJob` for an old job is ignored after a new synchronous job is started.
+     */
+    @Test
+    public void testRace3() throws Exception {
+        Semaphore dexoptCancelled = new Semaphore(0);
+        Semaphore jobExited = new Semaphore(0);
+        when(mPreRebootDriver.run(any(), anyBoolean(), any())).thenAnswer(invocation -> {
+            var cancellationSignal = invocation.<CancellationSignal>getArgument(2);
+            cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
+            assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
+            jobExited.release();
+            return true;
+        });
+
+        // An update arrives. A job is scheduled.
+        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
+
+        // The job scheduler starts the job.
+        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+
+        // Another update arrives, requesting a synchronous job run, replacing the old job. The new
+        // job, which is synchronous, is started right after the old job is cancelled by
+        // `onUpdateReadyStartNow`, before the job scheduler calls `onStartJob`.
+        JobParameters oldParameters = mJobParameters;
+        CompletableFuture<Void> future =
+                mPreRebootDexoptJob.onUpdateReadyStartNow(null /* otaSlot */);
+
+        // The old job should be cancelled at this point.
+        // This cannot be the new job having exited because jobs are serialized.
+        assertThat(jobExited.tryAcquire()).isTrue();
+
+        // The `onStopJob` call finally arrives. This call should be a no-op because the job has
+        // already been cancelled by ourselves during the `onUpdateReadyStartNow` call above. It
+        // should not cancel the new job.
+        mPreRebootDexoptJob.onStopJob(oldParameters);
+
+        // The new job should not be cancelled.
+        assertThat(jobExited.tryAcquire()).isFalse();
+
+        // Now cancel the new job.
+        mPreRebootDexoptJob.cancelGiven(future, false /* expectInterrupt */);
+
+        // Now the new job should be cancelled.
+        assertThat(jobExited.tryAcquire()).isTrue();
     }
 }
