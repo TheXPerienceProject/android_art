@@ -120,7 +120,8 @@ public class CompOsTestUtils {
         // We have to have kernel support for a VM.
         assumeTrue("Need an actual TestDevice", mDevice instanceof TestDevice);
         TestDevice testDevice = (TestDevice) mDevice;
-        assumeTrue("Requires VM support", testDevice.supportsMicrodroid());
+        assumeTrue("Requires protected VM support",
+                testDevice.supportsMicrodroid(true /* protectedVm*/));
 
         // And the CompOS APEX must be present.
         assumeTrue(mDevice.doesFileExist("/apex/com.android.compos/"));
