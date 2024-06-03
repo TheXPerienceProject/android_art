@@ -777,13 +777,6 @@ inline bool ArtMethod::CounterIsHot() {
   return hotness_count_ == 0;
 }
 
-inline bool ArtMethod::CounterHasReached(uint16_t samples, uint16_t threshold) {
-  DCHECK(!IsAbstract());
-  DCHECK_EQ(threshold, Runtime::Current()->GetJITOptions()->GetWarmupThreshold());
-  DCHECK_LE(samples, threshold);
-  return hotness_count_ <= (threshold - samples);
-}
-
 inline uint16_t ArtMethod::GetCounter() {
   DCHECK(!IsAbstract());
   return hotness_count_;
