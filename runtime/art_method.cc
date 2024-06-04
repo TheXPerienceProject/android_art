@@ -302,7 +302,7 @@ uint32_t ArtMethod::FindDexMethodIndexInOtherDexFile(const DexFile& other_dexfil
   if (dexfile == &other_dexfile) {
     return dex_method_idx;
   }
-  const char* mid_declaring_class_descriptor = dexfile->GetTypeDescriptor(mid.class_idx_);
+  std::string_view mid_declaring_class_descriptor = dexfile->GetTypeDescriptorView(mid.class_idx_);
   const dex::TypeId* other_type_id = other_dexfile.FindTypeId(mid_declaring_class_descriptor);
   if (other_type_id != nullptr) {
     const dex::MethodId* other_mid = other_dexfile.FindMethodId(
@@ -487,9 +487,8 @@ static const OatFile::OatMethod FindOatMethodFromDexFileFor(ArtMethod* method, b
   const DexFile* dex_file = method->GetDexFile();
 
   // recreate the class_def_index from the descriptor.
-  std::string descriptor_storage;
   const dex::TypeId* declaring_class_type_id =
-      dex_file->FindTypeId(method->GetDeclaringClass()->GetDescriptor(&descriptor_storage));
+      dex_file->FindTypeId(method->GetDeclaringClassDescriptorView());
   CHECK(declaring_class_type_id != nullptr);
   dex::TypeIndex declaring_class_type_index = dex_file->GetIndexForTypeId(*declaring_class_type_id);
   const dex::ClassDef* declaring_class_type_def =
@@ -846,8 +845,7 @@ std::string ArtMethod::PrettyMethod(ArtMethod* m, bool with_signature) {
 
 std::string ArtMethod::PrettyMethod(bool with_signature) {
   if (UNLIKELY(IsRuntimeMethod())) {
-    std::string result = GetDeclaringClassDescriptor();
-    result += '.';
+    std::string result = "<runtime method>.";
     result += GetName();
     // Do not add "<no signature>" even if `with_signature` is true.
     return result;

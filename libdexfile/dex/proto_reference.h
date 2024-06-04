@@ -62,7 +62,7 @@ struct ProtoReferenceValueComparator {
     // Compare return type first.
     const dex::ProtoId& prid1 = lhs.ProtoId();
     const dex::ProtoId& prid2 = rhs.ProtoId();
-    int return_type_diff = lhs.ReturnType().compare(rhs.ReturnType());
+    int return_type_diff = DexFile::CompareDescriptors(lhs.ReturnType(), rhs.ReturnType());
     if (return_type_diff != 0) {
       return return_type_diff < 0;
     }
@@ -77,7 +77,7 @@ struct ProtoReferenceValueComparator {
       std::string_view r_param = rhs.dex_file->GetTypeDescriptorView(
           rhs.dex_file->GetTypeId(params2->GetTypeItem(i).type_idx_));
 
-      int param_diff = l_param.compare(r_param);
+      int param_diff = DexFile::CompareDescriptors(l_param, r_param);
       if (param_diff != 0) {
         return param_diff < 0;
       }

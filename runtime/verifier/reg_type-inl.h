@@ -127,6 +127,10 @@ inline bool RegType::AssignableFrom(const RegType& lhs,
           // For unresolved types, we don't know if they are assignable, and the
           // verifier will continue assuming they are. We need to record that.
           if (verifier != nullptr) {
+            // Note that if `rhs` is an interface type, `lhs` may be j.l.Object
+            // and if the assignability check is not strict, then this should be
+            // OK. However we don't encode strictness in the verifier deps, and
+            // such a situation will force a full verification.
             VerifierDeps::MaybeRecordAssignability(verifier->GetVerifierDeps(),
                                                    verifier->GetDexFile(),
                                                    verifier->GetClassDef(),

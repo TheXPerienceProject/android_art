@@ -69,8 +69,6 @@ import java.util.stream.Collectors;
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class DexoptHelper {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     @NonNull private final Injector mInjector;
 
     public DexoptHelper(@NonNull Context context, @NonNull Config config) {

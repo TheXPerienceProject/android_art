@@ -27,11 +27,6 @@ cc_defaults {
     name: "libart_verify_dex_fuzzer-defaults",
     srcs: ["libart_verify_dex_fuzzer.cc"],
 
-    defaults: [
-        // To allow the ART module to build correctly.
-        "art_module_source_build_defaults",
-    ],
-
     // Build and run on x86 too.
     host_supported: true,
 
@@ -91,10 +86,6 @@ cc_fuzz {
 // TODO(b/171429704): Remove this genrule and use the zip directly.
 genrule {
     name: "art_runtest_corpus",
-    defaults: [
-        // To allow the ART module to build correctly.
-        "art_module_source_build_defaults",
-    ],
     tool_files: ["create_corpus.py"],
     cmd: "$(location) $(genDir) $(in)",
     srcs: [
@@ -1280,7 +1271,7 @@ genrule {
     // Zip the corpus folder. To get the folder, we grab the first file
     // from `in` and use its directory.
     cmd: "FILES=($(in)) &&" +
-         "$(location soong_zip) -j -L 0 -o $(out) -D $$(dirname $${FILES[0]})",
+        "$(location soong_zip) -j -L 0 -o $(out) -D $$(dirname $${FILES[0]})",
     srcs: ["corpus/*"],
     out: ["fuzzer_corpus.zip"],
     tools: ["soong_zip"],

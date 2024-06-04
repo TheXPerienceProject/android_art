@@ -129,6 +129,7 @@ using ::testing::WithArg;
 using PrimaryCurProfilePath = ProfilePath::PrimaryCurProfilePath;
 using PrimaryRefProfilePath = ProfilePath::PrimaryRefProfilePath;
 using TmpProfilePath = ProfilePath::TmpProfilePath;
+using WritableProfilePath = ProfilePath::WritableProfilePath;
 
 using std::literals::operator""s;  // NOLINT
 
@@ -392,7 +393,8 @@ class ArtdTest : public CommonArtTest {
     compiler_filter_ = "speed";
     tmp_profile_path_ =
         TmpProfilePath{.finalPath = PrimaryRefProfilePath{.packageName = "com.android.foo",
-                                                          .profileName = "primary"},
+                                                          .profileName = "primary",
+                                                          .isPreReboot = false},
                        .id = "12345"};
     profile_path_ = tmp_profile_path_;
     vdex_path_ = artifacts_path_;
@@ -447,7 +449,7 @@ class ArtdTest : public CommonArtTest {
       std::pair<std::conditional_t<kExpectOk, CopyAndRewriteProfileResult, ndk::ScopedAStatus>,
                 OutputProfile>>;
 
-  // Runs `copyAndRewriteProfile` with `tmp_profile_path_` and `dex_file_`.
+  // Runs `copyAndRewriteProfile` with `profile_path_` and `dex_file_`.
   template <bool kExpectOk = true>
   RunCopyAndRewriteProfileResult<kExpectOk> RunCopyAndRewriteProfile() {
     OutputProfile dst{.profilePath = tmp_profile_path_,
@@ -457,7 +459,7 @@ class ArtdTest : public CommonArtTest {
 
     CopyAndRewriteProfileResult result;
     ndk::ScopedAStatus status =
-        artd_->copyAndRewriteProfile(tmp_profile_path_, &dst, dex_file_, &result);
+        artd_->copyAndRewriteProfile(profile_path_.value(), &dst, dex_file_, &result);
     if constexpr (kExpectOk) {
       if (!status.isOk()) {
         return Error() << status.getMessage();
@@ -568,10 +570,10 @@ class ArtdTest : public CommonArtTest {
     }
 
     // Files to be replaced.
-    std::string oat_path = OR_FATAL(BuildOatPath(artifacts_path_));
-    CreateFile(oat_path, "old_oat");
-    CreateFile(OatPathToVdexPath(oat_path), "old_vdex");
-    CreateFile(OatPathToArtPath(oat_path), "old_art");
+    RawArtifactsPath artifacts_path = OR_FATAL(BuildArtifactsPath(artifacts_path_));
+    CreateFile(artifacts_path.oat_path, "old_oat");
+    CreateFile(artifacts_path.vdex_path, "old_vdex");
+    CreateFile(artifacts_path.art_path, "old_art");
   }
 };
 
@@ -941,6 +943,8 @@ TEST_F(ArtdTest, dexoptFlagsFromSystemProps) {
   EXPECT_CALL(*mock_props_, GetProperty("ro.config.low_ram")).WillOnce(Return("1"));
   EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.appimageformat")).WillOnce(Return("imgfmt"));
   EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.boot-image")).WillOnce(Return("boot-image"));
+  EXPECT_CALL(*mock_props_, GetProperty("dalvik.vm.dex2oat-flags"))
+      .WillOnce(Return("--flag1 --flag2  --flag3"));
 
   EXPECT_CALL(*mock_exec_utils_,
               DoExecAndReturnCode(
@@ -960,7 +964,10 @@ TEST_F(ArtdTest, dexoptFlagsFromSystemProps) {
                                     Contains("--compile-individually"),
                                     Contains(Flag("--image-format=", "imgfmt")),
                                     Not(Contains("--force-jit-zygote")),
-                                    Contains(Flag("--boot-image=", "boot-image")))),
+                                    Contains(Flag("--boot-image=", "boot-image")),
+                                    Contains("--flag1"),
+                                    Contains("--flag2"),
+                                    Contains("--flag3"))),
                   _,
                   _))
       .WillOnce(Return(0));
@@ -1389,7 +1396,7 @@ TEST_F(ArtdTest, isProfileUsableFailed) {
 }
 
 TEST_F(ArtdTest, copyAndRewriteProfileSuccess) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateFile(src_file, "valid_profile");
 
   CreateFile(dex_file_);
@@ -1421,7 +1428,7 @@ TEST_F(ArtdTest, copyAndRewriteProfileSuccess) {
 
 // The input is a plain profile file in the wrong format.
 TEST_F(ArtdTest, copyAndRewriteProfileBadProfileWrongFormat) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateFile(src_file, "wrong_format");
 
   CreateFile(dex_file_);
@@ -1440,7 +1447,7 @@ TEST_F(ArtdTest, copyAndRewriteProfileBadProfileWrongFormat) {
 
 // The input is a plain profile file that doesn't match the APK.
 TEST_F(ArtdTest, copyAndRewriteProfileBadProfileNoMatch) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateFile(src_file, "no_match");
 
   CreateFile(dex_file_);
@@ -1458,7 +1465,7 @@ TEST_F(ArtdTest, copyAndRewriteProfileBadProfileNoMatch) {
 
 // The input is a plain profile file that is empty.
 TEST_F(ArtdTest, copyAndRewriteProfileNoProfileEmpty) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateFile(src_file, "");
 
   CreateFile(dex_file_);
@@ -1486,7 +1493,7 @@ TEST_F(ArtdTest, copyAndRewriteProfileNoProfileNoFile) {
 
 // The input is a dm file with a profile entry in the wrong format.
 TEST_F(ArtdTest, copyAndRewriteProfileNoProfileDmWrongFormat) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateZipWithSingleEntry(src_file, "primary.prof", "wrong_format");
 
   CreateFile(dex_file_);
@@ -1505,7 +1512,7 @@ TEST_F(ArtdTest, copyAndRewriteProfileNoProfileDmWrongFormat) {
 
 // The input is a dm file with a profile entry that doesn't match the APK.
 TEST_F(ArtdTest, copyAndRewriteProfileNoProfileDmNoMatch) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateZipWithSingleEntry(src_file, "primary.prof", "no_match");
 
   CreateFile(dex_file_);
@@ -1523,7 +1530,7 @@ TEST_F(ArtdTest, copyAndRewriteProfileNoProfileDmNoMatch) {
 
 // The input is a dm file with a profile entry that is empty.
 TEST_F(ArtdTest, copyAndRewriteProfileNoProfileDmEmpty) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateZipWithSingleEntry(src_file, "primary.prof");
 
   CreateFile(dex_file_);
@@ -1540,7 +1547,7 @@ TEST_F(ArtdTest, copyAndRewriteProfileNoProfileDmEmpty) {
 
 // The input is a dm file without a profile entry.
 TEST_F(ArtdTest, copyAndRewriteProfileNoProfileDmNoEntry) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateZipWithSingleEntry(src_file, "primary.vdex");
 
   CreateFile(dex_file_);
@@ -1556,7 +1563,7 @@ TEST_F(ArtdTest, copyAndRewriteProfileNoProfileDmNoEntry) {
 }
 
 TEST_F(ArtdTest, copyAndRewriteProfileException) {
-  std::string src_file = OR_FATAL(BuildTmpProfilePath(tmp_profile_path_));
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateFile(src_file, "valid_profile");
 
   CreateFile(dex_file_);
@@ -1780,13 +1787,15 @@ TEST_F(ArtdGetVisibilityTest, getProfileVisibilityPermissionDenied) {
 }
 
 TEST_F(ArtdGetVisibilityTest, getArtifactsVisibilityOtherReadable) {
-  TestGetVisibilityOtherReadable(
-      &Artd::getArtifactsVisibility, artifacts_path_, OR_FATAL(BuildOatPath(artifacts_path_)));
+  TestGetVisibilityOtherReadable(&Artd::getArtifactsVisibility,
+                                 artifacts_path_,
+                                 OR_FATAL(BuildArtifactsPath(artifacts_path_)).oat_path);
 }
 
 TEST_F(ArtdGetVisibilityTest, getArtifactsVisibilityNotOtherReadable) {
-  TestGetVisibilityNotOtherReadable(
-      &Artd::getArtifactsVisibility, artifacts_path_, OR_FATAL(BuildOatPath(artifacts_path_)));
+  TestGetVisibilityNotOtherReadable(&Artd::getArtifactsVisibility,
+                                    artifacts_path_,
+                                    OR_FATAL(BuildArtifactsPath(artifacts_path_)).oat_path);
 }
 
 TEST_F(ArtdGetVisibilityTest, getArtifactsVisibilityNotFound) {
@@ -1794,8 +1803,9 @@ TEST_F(ArtdGetVisibilityTest, getArtifactsVisibilityNotFound) {
 }
 
 TEST_F(ArtdGetVisibilityTest, getArtifactsVisibilityPermissionDenied) {
-  TestGetVisibilityPermissionDenied(
-      &Artd::getArtifactsVisibility, artifacts_path_, OR_FATAL(BuildOatPath(artifacts_path_)));
+  TestGetVisibilityPermissionDenied(&Artd::getArtifactsVisibility,
+                                    artifacts_path_,
+                                    OR_FATAL(BuildArtifactsPath(artifacts_path_)).oat_path);
 }
 
 TEST_F(ArtdGetVisibilityTest, getDexFileVisibilityOtherReadable) {
@@ -1837,8 +1847,7 @@ TEST_F(ArtdGetVisibilityTest, getDmFileVisibilityPermissionDenied) {
 }
 
 TEST_F(ArtdTest, mergeProfiles) {
-  const TmpProfilePath& reference_profile_path = tmp_profile_path_;
-  std::string reference_profile_file = OR_FATAL(BuildTmpProfilePath(reference_profile_path));
+  std::string reference_profile_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
   CreateFile(reference_profile_file, "abc");
 
   // Doesn't exist.
@@ -1851,7 +1860,7 @@ TEST_F(ArtdTest, mergeProfiles) {
   std::string profile_1_file = OR_FATAL(BuildPrimaryCurProfilePath(profile_1_path));
   CreateFile(profile_1_file, "def");
 
-  OutputProfile output_profile{.profilePath = reference_profile_path,
+  OutputProfile output_profile{.profilePath = tmp_profile_path_,
                                .fsPermission = FsPermission{.uid = -1, .gid = -1}};
   output_profile.profilePath.id = "";
   output_profile.profilePath.tmpPath = "";
@@ -1884,7 +1893,7 @@ TEST_F(ArtdTest, mergeProfiles) {
   bool result;
   EXPECT_TRUE(artd_
                   ->mergeProfiles({profile_0_path, profile_1_path},
-                                  reference_profile_path,
+                                  profile_path_,
                                   &output_profile,
                                   {dex_file_1, dex_file_2},
                                   /*in_options=*/{},
@@ -1939,10 +1948,6 @@ TEST_F(ArtdTest, mergeProfilesEmptyReferenceProfile) {
 }
 
 TEST_F(ArtdTest, mergeProfilesProfilesDontExist) {
-  const TmpProfilePath& reference_profile_path = tmp_profile_path_;
-  std::string reference_profile_file = OR_FATAL(BuildTmpProfilePath(reference_profile_path));
-  CreateFile(reference_profile_file, "abc");
-
   // Doesn't exist.
   PrimaryCurProfilePath profile_0_path{
       .userId = 0, .packageName = "com.android.foo", .profileName = "primary"};
@@ -1953,7 +1958,7 @@ TEST_F(ArtdTest, mergeProfilesProfilesDontExist) {
       .userId = 1, .packageName = "com.android.foo", .profileName = "primary"};
   std::string profile_1_file = OR_FATAL(BuildPrimaryCurProfilePath(profile_1_path));
 
-  OutputProfile output_profile{.profilePath = reference_profile_path,
+  OutputProfile output_profile{.profilePath = tmp_profile_path_,
                                .fsPermission = FsPermission{.uid = -1, .gid = -1}};
   output_profile.profilePath.id = "";
   output_profile.profilePath.tmpPath = "";
@@ -1965,7 +1970,7 @@ TEST_F(ArtdTest, mergeProfilesProfilesDontExist) {
   bool result;
   EXPECT_TRUE(artd_
                   ->mergeProfiles({profile_0_path},
-                                  std::nullopt,
+                                  /*in_referenceProfile=*/std::nullopt,
                                   &output_profile,
                                   {dex_file_},
                                   /*in_options=*/{},
@@ -2089,138 +2094,165 @@ TEST_F(ArtdTest, mergeProfilesWithOptionsDumpClassesAndMethods) {
   CheckContent(output_profile.profilePath.tmpPath, "dump");
 }
 
-TEST_F(ArtdTest, cleanup) {
-  std::vector<std::string> gc_removed_files;
-  std::vector<std::string> gc_kept_files;
+class ArtdCleanupTest : public ArtdTest {
+ protected:
+  void SetUp() override {
+    ArtdTest::SetUp();
 
-  auto CreateGcRemovedFile = [&](const std::string& path) {
-    CreateFile(path);
-    gc_removed_files.push_back(path);
-  };
+    // Unmanaged files.
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/1.odex");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.odex");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.txt");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.txt");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.tmp");
 
-  auto CreateGcKeptFile = [&](const std::string& path) {
-    CreateFile(path);
-    gc_kept_files.push_back(path);
-  };
+    // Files to keep.
+    CreateGcKeptFile(android_data_ + "/misc/profiles/cur/1/com.android.foo/primary.prof");
+    CreateGcKeptFile(android_data_ + "/misc/profiles/cur/3/com.android.foo/primary.prof");
+    CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex");
+    CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex");
+    CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex");
+    CreateGcKeptFile(
+        android_expand_ +
+        "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex");
+    CreateGcKeptFile(
+        android_expand_ +
+        "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.vdex");
+    CreateGcKeptFile(
+        android_expand_ +
+        "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.art");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.vdex");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.art");
+    CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/cache/oat_primary/arm64/base.art");
+    CreateGcKeptFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/arm64/base.art");
+    CreateGcKeptFile(android_data_ + "/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
+    CreateGcKeptFile(android_expand_ +
+                     "/123456-7890/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
+    CreateGcKeptFile(android_data_ +
+                     "/user/0/com.android.foo/cache/not_oat_dir/oat_primary/arm64/base.art");
 
-  // Unmanaged files.
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/1.odex");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.odex");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/1.txt");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.txt");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.tmp");
-
-  // Files to keep.
-  CreateGcKeptFile(android_data_ + "/misc/profiles/cur/1/com.android.foo/primary.prof");
-  CreateGcKeptFile(android_data_ + "/misc/profiles/cur/3/com.android.foo/primary.prof");
-  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex");
-  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex");
-  CreateGcKeptFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex");
-  CreateGcKeptFile(
-      android_expand_ +
-      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex");
-  CreateGcKeptFile(
-      android_expand_ +
-      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.vdex");
-  CreateGcKeptFile(
-      android_expand_ +
-      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.art");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.vdex");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.art");
-  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/cache/oat_primary/arm64/base.art");
-  CreateGcKeptFile(android_data_ + "/user/0/com.android.foo/cache/oat_primary/arm64/base.art");
-  CreateGcKeptFile(android_data_ + "/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
-  CreateGcKeptFile(android_expand_ +
-                   "/123456-7890/user/1/com.android.foo/cache/oat_primary/arm64/base.art");
-  CreateGcKeptFile(android_data_ +
-                   "/user/0/com.android.foo/cache/not_oat_dir/oat_primary/arm64/base.art");
-
-  // Files to remove.
-  CreateGcRemovedFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof");
-  CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/2/com.android.foo/primary.prof");
-  CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/3/com.android.bar/primary.prof");
-  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/extra.odex");
-  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.dex");
-  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.vdex");
-  CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.art");
-  CreateGcRemovedFile(
-      android_expand_ +
-      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.odex");
-  CreateGcRemovedFile(
-      android_expand_ +
-      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.vdex");
-  CreateGcRemovedFile(
-      android_expand_ +
-      "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.art");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.vdex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.art");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/2.odex.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.odex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.art");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.odex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.vdex");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art");
-  CreateGcRemovedFile(android_data_ +
-                      "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art.123456.tmp");
-  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.bar/aaa/oat/arm64/1.vdex");
-  CreateGcRemovedFile(android_data_ +
-                      "/user/0/com.android.different_package/cache/oat_primary/arm64/base.art");
-  CreateGcRemovedFile(android_data_ +
-                      "/user/0/com.android.foo/cache/oat_primary/arm64/different_dex.art");
-  CreateGcRemovedFile(android_data_ +
-                      "/user/0/com.android.foo/cache/oat_primary/different_isa/base.art");
-
-  int64_t aidl_return;
-  ASSERT_TRUE(
-      artd_
-          ->cleanup(
-              {
-                  PrimaryCurProfilePath{
-                      .userId = 1, .packageName = "com.android.foo", .profileName = "primary"},
-                  PrimaryCurProfilePath{
-                      .userId = 3, .packageName = "com.android.foo", .profileName = "primary"},
-              },
-              {
-                  ArtifactsPath{.dexPath = "/system/app/Foo/Foo.apk",
-                                .isa = "arm64",
-                                .isInDalvikCache = true},
-                  ArtifactsPath{
-                      .dexPath =
-                          android_expand_ +
-                          "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/base.apk",
-                      .isa = "arm64",
-                      .isInDalvikCache = false},
-                  ArtifactsPath{.dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/2.apk",
-                                .isa = "arm64",
-                                .isInDalvikCache = false},
-              },
-              {
-                  VdexPath{ArtifactsPath{
-                      .dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/1.apk",
-                      .isa = "arm64",
-                      .isInDalvikCache = false}},
-              },
-              {
-                  RuntimeArtifactsPath{
-                      .packageName = "com.android.foo", .dexPath = "/a/b/base.apk", .isa = "arm64"},
-              },
-              &aidl_return)
-          .isOk());
-
-  for (const std::string& path : gc_removed_files) {
-    EXPECT_FALSE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be removed", path);
+    // Files to remove.
+    CreateGcRemovedFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof");
+    CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/2/com.android.foo/primary.prof");
+    CreateGcRemovedFile(android_data_ + "/misc/profiles/cur/3/com.android.bar/primary.prof");
+    CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/extra.odex");
+    CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.dex");
+    CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.vdex");
+    CreateGcRemovedFile(android_data_ + "/dalvik-cache/arm64/system@app@Bar@Bar.apk@classes.art");
+    CreateGcRemovedFile(
+        android_expand_ +
+        "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.odex");
+    CreateGcRemovedFile(
+        android_expand_ +
+        "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.vdex");
+    CreateGcRemovedFile(
+        android_expand_ +
+        "/123456-7890/app/~~daewfweaf==/com.android.foo-fjuwidhia==/oat/arm64/base.art");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/1.prof.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.vdex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.art");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/1.odex.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/oat/arm64/2.odex.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.odex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/1.art");
+    CreateGcRemovedFile(android_data_ +
+                        "/user_de/0/com.android.foo/aaa/oat/arm64/1.vdex.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.odex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.vdex");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art");
+    CreateGcRemovedFile(android_data_ +
+                        "/user_de/0/com.android.foo/aaa/bbb/oat/arm64/1.art.123456.tmp");
+    CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.bar/aaa/oat/arm64/1.vdex");
+    CreateGcRemovedFile(android_data_ +
+                        "/user/0/com.android.different_package/cache/oat_primary/arm64/base.art");
+    CreateGcRemovedFile(android_data_ +
+                        "/user/0/com.android.foo/cache/oat_primary/arm64/different_dex.art");
+    CreateGcRemovedFile(android_data_ +
+                        "/user/0/com.android.foo/cache/oat_primary/different_isa/base.art");
   }
 
-  for (const std::string& path : gc_kept_files) {
-    EXPECT_TRUE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be kept", path);
+  void CreateGcRemovedFile(const std::string& path) {
+    CreateFile(path);
+    gc_removed_files_.push_back(path);
   }
+
+  void CreateGcKeptFile(const std::string& path) {
+    CreateFile(path);
+    gc_kept_files_.push_back(path);
+  }
+
+  void RunCleanup(bool keepPreRebootStagedFiles) {
+    int64_t aidl_return;
+    ASSERT_STATUS_OK(artd_->cleanup(
+        {
+            PrimaryCurProfilePath{
+                .userId = 1, .packageName = "com.android.foo", .profileName = "primary"},
+            PrimaryCurProfilePath{
+                .userId = 3, .packageName = "com.android.foo", .profileName = "primary"},
+        },
+        {
+            ArtifactsPath{
+                .dexPath = "/system/app/Foo/Foo.apk", .isa = "arm64", .isInDalvikCache = true},
+            ArtifactsPath{
+                .dexPath = android_expand_ +
+                           "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/base.apk",
+                .isa = "arm64",
+                .isInDalvikCache = false},
+            ArtifactsPath{.dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/2.apk",
+                          .isa = "arm64",
+                          .isInDalvikCache = false},
+        },
+        {
+            VdexPath{
+                ArtifactsPath{.dexPath = android_data_ + "/user_de/0/com.android.foo/aaa/1.apk",
+                              .isa = "arm64",
+                              .isInDalvikCache = false}},
+        },
+        {
+            RuntimeArtifactsPath{
+                .packageName = "com.android.foo", .dexPath = "/a/b/base.apk", .isa = "arm64"},
+        },
+        keepPreRebootStagedFiles,
+        &aidl_return));
+  }
+
+  void Verify() {
+    for (const std::string& path : gc_removed_files_) {
+      EXPECT_FALSE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be removed", path);
+    }
+
+    for (const std::string& path : gc_kept_files_) {
+      EXPECT_TRUE(std::filesystem::exists(path)) << ART_FORMAT("'{}' should be kept", path);
+    }
+  }
+
+ private:
+  std::vector<std::string> gc_removed_files_;
+  std::vector<std::string> gc_kept_files_;
+};
+
+TEST_F(ArtdCleanupTest, cleanupKeepingPreRebootStagedFiles) {
+  CreateGcKeptFile(
+      android_expand_ +
+      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex.staged");
+  CreateGcKeptFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex.staged");
+
+  ASSERT_NO_FATAL_FAILURE(RunCleanup(/*keepPreRebootStagedFiles=*/true));
+  Verify();
+}
+
+TEST_F(ArtdCleanupTest, cleanupRemovingPreRebootStagedFiles) {
+  CreateGcRemovedFile(
+      android_expand_ +
+      "/123456-7890/app/~~nkfeankfna==/com.android.bar-jfoeaofiew==/oat/arm64/base.odex.staged");
+  CreateGcRemovedFile(android_data_ + "/user_de/0/com.android.foo/aaa/oat/arm64/2.odex.staged");
+
+  ASSERT_NO_FATAL_FAILURE(RunCleanup(/*keepPreRebootStagedFiles=*/false));
+  Verify();
 }
 
 TEST_F(ArtdTest, isInDalvikCache) {
@@ -2446,6 +2478,93 @@ TEST_F(ArtdTest, getProfileSize) {
   EXPECT_EQ(aidl_return, 1);
 }
 
+TEST_F(ArtdTest, commitPreRebootStagedFiles) {
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex.staged",
+             "new_odex_1");
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex.staged",
+             "new_vdex_1");
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art.staged",
+             "new_art_1");
+
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex",
+             "old_odex_1");
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex",
+             "old_vdex_1");
+  CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art", "old_art_1");
+
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.odex", "old_odex_2");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex", "old_vdex_2");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.art", "old_art_2");
+
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.odex.staged", "new_odex_2");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex.staged", "new_vdex_2");
+
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm/base.odex", "old_odex_3");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm/base.vdex", "old_vdex_3");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm/base.art", "old_art_3");
+
+  CreateFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof", "old_prof_1");
+  CreateFile(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof.staged",
+             "new_prof_1");
+
+  CreateFile(android_data_ + "/misc/profiles/ref/com.android.bar/primary.prof", "old_prof_2");
+
+  ASSERT_STATUS_OK(artd_->commitPreRebootStagedFiles(
+      {
+          // Has all new files. All old files should be replaced.
+          ArtifactsPath{
+              .dexPath = "/system/app/Foo/Foo.apk", .isa = "arm64", .isInDalvikCache = true},
+          // Has new files but not ".art" file. Old ".odex" and ".vdex" files should be replaced,
+          // and old ".art" file should be removed.
+          ArtifactsPath{.dexPath = android_data_ + "/app/com.android.foo/base.apk",
+                        .isa = "arm64",
+                        .isInDalvikCache = false},
+          // Has no new file. All old files should be kept.
+          ArtifactsPath{.dexPath = android_data_ + "/app/com.android.foo/base.apk",
+                        .isa = "arm",
+                        .isInDalvikCache = false},
+      },
+      {
+          // Has new file.
+          PrimaryRefProfilePath{.packageName = "com.android.foo", .profileName = "primary"},
+          // Has no new file.
+          PrimaryRefProfilePath{.packageName = "com.android.bar", .profileName = "primary"},
+      }));
+
+  CheckContent(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex",
+               "new_odex_1");
+  CheckContent(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex",
+               "new_vdex_1");
+  CheckContent(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art",
+               "new_art_1");
+
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.odex", "new_odex_2");
+  CreateFile(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex", "new_vdex_2");
+  EXPECT_FALSE(std::filesystem::exists(android_data_ + "/app/com.android.foo/oat/arm64/base.art"));
+
+  CheckContent(android_data_ + "/app/com.android.foo/oat/arm/base.odex", "old_odex_3");
+  CheckContent(android_data_ + "/app/com.android.foo/oat/arm/base.vdex", "old_vdex_3");
+  CheckContent(android_data_ + "/app/com.android.foo/oat/arm/base.art", "old_art_3");
+
+  CheckContent(android_data_ + "/misc/profiles/ref/com.android.foo/primary.prof", "new_prof_1");
+
+  CheckContent(android_data_ + "/misc/profiles/ref/com.android.bar/primary.prof", "old_prof_2");
+
+  // All staged files are gone.
+  EXPECT_FALSE(std::filesystem::exists(
+      android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex.staged"));
+  EXPECT_FALSE(std::filesystem::exists(
+      android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.vdex.staged"));
+  EXPECT_FALSE(std::filesystem::exists(
+      android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.art.staged"));
+  EXPECT_FALSE(
+      std::filesystem::exists(android_data_ + "/app/com.android.foo/oat/arm64/base.odex.staged"));
+  EXPECT_FALSE(
+      std::filesystem::exists(android_data_ + "/app/com.android.foo/oat/arm64/base.vdex.staged"));
+  EXPECT_FALSE(std::filesystem::exists(android_data_ +
+                                       "/misc/profiles/ref/com.android.foo/primary.prof.staged"));
+}
+
 class ArtdPreRebootTest : public ArtdTest {
  protected:
   void SetUp() override {
@@ -2479,6 +2598,9 @@ class ArtdPreRebootTest : public ArtdTest {
     )";
     ASSERT_TRUE(WriteStringToFile(ART_FORMAT(kInitEnvironRcTmpl, art_root_, android_data_),
                                   init_environ_rc_path_));
+
+    tmp_profile_path_.finalPath.get<WritableProfilePath::forPrimary>().isPreReboot = true;
+    output_artifacts_.artifactsPath.isPreReboot = true;
   }
 
   std::string pre_reboot_tmp_dir_;
@@ -2597,6 +2719,167 @@ TEST_F(ArtdPreRebootTest, preRebootInitNoRetry) {
   EXPECT_EQ(status.getExceptionCode(), EX_ILLEGAL_STATE);
   EXPECT_STREQ(status.getMessage(),
                "preRebootInit must not be concurrently called or retried after failure");
+}
+
+TEST_F(ArtdPreRebootTest, dexopt) {
+  std::string profile_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
+
+  dexopt_options_.generateAppImage = true;
+
+  EXPECT_CALL(
+      *mock_exec_utils_,
+      DoExecAndReturnCode(
+          WhenSplitBy("--", _, Contains(Flag("--profile-file-fd=", FdOf(profile_file)))), _, _))
+      .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("--oat-fd=", "oat")),
+                      WithArg<0>(WriteToFdFlag("--output-vdex-fd=", "vdex")),
+                      WithArg<0>(WriteToFdFlag("--app-image-fd=", "art")),
+                      Return(0)));
+  RunDexopt();
+
+  CheckContent(scratch_path_ + "/a/oat/arm64/b.odex.staged", "oat");
+  CheckContent(scratch_path_ + "/a/oat/arm64/b.vdex.staged", "vdex");
+  CheckContent(scratch_path_ + "/a/oat/arm64/b.art.staged", "art");
+}
+
+TEST_F(ArtdPreRebootTest, dexoptPreRebootProfile) {
+  profile_path_->get<ProfilePath::tmpProfilePath>()
+      .finalPath.get<WritableProfilePath::forPrimary>()
+      .isPreReboot = true;
+  std::string profile_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
+
+  dexopt_options_.generateAppImage = true;
+
+  EXPECT_CALL(
+      *mock_exec_utils_,
+      DoExecAndReturnCode(
+          WhenSplitBy("--", _, Contains(Flag("--profile-file-fd=", FdOf(profile_file)))), _, _))
+      .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("--oat-fd=", "oat")),
+                      WithArg<0>(WriteToFdFlag("--output-vdex-fd=", "vdex")),
+                      WithArg<0>(WriteToFdFlag("--app-image-fd=", "art")),
+                      Return(0)));
+  RunDexopt();
+
+  CheckContent(scratch_path_ + "/a/oat/arm64/b.odex.staged", "oat");
+  CheckContent(scratch_path_ + "/a/oat/arm64/b.vdex.staged", "vdex");
+  CheckContent(scratch_path_ + "/a/oat/arm64/b.art.staged", "art");
+}
+
+TEST_F(ArtdPreRebootTest, copyAndRewriteProfile) {
+  std::string src_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
+  CreateFile(src_file, "valid_profile");
+
+  CreateFile(dex_file_);
+
+  EXPECT_CALL(*mock_exec_utils_, DoExecAndReturnCode)
+      .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("--reference-profile-file-fd=", "def")),
+                      Return(ProfmanResult::kCopyAndUpdateSuccess)));
+
+  auto [result, dst] = OR_FAIL(RunCopyAndRewriteProfile());
+
+  EXPECT_EQ(result.status, CopyAndRewriteProfileResult::Status::SUCCESS);
+  EXPECT_THAT(dst.profilePath.tmpPath, ContainsRegex(R"re(/primary\.prof\.staged\.\w+\.tmp$)re"));
+  CheckContent(dst.profilePath.tmpPath, "def");
+}
+
+TEST_F(ArtdPreRebootTest, copyAndRewriteEmbeddedProfile) {
+  CreateZipWithSingleEntry(dex_file_, "assets/art-profile/baseline.prof", "valid_profile");
+
+  EXPECT_CALL(*mock_exec_utils_, DoExecAndReturnCode)
+      .WillOnce(DoAll(WithArg<0>(WriteToFdFlag("--reference-profile-file-fd=", "def")),
+                      Return(ProfmanResult::kCopyAndUpdateSuccess)));
+
+  auto [result, dst] = OR_FAIL(RunCopyAndRewriteEmbeddedProfile());
+
+  EXPECT_EQ(result.status, CopyAndRewriteProfileResult::Status::SUCCESS);
+  EXPECT_THAT(dst.profilePath.tmpPath, ContainsRegex(R"re(/primary\.prof\.staged\.\w+\.tmp$)re"));
+  CheckContent(dst.profilePath.tmpPath, "def");
+}
+
+TEST_F(ArtdPreRebootTest, mergeProfiles) {
+  std::string reference_profile_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
+  CreateFile(reference_profile_file, "abc");
+
+  PrimaryCurProfilePath profile_1_path{
+      .userId = 1, .packageName = "com.android.foo", .profileName = "primary"};
+  std::string profile_1_file = OR_FATAL(BuildPrimaryCurProfilePath(profile_1_path));
+  CreateFile(profile_1_file, "def");
+
+  OutputProfile output_profile{.profilePath = tmp_profile_path_,
+                               .fsPermission = FsPermission{.uid = -1, .gid = -1}};
+  output_profile.profilePath.id = "";
+  output_profile.profilePath.tmpPath = "";
+
+  std::string dex_file_1 = scratch_path_ + "/a/b.apk";
+  CreateFile(dex_file_1);
+
+  EXPECT_CALL(
+      *mock_exec_utils_,
+      DoExecAndReturnCode(
+          WhenSplitBy("--",
+                      _,
+                      AllOf(Contains(Flag("--reference-profile-file-fd=", FdHasContent("abc"))),
+                            Contains(Flag("--profile-file-fd=", FdHasContent("def"))))),
+          _,
+          _))
+      .WillOnce(DoAll(WithArg<0>(ClearAndWriteToFdFlag("--reference-profile-file-fd=", "merged")),
+                      Return(ProfmanResult::kCompile)));
+
+  bool result;
+  ASSERT_STATUS_OK(artd_->mergeProfiles({profile_1_path},
+                                        profile_path_,
+                                        &output_profile,
+                                        {dex_file_1},
+                                        /*in_options=*/{},
+                                        &result));
+  EXPECT_TRUE(result);
+  EXPECT_THAT(output_profile.profilePath.tmpPath,
+              ContainsRegex(R"re(/primary\.prof\.staged\.\w+\.tmp$)re"));
+  CheckContent(output_profile.profilePath.tmpPath, "merged");
+}
+
+TEST_F(ArtdPreRebootTest, mergeProfilesPreRebootReference) {
+  profile_path_->get<ProfilePath::tmpProfilePath>()
+      .finalPath.get<WritableProfilePath::forPrimary>()
+      .isPreReboot = true;
+  std::string reference_profile_file = OR_FATAL(BuildProfileOrDmPath(profile_path_.value()));
+  CreateFile(reference_profile_file, "abc");
+
+  PrimaryCurProfilePath profile_1_path{
+      .userId = 1, .packageName = "com.android.foo", .profileName = "primary"};
+  std::string profile_1_file = OR_FATAL(BuildPrimaryCurProfilePath(profile_1_path));
+  CreateFile(profile_1_file, "def");
+
+  OutputProfile output_profile{.profilePath = tmp_profile_path_,
+                               .fsPermission = FsPermission{.uid = -1, .gid = -1}};
+  output_profile.profilePath.id = "";
+  output_profile.profilePath.tmpPath = "";
+
+  std::string dex_file_1 = scratch_path_ + "/a/b.apk";
+  CreateFile(dex_file_1);
+
+  EXPECT_CALL(
+      *mock_exec_utils_,
+      DoExecAndReturnCode(
+          WhenSplitBy("--",
+                      _,
+                      AllOf(Contains(Flag("--reference-profile-file-fd=", FdHasContent("abc"))),
+                            Contains(Flag("--profile-file-fd=", FdHasContent("def"))))),
+          _,
+          _))
+      .WillOnce(DoAll(WithArg<0>(ClearAndWriteToFdFlag("--reference-profile-file-fd=", "merged")),
+                      Return(ProfmanResult::kCompile)));
+
+  bool result;
+  ASSERT_STATUS_OK(artd_->mergeProfiles({profile_1_path},
+                                        profile_path_,
+                                        &output_profile,
+                                        {dex_file_1},
+                                        /*in_options=*/{},
+                                        &result));
+  EXPECT_TRUE(result);
+  EXPECT_THAT(output_profile.profilePath.tmpPath,
+              ContainsRegex(R"re(/primary\.prof\.staged\.\w+\.tmp$)re"));
+  CheckContent(output_profile.profilePath.tmpPath, "merged");
 }
 
 }  // namespace

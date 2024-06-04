@@ -2552,14 +2552,14 @@ void Redefiner::ClassRedefinition::UpdateMethods(art::ObjPtr<art::mirror::Class>
   for (art::ArtMethod& method : mclass->GetDeclaredMethods(image_pointer_size)) {
     const art::dex::StringId* new_name_id = dex_file_->FindStringId(method.GetName());
     art::dex::TypeIndex method_return_idx =
-        dex_file_->GetIndexForTypeId(*dex_file_->FindTypeId(method.GetReturnTypeDescriptor()));
+        dex_file_->GetIndexForTypeId(*dex_file_->FindTypeId(method.GetReturnTypeDescriptorView()));
     const auto* old_type_list = method.GetParameterTypeList();
     std::vector<art::dex::TypeIndex> new_type_list;
     for (uint32_t i = 0; old_type_list != nullptr && i < old_type_list->Size(); i++) {
       new_type_list.push_back(
           dex_file_->GetIndexForTypeId(
               *dex_file_->FindTypeId(
-                  old_dex_file.GetTypeDescriptor(
+                  old_dex_file.GetTypeDescriptorView(
                       old_dex_file.GetTypeId(
                           old_type_list->GetTypeItem(i).type_idx_)))));
     }
@@ -2586,11 +2586,10 @@ void Redefiner::ClassRedefinition::UpdateFields(art::ObjPtr<art::mirror::Class> 
   // TODO The IFields & SFields pointers should be combined like the methods_ arrays were.
   for (auto fields_iter : {mclass->GetIFields(), mclass->GetSFields()}) {
     for (art::ArtField& field : fields_iter) {
-      std::string declaring_class_name;
       const art::dex::TypeId* new_declaring_id =
-          dex_file_->FindTypeId(field.GetDeclaringClass()->GetDescriptor(&declaring_class_name));
+          dex_file_->FindTypeId(field.GetDeclaringClassDescriptorView());
       const art::dex::StringId* new_name_id = dex_file_->FindStringId(field.GetName());
-      const art::dex::TypeId* new_type_id = dex_file_->FindTypeId(field.GetTypeDescriptor());
+      const art::dex::TypeId* new_type_id = dex_file_->FindTypeId(field.GetTypeDescriptorView());
       CHECK(new_name_id != nullptr && new_type_id != nullptr && new_declaring_id != nullptr);
       const art::dex::FieldId* new_field_id =
           dex_file_->FindFieldId(*new_declaring_id, *new_name_id, *new_type_id);

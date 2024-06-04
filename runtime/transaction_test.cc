@@ -20,6 +20,7 @@
 #include "art_method-inl.h"
 #include "class_linker-inl.h"
 #include "common_runtime_test.h"
+#include "common_throws.h"
 #include "dex/dex_file.h"
 #include "mirror/array-alloc-inl.h"
 #include "mirror/class-alloc-inl.h"
@@ -52,8 +53,7 @@ class TransactionTest : public CommonRuntimeTest {
     class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
     ASSERT_TRUE(h_klass->IsInitialized());
 
-    h_klass.Assign(class_linker_->FindSystemClass(soa.Self(),
-                                                  Transaction::kAbortExceptionDescriptor));
+    h_klass.Assign(class_linker_->FindSystemClass(soa.Self(), kTransactionAbortErrorDescriptor));
     ASSERT_TRUE(h_klass != nullptr);
     class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
     ASSERT_TRUE(h_klass->IsInitialized());
@@ -356,6 +356,58 @@ TEST_F(TransactionTest, InstanceFieldsTest) {
   EXPECT_EQ(longField->GetLong(h_instance.Get()), static_cast<int64_t>(0));
   EXPECT_FLOAT_EQ(floatField->GetFloat(h_instance.Get()), static_cast<float>(0.0f));
   EXPECT_DOUBLE_EQ(doubleField->GetDouble(h_instance.Get()), static_cast<double>(0.0));
+  EXPECT_EQ(objectField->GetObject(h_instance.Get()), nullptr);
+
+  // Fail to modify fields with strong CAS inside transaction, then rollback changes.
+  EnterTransactionMode();
+  bool cas_success = h_instance->CasField32</*kTransactionActive=*/ true>(
+      intField->GetOffset(),
+      /*old_value=*/ 1,
+      /*new_value=*/ 2,
+      CASMode::kStrong,
+      std::memory_order_seq_cst);
+  EXPECT_FALSE(cas_success);
+  cas_success = h_instance->CasFieldStrongSequentiallyConsistent64</*kTransactionActive=*/ true>(
+      longField->GetOffset(), /*old_value=*/ INT64_C(1), /*new_value=*/ INT64_C(2));
+  EXPECT_FALSE(cas_success);
+  cas_success = h_instance->CasFieldObject</*kTransactionActive=*/ true>(
+      objectField->GetOffset(),
+      /*old_value=*/ h_instance.Get(),
+      /*new_value=*/ nullptr,
+      CASMode::kStrong,
+      std::memory_order_seq_cst);
+  EXPECT_FALSE(cas_success);
+  RollbackAndExitTransactionMode();
+
+  // Check values have properly been restored to their original (default) value.
+  EXPECT_EQ(intField->GetInt(h_instance.Get()), 0);
+  EXPECT_EQ(longField->GetLong(h_instance.Get()), static_cast<int64_t>(0));
+  EXPECT_EQ(objectField->GetObject(h_instance.Get()), nullptr);
+
+  // Fail to modify fields with weak CAS inside transaction, then rollback changes.
+  EnterTransactionMode();
+  cas_success = h_instance->CasField32</*kTransactionActive=*/ true>(
+      intField->GetOffset(),
+      /*old_value=*/ 3,
+      /*new_value=*/ 4,
+      CASMode::kWeak,
+      std::memory_order_seq_cst);
+  EXPECT_FALSE(cas_success);
+  cas_success = h_instance->CasFieldWeakSequentiallyConsistent64</*kTransactionActive=*/ true>(
+      longField->GetOffset(), /*old_value=*/ INT64_C(3), /*new_value=*/ INT64_C(4));
+  EXPECT_FALSE(cas_success);
+  cas_success = h_instance->CasFieldObject</*kTransactionActive=*/ true>(
+      objectField->GetOffset(),
+      /*old_value=*/ h_klass.Get(),
+      /*new_value=*/ nullptr,
+      CASMode::kWeak,
+      std::memory_order_seq_cst);
+  EXPECT_FALSE(cas_success);
+  RollbackAndExitTransactionMode();
+
+  // Check values have properly been restored to their original (default) value.
+  EXPECT_EQ(intField->GetInt(h_instance.Get()), 0);
+  EXPECT_EQ(longField->GetLong(h_instance.Get()), static_cast<int64_t>(0));
   EXPECT_EQ(objectField->GetObject(h_instance.Get()), nullptr);
 }
 

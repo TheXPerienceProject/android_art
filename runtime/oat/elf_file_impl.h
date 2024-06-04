@@ -116,6 +116,9 @@ class ElfFileImpl {
   // Retrieves the expected size when the file is loaded at runtime. Returns true if successful.
   bool GetLoadedSize(size_t* size, std::string* error_msg) const;
 
+  // Get the alignment of the first loadable program segment. Return 0 if no loadable segment found.
+  size_t GetElfSegmentAlignmentFromFile() const;
+
   // Load segments into memory based on PT_LOAD program headers.
   // executable is true at run time, false at compile time.
   bool Load(File* file,

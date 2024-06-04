@@ -646,6 +646,13 @@ class Runtime {
   void ThrowTransactionAbortError(Thread* self)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  void AbortTransactionF(Thread* self, const char* fmt, ...)
+      __attribute__((__format__(__printf__, 3, 4)))
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  void AbortTransactionV(Thread* self, const char* fmt, va_list args)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   void RecordWriteFieldBoolean(mirror::Object* obj,
                                MemberOffset field_offset,
                                uint8_t value,

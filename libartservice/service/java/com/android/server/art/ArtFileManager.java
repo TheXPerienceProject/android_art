@@ -29,7 +29,6 @@ import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.util.Log;
 import android.util.Pair;
 
 import androidx.annotation.RequiresApi;
@@ -57,8 +56,6 @@ import java.util.Objects;
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class ArtFileManager {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     @NonNull private final Injector mInjector;
 
     public ArtFileManager(@NonNull Context context) {
@@ -111,7 +108,7 @@ public class ArtFileManager {
             boolean isInDalvikCache = Utils.isInDalvikCache(pkgState, mInjector.getArtd());
             for (PrimaryDexInfo dexInfo : PrimaryDexUtils.getDexInfo(pkg)) {
                 for (Abi abi : Utils.getAllAbis(pkgState)) {
-                    artifacts.add(AidlUtils.buildArtifactsPath(
+                    artifacts.add(AidlUtils.buildArtifactsPathAsInput(
                             dexInfo.dexPath(), abi.isa(), isInDalvikCache));
                     // Runtime images are only generated for primary dex files.
                     runtimeArtifacts.add(AidlUtils.buildRuntimeArtifactsPath(
@@ -123,7 +120,7 @@ public class ArtFileManager {
         if (options.forSecondaryDex()) {
             for (SecondaryDexInfo dexInfo : getSecondaryDexInfo(pkgState, options)) {
                 for (Abi abi : Utils.getAllAbisForNames(dexInfo.abiNames(), pkgState)) {
-                    artifacts.add(AidlUtils.buildArtifactsPath(
+                    artifacts.add(AidlUtils.buildArtifactsPathAsInput(
                             dexInfo.dexPath(), abi.isa(), false /* isInDalvikCache */));
                 }
             }
@@ -153,8 +150,9 @@ public class ArtFileManager {
                         dexInfo.dexPath(), abi.isa(), dexInfo.classLoaderContext());
                 if (result.artifactsLocation == ArtifactsLocation.DALVIK_CACHE
                         || result.artifactsLocation == ArtifactsLocation.NEXT_TO_DEX) {
-                    ArtifactsPath thisArtifacts = AidlUtils.buildArtifactsPath(dexInfo.dexPath(),
-                            abi.isa(), result.artifactsLocation == ArtifactsLocation.DALVIK_CACHE);
+                    ArtifactsPath thisArtifacts =
+                            AidlUtils.buildArtifactsPathAsInput(dexInfo.dexPath(), abi.isa(),
+                                    result.artifactsLocation == ArtifactsLocation.DALVIK_CACHE);
                     if (result.compilationReason.equals(ArtConstants.REASON_VDEX)) {
                         // Only the VDEX file is usable.
                         vdexFiles.add(VdexPath.artifactsPath(thisArtifacts));
@@ -169,8 +167,7 @@ public class ArtFileManager {
                     }
                 }
             } catch (ServiceSpecificException e) {
-                Log.e(TAG,
-                        String.format(
+                AsLog.e(String.format(
                                 "Failed to get dexopt status [packageName = %s, dexPath = %s, "
                                         + "isa = %s, classLoaderContext = %s]",
                                 pkgState.getPackageName(), dexInfo.dexPath(), abi.isa(),
@@ -190,7 +187,7 @@ public class ArtFileManager {
 
         if (options.forPrimaryDex()) {
             for (PrimaryDexInfo dexInfo : PrimaryDexUtils.getDexInfo(pkg)) {
-                refProfiles.add(PrimaryDexUtils.buildRefProfilePath(pkgState, dexInfo));
+                refProfiles.add(PrimaryDexUtils.buildRefProfilePathAsInput(pkgState, dexInfo));
                 curProfiles.addAll(mInjector.isSystemOrRootOrShell()
                                 ? PrimaryDexUtils.getCurProfiles(
                                           mInjector.getUserManager(), pkgState, dexInfo)
@@ -206,7 +203,8 @@ public class ArtFileManager {
                         && !mInjector.getCallingUserHandle().equals(dexInfo.userHandle())) {
                     continue;
                 }
-                refProfiles.add(AidlUtils.buildProfilePathForSecondaryRef(dexInfo.dexPath()));
+                refProfiles.add(
+                        AidlUtils.buildProfilePathForSecondaryRefAsInput(dexInfo.dexPath()));
                 curProfiles.add(AidlUtils.buildProfilePathForSecondaryCur(dexInfo.dexPath()));
             }
         }

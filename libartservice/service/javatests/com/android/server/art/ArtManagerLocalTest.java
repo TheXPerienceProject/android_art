@@ -48,6 +48,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.apphibernation.AppHibernationManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
 import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
@@ -83,6 +86,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
 import java.io.File;
@@ -132,12 +136,15 @@ public class ArtManagerLocalTest {
     @Mock private StorageManager mStorageManager;
     @Mock private ArtdRefCache.Pin mArtdPin;
     @Mock private DexMetadataHelper.Injector mDexMetadataHelperInjector;
+    @Mock private Context mContext;
+    @Mock private PreRebootDexoptJob mPreRebootDexoptJob;
     private PackageState mPkgState1;
     private AndroidPackage mPkg1;
     private CheckedSecondaryDexInfo mPkg1SecondaryDexInfo1;
     private CheckedSecondaryDexInfo mPkg1SecondaryDexInfoNotFound;
     private Config mConfig;
     private DexMetadataHelper mDexMetadataHelper;
+    private ArgumentCaptor<BroadcastReceiver> mBroadcastReceiverCaptor;
 
     // True if the artifacts should be in dalvik-cache.
     @Parameter(0) public boolean mIsInDalvikCache;
@@ -173,6 +180,8 @@ public class ArtManagerLocalTest {
                 .when(mInjector.getArtFileManager())
                 .thenReturn(new ArtFileManager(mArtFileManagerInjector));
         lenient().when(mInjector.getDexMetadataHelper()).thenReturn(mDexMetadataHelper);
+        lenient().when(mInjector.getContext()).thenReturn(mContext);
+        lenient().when(mInjector.getPreRebootDexoptJob()).thenReturn(mPreRebootDexoptJob);
 
         lenient().when(mArtFileManagerInjector.getArtd()).thenReturn(mArtd);
         lenient().when(mArtFileManagerInjector.getUserManager()).thenReturn(mUserManager);
@@ -186,6 +195,7 @@ public class ArtManagerLocalTest {
         lenient().when(SystemProperties.get(eq("pm.dexopt.install"))).thenReturn("speed-profile");
         lenient().when(SystemProperties.get(eq("pm.dexopt.bg-dexopt"))).thenReturn("speed-profile");
         lenient().when(SystemProperties.get(eq("pm.dexopt.first-boot"))).thenReturn("verify");
+        lenient().when(SystemProperties.get(eq("pm.dexopt.boot-after-ota"))).thenReturn("verify");
         lenient()
                 .when(SystemProperties.get(eq("pm.dexopt.boot-after-mainline-update")))
                 .thenReturn("verify");
@@ -269,6 +279,11 @@ public class ArtManagerLocalTest {
                 .when(mDexMetadataHelperInjector.openZipFile(any()))
                 .thenThrow(NoSuchFileException.class);
 
+        mBroadcastReceiverCaptor = ArgumentCaptor.forClass(BroadcastReceiver.class);
+        lenient()
+                .when(mContext.registerReceiver(mBroadcastReceiverCaptor.capture(), any()))
+                .thenReturn(mock(Intent.class));
+
         mArtManagerLocal = new ArtManagerLocal(mInjector);
     }
 
@@ -284,17 +299,17 @@ public class ArtManagerLocalTest {
         assertThat(result.getFreedBytes())
                 .isEqualTo(6 * DEXOPT_ARTIFACTS_FREED + 4 * RUNTIME_ARTIFACTS_FREED);
 
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/base.apk", "arm64", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/base.apk", "arm", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/split_0.apk", "arm64", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/split_0.apk", "arm", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/data/user/0/foo/1.apk", "arm64", false /* isInDalvikCache */)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/data/user/0/foo/not_found.apk", "arm64", false /* isInDalvikCache */)));
 
         verify(mArtd).deleteRuntimeArtifacts(deepEq(AidlUtils.buildRuntimeArtifactsPath(
@@ -331,13 +346,13 @@ public class ArtManagerLocalTest {
         assertThat(result.getFreedBytes())
                 .isEqualTo(6 * DEXOPT_ARTIFACTS_FREED + 4 * RUNTIME_ARTIFACTS_FREED);
 
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/base.apk", "x86_64", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/base.apk", "x86", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/split_0.apk", "x86_64", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/split_0.apk", "x86", mIsInDalvikCache)));
 
         verify(mArtd).deleteRuntimeArtifacts(deepEq(AidlUtils.buildRuntimeArtifactsPath(
@@ -350,9 +365,9 @@ public class ArtManagerLocalTest {
                 PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "x86")));
 
         // We assume that the ISA got from `DexUseManagerLocal` is already the translated one.
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/data/user/0/foo/1.apk", "x86_64", false /* isInDalvikCache */)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/data/user/0/foo/not_found.apk", "x86_64", false /* isInDalvikCache */)));
 
         // Verify that there are no more calls than the ones above.
@@ -462,19 +477,19 @@ public class ArtManagerLocalTest {
         mArtManagerLocal.clearAppProfiles(mSnapshot, PKG_NAME_1);
 
         verify(mArtd).deleteProfile(
-                deepEq(AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary")));
+                deepEq(AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary")));
         verify(mArtd).deleteProfile(deepEq(
                 AidlUtils.buildProfilePathForPrimaryCur(0 /* userId */, PKG_NAME_1, "primary")));
         verify(mArtd).deleteProfile(deepEq(
                 AidlUtils.buildProfilePathForPrimaryCur(1 /* userId */, PKG_NAME_1, "primary")));
 
         verify(mArtd).deleteProfile(
-                deepEq(AidlUtils.buildProfilePathForSecondaryRef("/data/user/0/foo/1.apk")));
+                deepEq(AidlUtils.buildProfilePathForSecondaryRefAsInput("/data/user/0/foo/1.apk")));
         verify(mArtd).deleteProfile(
                 deepEq(AidlUtils.buildProfilePathForSecondaryCur("/data/user/0/foo/1.apk")));
 
-        verify(mArtd).deleteProfile(deepEq(
-                AidlUtils.buildProfilePathForSecondaryRef("/data/user/0/foo/not_found.apk")));
+        verify(mArtd).deleteProfile(deepEq(AidlUtils.buildProfilePathForSecondaryRefAsInput(
+                "/data/user/0/foo/not_found.apk")));
         verify(mArtd).deleteProfile(deepEq(
                 AidlUtils.buildProfilePathForSecondaryCur("/data/user/0/foo/not_found.apk")));
     }
@@ -521,19 +536,19 @@ public class ArtManagerLocalTest {
                 .isSameInstanceAs(result);
 
         verify(mArtd).deleteProfile(
-                deepEq(AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary")));
+                deepEq(AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary")));
         verify(mArtd).deleteProfile(deepEq(
                 AidlUtils.buildProfilePathForPrimaryCur(0 /* userId */, PKG_NAME_1, "primary")));
         verify(mArtd).deleteProfile(deepEq(
                 AidlUtils.buildProfilePathForPrimaryCur(1 /* userId */, PKG_NAME_1, "primary")));
 
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/base.apk", "arm64", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/base.apk", "arm", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/split_0.apk", "arm64", mIsInDalvikCache)));
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/split_0.apk", "arm", mIsInDalvikCache)));
 
         verify(mArtd).deleteRuntimeArtifacts(deepEq(AidlUtils.buildRuntimeArtifactsPath(
@@ -546,11 +561,11 @@ public class ArtManagerLocalTest {
                 PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm")));
 
         verify(mArtd).deleteProfile(
-                deepEq(AidlUtils.buildProfilePathForSecondaryRef("/data/user/0/foo/1.apk")));
+                deepEq(AidlUtils.buildProfilePathForSecondaryRefAsInput("/data/user/0/foo/1.apk")));
         verify(mArtd).deleteProfile(
                 deepEq(AidlUtils.buildProfilePathForSecondaryCur("/data/user/0/foo/1.apk")));
 
-        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPath(
+        verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/data/user/0/foo/1.apk", "arm64", false /* isInDalvikCache */)));
     }
 
@@ -836,7 +851,8 @@ public class ArtManagerLocalTest {
         File tempFile = File.createTempFile("primary", ".prof");
         tempFile.deleteOnExit();
 
-        ProfilePath refProfile = AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary");
+        ProfilePath refProfile =
+                AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary");
         String dexPath = "/somewhere/app/foo/base.apk";
 
         when(mArtd.isProfileUsable(deepEq(refProfile), eq(dexPath))).thenReturn(true);
@@ -848,7 +864,8 @@ public class ArtManagerLocalTest {
                                                  1 /* userId */, PKG_NAME_1, "primary"))),
                      isNull(),
                      deepEq(AidlUtils.buildOutputProfileForPrimary(PKG_NAME_1, "primary",
-                             Process.SYSTEM_UID, Process.SYSTEM_UID, false /* isPublic */)),
+                             Process.SYSTEM_UID, Process.SYSTEM_UID, false /* isPublic */,
+                             false /* isPreReboot */)),
                      deepEq(List.of(dexPath)), deepEq(options)))
                 .thenAnswer(invocation -> {
                     try (var writer = new FileWriter(tempFile)) {
@@ -880,7 +897,8 @@ public class ArtManagerLocalTest {
         File tempFileForSnapshot = File.createTempFile("primary", ".prof");
         tempFileForSnapshot.deleteOnExit();
 
-        ProfilePath refProfile = AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary");
+        ProfilePath refProfile =
+                AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary");
         String dexPath = "/somewhere/app/foo/base.apk";
 
         // Simulate that the reference profile doesn't exist.
@@ -920,7 +938,8 @@ public class ArtManagerLocalTest {
 
     @Test
     public void testSnapshotAppProfileFromEmbeddedProfile() throws Exception {
-        ProfilePath refProfile = AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary");
+        ProfilePath refProfile =
+                AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary");
         String dexPath = "/somewhere/app/foo/base.apk";
 
         // Simulate that the reference profile doesn't exist.
@@ -937,7 +956,8 @@ public class ArtManagerLocalTest {
 
     @Test
     public void testSnapshotAppProfileDisableEmbeddedProfile() throws Exception {
-        ProfilePath refProfile = AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary");
+        ProfilePath refProfile =
+                AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary");
         String dexPath = "/somewhere/app/foo/base.apk";
 
         // Simulate that the reference profile doesn't exist.
@@ -959,7 +979,7 @@ public class ArtManagerLocalTest {
     @Test
     public void testSnapshotAppProfileSplit() throws Exception {
         ProfilePath refProfile =
-                AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "split_0.split");
+                AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "split_0.split");
         String dexPath = "/somewhere/app/foo/split_0.apk";
 
         when(mArtd.isProfileUsable(deepEq(refProfile), eq(dexPath))).thenReturn(true);
@@ -971,7 +991,8 @@ public class ArtManagerLocalTest {
                                                  1 /* userId */, PKG_NAME_1, "split_0.split"))),
                      isNull(),
                      deepEq(AidlUtils.buildOutputProfileForPrimary(PKG_NAME_1, "split_0.split",
-                             Process.SYSTEM_UID, Process.SYSTEM_UID, false /* isPublic */)),
+                             Process.SYSTEM_UID, Process.SYSTEM_UID, false /* isPublic */,
+                             false /* isPreReboot */)),
                      deepEq(List.of(dexPath)), any()))
                 .thenReturn(false);
 
@@ -1049,27 +1070,28 @@ public class ArtManagerLocalTest {
 
         when(mArtd.mergeProfiles(
                      inAnyOrderDeepEquals(
-                             AidlUtils.buildProfilePathForPrimaryRef("android", "primary"),
+                             AidlUtils.buildProfilePathForPrimaryRefAsInput("android", "primary"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      0 /* userId */, "android", "primary"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      1 /* userId */, "android", "primary"),
-                             AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary"),
+                             AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      0 /* userId */, PKG_NAME_1, "primary"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      1 /* userId */, PKG_NAME_1, "primary"),
-                             AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "split_0.split"),
+                             AidlUtils.buildProfilePathForPrimaryRefAsInput(
+                                     PKG_NAME_1, "split_0.split"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      0 /* userId */, PKG_NAME_1, "split_0.split"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      1 /* userId */, PKG_NAME_1, "split_0.split"),
-                             AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_2, "primary"),
+                             AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_2, "primary"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      0 /* userId */, PKG_NAME_2, "primary"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      1 /* userId */, PKG_NAME_2, "primary"),
-                             AidlUtils.buildProfilePathForPrimaryRef(
+                             AidlUtils.buildProfilePathForPrimaryRefAsInput(
                                      PKG_NAME_HIBERNATING, "primary"),
                              AidlUtils.buildProfilePathForPrimaryCur(
                                      0 /* userId */, PKG_NAME_HIBERNATING, "primary"),
@@ -1077,7 +1099,8 @@ public class ArtManagerLocalTest {
                                      1 /* userId */, PKG_NAME_HIBERNATING, "primary")),
                      isNull(),
                      deepEq(AidlUtils.buildOutputProfileForPrimary("android", "primary",
-                             Process.SYSTEM_UID, Process.SYSTEM_UID, false /* isPublic */)),
+                             Process.SYSTEM_UID, Process.SYSTEM_UID, false /* isPublic */,
+                             false /* isPreReboot */)),
                      deepEq(List.of("bcp0", "bcp1", "sscp0", "sscp1", "sssj0", "sssj1")),
                      deepEq(options)))
                 .thenReturn(false); // A non-empty merge is tested in `testSnapshotAppProfile`.
@@ -1111,7 +1134,18 @@ public class ArtManagerLocalTest {
     }
 
     @Test
-    public void testCleanup() throws Exception {
+    public void testCleanupKeepPreRebootStagedFiles() throws Exception {
+        when(mPreRebootDexoptJob.hasStarted()).thenReturn(true);
+        testCleanup(true /* keepPreRebootStagedFiles */);
+    }
+
+    @Test
+    public void testCleanupRemovePreRebootStagedFiles() throws Exception {
+        when(mPreRebootDexoptJob.hasStarted()).thenReturn(false);
+        testCleanup(false /* keepPreRebootStagedFiles */);
+    }
+
+    private void testCleanup(boolean keepPreRebootStagedFiles) throws Exception {
         // It should keep all artifacts, but not runtime images.
         doReturn(createGetDexoptStatusResult(
                          "speed-profile", "bg-dexopt", "location", ArtifactsLocation.NEXT_TO_DEX))
@@ -1144,30 +1178,33 @@ public class ArtManagerLocalTest {
         mArtManagerLocal.cleanup(mSnapshot);
 
         verify(mArtd).cleanup(
-                inAnyOrderDeepEquals(AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary"),
+                inAnyOrderDeepEquals(
+                        AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary"),
                         AidlUtils.buildProfilePathForPrimaryCur(
                                 0 /* userId */, PKG_NAME_1, "primary"),
                         AidlUtils.buildProfilePathForPrimaryCur(
                                 1 /* userId */, PKG_NAME_1, "primary"),
-                        AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "split_0.split"),
+                        AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "split_0.split"),
                         AidlUtils.buildProfilePathForPrimaryCur(
                                 0 /* userId */, PKG_NAME_1, "split_0.split"),
                         AidlUtils.buildProfilePathForPrimaryCur(
                                 1 /* userId */, PKG_NAME_1, "split_0.split"),
-                        AidlUtils.buildProfilePathForSecondaryRef("/data/user/0/foo/1.apk"),
+                        AidlUtils.buildProfilePathForSecondaryRefAsInput("/data/user/0/foo/1.apk"),
                         AidlUtils.buildProfilePathForSecondaryCur("/data/user/0/foo/1.apk")),
-                inAnyOrderDeepEquals(AidlUtils.buildArtifactsPath("/somewhere/app/foo/base.apk",
-                                             "arm64", false /* isInDalvikCache */),
-                        AidlUtils.buildArtifactsPath(
+                inAnyOrderDeepEquals(
+                        AidlUtils.buildArtifactsPathAsInput("/somewhere/app/foo/base.apk", "arm64",
+                                false /* isInDalvikCache */),
+                        AidlUtils.buildArtifactsPathAsInput(
                                 "/data/user/0/foo/1.apk", "arm64", false /* isInDalvikCache */),
-                        AidlUtils.buildArtifactsPath("/somewhere/app/foo/split_0.apk", "arm64",
-                                true /* isInDalvikCache */)),
-                inAnyOrderDeepEquals(VdexPath.artifactsPath(AidlUtils.buildArtifactsPath(
+                        AidlUtils.buildArtifactsPathAsInput("/somewhere/app/foo/split_0.apk",
+                                "arm64", true /* isInDalvikCache */)),
+                inAnyOrderDeepEquals(VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
                         "/somewhere/app/foo/split_0.apk", "arm", false /* isInDalvikCache */))),
                 inAnyOrderDeepEquals(AidlUtils.buildRuntimeArtifactsPath(
                                              PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm64"),
                         AidlUtils.buildRuntimeArtifactsPath(
-                                PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm")));
+                                PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm")),
+                eq(keepPreRebootStagedFiles));
     }
 
     @Test
@@ -1227,14 +1264,14 @@ public class ArtManagerLocalTest {
                 .getDexoptStatus(eq("/somewhere/app/foo/base.apk"), eq("arm"), any());
 
         // These are counted as TYPE_DEXOPT_ARTIFACT.
-        doReturn(1l << 0).when(mArtd).getArtifactsSize(deepEq(AidlUtils.buildArtifactsPath(
+        doReturn(1l << 0).when(mArtd).getArtifactsSize(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/base.apk", "arm64", false /* isInDalvikCache */)));
-        doReturn(1l << 1).when(mArtd).getArtifactsSize(deepEq(AidlUtils.buildArtifactsPath(
+        doReturn(1l << 1).when(mArtd).getArtifactsSize(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/data/user/0/foo/1.apk", "arm64", false /* isInDalvikCache */)));
-        doReturn(1l << 2).when(mArtd).getArtifactsSize(deepEq(AidlUtils.buildArtifactsPath(
+        doReturn(1l << 2).when(mArtd).getArtifactsSize(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/split_0.apk", "arm64", true /* isInDalvikCache */)));
         doReturn(1l << 3).when(mArtd).getVdexFileSize(
-                deepEq(VdexPath.artifactsPath(AidlUtils.buildArtifactsPath(
+                deepEq(VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
                         "/somewhere/app/foo/split_0.apk", "arm", false /* isInDalvikCache */))));
         doReturn(1l << 4).when(mArtd).getRuntimeArtifactsSize(
                 deepEq(AidlUtils.buildRuntimeArtifactsPath(
@@ -1250,11 +1287,11 @@ public class ArtManagerLocalTest {
 
         // These are counted as TYPE_REF_PROFILE.
         doReturn(1l << 6).when(mArtd).getProfileSize(
-                deepEq(AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "primary")));
-        doReturn(1l << 7).when(mArtd).getProfileSize(
-                deepEq(AidlUtils.buildProfilePathForPrimaryRef(PKG_NAME_1, "split_0.split")));
+                deepEq(AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "primary")));
+        doReturn(1l << 7).when(mArtd).getProfileSize(deepEq(
+                AidlUtils.buildProfilePathForPrimaryRefAsInput(PKG_NAME_1, "split_0.split")));
         doReturn(1l << 8).when(mArtd).getProfileSize(
-                deepEq(AidlUtils.buildProfilePathForSecondaryRef("/data/user/0/foo/1.apk")));
+                deepEq(AidlUtils.buildProfilePathForSecondaryRefAsInput("/data/user/0/foo/1.apk")));
         long expectedRefProfileSize = (1l << 6) + (1l << 7) + (1l << 8);
         int expectedGetProfileSizeCalls = 3;
 
@@ -1278,15 +1315,16 @@ public class ArtManagerLocalTest {
 
             // These are counted as TYPE_DEXOPT_ARTIFACT.
             // Dexopt artifacts of secondary dex files.
-            doReturn(1l << 12).when(mArtd).getArtifactsSize(deepEq(AidlUtils.buildArtifactsPath(
-                    "/data/user/1/foo/1.apk", "arm64", false /* isInDalvikCache */)));
+            doReturn(1l << 12).when(mArtd).getArtifactsSize(
+                    deepEq(AidlUtils.buildArtifactsPathAsInput(
+                            "/data/user/1/foo/1.apk", "arm64", false /* isInDalvikCache */)));
             expectedDexoptArtifactSize += (1l << 12);
             expectedGetArtifactsSizeCalls += 1;
 
             // These are counted as TYPE_REF_PROFILE.
             // Reference profiles of secondary dex files.
-            doReturn(1l << 13).when(mArtd).getProfileSize(
-                    deepEq(AidlUtils.buildProfilePathForSecondaryRef("/data/user/1/foo/1.apk")));
+            doReturn(1l << 13).when(mArtd).getProfileSize(deepEq(
+                    AidlUtils.buildProfilePathForSecondaryRefAsInput("/data/user/1/foo/1.apk")));
             expectedRefProfileSize += (1l << 13);
             expectedGetProfileSizeCalls += 1;
 
@@ -1317,6 +1355,56 @@ public class ArtManagerLocalTest {
         verify(mArtd, times(expectedGetVdexFileSizeCalls)).getVdexFileSize(any());
         verify(mArtd, times(expectedGetRuntimeArtifactsSizeCalls)).getRuntimeArtifactsSize(any());
         verify(mArtd, times(expectedGetProfileSizeCalls)).getProfileSize(any());
+    }
+
+    @Test
+    public void testCommitPreRebootStagedFiles() throws Exception {
+        when(mSnapshot.getPackageStates()).thenReturn(Map.of(PKG_NAME_1, mPkgState1));
+
+        mArtManagerLocal.onBoot(ReasonMapping.REASON_BOOT_AFTER_OTA,
+                null /* progressCallbackExecutor */, null /* progressCallback */);
+
+        // It should commit files for primary dex files on boot.
+        verify(mArtd).commitPreRebootStagedFiles(
+                inAnyOrderDeepEquals(
+                        AidlUtils.buildArtifactsPathAsInput(
+                                "/somewhere/app/foo/base.apk", "arm64", mIsInDalvikCache),
+                        AidlUtils.buildArtifactsPathAsInput(
+                                "/somewhere/app/foo/base.apk", "arm", mIsInDalvikCache),
+                        AidlUtils.buildArtifactsPathAsInput(
+                                "/somewhere/app/foo/split_0.apk", "arm64", mIsInDalvikCache),
+                        AidlUtils.buildArtifactsPathAsInput(
+                                "/somewhere/app/foo/split_0.apk", "arm", mIsInDalvikCache)),
+                inAnyOrderDeepEquals(AidlUtils.toWritableProfilePath(
+                                             AidlUtils.buildProfilePathForPrimaryRefAsInput(
+                                                     PKG_NAME_1, "primary")),
+                        AidlUtils.toWritableProfilePath(
+                                AidlUtils.buildProfilePathForPrimaryRefAsInput(
+                                        PKG_NAME_1, "split_0.split"))));
+        verify(mArtd, times(1)).commitPreRebootStagedFiles(any(), any());
+
+        mArtManagerLocal.systemReady();
+
+        // It should not commit anything on system ready.
+        verify(mArtd, times(1)).commitPreRebootStagedFiles(any(), any());
+
+        mBroadcastReceiverCaptor.getValue().onReceive(mContext, mock(Intent.class));
+
+        // It should commit files for secondary dex files on boot complete.
+        verify(mArtd).commitPreRebootStagedFiles(
+                inAnyOrderDeepEquals(AidlUtils.buildArtifactsPathAsInput(
+                        "/data/user/0/foo/1.apk", "arm64", false /* isInDalvikCache */)),
+                inAnyOrderDeepEquals(AidlUtils.toWritableProfilePath(
+                        AidlUtils.buildProfilePathForSecondaryRefAsInput(
+                                "/data/user/0/foo/1.apk"))));
+        verify(mArtd, times(2)).commitPreRebootStagedFiles(any(), any());
+    }
+
+    @Test
+    public void testCommitPreRebootStagedFilesOnBootNotCalled() throws Exception {
+        mArtManagerLocal.systemReady();
+
+        verify(mContext, never()).registerReceiver(any(), any());
     }
 
     private AndroidPackage createPackage(boolean multiSplit) {

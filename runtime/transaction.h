@@ -46,8 +46,6 @@ template<class MirrorType> class ObjPtr;
 
 class Transaction final {
  public:
-  static constexpr const char* kAbortExceptionDescriptor = "Ldalvik/system/TransactionAbortError;";
-
   Transaction(bool strict, mirror::Class* root, ArenaStack* arena_stack, ArenaPool* arena_pool);
   ~Transaction();
 

@@ -420,8 +420,8 @@ void* OpenNativeLibrary(JNIEnv* env,
                                        /*is_shared=*/false,
                                        empty_dex_path,
                                        library_path_j,
-                                       /*permitted_path=*/nullptr,
-                                       /*uses_library_list=*/nullptr);
+                                       /*permitted_path_j=*/nullptr,
+                                       /*uses_library_list_j=*/nullptr);
   if (!isolated_ns.ok()) {
     ALOGD("Failed to create isolated ns for %s (caller=%s)",
           path,

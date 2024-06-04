@@ -195,11 +195,18 @@ class OatFileBase : public OatFile {
  private:
   std::string ErrorPrintf(const char* fmt, ...) __attribute__((__format__(__printf__, 2, 3)));
   bool ReadIndexBssMapping(/*inout*/const uint8_t** oat,
+                           const char* container_tag,
                            size_t dex_file_index,
                            const std::string& dex_file_location,
-                           const char* tag,
+                           const char* entry_tag,
                            /*out*/const IndexBssMapping** mapping,
                            std::string* error_msg);
+  bool ReadBssMappingInfo(/*inout*/const uint8_t** oat,
+                          const char* container_tag,
+                          size_t dex_file_index,
+                          const std::string& dex_file_location,
+                          /*out*/BssMappingInfo* bss_mapping_info,
+                          std::string* error_msg);
 
   DISALLOW_COPY_AND_ASSIGN(OatFileBase);
 };
@@ -366,6 +373,11 @@ bool OatFileBase::ComputeFields(const std::string& file_path, std::string* error
     }
     // Readjust to be non-inclusive upper bound.
     data_img_rel_ro_end_ += sizeof(uint32_t);
+    data_img_rel_ro_app_image_ =
+        FindDynamicSymbolAddress("oatdataimgrelroappimage", &symbol_error_msg);
+    if (data_img_rel_ro_app_image_ == nullptr) {
+      data_img_rel_ro_app_image_ = data_img_rel_ro_end_;
+    }
   }
 
   bss_begin_ = const_cast<uint8_t*>(FindDynamicSymbolAddress("oatbss", &symbol_error_msg));
@@ -434,17 +446,19 @@ std::string OatFileBase::ErrorPrintf(const char* fmt, ...) {
 }
 
 bool OatFileBase::ReadIndexBssMapping(/*inout*/const uint8_t** oat,
+                                      const char* container_tag,
                                       size_t dex_file_index,
                                       const std::string& dex_file_location,
-                                      const char* tag,
+                                      const char* entry_tag,
                                       /*out*/const IndexBssMapping** mapping,
                                       std::string* error_msg) {
   uint32_t index_bss_mapping_offset;
   if (UNLIKELY(!ReadOatDexFileData(*this, oat, &index_bss_mapping_offset))) {
-    *error_msg = ErrorPrintf("OatDexFile #%zd for '%s' truncated after %s bss mapping offset",
+    *error_msg = ErrorPrintf("%s #%zd for '%s' truncated, missing %s bss mapping offset",
+                             container_tag,
                              dex_file_index,
                              dex_file_location.c_str(),
-                             tag);
+                             entry_tag);
     return false;
   }
   const bool readable_index_bss_mapping_size =
@@ -460,11 +474,12 @@ bool OatFileBase::ReadIndexBssMapping(/*inout*/const uint8_t** oat,
           UNLIKELY(index_bss_mapping->size() == 0u) ||
           UNLIKELY(Size() - index_bss_mapping_offset <
                    IndexBssMapping::ComputeSize(index_bss_mapping->size())))) {
-    *error_msg = ErrorPrintf("OatDexFile #%zu for '%s' with unaligned or "
+    *error_msg = ErrorPrintf("%s #%zu for '%s' with unaligned or "
                                  "truncated %s bss mapping, offset %u of %zu, length %zu",
+                             container_tag,
                              dex_file_index,
                              dex_file_location.c_str(),
-                             tag,
+                             entry_tag,
                              index_bss_mapping_offset,
                              Size(),
                              index_bss_mapping != nullptr ? index_bss_mapping->size() : 0u);
@@ -473,6 +488,24 @@ bool OatFileBase::ReadIndexBssMapping(/*inout*/const uint8_t** oat,
 
   *mapping = index_bss_mapping;
   return true;
+}
+
+bool OatFileBase::ReadBssMappingInfo(/*inout*/const uint8_t** oat,
+                                     const char* container_tag,
+                                     size_t dex_file_index,
+                                     const std::string& dex_file_location,
+                                     /*out*/BssMappingInfo* bss_mapping_info,
+                                     std::string* error_msg) {
+  auto read_index_bss_mapping = [&](const char* tag, /*out*/const IndexBssMapping** mapping) {
+    return ReadIndexBssMapping(
+        oat, container_tag, dex_file_index, dex_file_location, tag, mapping, error_msg);
+  };
+  return read_index_bss_mapping("method", &bss_mapping_info->method_bss_mapping) &&
+         read_index_bss_mapping("type", &bss_mapping_info->type_bss_mapping) &&
+         read_index_bss_mapping("public type", &bss_mapping_info->public_type_bss_mapping) &&
+         read_index_bss_mapping("package type", &bss_mapping_info->package_type_bss_mapping) &&
+         read_index_bss_mapping("string", &bss_mapping_info->string_bss_mapping) &&
+         read_index_bss_mapping("method type", &bss_mapping_info->method_type_bss_mapping);
 }
 
 static bool ComputeAndCheckTypeLookupTableData(const DexFile::Header& header,
@@ -620,10 +653,15 @@ bool OatFileBase::Setup(int zip_fd,
 
   if (!IsAligned<sizeof(uint32_t)>(data_img_rel_ro_begin_) ||
       !IsAligned<sizeof(uint32_t)>(data_img_rel_ro_end_) ||
-      data_img_rel_ro_begin_ > data_img_rel_ro_end_) {
-    *error_msg = ErrorPrintf("unaligned or unordered databimgrelro symbol(s): begin = %p, end = %p",
-                             data_img_rel_ro_begin_,
-                             data_img_rel_ro_end_);
+      !IsAligned<sizeof(uint32_t)>(data_img_rel_ro_app_image_) ||
+      data_img_rel_ro_begin_ > data_img_rel_ro_end_ ||
+      data_img_rel_ro_begin_ > data_img_rel_ro_app_image_ ||
+      data_img_rel_ro_app_image_ > data_img_rel_ro_end_) {
+    *error_msg = ErrorPrintf(
+        "unaligned or unordered databimgrelro symbol(s): begin = %p, end = %p, app_image = %p",
+        data_img_rel_ro_begin_,
+        data_img_rel_ro_end_,
+        data_img_rel_ro_app_image_);
     return false;
   }
 
@@ -970,21 +1008,9 @@ bool OatFileBase::Setup(int zip_fd,
         ? reinterpret_cast<const DexLayoutSections*>(Begin() + dex_layout_sections_offset)
         : nullptr;
 
-    const IndexBssMapping* method_bss_mapping;
-    const IndexBssMapping* type_bss_mapping;
-    const IndexBssMapping* public_type_bss_mapping;
-    const IndexBssMapping* package_type_bss_mapping;
-    const IndexBssMapping* string_bss_mapping;
-    const IndexBssMapping* method_type_bss_mapping = nullptr;
-    auto read_index_bss_mapping = [&](const char* tag, /*out*/const IndexBssMapping** mapping) {
-      return ReadIndexBssMapping(&oat, i, dex_file_location, tag, mapping, error_msg);
-    };
-    if (!read_index_bss_mapping("method", &method_bss_mapping) ||
-        !read_index_bss_mapping("type", &type_bss_mapping) ||
-        !read_index_bss_mapping("public type", &public_type_bss_mapping) ||
-        !read_index_bss_mapping("package type", &package_type_bss_mapping) ||
-        !read_index_bss_mapping("string", &string_bss_mapping) ||
-        !read_index_bss_mapping("method type", &method_type_bss_mapping)) {
+    BssMappingInfo bss_mapping_info;
+    if (!ReadBssMappingInfo(
+            &oat, "OatDexFile", i, dex_file_location, &bss_mapping_info, error_msg)) {
       return false;
     }
 
@@ -999,12 +1025,7 @@ bool OatFileBase::Setup(int zip_fd,
                        dex_file_container,
                        dex_file_pointer,
                        lookup_table_data,
-                       method_bss_mapping,
-                       type_bss_mapping,
-                       public_type_bss_mapping,
-                       package_type_bss_mapping,
-                       string_bss_mapping,
-                       method_type_bss_mapping,
+                       bss_mapping_info,
                        class_offsets_pointer,
                        dex_layout_sections);
     oat_dex_files_storage_.push_back(oat_dex_file);
@@ -1053,17 +1074,11 @@ bool OatFileBase::Setup(int zip_fd,
     // At runtime, there might be more DexFiles added to the BCP that we didn't compile with.
     // We only care about the ones in [0..number_of_bcp_dexfiles).
     for (size_t i = 0, size = number_of_bcp_dexfiles; i != size; ++i) {
-      const std::string& dex_file_location = linker != nullptr ?
-                                                 linker->GetBootClassPath()[i]->GetLocation() :
-                                                 "No runtime/linker therefore no DexFile location";
-      auto read_index_bss_mapping = [&](const char* tag, /*out*/const IndexBssMapping** mapping) {
-        return ReadIndexBssMapping(&bcp_info_begin, i, dex_file_location, tag, mapping, error_msg);
-      };
-      if (!read_index_bss_mapping("method", &bcp_bss_info_[i].method_bss_mapping) ||
-          !read_index_bss_mapping("type", &bcp_bss_info_[i].type_bss_mapping) ||
-          !read_index_bss_mapping("public type", &bcp_bss_info_[i].public_type_bss_mapping) ||
-          !read_index_bss_mapping("package type", &bcp_bss_info_[i].package_type_bss_mapping) ||
-          !read_index_bss_mapping("string", &bcp_bss_info_[i].string_bss_mapping)) {
+      const std::string& dex_file_location = linker != nullptr
+          ? linker->GetBootClassPath()[i]->GetLocation()
+          : "No runtime/linker therefore no DexFile location";
+      if (!ReadBssMappingInfo(
+              &bcp_info_begin, "BcpBssInfo", i, dex_file_location, &bcp_bss_info_[i], error_msg)) {
         return false;
       }
     }
@@ -2010,6 +2025,7 @@ OatFile::OatFile(const std::string& location, bool is_executable)
       end_(nullptr),
       data_img_rel_ro_begin_(nullptr),
       data_img_rel_ro_end_(nullptr),
+      data_img_rel_ro_app_image_(nullptr),
       bss_begin_(nullptr),
       bss_end_(nullptr),
       bss_methods_(nullptr),
@@ -2017,6 +2033,7 @@ OatFile::OatFile(const std::string& location, bool is_executable)
       is_executable_(is_executable),
       vdex_begin_(nullptr),
       vdex_end_(nullptr),
+      app_image_begin_(nullptr),
       secondary_lookup_lock_("OatFile secondary lookup lock", kOatFileSecondaryLookupLock) {
   CHECK(!location_.empty());
 }
@@ -2049,9 +2066,25 @@ const uint8_t* OatFile::DexEnd() const {
 
 ArrayRef<const uint32_t> OatFile::GetBootImageRelocations() const {
   if (data_img_rel_ro_begin_ != nullptr) {
-    const uint32_t* relocations = reinterpret_cast<const uint32_t*>(data_img_rel_ro_begin_);
-    const uint32_t* relocations_end = reinterpret_cast<const uint32_t*>(data_img_rel_ro_end_);
-    return ArrayRef<const uint32_t>(relocations, relocations_end - relocations);
+    const uint32_t* boot_image_relocations =
+        reinterpret_cast<const uint32_t*>(data_img_rel_ro_begin_);
+    const uint32_t* boot_image_relocations_end =
+        reinterpret_cast<const uint32_t*>(data_img_rel_ro_app_image_);
+    return ArrayRef<const uint32_t>(
+        boot_image_relocations, boot_image_relocations_end - boot_image_relocations);
+  } else {
+    return ArrayRef<const uint32_t>();
+  }
+}
+
+ArrayRef<const uint32_t> OatFile::GetAppImageRelocations() const {
+  if (data_img_rel_ro_begin_ != nullptr) {
+    const uint32_t* app_image_relocations =
+        reinterpret_cast<const uint32_t*>(data_img_rel_ro_app_image_);
+    const uint32_t* app_image_relocations_end =
+        reinterpret_cast<const uint32_t*>(data_img_rel_ro_end_);
+    return ArrayRef<const uint32_t>(
+        app_image_relocations, app_image_relocations_end - app_image_relocations);
   } else {
     return ArrayRef<const uint32_t>();
   }
@@ -2142,12 +2175,7 @@ OatDexFile::OatDexFile(const OatFile* oat_file,
                        const std::shared_ptr<DexFileContainer>& dex_file_container,
                        const uint8_t* dex_file_pointer,
                        const uint8_t* lookup_table_data,
-                       const IndexBssMapping* method_bss_mapping_data,
-                       const IndexBssMapping* type_bss_mapping_data,
-                       const IndexBssMapping* public_type_bss_mapping_data,
-                       const IndexBssMapping* package_type_bss_mapping_data,
-                       const IndexBssMapping* string_bss_mapping_data,
-                       const IndexBssMapping* method_type_bss_mapping_data,
+                       const OatFile::BssMappingInfo& bss_mapping_info,
                        const uint32_t* oat_class_offsets_pointer,
                        const DexLayoutSections* dex_layout_sections)
     : oat_file_(oat_file),
@@ -2159,12 +2187,7 @@ OatDexFile::OatDexFile(const OatFile* oat_file,
       dex_file_container_(dex_file_container),
       dex_file_pointer_(dex_file_pointer),
       lookup_table_data_(lookup_table_data),
-      method_bss_mapping_(method_bss_mapping_data),
-      type_bss_mapping_(type_bss_mapping_data),
-      public_type_bss_mapping_(public_type_bss_mapping_data),
-      package_type_bss_mapping_(package_type_bss_mapping_data),
-      string_bss_mapping_(string_bss_mapping_data),
-      method_type_bss_mapping_(method_type_bss_mapping_data),
+      bss_mapping_info_(bss_mapping_info),
       oat_class_offsets_pointer_(oat_class_offsets_pointer),
       lookup_table_(),
       dex_layout_sections_(dex_layout_sections) {
@@ -2316,7 +2339,7 @@ OatFile::OatClass OatDexFile::GetOatClass(uint16_t class_def_index) const {
 }
 
 const dex::ClassDef* OatDexFile::FindClassDef(const DexFile& dex_file,
-                                              const char* descriptor,
+                                              std::string_view descriptor,
                                               size_t hash) {
   const OatDexFile* oat_dex_file = dex_file.GetOatDexFile();
   DCHECK_EQ(ComputeModifiedUtf8Hash(descriptor), hash);
@@ -2481,7 +2504,7 @@ void OatFile::InitializeRelocations() const {
   DCHECK(IsExecutable());
 
   // Initialize the .data.img.rel.ro section.
-  if (!GetBootImageRelocations().empty()) {
+  if (DataImgRelRoEnd() != DataImgRelRoBegin()) {
     uint8_t* reloc_begin = const_cast<uint8_t*>(DataImgRelRoBegin());
     CheckedCall(mprotect,
                 "un-protect boot image relocations",
@@ -2491,6 +2514,13 @@ void OatFile::InitializeRelocations() const {
     uint32_t boot_image_begin = Runtime::Current()->GetHeap()->GetBootImagesStartAddress();
     for (const uint32_t& relocation : GetBootImageRelocations()) {
       const_cast<uint32_t&>(relocation) += boot_image_begin;
+    }
+    if (!GetAppImageRelocations().empty()) {
+      CHECK(app_image_begin_ != nullptr);
+      uint32_t app_image_begin = reinterpret_cast32<uint32_t>(app_image_begin_);
+      for (const uint32_t& relocation : GetAppImageRelocations()) {
+        const_cast<uint32_t&>(relocation) += app_image_begin;
+      }
     }
     CheckedCall(mprotect,
                 "protect boot image relocations",

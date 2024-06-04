@@ -79,7 +79,6 @@ cd "$ANDROID_BUILD_TOP"
 
 echo "Unziping boot.zip"
 BOOT_UNZIP_DIR="$WORK_DIR"/boot-dex
-ART_JARS="$BOOT_UNZIP_DIR"/dex_artjars_input
 BOOT_JARS="$BOOT_UNZIP_DIR"/dex_bootjars_input
 SYSTEM_SERVER_JAR="$BOOT_UNZIP_DIR"/system/framework/services.jar
 
@@ -87,10 +86,6 @@ unzip -o "$BOOT_ZIP" -d "$BOOT_UNZIP_DIR"
 
 echo "Processing boot image jar files"
 jar_args=()
-for entry in "$ART_JARS"/*
-do
-  jar_args+=("--apk=$entry")
-done
 for entry in "$BOOT_JARS"/*
 do
   jar_args+=("--apk=$entry")

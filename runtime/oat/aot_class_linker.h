@@ -35,18 +35,28 @@ class AotClassLinker : public ClassLinker {
   explicit AotClassLinker(InternTable *intern_table);
   ~AotClassLinker();
 
+  EXPORT static void SetAppImageDexFiles(const std::vector<const DexFile*>* app_image_dex_files);
+
   EXPORT static bool CanReferenceInBootImageExtensionOrAppImage(
       ObjPtr<mirror::Class> klass, gc::Heap* heap) REQUIRES_SHARED(Locks::mutator_lock_);
 
   EXPORT void SetSdkChecker(std::unique_ptr<SdkChecker>&& sdk_checker_);
   const SdkChecker* GetSdkChecker() const;
 
-  bool DenyAccessBasedOnPublicSdk([[maybe_unused]] ArtMethod* art_method) const override
+  bool DenyAccessBasedOnPublicSdk(ArtMethod* art_method) const override
       REQUIRES_SHARED(Locks::mutator_lock_);
-  bool DenyAccessBasedOnPublicSdk([[maybe_unused]] ArtField* art_field) const override
+  bool DenyAccessBasedOnPublicSdk(ArtField* art_field) const override
       REQUIRES_SHARED(Locks::mutator_lock_);
-  bool DenyAccessBasedOnPublicSdk([[maybe_unused]] const char* type_descriptor) const override;
+  bool DenyAccessBasedOnPublicSdk(std::string_view type_descriptor) const override;
   void SetEnablePublicSdkChecks(bool enabled) override;
+
+  // Transaction constraint checks for AOT compilation.
+  bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const override
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) const override
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) const override
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
  protected:
   // Overridden version of PerformClassVerification allows skipping verification if the class was

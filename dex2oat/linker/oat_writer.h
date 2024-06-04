@@ -147,11 +147,10 @@ class OatWriter {
       File&& dex_file_fd,
       const char* location);
   // Add dex file source from raw memory.
-  bool AddRawDexFileSource(
-      std::shared_ptr<DexFileContainer> container,
-      const uint8_t* dex_file_begin,
-      const char* location,
-      uint32_t location_checksum);
+  bool AddRawDexFileSource(const std::shared_ptr<DexFileContainer>& container,
+                           const uint8_t* dex_file_begin,
+                           const char* location,
+                           uint32_t location_checksum);
   // Add dex file source(s) from a vdex file.
   bool AddVdexDexFilesSource(
       const VdexFile& vdex_file,
@@ -213,6 +212,10 @@ class OatWriter {
 
   size_t GetDataImgRelRoSize() const {
     return data_img_rel_ro_size_;
+  }
+
+  size_t GetDataImgRelRoAppImageOffset() const {
+    return data_img_rel_ro_app_image_offset_;
   }
 
   size_t GetBssSize() const {
@@ -419,6 +422,9 @@ class OatWriter {
   // The size of the optional .data.img.rel.ro section holding the image relocations.
   size_t data_img_rel_ro_size_;
 
+  // The start of app image relocations in the .data.img.rel.ro section.
+  size_t data_img_rel_ro_app_image_offset_;
+
   // The start of the optional .bss section.
   size_t bss_start_;
 
@@ -461,6 +467,11 @@ class OatWriter {
   // method in the dex file with the "method reference value comparator" for deduplication.
   // The value is the target offset for patching, starting at `bss_start_ + bss_methods_offset_`.
   SafeMap<MethodReference, size_t, MethodReferenceValueComparator> bss_method_entries_;
+
+  // Map for allocating app image Class entries in .data.img.rel.ro. Indexed by TypeReference for
+  // the source type in the dex file with the "type value comparator" for deduplication. The value
+  // is the target offset for patching, starting at `data_img_rel_ro_start_`.
+  SafeMap<TypeReference, size_t, TypeReferenceValueComparator> app_image_rel_ro_type_entries_;
 
   // Map for allocating Class entries in .bss. Indexed by TypeReference for the source
   // type in the dex file with the "type value comparator" for deduplication. The value

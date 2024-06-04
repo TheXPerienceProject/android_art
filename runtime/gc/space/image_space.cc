@@ -43,7 +43,6 @@
 #include "base/memfd.h"
 #include "base/os.h"
 #include "base/pointer_size.h"
-#include "base/scoped_flock.h"
 #include "base/stl_util.h"
 #include "base/string_view_cpp20.h"
 #include "base/systrace.h"
@@ -2812,8 +2811,6 @@ class ImageSpace::BootImageLoader {
                                    /*out*/std::string* error_msg)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     if (art_fd.get() != -1) {
-      // No need to lock memfd for which we hold the only file descriptor
-      // (see locking with ScopedFlock for normal files below).
       VLOG(startup) << "Using image file " << image_filename.c_str() << " for image location "
                     << image_location << " for compiled extension";
 
@@ -2830,15 +2827,6 @@ class ImageSpace::BootImageLoader {
       // the `image_file` as we no longer need it.
       return result;
     }
-
-    // Note that we must not use the file descriptor associated with
-    // ScopedFlock::GetFile to Init the image file. We want the file
-    // descriptor (and the associated exclusive lock) to be released when
-    // we leave Create.
-    ScopedFlock image = LockedFile::Open(image_filename.c_str(),
-                                         /*flags=*/ O_RDONLY,
-                                         /*block=*/ true,
-                                         error_msg);
 
     VLOG(startup) << "Using image file " << image_filename.c_str() << " for image location "
                   << image_location;
@@ -3348,9 +3336,6 @@ bool ImageSpace::LoadBootImage(const std::vector<std::string>& boot_class_path,
                          &apex_versions);
   loader.FindImageFiles();
 
-  // Collect all the errors.
-  std::vector<std::string> error_msgs;
-
   std::string error_msg;
   if (loader.LoadFromSystem(extra_reservation_size,
                             allow_in_memory_compilation,
@@ -3359,22 +3344,10 @@ bool ImageSpace::LoadBootImage(const std::vector<std::string>& boot_class_path,
                             &error_msg)) {
     return true;
   }
-  error_msgs.push_back(error_msg);
-
-  std::ostringstream oss;
-  bool first = true;
-  for (const auto& msg : error_msgs) {
-    if (first) {
-      first = false;
-    } else {
-      oss << "\n    ";
-    }
-    oss << msg;
-  }
-
   LOG(ERROR) << "Could not create image space with image file '"
-      << Join(image_locations, kComponentSeparator) << "'. Attempting to fall back to imageless "
-      << "running. Error was: " << oss.str();
+             << Join(image_locations, kComponentSeparator)
+             << "'. Attempting to fall back to imageless running. Error was: "
+             << error_msg;
 
   return false;
 }

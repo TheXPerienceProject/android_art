@@ -126,7 +126,6 @@ cc_fuzz {
     name: "artd_fuzzer",
     defaults: [
         "service_fuzzer_defaults",
-        "art_module_source_build_defaults",
         "artd_defaults",
         // Fuzzer is on a special variant, different from the APEX variant. When
         // linking against "libdexfile" as a shared library, the build system

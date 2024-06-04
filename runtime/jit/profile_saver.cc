@@ -662,7 +662,7 @@ void ProfileSaver::GetClassesAndMethodsHelper::UpdateProfile(const std::set<std:
         array_class_descriptor.assign(class_record.array_dimension, '[');
         array_class_descriptor += dex_file->GetTypeDescriptorView(class_record.type_index);
         dex::TypeIndex type_index =
-            profile_info->FindOrCreateTypeIndex(*dex_file, array_class_descriptor.c_str());
+            profile_info->FindOrCreateTypeIndex(*dex_file, array_class_descriptor);
         if (type_index.IsValid()) {
           profile_info->AddClass(profile_index, type_index);
         }
@@ -716,7 +716,7 @@ void ProfileSaver::GetClassesAndMethodsHelper::UpdateProfile(const std::set<std:
           array_class_descriptor.assign(dim, '[');
           array_class_descriptor += Primitive::Descriptor(enum_cast<Primitive::Type>(i));
           dex::TypeIndex type_index =
-              profile_info->FindOrCreateTypeIndex(*dex_file, array_class_descriptor.c_str());
+              profile_info->FindOrCreateTypeIndex(*dex_file, array_class_descriptor);
           if (type_index.IsValid()) {
             profile_info->AddClass(profile_index, type_index);
           }

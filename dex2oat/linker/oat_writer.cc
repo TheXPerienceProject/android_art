@@ -373,6 +373,7 @@ OatWriter::OatWriter(const CompilerOptions& compiler_options,
       oat_size_(0u),
       data_img_rel_ro_start_(0u),
       data_img_rel_ro_size_(0u),
+      data_img_rel_ro_app_image_offset_(0u),
       bss_start_(0u),
       bss_size_(0u),
       bss_methods_offset_(0u),
@@ -380,6 +381,7 @@ OatWriter::OatWriter(const CompilerOptions& compiler_options,
       boot_image_rel_ro_entries_(),
       bss_method_entry_references_(),
       bss_method_entries_(),
+      app_image_rel_ro_type_entries_(),
       bss_type_entries_(),
       bss_public_type_entries_(),
       bss_package_type_entries_(),
@@ -486,7 +488,7 @@ bool OatWriter::AddVdexDexFilesSource(const VdexFile& vdex_file, const char* loc
 }
 
 // Add dex file source from raw memory.
-bool OatWriter::AddRawDexFileSource(std::shared_ptr<DexFileContainer> container,
+bool OatWriter::AddRawDexFileSource(const std::shared_ptr<DexFileContainer>& container,
                                     const uint8_t* dex_file_begin,
                                     const char* location,
                                     uint32_t location_checksum) {
@@ -754,6 +756,9 @@ class OatWriter::InitBssLayoutMethodVisitor : public DexMethodVisitor {
                           target_method.dex_file->NumMethodIds(),
                           &writer_->bss_method_entry_references_);
           writer_->bss_method_entries_.Overwrite(target_method, /* placeholder */ 0u);
+        } else if (patch.GetType() == LinkerPatch::Type::kTypeAppImageRelRo) {
+          writer_->app_image_rel_ro_type_entries_.Overwrite(patch.TargetType(),
+                                                            /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kTypeBssEntry) {
           TypeReference target_type = patch.TargetType();
           AddBssReference(target_type,
@@ -1710,6 +1715,16 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
                                                                    target_offset);
               break;
             }
+            case LinkerPatch::Type::kTypeAppImageRelRo: {
+              uint32_t target_offset =
+                  writer_->data_img_rel_ro_start_ +
+                  writer_->app_image_rel_ro_type_entries_.Get(patch.TargetType());
+              writer_->relative_patcher_->PatchPcRelativeReference(&patched_code_,
+                                                                   patch,
+                                                                   offset_ + literal_offset,
+                                                                   target_offset);
+              break;
+            }
             case LinkerPatch::Type::kTypeBssEntry: {
               uint32_t target_offset =
                   writer_->bss_start_ + writer_->bss_type_entries_.Get(patch.TargetType());
@@ -2363,7 +2378,7 @@ size_t OatWriter::InitOatCodeDexFiles(size_t offset) {
 
 size_t OatWriter::InitDataImgRelRoLayout(size_t offset) {
   DCHECK_EQ(data_img_rel_ro_size_, 0u);
-  if (boot_image_rel_ro_entries_.empty()) {
+  if (boot_image_rel_ro_entries_.empty() && app_image_rel_ro_type_entries_.empty()) {
     // Nothing to put to the .data.img.rel.ro section.
     return offset;
   }
@@ -2371,6 +2386,14 @@ size_t OatWriter::InitDataImgRelRoLayout(size_t offset) {
   data_img_rel_ro_start_ = RoundUp(offset, kElfSegmentAlignment);
 
   for (auto& entry : boot_image_rel_ro_entries_) {
+    size_t& entry_offset = entry.second;
+    entry_offset = data_img_rel_ro_size_;
+    data_img_rel_ro_size_ += sizeof(uint32_t);
+  }
+
+  data_img_rel_ro_app_image_offset_ = data_img_rel_ro_size_;
+
+  for (auto& entry : app_image_rel_ro_type_entries_) {
     size_t& entry_offset = entry.second;
     entry_offset = data_img_rel_ro_size_;
     data_img_rel_ro_size_ += sizeof(uint32_t);
@@ -3176,18 +3199,39 @@ size_t OatWriter::WriteCodeDexFiles(OutputStream* out,
 size_t OatWriter::WriteDataImgRelRo(OutputStream* out,
                                     size_t file_offset,
                                     size_t relative_offset) {
-  if (boot_image_rel_ro_entries_.empty()) {
+  if (boot_image_rel_ro_entries_.empty() && app_image_rel_ro_type_entries_.empty()) {
     return relative_offset;
   }
 
   // Write the entire .data.img.rel.ro with a single WriteFully().
   std::vector<uint32_t> data;
-  data.reserve(boot_image_rel_ro_entries_.size());
+  data.reserve(boot_image_rel_ro_entries_.size() + app_image_rel_ro_type_entries_.size());
   for (const auto& entry : boot_image_rel_ro_entries_) {
     uint32_t boot_image_offset = entry.first;
     data.push_back(boot_image_offset);
   }
-  DCHECK_EQ(data.size(), boot_image_rel_ro_entries_.size());
+  if (!app_image_rel_ro_type_entries_.empty()) {
+    DCHECK(GetCompilerOptions().IsAppImage());
+    ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
+    ScopedObjectAccess soa(Thread::Current());
+    const DexFile* last_dex_file = nullptr;
+    ObjPtr<mirror::DexCache> dex_cache = nullptr;
+    ObjPtr<mirror::ClassLoader> class_loader = nullptr;
+    for (const auto& entry : app_image_rel_ro_type_entries_) {
+      TypeReference target_type = entry.first;
+      if (target_type.dex_file != last_dex_file) {
+        dex_cache =  class_linker->FindDexCache(soa.Self(), *target_type.dex_file);
+        class_loader = dex_cache->GetClassLoader();
+        last_dex_file = target_type.dex_file;
+      }
+      ObjPtr<mirror::Class> type =
+          class_linker->LookupResolvedType(target_type.TypeIndex(), dex_cache, class_loader);
+      CHECK(type != nullptr);
+      uint32_t app_image_offset = image_writer_->GetGlobalImageOffset(type.Ptr());
+      data.push_back(app_image_offset);
+    }
+  }
+  DCHECK_EQ(data.size(), boot_image_rel_ro_entries_.size() + app_image_rel_ro_type_entries_.size());
   DCHECK_OFFSET();
   if (!out->WriteFully(data.data(), data.size() * sizeof(data[0]))) {
     PLOG(ERROR) << "Failed to write .data.img.rel.ro in " << out->GetLocation();

@@ -24,7 +24,6 @@ import android.annotation.NonNull;
 import android.os.Build;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
-import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
@@ -54,8 +53,6 @@ import java.util.stream.Collectors;
  */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class DumpHelper {
-    private static final String TAG = ArtManagerLocal.TAG;
-
     @NonNull private final Injector mInjector;
 
     public DumpHelper(@NonNull ArtManagerLocal artManagerLocal) {
@@ -85,9 +82,7 @@ public class DumpHelper {
     public void dumpPackage(@NonNull PrintWriter pw,
             @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
             @NonNull PackageState pkgState) {
-        // An APEX has a uid of -1.
-        // TODO(b/256637152): Consider using `isApex` instead.
-        if (pkgState.getAppId() <= 0 || pkgState.getAndroidPackage() == null) {
+        if (pkgState.isApex() || pkgState.getAndroidPackage() == null) {
             return;
         }
 
