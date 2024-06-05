@@ -75,6 +75,23 @@
   /*         PALETTE_STATUS_NOT_SUPPORTED if the implementation no longer supports this */    \
   /*         call. This can happen at any future SDK level since this function wraps an */    \
   /*         internal unstable API. */                                                        \
-  M(PaletteSetTaskProfiles, int32_t tid, const char* const profiles[], size_t profiles_len)
+  M(PaletteSetTaskProfiles, int32_t tid, const char* const profiles[], size_t profiles_len)   \
+                                                                                              \
+  /* Methods in version 4 API, corresponding to SDK level 36. */                              \
+                                                                                              \
+  /* Retrieves the debug store as a string. */                                                \
+  /* */                                                                                       \
+  /* This function retrieves debug information stored in a predefined debug store. */         \
+  /* The information retrieved are used for debugging and logging purposes. */                \
+  /* */                                                                                       \
+  /* @param result  A pointer to a null-terminated character array where the retrieved */     \
+  /*               string will be stored. */                                                  \
+  /* @param max_size The maximum number of characters to be copied into the result, */        \
+  /*                 including the null terminator. It is the caller's responsibility */      \
+  /*                 to ensure that the pointed by result is large enough to store */         \
+  /*                 up to max_size characters. */                                            \
+  /* @return PALETTE_STATUS_OK if the call succeeded. */                                      \
+  /*          PALETTE_STATUS_INVALID_ARGUMENT if the pointer is a nullptr or max_size is 0 */ \
+  M(PaletteDebugStoreGetString, char* result, size_t max_size)
 
 #endif  // ART_LIBARTPALETTE_INCLUDE_PALETTE_PALETTE_METHOD_LIST_H_
