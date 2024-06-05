@@ -4816,5 +4816,19 @@ std::string Heap::GetForegroundCollectorName() {
   return oss.str();
 }
 
+bool Heap::HasAppImageSpaceFor(const std::string& dex_location) const {
+  ScopedObjectAccess soa(Thread::Current());
+  for (space::ContinuousSpace* space : continuous_spaces_) {
+    // An image space is either a boot image space or an app image space.
+    if (space->IsImageSpace() &&
+        !IsBootImageAddress(space->Begin()) &&
+        (space->AsImageSpace()->GetOatFile()->GetOatDexFiles()[0]->GetDexFileLocation() ==
+              dex_location)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace gc
 }  // namespace art

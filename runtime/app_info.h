@@ -85,6 +85,13 @@ class AppInfo {
   // Returns an empty string if there is no primary APK.
   std::string GetPrimaryApkReferenceProfile();
 
+  // Returns the path of the primary APK.
+  // If there are multiple primary APKs registed via RegisterAppInfo, the method
+  // will return the path of the first APK, sorted by the location name.
+  //
+  // Returns an empty string if there is no primary APK.
+  std::string GetPrimaryApkPath();
+
   // Whether we've received a call to RegisterAppInfo.
   bool HasRegisteredAppInfo();
 
