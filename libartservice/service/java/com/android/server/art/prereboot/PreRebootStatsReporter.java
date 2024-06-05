@@ -81,7 +81,7 @@ public class PreRebootStatsReporter {
     public void recordJobScheduled() {
         PreRebootStats.Builder statsBuilder = PreRebootStats.newBuilder();
         statsBuilder.setStatus(Status.STATUS_SCHEDULED)
-                .setJobScheduledTimestampMillis(System.currentTimeMillis());
+                .setJobScheduledTimestampMillis(mInjector.getCurrentTimeMillis());
         save(statsBuilder);
     }
 
@@ -93,7 +93,7 @@ public class PreRebootStatsReporter {
         }
 
         JobRun.Builder runBuilder =
-                JobRun.newBuilder().setJobStartedTimestampMillis(System.currentTimeMillis());
+                JobRun.newBuilder().setJobStartedTimestampMillis(mInjector.getCurrentTimeMillis());
         statsBuilder.setStatus(Status.STATUS_STARTED)
                 .addJobRuns(runBuilder)
                 .setSkippedPackageCount(0)
@@ -133,8 +133,8 @@ public class PreRebootStatsReporter {
         JobRun lastRun = jobRuns.get(jobRuns.size() - 1);
         Utils.check(lastRun.getJobEndedTimestampMillis() == 0);
 
-        JobRun.Builder runBuilder =
-                JobRun.newBuilder(lastRun).setJobEndedTimestampMillis(System.currentTimeMillis());
+        JobRun.Builder runBuilder = JobRun.newBuilder(lastRun).setJobEndedTimestampMillis(
+                mInjector.getCurrentTimeMillis());
 
         Status status;
         if (success) {
@@ -172,7 +172,8 @@ public class PreRebootStatsReporter {
             });
         }
 
-        private void report() {
+        @VisibleForTesting
+        public void report() {
             PreRebootStats.Builder statsBuilder = load();
             delete();
 
@@ -181,21 +182,17 @@ public class PreRebootStatsReporter {
                 return;
             }
 
-            PackageManagerLocal packageManagerLocal = Objects.requireNonNull(
-                    LocalManagerRegistry.getManager(PackageManagerLocal.class));
-            ArtManagerLocal artManagerLocal =
-                    Objects.requireNonNull(LocalManagerRegistry.getManager(ArtManagerLocal.class));
+            ArtManagerLocal artManagerLocal = mInjector.getArtManagerLocal();
 
             // This takes some time (~3ms per package). It probably fine because we are running
             // asynchronously. Consider removing this in the future.
             int packagesWithArtifactsUsableCount;
-            try (var snapshot = packageManagerLocal.withFilteredSnapshot();
-                    var pin = ArtdRefCache.getInstance().new Pin()) {
+            try (var snapshot = mInjector.getPackageManagerLocal().withFilteredSnapshot();
+                    var pin = mInjector.createArtdPin()) {
                 packagesWithArtifactsUsableCount =
                         (int) mPackagesWithArtifacts.stream()
                                 .map(packageName
                                         -> artManagerLocal.getDexoptStatus(snapshot, packageName))
-
                                 .filter(status -> hasUsablePreRebootArtifacts(status))
                                 .count();
             }
@@ -220,7 +217,7 @@ public class PreRebootStatsReporter {
                               - statsBuilder.getJobScheduledTimestampMillis())
                     : -1;
 
-            ArtStatsLog.write(ArtStatsLog.PREREBOOT_DEXOPT_JOB_ENDED,
+            mInjector.writeStats(ArtStatsLog.PREREBOOT_DEXOPT_JOB_ENDED,
                     getStatusForStatsd(statsBuilder.getStatus()),
                     statsBuilder.getOptimizedPackageCount(), statsBuilder.getFailedPackageCount(),
                     statsBuilder.getSkippedPackageCount(), statsBuilder.getTotalPackageCount(),
@@ -299,6 +296,39 @@ public class PreRebootStatsReporter {
         @NonNull
         public String getFilename() {
             return FILENAME;
+        }
+
+        public long getCurrentTimeMillis() {
+            return System.currentTimeMillis();
+        }
+
+        @NonNull
+        public PackageManagerLocal getPackageManagerLocal() {
+            return Objects.requireNonNull(
+                    LocalManagerRegistry.getManager(PackageManagerLocal.class));
+        }
+
+        @NonNull
+        public ArtManagerLocal getArtManagerLocal() {
+            return Objects.requireNonNull(LocalManagerRegistry.getManager(ArtManagerLocal.class));
+        }
+
+        @NonNull
+        public ArtdRefCache.Pin createArtdPin() {
+            return ArtdRefCache.getInstance().new Pin();
+        }
+
+        // Wrap the static void method to make it easier to mock. There is no good way to mock a
+        // method that is both void and static, due to the poor design of Mockito API.
+        public void writeStats(int code, int status, int optimizedPackageCount,
+                int failedPackageCount, int skippedPackageCount, int totalPackageCount,
+                long jobDurationMillis, long jobLatencyMillis,
+                int packagesWithArtifactsAfterRebootCount,
+                int packagesWithArtifactsUsableAfterRebootCount, int jobRunCount) {
+            ArtStatsLog.write(code, status, optimizedPackageCount, failedPackageCount,
+                    skippedPackageCount, totalPackageCount, jobDurationMillis, jobLatencyMillis,
+                    packagesWithArtifactsAfterRebootCount,
+                    packagesWithArtifactsUsableAfterRebootCount, jobRunCount);
         }
     }
 }
