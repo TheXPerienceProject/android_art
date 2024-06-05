@@ -809,16 +809,7 @@ class Heap {
   bool HasBootImageSpace() const {
     return !boot_image_spaces_.empty();
   }
-  bool HasAppImageSpace() const {
-    ScopedObjectAccess soa(Thread::Current());
-    for (const space::ContinuousSpace* space : continuous_spaces_) {
-      // An image space is either a boot image space or an app image space.
-      if (space->IsImageSpace() && !IsBootImageAddress(space->Begin())) {
-        return true;
-      }
-    }
-    return false;
-  }
+  bool HasAppImageSpaceFor(const std::string& dex_location) const;
 
   ReferenceProcessor* GetReferenceProcessor() {
     return reference_processor_.get();

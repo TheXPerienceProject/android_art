@@ -155,5 +155,17 @@ std::string AppInfo::GetPrimaryApkReferenceProfile() {
   return "";
 }
 
+std::string AppInfo::GetPrimaryApkPath() {
+  MutexLock mu(Thread::Current(), update_mutex_);
+
+  for (const auto& it : registered_code_locations_) {
+    const CodeLocationInfo& cli = it.second;
+    if (cli.code_type == CodeType::kPrimaryApk) {
+      return it.first;
+    }
+  }
+  return kUnknownValue;
+}
+
 
 }  // namespace art
