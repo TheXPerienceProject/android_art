@@ -204,19 +204,25 @@ class TraceWriter {
   // as the owner tid. This also allocates the buffer pool.
   void InitializeTraceBuffers();
 
-  // Releases the trace buffer and transfers the ownership to the specified tid. If the tid is 0,
-  // then it means it is free and other threads can claim it.
-  void FetchTraceBufferForThread(int index, size_t tid);
+  // Releases the trace buffer and signals any waiting threads about a free buffer.
+  void ReleaseBuffer(int index);
 
   // Tries to find a free buffer (which has owner of 0) from the pool. If there are no free buffers
-  // it fetches a task, flushes the contents of the buffer and returns that buffer.
-  uintptr_t* AcquireTraceBuffer(size_t tid);
+  // then it just waits for a free buffer. To prevent any deadlocks, we only wait if the number of
+  // pending tasks are greater than the number of waiting threads. Allocates a new buffer if it
+  // isn't safe to wait.
+  uintptr_t* AcquireTraceBuffer(size_t tid) REQUIRES_SHARED(Locks::mutator_lock_)
+      REQUIRES(!tracing_lock_);
 
   // Returns the index corresponding to the start of the current_buffer. We allocate one large
   // buffer and assign parts of it for each thread.
   int GetMethodTraceIndex(uintptr_t* current_buffer);
 
   int GetTraceFormatVersion() { return trace_format_version_; }
+
+  // Ensures that there are no threads suspended waiting for a free buffer. It signals threads
+  // waiting for a free buffer and waits for all the threads to respond to the signal.
+  void StopTracing();
 
  private:
   void ReadValuesFromRecord(uintptr_t* method_trace_entries,
@@ -344,6 +350,12 @@ class TraceWriter {
 
   std::vector<std::atomic<size_t>> owner_tids_;
   std::unique_ptr<uintptr_t[]> trace_buffer_;
+
+  Mutex buffer_pool_lock_;
+  ConditionVariable buffer_available_ GUARDED_BY(buffer_pool_lock_);
+  ConditionVariable num_waiters_zero_cond_ GUARDED_BY(buffer_pool_lock_);
+  std::atomic<size_t> num_waiters_for_buffer_;
+  std::atomic<bool> finish_tracing_ = false;
 
   // Lock to protect common data structures accessed from multiple threads like
   // art_method_id_map_, thread_id_map_.
