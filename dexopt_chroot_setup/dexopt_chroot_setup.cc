@@ -324,7 +324,8 @@ Result<std::optional<std::string>> LoadOtaSlotFile() {
 
 }  // namespace
 
-ScopedAStatus DexoptChrootSetup::setUp(const std::optional<std::string>& in_otaSlot) {
+ScopedAStatus DexoptChrootSetup::setUp(const std::optional<std::string>& in_otaSlot,
+                                       bool in_mapSnapshotsForOta) {
   if (!mu_.try_lock()) {
     return Fatal("Unexpected concurrent calls");
   }
@@ -333,7 +334,7 @@ ScopedAStatus DexoptChrootSetup::setUp(const std::optional<std::string>& in_otaS
   if (in_otaSlot.has_value() && (in_otaSlot.value() != "_a" && in_otaSlot.value() != "_b")) {
     return Fatal(ART_FORMAT("Invalid OTA slot '{}'", in_otaSlot.value()));
   }
-  OR_RETURN_NON_FATAL(SetUpChroot(in_otaSlot));
+  OR_RETURN_NON_FATAL(SetUpChroot(in_otaSlot, in_mapSnapshotsForOta));
   return ScopedAStatus::ok();
 }
 
@@ -369,7 +370,8 @@ Result<void> DexoptChrootSetup::Start() {
   return {};
 }
 
-Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ota_slot) const {
+Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ota_slot,
+                                            bool map_snapshots_for_ota) const {
   // Set the default permission mode for new files and dirs to be `kChrootDefaultMode`.
   umask(~kChrootDefaultMode & 0777);
 
@@ -394,24 +396,30 @@ Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ot
   } else {
     CHECK(ota_slot.value() == "_a" || ota_slot.value() == "_b");
 
-    // Write the file early in case `snapshotctl map` fails in the middle, leaving some devices
-    // mapped. We don't assume that `snapshotctl map` is transactional.
-    if (!WriteStringToFile("", *kSnapshotMappedFile)) {
-      return ErrnoErrorf("Failed to write '{}'", *kSnapshotMappedFile);
+    if (map_snapshots_for_ota) {
+      // Write the file early in case `snapshotctl map` fails in the middle, leaving some devices
+      // mapped. We don't assume that `snapshotctl map` is transactional.
+      if (!WriteStringToFile("", *kSnapshotMappedFile)) {
+        return ErrnoErrorf("Failed to write '{}'", *kSnapshotMappedFile);
+      }
+
+      // Run `snapshotctl map` through init to map block devices. We can't run it ourselves because
+      // it requires the UID to be 0. See `sys.snapshotctl.map` in `init.rc`.
+      if (!SetProperty("sys.snapshotctl.map", "requested")) {
+        return Errorf("Failed to request snapshotctl map");
+      }
+      if (!WaitForProperty("sys.snapshotctl.map", "finished", kSnapshotCtlTimeout)) {
+        return Errorf("snapshotctl timed out");
+      }
+
+      // We don't know whether snapshotctl succeeded or not, but if it failed, the mount operation
+      // below will fail with `ENOENT`.
+      OR_RETURN(Mount(GetBlockDeviceName("system", ota_slot.value()), CHROOT_DIR));
+    } else {
+      // update_engine has mounted `system` at `/postinstall` for us.
+      OR_RETURN(BindMount("/postinstall", CHROOT_DIR));
     }
 
-    // Run `snapshotctl map` through init to map block devices. We can't run it ourselves because it
-    // requires the UID to be 0. See `sys.snapshotctl.map` in `init.rc`.
-    if (!SetProperty("sys.snapshotctl.map", "requested")) {
-      return Errorf("Failed to request snapshotctl map");
-    }
-    if (!WaitForProperty("sys.snapshotctl.map", "finished", kSnapshotCtlTimeout)) {
-      return Errorf("snapshotctl timed out");
-    }
-
-    // We don't know whether snapshotctl succeeded or not, but if it failed, the mount operation
-    // below will fail with `ENOENT`.
-    OR_RETURN(Mount(GetBlockDeviceName("system", ota_slot.value()), CHROOT_DIR));
     for (const std::string& partition : additional_system_partitions) {
       OR_RETURN(
           Mount(GetBlockDeviceName(partition, ota_slot.value()), PathInChroot("/" + partition)));

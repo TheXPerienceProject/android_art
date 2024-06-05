@@ -76,7 +76,7 @@ public class PreRebootStatsReporterTest {
         var reporter = new PreRebootStatsReporter(mInjector);
 
         doReturn(50l).when(mInjector).getCurrentTimeMillis();
-        reporter.recordJobScheduled();
+        reporter.recordJobScheduled(true /* isAsync */);
         checkProto(PreRebootStats.newBuilder()
                            .setStatus(Status.STATUS_SCHEDULED)
                            .setJobScheduledTimestampMillis(50)
@@ -233,11 +233,75 @@ public class PreRebootStatsReporterTest {
     }
 
     @Test
+    public void testSuccessSync() throws Exception {
+        var reporter = new PreRebootStatsReporter(mInjector);
+
+        reporter.recordJobScheduled(false /* isAsync */);
+        checkProto(PreRebootStats.newBuilder().setStatus(Status.STATUS_SCHEDULED).build());
+
+        {
+            doReturn(200l).when(mInjector).getCurrentTimeMillis();
+            reporter.recordJobStarted();
+            checkProto(PreRebootStats.newBuilder()
+                               .setStatus(Status.STATUS_STARTED)
+                               .addJobRuns(JobRun.newBuilder().setJobStartedTimestampMillis(200))
+                               .setSkippedPackageCount(0)
+                               .setOptimizedPackageCount(0)
+                               .setFailedPackageCount(0)
+                               .setTotalPackageCount(0)
+                               .build());
+
+            var reporterInChroot = new PreRebootStatsReporter(mInjector);
+            var progressSession = reporterInChroot.new ProgressSession();
+
+            progressSession.recordProgress(1 /* skippedPackageCount */,
+                    6 /* optimizedPackageCount */, 3 /* failedPackageCount */,
+                    10 /* totalPackageCount */);
+            checkProto(PreRebootStats.newBuilder()
+                               .setStatus(Status.STATUS_STARTED)
+                               .addJobRuns(JobRun.newBuilder().setJobStartedTimestampMillis(200))
+                               .setSkippedPackageCount(1)
+                               .setOptimizedPackageCount(6)
+                               .setFailedPackageCount(3)
+                               .setTotalPackageCount(10)
+                               .build());
+
+            doReturn(300l).when(mInjector).getCurrentTimeMillis();
+            reporter.recordJobEnded(true /* success */);
+            checkProto(PreRebootStats.newBuilder()
+                               .setStatus(Status.STATUS_FINISHED)
+                               .addJobRuns(JobRun.newBuilder()
+                                                   .setJobStartedTimestampMillis(200)
+                                                   .setJobEndedTimestampMillis(300))
+                               .setSkippedPackageCount(1)
+                               .setOptimizedPackageCount(6)
+                               .setFailedPackageCount(3)
+                               .setTotalPackageCount(10)
+                               .build());
+        }
+
+        {
+            var reporterAfterReboot = new PreRebootStatsReporter(mInjector);
+            var afterRebootSession = reporterAfterReboot.new AfterRebootSession();
+
+            afterRebootSession.report();
+        }
+
+        verify(mInjector).writeStats(ArtStatsLog.PREREBOOT_DEXOPT_JOB_ENDED,
+                ArtStatsLog.PRE_REBOOT_DEXOPT_JOB_ENDED__STATUS__STATUS_FINISHED,
+                6 /* optimizedPackageCount */, 3 /* failedPackageCount */,
+                1 /* skippedPackageCount */, 10 /* totalPackageCount */,
+                100 /* jobDurationMillis */, -1 /* jobLatencyMillis */,
+                0 /* packagesWithArtifactsAfterRebootCount */,
+                0 /* packagesWithArtifactsUsableAfterRebootCount */, 1 /* jobRunCount */);
+    }
+
+    @Test
     public void testFailure() throws Exception {
         var reporter = new PreRebootStatsReporter(mInjector);
 
         doReturn(50l).when(mInjector).getCurrentTimeMillis();
-        reporter.recordJobScheduled();
+        reporter.recordJobScheduled(true /* isAsync */);
         checkProto(PreRebootStats.newBuilder()
                            .setStatus(Status.STATUS_SCHEDULED)
                            .setJobScheduledTimestampMillis(50)
@@ -291,7 +355,7 @@ public class PreRebootStatsReporterTest {
         var reporter = new PreRebootStatsReporter(mInjector);
 
         doReturn(50l).when(mInjector).getCurrentTimeMillis();
-        reporter.recordJobScheduled();
+        reporter.recordJobScheduled(true /* isAsync */);
         checkProto(PreRebootStats.newBuilder()
                            .setStatus(Status.STATUS_SCHEDULED)
                            .setJobScheduledTimestampMillis(50)
@@ -347,7 +411,7 @@ public class PreRebootStatsReporterTest {
         var reporter = new PreRebootStatsReporter(mInjector);
 
         doReturn(50l).when(mInjector).getCurrentTimeMillis();
-        reporter.recordJobScheduled();
+        reporter.recordJobScheduled(true /* isAsync */);
         checkProto(PreRebootStats.newBuilder()
                            .setStatus(Status.STATUS_SCHEDULED)
                            .setJobScheduledTimestampMillis(50)
