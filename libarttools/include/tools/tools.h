@@ -17,6 +17,7 @@
 #ifndef ART_LIBARTTOOLS_INCLUDE_TOOLS_TOOLS_H_
 #define ART_LIBARTTOOLS_INCLUDE_TOOLS_TOOLS_H_
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -55,6 +56,11 @@ android::base::Result<std::vector<android::fs_mgr::FstabEntry>> GetProcMountsAnc
 // Returns the fstab entries in /proc/mounts where the given path is a prefix of the mount point.
 android::base::Result<std::vector<android::fs_mgr::FstabEntry>> GetProcMountsDescendantsOfPath(
     std::string_view path);
+
+// See `ArtJni.ensureNoProcessInDir`.
+android::base::Result<void> EnsureNoProcessInDir(const std::string& dir,
+                                                 uint32_t timeout_ms,
+                                                 bool try_kill);
 
 }  // namespace tools
 }  // namespace art

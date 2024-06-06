@@ -116,7 +116,7 @@ public class PreRebootManager implements PreRebootManagerInterface {
             callbackExecutor.shutdown();
             try {
                 // Make sure we have no running threads when we tear down.
-                callbackExecutor.awaitTermination(Integer.MAX_VALUE, TimeUnit.SECONDS);
+                callbackExecutor.awaitTermination(5, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 AsLog.wtf("Interrupted", e);
             }
