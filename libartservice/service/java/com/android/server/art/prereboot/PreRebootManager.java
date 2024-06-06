@@ -73,8 +73,8 @@ public class PreRebootManager implements PreRebootManagerInterface {
 
             var progressSession = new PreRebootStatsReporter().new ProgressSession();
 
-            // Contains three values: skipped, performed, failed.
-            List<Integer> values = new ArrayList(List.of(0, 0, 0));
+            // Contains four values: skipped, performed, failed, has pre-reboot artifacts.
+            List<Integer> values = new ArrayList(List.of(0, 0, 0, 0));
 
             // Record every progress change right away, in case the job is interrupted by a reboot.
             Consumer<OperationProgress> progressCallback = progress -> {
@@ -101,9 +101,12 @@ public class PreRebootManager implements PreRebootManagerInterface {
                     default:
                         throw new IllegalStateException("Unknown status: " + result.getStatus());
                 }
+                if (hasExistingArtifacts(result) || result.hasUpdatedArtifacts()) {
+                    values.set(3, values.get(3) + 1);
+                }
 
-                progressSession.recordProgress(
-                        values.get(0), values.get(1), values.get(2), progress.getTotal());
+                progressSession.recordProgress(values.get(0), values.get(1), values.get(2),
+                        progress.getTotal(), values.get(3));
             };
 
             try (var snapshot = packageManagerLocal.withFilteredSnapshot()) {

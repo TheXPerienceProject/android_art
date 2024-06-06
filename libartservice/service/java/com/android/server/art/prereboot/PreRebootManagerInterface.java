@@ -42,5 +42,11 @@ import androidx.annotation.RequiresApi;
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public interface PreRebootManagerInterface {
     void run(@NonNull ArtModuleServiceManager artModuleServiceManager, @NonNull Context context,
-            @NonNull CancellationSignal cancellationSignal);
+            @NonNull CancellationSignal cancellationSignal) throws SystemRequirementException;
+
+    public static class SystemRequirementException extends Exception {
+        public SystemRequirementException(@NonNull String message) {
+            super(message);
+        }
+    }
 }
