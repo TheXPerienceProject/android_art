@@ -207,6 +207,10 @@ class TraceWriter {
   // Releases the trace buffer and signals any waiting threads about a free buffer.
   void ReleaseBuffer(int index);
 
+  // Release the trace buffer of the thread. This is called to release the buffer without flushing
+  // the entries. See a comment in ThreadList::Unregister for more detailed explanation.
+  void ReleaseBufferForThread(Thread* self);
+
   // Tries to find a free buffer (which has owner of 0) from the pool. If there are no free buffers
   // then it just waits for a free buffer. To prevent any deadlocks, we only wait if the number of
   // pending tasks are greater than the number of waiting threads. Allocates a new buffer if it
@@ -432,6 +436,11 @@ class Trace final : public instrumentation::InstrumentationListener, public Clas
 
   // Flush the per-thread buffer. This is called when the thread is about to detach.
   static void FlushThreadBuffer(Thread* thread) REQUIRES_SHARED(Locks::mutator_lock_)
+      REQUIRES(!Locks::trace_lock_) NO_THREAD_SAFETY_ANALYSIS;
+
+  // Release per-thread buffer without flushing any entries. This is used when a new trace buffer is
+  // allocated while the thread is terminating. See ThreadList::Unregister for more details.
+  static void ReleaseThreadBuffer(Thread* thread)
       REQUIRES(!Locks::trace_lock_) NO_THREAD_SAFETY_ANALYSIS;
 
   // Removes any listeners installed for method tracing. This is used in non-streaming case
