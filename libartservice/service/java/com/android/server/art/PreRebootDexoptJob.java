@@ -160,7 +160,7 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
         if (!isEnabled()) {
             return null;
         }
-        mInjector.getStatsReporter().recordJobScheduled(false /* isAsync */);
+        mInjector.getStatsReporter().recordJobScheduled(false /* isAsync */, isOtaUpdate());
         return startLocked(null /* onJobFinishedLocked */);
     }
 
@@ -223,7 +223,7 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
 
         if (result == JobScheduler.RESULT_SUCCESS) {
             AsLog.i("Pre-reboot Dexopt Job scheduled");
-            mInjector.getStatsReporter().recordJobScheduled(true /* isAsync */);
+            mInjector.getStatsReporter().recordJobScheduled(true /* isAsync */, isOtaUpdate());
             return ArtFlags.SCHEDULE_SUCCESS;
         } else {
             AsLog.i("Failed to schedule Pre-reboot Dexopt Job");
@@ -403,6 +403,11 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
 
     private void markHasStarted(boolean value) {
         ArtJni.setProperty("dalvik.vm.pre-reboot.has-started", String.valueOf(value));
+    }
+
+    @GuardedBy("this")
+    private boolean isOtaUpdate() {
+        return mOtaSlot != null;
     }
 
     /**
