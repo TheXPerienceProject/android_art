@@ -183,7 +183,7 @@ public class BackgroundDexoptJob implements ArtServiceJobInterface {
             try (var tracing = new Utils.TracingWithTimingLogging(AsLog.getTag(), "jobExecution")) {
                 return run(mCancellationSignal);
             } catch (RuntimeException e) {
-                AsLog.e("Fatal error", e);
+                AsLog.wtf("Fatal error", e);
                 return new FatalErrorResult();
             } finally {
                 synchronized (this) {

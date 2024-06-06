@@ -101,8 +101,10 @@ public class PreRebootDriver {
             Utils.logArtdException(e);
         } catch (ServiceSpecificException e) {
             AsLog.e("Failed to set up chroot", e);
-        } catch (ReflectiveOperationException | IOException | ErrnoException e) {
-            AsLog.e("Failed to run pre-reboot dexopt", e);
+        } catch (ReflectiveOperationException e) {
+            AsLog.wtf("Failed to run Pre-reboot Dexopt", e);
+        } catch (IOException | ErrnoException e) {
+            AsLog.e("Failed to run Pre-reboot Dexopt", e);
         } finally {
             try {
                 // No need to pass `mapSnapshotsForOta` because `setUp` stores this information in a
