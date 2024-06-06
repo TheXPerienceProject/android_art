@@ -33,6 +33,7 @@ import android.system.Os;
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.server.art.ArtJni;
 import com.android.server.art.ArtManagerLocal;
 import com.android.server.art.ArtModuleServiceInitializer;
 import com.android.server.art.ArtdRefCache;
@@ -82,13 +83,15 @@ public class PreRebootDriver {
      *
      * @param otaSlot The slot that contains the OTA update, "_a" or "_b", or null for a Mainline
      *         update.
+     * @param mapSnapshotsForOta Whether to map/unmap snapshots. Only applicable to an OTA update.
      */
-    public boolean run(@Nullable String otaSlot, @NonNull CancellationSignal cancellationSignal) {
+    public boolean run(@Nullable String otaSlot, boolean mapSnapshotsForOta,
+            @NonNull CancellationSignal cancellationSignal) {
         var statsReporter = new PreRebootStatsReporter();
         boolean success = false;
         try {
             statsReporter.recordJobStarted();
-            if (!setUp(otaSlot)) {
+            if (!setUp(otaSlot, mapSnapshotsForOta)) {
                 return false;
             }
             runFromChroot(cancellationSignal);
@@ -101,8 +104,17 @@ public class PreRebootDriver {
         } catch (ReflectiveOperationException | IOException | ErrnoException e) {
             AsLog.e("Failed to run pre-reboot dexopt", e);
         } finally {
-            tearDown(false /* throwing */);
-            statsReporter.recordJobEnded(success);
+            try {
+                // No need to pass `mapSnapshotsForOta` because `setUp` stores this information in a
+                // temp file.
+                tearDown();
+            } catch (RemoteException e) {
+                Utils.logArtdException(e);
+            } catch (ServiceSpecificException | IOException e) {
+                AsLog.e("Failed to tear down chroot", e);
+            } finally {
+                statsReporter.recordJobEnded(success);
+            }
         }
         return false;
     }
@@ -110,7 +122,7 @@ public class PreRebootDriver {
     public void test() {
         boolean teardownAttempted = false;
         try {
-            if (!setUp(null /* otaSlot */)) {
+            if (!setUp(null /* otaSlot */, false /* mapSnapshotsForOta */)) {
                 throw new AssertionError("System requirement check failed");
             }
             // Ideally, we should try dexopting some packages here. However, it's not trivial to
@@ -118,18 +130,23 @@ public class PreRebootDriver {
             // dexopt only one package, and that can easily make the test fail the CTS quality
             // requirement on test duration (<30s).
             teardownAttempted = true;
-            tearDown(true /* throwing */);
-        } catch (RemoteException e) {
+            tearDown();
+        } catch (RemoteException | IOException e) {
             throw new AssertionError("Unexpected exception", e);
         } finally {
             if (!teardownAttempted) {
-                tearDown(false /* throwing */);
+                try {
+                    tearDown();
+                } catch (RemoteException | IOException | RuntimeException e) {
+                    // Do nothing.
+                }
             }
         }
     }
 
-    private boolean setUp(@Nullable String otaSlot) throws RemoteException {
-        mInjector.getDexoptChrootSetup().setUp(otaSlot);
+    private boolean setUp(@Nullable String otaSlot, boolean mapSnapshotsForOta)
+            throws RemoteException {
+        mInjector.getDexoptChrootSetup().setUp(otaSlot, mapSnapshotsForOta);
         if (!mInjector.getArtd().checkPreRebootSystemRequirements(CHROOT_DIR)) {
             return false;
         }
@@ -137,42 +154,22 @@ public class PreRebootDriver {
         return true;
     }
 
-    /** @param throwing Throws {@link RuntimeException} on failure. */
-    private void tearDown(boolean throwing) {
+    private void tearDown() throws RemoteException, IOException {
         // In general, the teardown unmounts apexes and partitions, and open files can keep the
         // mounts busy so that they cannot be unmounted. Therefore, a running Pre-reboot artd
         // process can prevent the teardown from succeeding. It's managed by the service manager,
-        // and there isn't a reliable API to kill it, so we have to kill it by triggering GC and
-        // finalization, with sleep and retry mechanism.
-        Throwable lastThrowable = null;
-        for (int numRetries = 3; numRetries > 0;) {
-            try {
-                Runtime.getRuntime().gc();
-                Runtime.getRuntime().runFinalization();
-                // Wait for the service manager to shut down artd. The shutdown is asynchronous.
-                Utils.sleep(5000);
-                mInjector.getDexoptChrootSetup().tearDown();
-                return;
-            } catch (RemoteException e) {
-                Utils.logArtdException(e);
-                lastThrowable = e;
-            } catch (ServiceSpecificException e) {
-                AsLog.e("Failed to tear down chroot", e);
-                lastThrowable = e;
-            } catch (IllegalStateException e) {
-                // Not expected, but we still want retries in such an extreme case.
-                AsLog.wtf("Unexpected exception", e);
-                lastThrowable = e;
-            }
-
-            if (--numRetries > 0) {
-                AsLog.i("Retrying....");
-                Utils.sleep(30000);
-            }
-        }
-        if (throwing) {
-            throw Utils.toRuntimeException(lastThrowable);
-        }
+        // and there isn't a reliable API to kill it. We deal with it in two steps:
+        // 1. Trigger GC and finalization. The service manager should gracefully shut it down, since
+        //    there is no reference to it as this point.
+        // 2. Call `ensureNoProcessInDir` to wait for it to exit. If it doesn't exit in 5 seconds,
+        //    `ensureNoProcessInDir` will then kill it.
+        Runtime.getRuntime().gc();
+        Runtime.getRuntime().runFinalization();
+        // At this point, no process other than `artd` is expected to be running. `runFromChroot`
+        // blocks on `artd` calls, even upon cancellation, and `artd` in turn waits for child
+        // processes to exit, even if they are killed due to the cancellation.
+        ArtJni.ensureNoProcessInDir(CHROOT_DIR, 5000 /* timeoutMs */);
+        mInjector.getDexoptChrootSetup().tearDown();
     }
 
     private void runFromChroot(@NonNull CancellationSignal cancellationSignal)
