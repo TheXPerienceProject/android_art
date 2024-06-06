@@ -25,6 +25,8 @@ import androidx.annotation.RequiresApi;
 
 import dalvik.system.VMRuntime;
 
+import java.io.IOException;
+
 /**
  * JNI methods for ART Service with wrappers.
  *
@@ -129,10 +131,42 @@ public class ArtJni {
         return null;
     }
 
+    /**
+     * Waits for processes whose executable is in the given directory to exit, and kills them if
+     * they don't exit within the timeout.
+     *
+     * Note that this method only checks processes' executable paths, not their open files. If the
+     * executable of a process is outside of the given directory but the process opens a file in
+     * that directory, this method doesn't handle it.
+     *
+     * After killing, the method waits another round with the given timeout. Theoretically, this
+     * method can take at most {@code 2 * timeoutMs}. However, the second round should be pretty
+     * fast in practice.
+     *
+     * This method assumes that no new process is started from an executable in the given directory
+     * while the method is running. It is the callers responsibility to make sure that this
+     * assumption holds.
+     *
+     * @throws IllegalArgumentException if {@code timeoutMs} is negative
+     * @throws IOException if the operation fails
+     */
+    public static Void ensureNoProcessInDir(@NonNull String dir, int timeoutMs) throws IOException {
+        if (GlobalInjector.getInstance().isPreReboot()) {
+            // We don't need this for Pre-reboot Dexopt.
+            throw new UnsupportedOperationException();
+        }
+        ensureNoProcessInDirNative(dir, timeoutMs);
+        // Return a placeholder value to make this method easier to mock. There is no good way to
+        // mock a method that is both void and static, due to the poor design of Mockito API.
+        return null;
+    }
+
     @Nullable private static native String validateDexPathNative(@NonNull String dexPath);
     @Nullable
     private static native String validateClassLoaderContextNative(
             @NonNull String dexPath, @NonNull String classLoaderContext);
     @NonNull private static native String getGarbageCollectorNative();
     private static native void setPropertyNative(@NonNull String key, @NonNull String value);
+    private static native void ensureNoProcessInDirNative(@NonNull String dir, int timeoutMs)
+            throws IOException;
 }
