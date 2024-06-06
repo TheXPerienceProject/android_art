@@ -266,7 +266,7 @@ Result<std::vector<std::string>> GetSupportedFilesystems() {
   return filesystems;
 }
 
-Result<void> Mount(const std::string& block_device, const std::string& target) {
+Result<void> Mount(const std::string& block_device, const std::string& target, bool is_optional) {
   static const NoDestructor<Result<std::vector<std::string>>> supported_filesystems(
       GetSupportedFilesystems());
   if (!supported_filesystems->ok()) {
@@ -284,6 +284,10 @@ Result<void> Mount(const std::string& block_device, const std::string& target) {
           "Mounted '{}' at '{}' with type '{}'", block_device, target, filesystem);
       return {};
     } else {
+      if (errno == ENOENT && is_optional) {
+        LOG(INFO) << ART_FORMAT("Skipped non-existing block device '{}'", block_device);
+        return {};
+      }
       error_msgs.push_back(ART_FORMAT("Tried '{}': {}", filesystem, strerror(errno)));
       if (errno != EINVAL && errno != EBUSY) {
         // If the filesystem type is wrong, `errno` must be either `EINVAL` or `EBUSY`. For example,
@@ -391,6 +395,9 @@ Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ot
   if (!IsOtaUpdate(ota_slot)) {  // Mainline update
     OR_RETURN(BindMount("/", CHROOT_DIR));
     for (const std::string& partition : additional_system_partitions) {
+      // Some additional partitions are optional, but that's okay. The root filesystem (mounted at
+      // `/`) has empty directories for additional partitions. If additional partitions don't exist,
+      // we'll just be bind-mounting empty directories.
       OR_RETURN(BindMount("/" + partition, PathInChroot("/" + partition)));
     }
   } else {
@@ -414,15 +421,17 @@ Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ot
 
       // We don't know whether snapshotctl succeeded or not, but if it failed, the mount operation
       // below will fail with `ENOENT`.
-      OR_RETURN(Mount(GetBlockDeviceName("system", ota_slot.value()), CHROOT_DIR));
+      OR_RETURN(
+          Mount(GetBlockDeviceName("system", ota_slot.value()), CHROOT_DIR, /*is_optional=*/false));
     } else {
       // update_engine has mounted `system` at `/postinstall` for us.
       OR_RETURN(BindMount("/postinstall", CHROOT_DIR));
     }
 
     for (const std::string& partition : additional_system_partitions) {
-      OR_RETURN(
-          Mount(GetBlockDeviceName(partition, ota_slot.value()), PathInChroot("/" + partition)));
+      OR_RETURN(Mount(GetBlockDeviceName(partition, ota_slot.value()),
+                      PathInChroot("/" + partition),
+                      /*is_optional=*/true));
     }
   }
 
