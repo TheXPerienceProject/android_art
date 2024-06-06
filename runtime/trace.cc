@@ -824,6 +824,17 @@ void Trace::FlushThreadBuffer(Thread* self) {
   the_trace_->trace_writer_->FlushBuffer(self, /* is_sync= */ false, /* free_buffer= */ true);
 }
 
+void Trace::ReleaseThreadBuffer(Thread* self) {
+  MutexLock mu(self, *Locks::trace_lock_);
+  // Check if we still need to flush inside the trace_lock_. If we are stopping tracing it is
+  // possible we already deleted the trace and flushed the buffer too.
+  if (the_trace_ == nullptr) {
+    DCHECK_EQ(self->GetMethodTraceBuffer(), nullptr);
+    return;
+  }
+  the_trace_->trace_writer_->ReleaseBufferForThread(self);
+}
+
 void Trace::Abort() {
   // Do not write anything anymore.
   StopTracing(/* flush_entries= */ false);
@@ -1468,6 +1479,16 @@ void TraceWriter::ReleaseBuffer(int index) {
     owner_tids_[index].store(0);
   }
   buffer_available_.Signal(Thread::Current());
+}
+
+void TraceWriter::ReleaseBufferForThread(Thread* self) {
+  uintptr_t* buffer = self->GetMethodTraceBuffer();
+  int index = GetMethodTraceIndex(buffer);
+  if (index == -1) {
+    delete[] buffer;
+  } else {
+    ReleaseBuffer(index);
+  }
 }
 
 int TraceWriter::GetMethodTraceIndex(uintptr_t* current_buffer) {
