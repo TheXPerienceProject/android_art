@@ -105,18 +105,18 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
         }
 
         mIsRunningJobKnownByJobScheduler = true;
+        @SuppressWarnings("GuardedBy") // https://errorprone.info/bugpattern/GuardedBy#limitations
+        Runnable onJobFinishedLocked = () -> {
+            Utils.check(mIsRunningJobKnownByJobScheduler);
+            mIsRunningJobKnownByJobScheduler = false;
+            // If it failed, it means something went wrong, so we don't reschedule the job because
+            // it will likely fail again. If it's cancelled, the job will be rescheduled because the
+            // return value of `onStopJob` will be respected, and this call will be ignored.
+            jobService.jobFinished(params, false /* wantsReschedule */);
+        };
         // No need to handle exceptions thrown by the future because exceptions are handled inside
         // the future itself.
-        startLocked(() -> {
-            if (mIsRunningJobKnownByJobScheduler) {
-                mIsRunningJobKnownByJobScheduler = false;
-                // If it failed, it means something went wrong, so we don't reschedule the job
-                // because it will likely fail again. If it's cancelled, the job will be rescheduled
-                // because the return value of `onStopJob` will be respected, and this call will be
-                // skipped.
-                jobService.jobFinished(params, false /* wantsReschedule */);
-            }
-        });
+        startLocked(onJobFinishedLocked);
         // "true" means the job will continue running until `jobFinished` is called.
         return true;
     }
@@ -125,7 +125,6 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
     public synchronized boolean onStopJob(@NonNull JobParameters params) {
         if (mIsRunningJobKnownByJobScheduler) {
             cancelGivenLocked(mRunningJob, false /* expectInterrupt */);
-            mIsRunningJobKnownByJobScheduler = false;
         }
         // "true" means to execute again with the default retry policy.
         return true;
