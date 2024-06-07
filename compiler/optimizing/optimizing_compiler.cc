@@ -30,7 +30,6 @@
 #include "base/macros.h"
 #include "base/mutex.h"
 #include "base/scoped_arena_allocator.h"
-#include "base/systrace.h"
 #include "base/timing_logger.h"
 #include "builder.h"
 #include "code_generator.h"
@@ -782,7 +781,6 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
   }
 
   if (Compiler::IsPathologicalCase(*code_item, method_idx, dex_file)) {
-    SCOPED_TRACE << "Not compiling because of pathological case";
     MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kNotCompiledPathological);
     return nullptr;
   }
@@ -793,7 +791,6 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
   if ((compiler_options.GetCompilerFilter() == CompilerFilter::kSpace)
       && (CodeItemInstructionAccessor(dex_file, code_item).InsnsSizeInCodeUnits() >
           kSpaceFilterOptimizingThreshold)) {
-    SCOPED_TRACE << "Not compiling because of space filter";
     MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kNotCompiledSpaceFilter);
     return nullptr;
   }
@@ -868,7 +865,6 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
                           compilation_stats_.get());
     GraphAnalysisResult result = builder.BuildGraph();
     if (result != kAnalysisSuccess) {
-      SCOPED_TRACE << "Not compiling because of " << result;
       switch (result) {
         case kAnalysisSkipped: {
           MaybeRecordStat(compilation_stats_.get(),
@@ -931,7 +927,6 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
     // However, we may have run out of memory trying to create it, so in this
     // case just abort the compilation.
     if (graph->GetProfilingInfo() == nullptr) {
-      SCOPED_TRACE << "Not compiling because of out of memory";
       MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kJitOutOfMemoryForCommit);
       return nullptr;
     }
@@ -943,7 +938,6 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
                     compilation_stats_.get());
 
   if (UNLIKELY(codegen->GetFrameSize() > codegen->GetMaximumFrameSize())) {
-    SCOPED_TRACE << "Not compiling because of stack frame too large";
     LOG(WARNING) << "Stack frame size is " << codegen->GetFrameSize()
                  << " which is larger than the maximum of " << codegen->GetMaximumFrameSize()
                  << " bytes. Method: " << graph->PrettyMethod();

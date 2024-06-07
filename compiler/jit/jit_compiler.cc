@@ -178,8 +178,7 @@ bool JitCompiler::CompileMethod(
     Thread* self, JitMemoryRegion* region, ArtMethod* method, CompilationKind compilation_kind) {
   SCOPED_TRACE << "JIT compiling "
                << method->PrettyMethod()
-               << " (kind=" << compilation_kind << ")"
-               << " from " << method->GetDexFile()->GetLocation();
+               << " (kind=" << compilation_kind << ")";
 
   DCHECK(!method->IsProxyMethod());
   DCHECK(method->GetDeclaringClass()->IsResolved());
