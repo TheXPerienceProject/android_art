@@ -51,6 +51,7 @@
 #include "android-base/errors.h"
 #include "android-base/file.h"
 #include "android-base/logging.h"
+#include "android-base/parseint.h"
 #include "android-base/result.h"
 #include "android-base/scopeguard.h"
 #include "android-base/strings.h"
@@ -113,10 +114,13 @@ using ::android::base::ErrnoError;
 using ::android::base::Error;
 using ::android::base::Join;
 using ::android::base::make_scope_guard;
+using ::android::base::ParseInt;
 using ::android::base::ReadFileToString;
 using ::android::base::Result;
 using ::android::base::Split;
+using ::android::base::StartsWith;
 using ::android::base::Tokenize;
+using ::android::base::Trim;
 using ::android::base::WriteStringToFd;
 using ::android::base::WriteStringToFile;
 using ::android::fs_mgr::FstabEntry;
@@ -158,6 +162,16 @@ std::optional<int64_t> GetSize(std::string_view path) {
   return size;
 }
 
+bool DeleteFile(const std::string& path) {
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+  if (ec) {
+    LOG(ERROR) << ART_FORMAT("Failed to remove '{}': {}", path, ec.message());
+    return false;
+  }
+  return true;
+}
+
 // Deletes a file. Returns the size of the deleted file, or 0 if the deleted file is empty or an
 // error occurs.
 int64_t GetSizeAndDeleteFile(const std::string& path) {
@@ -165,13 +179,9 @@ int64_t GetSizeAndDeleteFile(const std::string& path) {
   if (!size.has_value()) {
     return 0;
   }
-
-  std::error_code ec;
-  if (!std::filesystem::remove(path, ec)) {
-    LOG(ERROR) << ART_FORMAT("Failed to remove '{}': {}", path, ec.message());
+  if (!DeleteFile(path)) {
     return 0;
   }
-
   return size.value();
 }
 
@@ -762,15 +772,9 @@ ndk::ScopedAStatus Artd::commitTmpProfile(const TmpProfilePath& in_profile) {
 }
 
 ndk::ScopedAStatus Artd::deleteProfile(const ProfilePath& in_profile) {
-  RETURN_FATAL_IF_ARG_IS_PRE_REBOOT(in_profile, "profile");
-
+  // `in_profile` can be either a Pre-reboot path or an ordinary one.
   std::string profile_path = OR_RETURN_FATAL(BuildProfileOrDmPath(in_profile));
-
-  std::error_code ec;
-  std::filesystem::remove(profile_path, ec);
-  if (ec) {
-    LOG(ERROR) << ART_FORMAT("Failed to remove '{}': {}", profile_path, ec.message());
-  }
+  DeleteFile(profile_path);
 
   return ScopedAStatus::ok();
 }
@@ -1286,6 +1290,19 @@ ScopedAStatus Artd::cleanup(const std::vector<ProfilePath>& in_profilesToKeep,
   return ScopedAStatus::ok();
 }
 
+ScopedAStatus Artd::cleanUpPreRebootStagedFiles() {
+  RETURN_FATAL_IF_PRE_REBOOT(options_);
+  std::string android_data = OR_RETURN_NON_FATAL(GetAndroidDataOrError());
+  std::string android_expand = OR_RETURN_NON_FATAL(GetAndroidExpandOrError());
+  for (const std::string& file : ListManagedFiles(android_data, android_expand)) {
+    if (IsPreRebootStagedFile(file)) {
+      LOG(INFO) << ART_FORMAT("Cleaning up obsolete Pre-reboot staged file '{}'", file);
+      DeleteFile(file);
+    }
+  }
+  return ScopedAStatus::ok();
+}
+
 ScopedAStatus Artd::isInDalvikCache(const std::string& in_dexFile, bool* _aidl_return) {
   // The artifacts should be in the global dalvik-cache directory if:
   // (1). the dex file is on a system partition, even if the partition is remounted read-write,
@@ -1372,9 +1389,9 @@ ScopedAStatus Artd::getProfileSize(const ProfilePath& in_profile, int64_t* _aidl
   return ScopedAStatus::ok();
 }
 
-ScopedAStatus Artd::commitPreRebootStagedFiles(
-    const std::vector<ArtifactsPath>& in_artifacts,
-    const std::vector<WritableProfilePath>& in_profiles) {
+ScopedAStatus Artd::commitPreRebootStagedFiles(const std::vector<ArtifactsPath>& in_artifacts,
+                                               const std::vector<WritableProfilePath>& in_profiles,
+                                               bool* _aidl_return) {
   RETURN_FATAL_IF_PRE_REBOOT(options_);
 
   std::vector<std::pair<std::string, std::string>> files_to_move;
@@ -1424,6 +1441,40 @@ ScopedAStatus Artd::commitPreRebootStagedFiles(
     LOG(INFO) << ART_FORMAT("Committed Pre-reboot staged file '{}' to '{}'", src_path, dst_path);
   }
 
+  *_aidl_return = !files_to_move.empty();
+  return ScopedAStatus::ok();
+}
+
+ScopedAStatus Artd::checkPreRebootSystemRequirements(const std::string& in_chrootDir,
+                                                     bool* _aidl_return) {
+  RETURN_FATAL_IF_PRE_REBOOT(options_);
+  BuildSystemProperties new_props =
+      OR_RETURN_NON_FATAL(BuildSystemProperties::Create(in_chrootDir + "/system/build.prop"));
+  std::string old_release_str = props_->GetOrEmpty("ro.build.version.release");
+  int old_release;
+  if (!ParseInt(old_release_str, &old_release)) {
+    return NonFatal(
+        ART_FORMAT("Failed to read or parse old release number, got '{}'", old_release_str));
+  }
+  std::string new_release_str = new_props.GetOrEmpty("ro.build.version.release");
+  int new_release;
+  if (!ParseInt(new_release_str, &new_release)) {
+    return NonFatal(
+        ART_FORMAT("Failed to read or parse new release number, got '{}'", new_release_str));
+  }
+  if (new_release - old_release >= 2) {
+    // When the release version difference is large, there is no particular technical reason why we
+    // can't run Pre-reboot Dexopt, but we cannot test and support those cases.
+    LOG(WARNING) << ART_FORMAT(
+        "Pre-reboot Dexopt not supported due to large difference in release versions (old_release: "
+        "{}, new_release: {})",
+        old_release,
+        new_release);
+    *_aidl_return = false;
+    return ScopedAStatus::ok();
+  }
+
+  *_aidl_return = true;
   return ScopedAStatus::ok();
 }
 
@@ -1858,6 +1909,38 @@ ScopedAStatus Artd::validateClassLoaderContext(const std::string& in_dexFile,
     *_aidl_return = std::nullopt;
   }
   return ScopedAStatus::ok();
+}
+
+Result<BuildSystemProperties> BuildSystemProperties::Create(const std::string& filename) {
+  std::string content;
+  if (!ReadFileToString(filename, &content)) {
+    return ErrnoErrorf("Failed to read '{}'", filename);
+  }
+  std::unordered_map<std::string, std::string> system_properties;
+  for (const std::string& raw_line : Split(content, "\n")) {
+    std::string line = Trim(raw_line);
+    if (line.empty() || StartsWith(line, '#')) {
+      continue;
+    }
+    size_t pos = line.find('=');
+    if (pos == std::string::npos || pos == 0 || (pos == 1 && line[1] == '?')) {
+      return Errorf("Malformed system property line '{}' in file '{}'", line, filename);
+    }
+    if (line[pos - 1] == '?') {
+      std::string key = line.substr(/*pos=*/0, /*n=*/pos - 1);
+      if (system_properties.find(key) == system_properties.end()) {
+        system_properties[key] = line.substr(pos + 1);
+      }
+    } else {
+      system_properties[line.substr(/*pos=*/0, /*n=*/pos)] = line.substr(pos + 1);
+    }
+  }
+  return BuildSystemProperties(std::move(system_properties));
+}
+
+std::string BuildSystemProperties::GetProperty(const std::string& key) const {
+  auto it = system_properties_.find(key);
+  return it != system_properties_.end() ? it->second : "";
 }
 
 }  // namespace artd

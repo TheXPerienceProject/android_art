@@ -2229,7 +2229,7 @@ class InitializeClassVisitor : public CompilationVisitor {
     const dex::TypeId& class_type_id = dex_file.GetTypeId(class_def->class_idx_);
     const char* descriptor = dex_file.GetStringData(class_type_id.descriptor_idx_);
     StackHandleScope<3> hs(self);
-    ClassLinker* const class_linker = manager_->GetClassLinker();
+    AotClassLinker* const class_linker = down_cast<AotClassLinker*>(manager_->GetClassLinker());
     Runtime* const runtime = Runtime::Current();
     const CompilerOptions& compiler_options = manager_->GetCompiler()->GetCompilerOptions();
     const bool is_boot_image = compiler_options.IsBootImage();
@@ -2338,7 +2338,7 @@ class InitializeClassVisitor : public CompilationVisitor {
             DCHECK(exception_initialized);
 
             // Run the class initializer in transaction mode.
-            runtime->EnterTransactionMode(is_app_image, klass.Get());
+            class_linker->EnterTransactionMode(is_app_image, klass.Get());
 
             bool success = class_linker->EnsureInitialized(self, klass, true, true);
             // TODO we detach transaction from runtime to indicate we quit the transactional
@@ -2349,7 +2349,7 @@ class InitializeClassVisitor : public CompilationVisitor {
               ScopedAssertNoThreadSuspension ants("Transaction end");
 
               if (success) {
-                runtime->ExitTransactionMode();
+                class_linker->ExitTransactionMode();
                 DCHECK(!runtime->IsActiveTransaction());
 
                 if (is_boot_image || is_boot_image_extension) {
@@ -2370,7 +2370,7 @@ class InitializeClassVisitor : public CompilationVisitor {
                   *file_log << exception->Dump() << "\n";
                 }
                 self->ClearException();
-                runtime->RollbackAllTransactions();
+                class_linker->RollbackAllTransactions();
                 CHECK_EQ(old_status, klass->GetStatus()) << "Previous class status not restored";
               }
             }
@@ -2419,9 +2419,9 @@ class InitializeClassVisitor : public CompilationVisitor {
       self->GetJniEnv()->AssertLocalsEmpty();
     }
 
-    if (!klass->IsVisiblyInitialized() &&
+    if (!klass->IsInitialized() &&
         (is_boot_image || is_boot_image_extension) &&
-        !compiler_options.IsPreloadedClass(PrettyDescriptor(descriptor).c_str())) {
+        !compiler_options.IsPreloadedClass(PrettyDescriptor(descriptor))) {
       klass->SetInBootImageAndNotInPreloadedClasses();
     }
 

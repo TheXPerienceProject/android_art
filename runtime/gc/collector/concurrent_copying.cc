@@ -583,7 +583,7 @@ class ConcurrentCopying::FlipCallback : public Closure {
     if (UNLIKELY(runtime->IsActiveTransaction())) {
       CHECK(runtime->IsAotCompiler());
       TimingLogger::ScopedTiming split3("(Paused)VisitTransactionRoots", cc->GetTimings());
-      runtime->VisitTransactionRoots(cc);
+      runtime->GetClassLinker()->VisitTransactionRoots(cc);
     }
     if (kUseBakerReadBarrier && kGrayDirtyImmuneObjects) {
       cc->GrayAllNewlyDirtyImmuneObjects();

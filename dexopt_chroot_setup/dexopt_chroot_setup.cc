@@ -68,6 +68,7 @@ using ::android::base::SetProperty;
 using ::android::base::Split;
 using ::android::base::Tokenize;
 using ::android::base::WaitForProperty;
+using ::android::base::WriteStringToFile;
 using ::android::fs_mgr::FstabEntry;
 using ::art::tools::CmdlineBuilder;
 using ::art::tools::Fatal;
@@ -79,6 +80,10 @@ using ::ndk::ScopedAStatus;
 constexpr const char* kServiceName = "dexopt_chroot_setup";
 const NoDestructor<std::string> kBindMountTmpDir(
     std::string(DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR) + "/mount_tmp");
+const NoDestructor<std::string> kOtaSlotFile(std::string(DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR) +
+                                             "/ota_slot");
+const NoDestructor<std::string> kSnapshotMappedFile(
+    std::string(DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR) + "/snapshot_mapped");
 constexpr mode_t kChrootDefaultMode = 0755;
 constexpr std::chrono::milliseconds kSnapshotCtlTimeout = std::chrono::seconds(60);
 
@@ -303,6 +308,20 @@ Result<void> MountTmpfs(const std::string& target, std::string_view se_context) 
   return {};
 }
 
+Result<std::optional<std::string>> LoadOtaSlotFile() {
+  std::string content;
+  if (!ReadFileToString(*kOtaSlotFile, &content)) {
+    return ErrnoErrorf("Failed to read '{}'", *kOtaSlotFile);
+  }
+  if (content == "_a" || content == "_b") {
+    return content;
+  }
+  if (content.empty()) {
+    return std::nullopt;
+  }
+  return Errorf("Invalid content of '{}': '{}'", *kOtaSlotFile, content);
+}
+
 }  // namespace
 
 ScopedAStatus DexoptChrootSetup::setUp(const std::optional<std::string>& in_otaSlot) {
@@ -315,6 +334,16 @@ ScopedAStatus DexoptChrootSetup::setUp(const std::optional<std::string>& in_otaS
     return Fatal(ART_FORMAT("Invalid OTA slot '{}'", in_otaSlot.value()));
   }
   OR_RETURN_NON_FATAL(SetUpChroot(in_otaSlot));
+  return ScopedAStatus::ok();
+}
+
+ScopedAStatus DexoptChrootSetup::init() {
+  if (!mu_.try_lock()) {
+    return Fatal("Unexpected concurrent calls");
+  }
+  std::lock_guard<std::mutex> lock(mu_, std::adopt_lock);
+
+  OR_RETURN_NON_FATAL(InitChroot());
   return ScopedAStatus::ok();
 }
 
@@ -365,6 +394,12 @@ Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ot
   } else {
     CHECK(ota_slot.value() == "_a" || ota_slot.value() == "_b");
 
+    // Write the file early in case `snapshotctl map` fails in the middle, leaving some devices
+    // mapped. We don't assume that `snapshotctl map` is transactional.
+    if (!WriteStringToFile("", *kSnapshotMappedFile)) {
+      return ErrnoErrorf("Failed to write '{}'", *kSnapshotMappedFile);
+    }
+
     // Run `snapshotctl map` through init to map block devices. We can't run it ourselves because it
     // requires the UID to be 0. See `sys.snapshotctl.map` in `init.rc`.
     if (!SetProperty("sys.snapshotctl.map", "requested")) {
@@ -405,6 +440,16 @@ Result<void> DexoptChrootSetup::SetUpChroot(const std::optional<std::string>& ot
   for (const std::string& src : bind_mount_srcs) {
     OR_RETURN(BindMountRecursive(src, PathInChroot(src)));
   }
+
+  if (!WriteStringToFile(ota_slot.value_or(""), *kOtaSlotFile)) {
+    return ErrnoErrorf("Failed to write '{}'", *kOtaSlotFile);
+  }
+
+  return {};
+}
+
+Result<void> DexoptChrootSetup::InitChroot() const {
+  std::optional<std::string> ota_slot = OR_RETURN(LoadOtaSlotFile());
 
   // Generate empty linker config to suppress warnings.
   if (!android::base::WriteStringToFile("", PathInChroot("/linkerconfig/ld.config.txt"))) {
@@ -482,11 +527,22 @@ Result<void> DexoptChrootSetup::TearDownChroot() const {
     return Errorf("Failed to remove dir '{}': {}", *kBindMountTmpDir, ec.message());
   }
 
-  if (!SetProperty("sys.snapshotctl.unmap", "requested")) {
-    return Errorf("Failed to request snapshotctl unmap");
+  std::filesystem::remove(*kOtaSlotFile, ec);
+  if (ec) {
+    return Errorf("Failed to remove file '{}': {}", *kOtaSlotFile, ec.message());
   }
-  if (!WaitForProperty("sys.snapshotctl.unmap", "finished", kSnapshotCtlTimeout)) {
-    return Errorf("snapshotctl timed out");
+
+  if (OS::FileExists(kSnapshotMappedFile->c_str())) {
+    if (!SetProperty("sys.snapshotctl.unmap", "requested")) {
+      return Errorf("Failed to request snapshotctl unmap");
+    }
+    if (!WaitForProperty("sys.snapshotctl.unmap", "finished", kSnapshotCtlTimeout)) {
+      return Errorf("snapshotctl timed out");
+    }
+    std::filesystem::remove(*kSnapshotMappedFile, ec);
+    if (ec) {
+      return Errorf("Failed to remove file '{}': {}", *kSnapshotMappedFile, ec.message());
+    }
   }
 
   return {};
