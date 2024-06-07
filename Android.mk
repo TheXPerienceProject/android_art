@@ -62,7 +62,6 @@ LOCAL_REQUIRED_MODULES := \
 # APEX builds when HOST_PREFER_32_BIT is set (b/120617876).
 ifneq ($(HOST_PREFER_32_BIT),true)
 LOCAL_REQUIRED_MODULES += \
-    dexdiag \
     dexlist \
     oatdump \
 
