@@ -143,8 +143,6 @@ enum GraphAnalysisResult {
   kAnalysisSuccess,
 };
 
-std::ostream& operator<<(std::ostream& os, GraphAnalysisResult ga);
-
 template <typename T>
 static inline typename std::make_unsigned<T>::type MakeUnsigned(T x) {
   return static_cast<typename std::make_unsigned<T>::type>(x);

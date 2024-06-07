@@ -171,6 +171,14 @@ class ProfilingInfo {
     return MemberOffset(OFFSETOF_MEMBER(ProfilingInfo, baseline_hotness_count_));
   }
 
+  void ResetCounter() {
+    baseline_hotness_count_ = GetOptimizeThreshold();
+  }
+
+  bool CounterHasChanged() const {
+    return baseline_hotness_count_ != GetOptimizeThreshold();
+  }
+
   uint16_t GetBaselineHotnessCount() const {
     return baseline_hotness_count_;
   }

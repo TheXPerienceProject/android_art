@@ -16,11 +16,10 @@
 def run(ctx, args):
   ctx.default_run(
       args,
-      # Profiling is only done on interpreted and JITted code.
       Xcompiler_option=[
-          "--compiler-filter=verify"
+          "--count-hotness-in-compiled-code", "--compiler-filter=speed"
       ],
       runtime_option=[
-          "-Xjitsaveprofilinginfo", "-Xusejit:true"
+          "-Xps-profile-aot-code", "-Xjitsaveprofilinginfo", "-Xusejit:true"
       ],
   )
