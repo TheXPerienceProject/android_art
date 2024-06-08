@@ -47,7 +47,7 @@ public class Main {
           new String[] {codePath},
           VMRuntime.CODE_PATH_TYPE_PRIMARY_APK);
 
-      // Test that the profile saves an app method that gets JITted.
+      // Test that the profile saves an app method with a profiling info.
       $noinline$hotnessCountWithLoop(100000);
       ensureProfileProcessing();
       Method appMethod = Main.class.getDeclaredMethod(methodName);
@@ -72,7 +72,7 @@ public class Main {
     }
   }
 
-  // Checks if the profile saver has the method as hot/warm.
+  // Checks if the profiles saver has the method as hot/warm.
   public static native boolean presentInProfile(String profile, Method method);
   // Ensures the profile saver does its usual processing.
   public static native void ensureProfileProcessing();

@@ -26,10 +26,14 @@ struct ProfileSaverOptions {
   // period is not configured.
   static constexpr uint32_t kMinFirstSaveMsNotSet = 0;
   static constexpr uint32_t kSaveResolvedClassesDelayMs = 5 * 1000;  // 5 seconds
+  // Minimum number of JIT samples during launch to mark a method as hot in the profile.
+  static constexpr uint32_t kHotStartupMethodSamples = 1;
+  static constexpr uint32_t kHotStartupMethodSamplesLowRam = 256;
   static constexpr uint32_t kMinMethodsToSave = 10;
   static constexpr uint32_t kMinClassesToSave = 10;
   static constexpr uint32_t kMinNotificationBeforeWake = 10;
   static constexpr uint32_t kMaxNotificationBeforeWake = 50;
+  static constexpr uint32_t kHotStartupMethodSamplesNotSet = std::numeric_limits<uint32_t>::max();
   static constexpr uint16_t kInlineCacheThreshold = 4000;
 
   ProfileSaverOptions() :
@@ -37,6 +41,7 @@ struct ProfileSaverOptions {
     min_save_period_ms_(kMinSavePeriodMs),
     min_first_save_ms_(kMinFirstSaveMsNotSet),
     save_resolved_classes_delay_ms_(kSaveResolvedClassesDelayMs),
+    hot_startup_method_samples_(kHotStartupMethodSamplesNotSet),
     min_methods_to_save_(kMinMethodsToSave),
     min_classes_to_save_(kMinClassesToSave),
     min_notification_before_wake_(kMinNotificationBeforeWake),
@@ -52,6 +57,7 @@ struct ProfileSaverOptions {
       uint32_t min_save_period_ms,
       uint32_t min_first_save_ms,
       uint32_t save_resolved_classes_delay_ms,
+      uint32_t hot_startup_method_samples,
       uint32_t min_methods_to_save,
       uint32_t min_classes_to_save,
       uint32_t min_notification_before_wake,
@@ -65,6 +71,7 @@ struct ProfileSaverOptions {
     min_save_period_ms_(min_save_period_ms),
     min_first_save_ms_(min_first_save_ms),
     save_resolved_classes_delay_ms_(save_resolved_classes_delay_ms),
+    hot_startup_method_samples_(hot_startup_method_samples),
     min_methods_to_save_(min_methods_to_save),
     min_classes_to_save_(min_classes_to_save),
     min_notification_before_wake_(min_notification_before_wake),
@@ -90,6 +97,13 @@ struct ProfileSaverOptions {
   }
   uint32_t GetSaveResolvedClassesDelayMs() const {
     return save_resolved_classes_delay_ms_;
+  }
+  uint32_t GetHotStartupMethodSamples(bool is_low_ram) const {
+    uint32_t ret = hot_startup_method_samples_;
+    if (ret == kHotStartupMethodSamplesNotSet) {
+      ret = is_low_ram ? kHotStartupMethodSamplesLowRam : kHotStartupMethodSamples;
+    }
+    return ret;
   }
   uint32_t GetMinMethodsToSave() const {
     return min_methods_to_save_;
@@ -127,6 +141,7 @@ struct ProfileSaverOptions {
         << ", min_save_period_ms_" << pso.min_save_period_ms_
         << ", min_first_save_ms_" << pso.min_first_save_ms_
         << ", save_resolved_classes_delay_ms_" << pso.save_resolved_classes_delay_ms_
+        << ", hot_startup_method_samples_" << pso.hot_startup_method_samples_
         << ", min_methods_to_save_" << pso.min_methods_to_save_
         << ", min_classes_to_save_" << pso.min_classes_to_save_
         << ", min_notification_before_wake_" << pso.min_notification_before_wake_
@@ -142,6 +157,9 @@ struct ProfileSaverOptions {
   uint32_t min_save_period_ms_;
   uint32_t min_first_save_ms_;
   uint32_t save_resolved_classes_delay_ms_;
+  // Do not access hot_startup_method_samples_ directly for reading since it may be set to the
+  // placeholder default.
+  uint32_t hot_startup_method_samples_;
   uint32_t min_methods_to_save_;
   uint32_t min_classes_to_save_;
   uint32_t min_notification_before_wake_;

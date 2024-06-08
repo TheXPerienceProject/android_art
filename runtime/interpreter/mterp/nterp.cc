@@ -693,10 +693,7 @@ extern "C" jit::OsrData* NterpHotMethod(ArtMethod* method, uint16_t* dex_pc_ptr,
     DCHECK_EQ(Thread::Current()->GetSharedMethodHotness(), 0u);
     Thread::Current()->ResetSharedMethodHotness();
   } else {
-    // Move the counter to the initial threshold in case we have to re-JIT it.
     method->ResetCounter(runtime->GetJITOptions()->GetWarmupThreshold());
-    // Mark the method as warm for the profile saver.
-    method->SetPreviouslyWarm();
   }
   jit::Jit* jit = runtime->GetJit();
   if (jit != nullptr && jit->UseJitCompilation()) {

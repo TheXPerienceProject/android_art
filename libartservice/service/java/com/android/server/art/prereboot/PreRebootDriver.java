@@ -17,6 +17,7 @@
 package com.android.server.art.prereboot;
 
 import static com.android.server.art.IDexoptChrootSetup.CHROOT_DIR;
+import static com.android.server.art.prereboot.PreRebootManagerInterface.SystemRequirementException;
 import static com.android.server.art.proto.PreRebootStats.Status;
 
 import android.annotation.NonNull;
@@ -89,11 +90,10 @@ public class PreRebootDriver {
             @NonNull CancellationSignal cancellationSignal) {
         var statsReporter = new PreRebootStatsReporter();
         boolean success = false;
+        boolean systemRequirementCheckFailed = false;
         try {
             statsReporter.recordJobStarted();
-            if (!setUp(otaSlot, mapSnapshotsForOta)) {
-                return false;
-            }
+            setUp(otaSlot, mapSnapshotsForOta);
             runFromChroot(cancellationSignal);
             success = true;
             return true;
@@ -101,8 +101,22 @@ public class PreRebootDriver {
             Utils.logArtdException(e);
         } catch (ServiceSpecificException e) {
             AsLog.e("Failed to set up chroot", e);
-        } catch (ReflectiveOperationException | IOException | ErrnoException e) {
-            AsLog.e("Failed to run pre-reboot dexopt", e);
+        } catch (SystemRequirementException e) {
+            systemRequirementCheckFailed = true;
+            AsLog.e("System requirement check failed", e);
+        } catch (ReflectiveOperationException e) {
+            Throwable cause = e.getCause();
+            if (cause != null
+                    && cause.getClass().getName().equals(
+                            SystemRequirementException.class.getName())) {
+                // For future use only. Can't happen for now.
+                systemRequirementCheckFailed = true;
+                AsLog.e("System requirement check failed in chroot", cause);
+            } else {
+                AsLog.wtf("Failed to run Pre-reboot Dexopt", e);
+            }
+        } catch (IOException | ErrnoException e) {
+            AsLog.e("Failed to run Pre-reboot Dexopt", e);
         } finally {
             try {
                 // No need to pass `mapSnapshotsForOta` because `setUp` stores this information in a
@@ -113,7 +127,7 @@ public class PreRebootDriver {
             } catch (ServiceSpecificException | IOException e) {
                 AsLog.e("Failed to tear down chroot", e);
             } finally {
-                statsReporter.recordJobEnded(success);
+                statsReporter.recordJobEnded(success, systemRequirementCheckFailed);
             }
         }
         return false;
@@ -122,15 +136,15 @@ public class PreRebootDriver {
     public void test() {
         boolean teardownAttempted = false;
         try {
-            if (!setUp(null /* otaSlot */, false /* mapSnapshotsForOta */)) {
-                throw new AssertionError("System requirement check failed");
-            }
+            setUp(null /* otaSlot */, false /* mapSnapshotsForOta */);
             // Ideally, we should try dexopting some packages here. However, it's not trivial to
             // pass a package list into chroot. Besides, we need to generate boot images even if we
             // dexopt only one package, and that can easily make the test fail the CTS quality
             // requirement on test duration (<30s).
             teardownAttempted = true;
             tearDown();
+        } catch (SystemRequirementException e) {
+            throw new AssertionError("System requirement check failed", e);
         } catch (RemoteException | IOException e) {
             throw new AssertionError("Unexpected exception", e);
         } finally {
@@ -144,14 +158,13 @@ public class PreRebootDriver {
         }
     }
 
-    private boolean setUp(@Nullable String otaSlot, boolean mapSnapshotsForOta)
-            throws RemoteException {
+    private void setUp(@Nullable String otaSlot, boolean mapSnapshotsForOta)
+            throws RemoteException, SystemRequirementException {
         mInjector.getDexoptChrootSetup().setUp(otaSlot, mapSnapshotsForOta);
         if (!mInjector.getArtd().checkPreRebootSystemRequirements(CHROOT_DIR)) {
-            return false;
+            throw new SystemRequirementException("See logs for details");
         }
         mInjector.getDexoptChrootSetup().init();
-        return true;
     }
 
     private void tearDown() throws RemoteException, IOException {
