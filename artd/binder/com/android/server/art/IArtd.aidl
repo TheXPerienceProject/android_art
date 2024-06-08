@@ -192,6 +192,15 @@ interface IArtd {
             boolean keepPreRebootStagedFiles);
 
     /**
+     * Deletes all Pre-reboot staged files.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
+     * Throws fatal errors. Logs and ignores non-fatal errors.
+     */
+    void cleanUpPreRebootStagedFiles();
+
+    /**
      * Returns whether the artifacts of the primary dex files should be in the global dalvik-cache
      * directory.
      *
@@ -263,10 +272,23 @@ interface IArtd {
      * Not supported in Pre-reboot Dexopt mode.
      *
      * Throws fatal and non-fatal errors.
+     *
+     * @return true if any file has been committed.
      */
-    void commitPreRebootStagedFiles(
+    boolean commitPreRebootStagedFiles(
             in List<com.android.server.art.ArtifactsPath> artifacts,
             in List<com.android.server.art.ProfilePath.WritableProfilePath> profiles);
+
+    /**
+     * Returns whether the old system and the new system meet the requirements to run Pre-reboot
+     * Dexopt. This method can only be called with a chroot dir set up by
+     * {@link IDexoptChrootSetup#setUp}.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
+     * Throws fatal and non-fatal errors.
+     */
+    boolean checkPreRebootSystemRequirements(@utf8InCpp String chrootDir);
 
     // The methods below are only for Pre-reboot Dexopt and only supported in Pre-reboot Dexopt
     // mode.

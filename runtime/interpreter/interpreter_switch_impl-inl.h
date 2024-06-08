@@ -44,6 +44,218 @@
 namespace art HIDDEN {
 namespace interpreter {
 
+// We declare the helpers classes for transaction checks here but they shall be defined
+// only when compiling the transactional and non-transactional interpreter.
+class ActiveTransactionChecker;  // For transactional interpreter.
+class InactiveTransactionChecker;  // For non-transactional interpreter.
+
+// We declare the helpers classes for instrumentation handling here but they shall be defined
+// only when compiling the transactional and non-transactional interpreter.
+class ActiveInstrumentationHandler;  // For non-transactional interpreter.
+class InactiveInstrumentationHandler;  // For transactional interpreter.
+
+// Handles iget-XXX and sget-XXX instructions.
+// Returns true on success, otherwise throws an exception and returns false.
+template<FindFieldType find_type,
+         Primitive::Type field_type,
+         bool transaction_active = false>
+ALWAYS_INLINE bool DoFieldGet(Thread* self,
+                              ShadowFrame& shadow_frame,
+                              const Instruction* inst,
+                              uint16_t inst_data,
+                              const instrumentation::Instrumentation* instrumentation)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  using InstrumentationHandler = typename std::conditional_t<
+      transaction_active, InactiveInstrumentationHandler, ActiveInstrumentationHandler>;
+  bool should_report = InstrumentationHandler::HasFieldReadListeners(instrumentation);
+  const bool is_static = (find_type == StaticObjectRead) || (find_type == StaticPrimitiveRead);
+  ArtField* field = nullptr;
+  MemberOffset offset(0u);
+  bool is_volatile;
+  GetFieldInfo(self,
+               shadow_frame.GetMethod(),
+               reinterpret_cast<const uint16_t*>(inst),
+               is_static,
+               /*resolve_field_type=*/ false,
+               &field,
+               &is_volatile,
+               &offset);
+  if (self->IsExceptionPending()) {
+    return false;
+  }
+
+  ObjPtr<mirror::Object> obj;
+  if (is_static) {
+    obj = field->GetDeclaringClass();
+    using TransactionChecker = typename std::conditional_t<
+        transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
+    if (TransactionChecker::ReadConstraint(self, obj)) {
+      return false;
+    }
+  } else {
+    obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
+    if (should_report || obj == nullptr) {
+      field = ResolveFieldWithAccessChecks(self,
+                                           Runtime::Current()->GetClassLinker(),
+                                           inst->VRegC_22c(),
+                                           shadow_frame.GetMethod(),
+                                           /* is_static= */ false,
+                                           /* is_put= */ false,
+                                           /* resolve_field_type= */ false);
+      if (obj == nullptr) {
+        ThrowNullPointerExceptionForFieldAccess(
+            field, shadow_frame.GetMethod(), /* is_read= */ true);
+        return false;
+      }
+      // Reload in case suspension happened during field resolution.
+      obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
+    }
+  }
+
+  uint32_t vregA = is_static ? inst->VRegA_21c(inst_data) : inst->VRegA_22c(inst_data);
+  JValue result;
+  if (should_report) {
+    DCHECK(field != nullptr);
+    if (UNLIKELY(!DoFieldGetCommon<field_type>(self, shadow_frame, obj, field, &result))) {
+      // Instrumentation threw an error!
+      CHECK(self->IsExceptionPending());
+      return false;
+    }
+  }
+
+#define FIELD_GET(prim, type, jtype, vreg)                                      \
+  case Primitive::kPrim ##prim:                                                 \
+    shadow_frame.SetVReg ##vreg(vregA,                                          \
+        should_report ? result.Get ##jtype()                                    \
+                      : is_volatile ? obj->GetField ## type ## Volatile(offset) \
+                                    : obj->GetField ##type(offset));            \
+    break;
+
+  switch (field_type) {
+    FIELD_GET(Boolean, Boolean, Z, )
+    FIELD_GET(Byte, Byte, B, )
+    FIELD_GET(Char, Char, C, )
+    FIELD_GET(Short, Short, S, )
+    FIELD_GET(Int, 32, I, )
+    FIELD_GET(Long, 64, J, Long)
+#undef FIELD_GET
+    case Primitive::kPrimNot:
+      shadow_frame.SetVRegReference(
+          vregA,
+          should_report ? result.GetL()
+                        : is_volatile ? obj->GetFieldObjectVolatile<mirror::Object>(offset)
+                                      : obj->GetFieldObject<mirror::Object>(offset));
+      break;
+    default:
+      LOG(FATAL) << "Unreachable: " << field_type;
+      UNREACHABLE();
+  }
+  return true;
+}
+
+// Handles iput-XXX and sput-XXX instructions.
+// Returns true on success, otherwise throws an exception and returns false.
+template<FindFieldType find_type, Primitive::Type field_type, bool transaction_active>
+ALWAYS_INLINE bool DoFieldPut(Thread* self,
+                              const ShadowFrame& shadow_frame,
+                              const Instruction* inst,
+                              uint16_t inst_data,
+                              const instrumentation::Instrumentation* instrumentation)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  using InstrumentationHandler = typename std::conditional_t<
+      transaction_active, InactiveInstrumentationHandler, ActiveInstrumentationHandler>;
+  bool should_report = InstrumentationHandler::HasFieldWriteListeners(instrumentation);
+  bool is_static = (find_type == StaticObjectWrite) || (find_type == StaticPrimitiveWrite);
+  uint32_t vregA = is_static ? inst->VRegA_21c(inst_data) : inst->VRegA_22c(inst_data);
+  bool resolve_field_type = (shadow_frame.GetVRegReference(vregA) != nullptr);
+  ArtField* field = nullptr;
+  MemberOffset offset(0u);
+  bool is_volatile;
+  GetFieldInfo(self,
+               shadow_frame.GetMethod(),
+               reinterpret_cast<const uint16_t*>(inst),
+               is_static,
+               resolve_field_type,
+               &field,
+               &is_volatile,
+               &offset);
+  if (self->IsExceptionPending()) {
+    return false;
+  }
+
+  ObjPtr<mirror::Object> obj;
+  if (is_static) {
+    obj = field->GetDeclaringClass();
+  } else {
+    obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
+    if (should_report || obj == nullptr) {
+      field = ResolveFieldWithAccessChecks(self,
+                                           Runtime::Current()->GetClassLinker(),
+                                           inst->VRegC_22c(),
+                                           shadow_frame.GetMethod(),
+                                           /* is_static= */ false,
+                                           /* is_put= */ true,
+                                           resolve_field_type);
+      if (UNLIKELY(obj == nullptr)) {
+        ThrowNullPointerExceptionForFieldAccess(
+            field, shadow_frame.GetMethod(), /* is_read= */ false);
+        return false;
+      }
+      // Reload in case suspension happened during field resolution.
+      obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
+    }
+  }
+  using TransactionChecker = typename std::conditional_t<
+      transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
+  if (TransactionChecker::WriteConstraint(self, obj)) {
+    return false;
+  }
+
+  JValue value = GetFieldValue<field_type>(shadow_frame, vregA);
+
+  if (field_type == Primitive::kPrimNot &&
+      TransactionChecker::WriteValueConstraint(self, value.GetL())) {
+    return false;
+  }
+  if (should_report) {
+    return DoFieldPutCommon<field_type, transaction_active>(self,
+                                                            shadow_frame,
+                                                            obj,
+                                                            field,
+                                                            value);
+  }
+#define FIELD_SET(prim, type, jtype) \
+  case Primitive::kPrim ## prim: \
+    if (is_volatile) { \
+      obj->SetField ## type ## Volatile<transaction_active>(offset, value.Get ## jtype()); \
+    } else { \
+      obj->SetField ## type<transaction_active>(offset, value.Get ## jtype()); \
+    } \
+    break;
+
+  switch (field_type) {
+    FIELD_SET(Boolean, Boolean, Z)
+    FIELD_SET(Byte, Byte, B)
+    FIELD_SET(Char, Char, C)
+    FIELD_SET(Short, Short, S)
+    FIELD_SET(Int, 32, I)
+    FIELD_SET(Long, 64, J)
+    FIELD_SET(Not, Object, L)
+    case Primitive::kPrimVoid: {
+      LOG(FATAL) << "Unreachable " << field_type;
+      break;
+    }
+  }
+#undef FIELD_SET
+
+  if (transaction_active) {
+    if (UNLIKELY(self->IsExceptionPending())) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Short-lived helper class which executes single DEX bytecode.  It is inlined by compiler.
 // Any relevant execution information is stored in the fields - it should be kept to minimum.
 // All instance functions must be inlined so that the fields can be stored in registers.
@@ -54,13 +266,15 @@ namespace interpreter {
 template<bool transaction_active, Instruction::Format kFormat>
 class InstructionHandler {
  public:
+  using InstrumentationHandler = typename std::conditional_t<
+      transaction_active, InactiveInstrumentationHandler, ActiveInstrumentationHandler>;
   using TransactionChecker = typename std::conditional_t<
       transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
 
 #define HANDLER_ATTRIBUTES ALWAYS_INLINE FLATTEN WARN_UNUSED REQUIRES_SHARED(Locks::mutator_lock_)
 
   HANDLER_ATTRIBUTES bool CheckTransactionAbort() {
-    if (transaction_active && Runtime::Current()->IsTransactionAborted()) {
+    if (TransactionChecker::IsTransactionAborted()) {
       // Transaction abort cannot be caught by catch handlers.
       // Preserve the abort exception while doing non-standard return.
       StackHandleScope<1u> hs(Self());
@@ -68,8 +282,7 @@ class InstructionHandler {
       DCHECK(abort_exception != nullptr);
       DCHECK(abort_exception->GetClass()->DescriptorEquals(kTransactionAbortErrorDescriptor));
       Self()->ClearException();
-      PerformNonStandardReturn(
-          Self(), shadow_frame_, ctx_->result, Instrumentation(), Accessor().InsSize());
+      PerformNonStandardReturn(Self(), shadow_frame_, ctx_->result, Instrumentation());
       Self()->SetException(abort_exception.Get());
       ExitInterpreterLoop();
       return false;
@@ -78,10 +291,9 @@ class InstructionHandler {
   }
 
   HANDLER_ATTRIBUTES bool CheckForceReturn() {
-    if (shadow_frame_.GetForcePopFrame()) {
+    if (InstrumentationHandler::GetForcePopFrame(shadow_frame_)) {
       DCHECK(Runtime::Current()->AreNonStandardExitsEnabled());
-      PerformNonStandardReturn(
-          Self(), shadow_frame_, ctx_->result, Instrumentation(), Accessor().InsSize());
+      PerformNonStandardReturn(Self(), shadow_frame_, ctx_->result, Instrumentation());
       ExitInterpreterLoop();
       return false;
     }
@@ -148,16 +360,16 @@ class InstructionHandler {
     if (!CheckForceReturn()) {
       return false;
     }
-    if (UNLIKELY(shadow_frame_.GetNotifyDexPcMoveEvents())) {
+    if (UNLIKELY(InstrumentationHandler::NeedsDexPcEvents(shadow_frame_))) {
       uint8_t opcode = inst_->Opcode(inst_data_);
       bool is_move_result_object = (opcode == Instruction::MOVE_RESULT_OBJECT);
       JValue* save_ref = is_move_result_object ? &ctx_->result_register : nullptr;
-      if (UNLIKELY(!DoDexPcMoveEvent(Self(),
-                                     Accessor(),
-                                     shadow_frame_,
-                                     DexPC(),
-                                     Instrumentation(),
-                                     save_ref))) {
+      if (UNLIKELY(!InstrumentationHandler::DoDexPcMoveEvent(Self(),
+                                                             Accessor(),
+                                                             shadow_frame_,
+                                                             DexPC(),
+                                                             Instrumentation(),
+                                                             save_ref))) {
         DCHECK(Self()->IsExceptionPending());
         // Do not raise exception event if it is caused by other instrumentation event.
         shadow_frame_.SetSkipNextExceptionEvent(true);
@@ -170,53 +382,17 @@ class InstructionHandler {
     return true;
   }
 
-  // Unlike most other events the DexPcMovedEvent can be sent when there is a pending exception (if
-  // the next instruction is MOVE_EXCEPTION). This means it needs to be handled carefully to be able
-  // to detect exceptions thrown by the DexPcMovedEvent itself. These exceptions could be thrown by
-  // jvmti-agents while handling breakpoint or single step events. We had to move this into its own
-  // function because it was making ExecuteSwitchImpl have too large a stack.
-  NO_INLINE static bool DoDexPcMoveEvent(Thread* self,
-                                         const CodeItemDataAccessor& accessor,
-                                         const ShadowFrame& shadow_frame,
-                                         uint32_t dex_pc_,
-                                         const instrumentation::Instrumentation* instrumentation,
-                                         JValue* save_ref)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(instrumentation->HasDexPcListeners());
-    StackHandleScope<2> hs(self);
-    Handle<mirror::Throwable> thr(hs.NewHandle(self->GetException()));
-    mirror::Object* null_obj = nullptr;
-    HandleWrapper<mirror::Object> h(
-        hs.NewHandleWrapper(LIKELY(save_ref == nullptr) ? &null_obj : save_ref->GetGCRoot()));
-    self->ClearException();
-    instrumentation->DexPcMovedEvent(self,
-                                     shadow_frame.GetThisObject(accessor.InsSize()),
-                                     shadow_frame.GetMethod(),
-                                     dex_pc_);
-    if (UNLIKELY(self->IsExceptionPending())) {
-      // We got a new exception in the dex-pc-moved event.
-      // We just let this exception replace the old one.
-      // TODO It would be good to add the old exception to the
-      // suppressed exceptions of the new one if possible.
-      return false;  // Pending exception.
-    }
-    if (UNLIKELY(!thr.IsNull())) {
-      self->SetException(thr.Get());
-    }
-    return true;
-  }
-
   HANDLER_ATTRIBUTES bool HandleReturn(JValue result) {
     Self()->AllowThreadSuspension();
     if (!DoMonitorCheckOnExit(Self(), &shadow_frame_)) {
       return false;
     }
-    if (UNLIKELY(NeedsMethodExitEvent(Instrumentation()) &&
-                 !SendMethodExitEvents(Self(),
-                                       Instrumentation(),
-                                       shadow_frame_,
-                                       shadow_frame_.GetMethod(),
-                                       result))) {
+    if (UNLIKELY(InstrumentationHandler::NeedsMethodExitEvent(Instrumentation()) &&
+                 !InstrumentationHandler::SendMethodExitEvents(Self(),
+                                                               Instrumentation(),
+                                                               shadow_frame_,
+                                                               shadow_frame_.GetMethod(),
+                                                               result))) {
       DCHECK(Self()->IsExceptionPending());
       // Do not raise exception event if it is caused by other instrumentation event.
       shadow_frame_.SetSkipNextExceptionEvent(true);
@@ -231,8 +407,9 @@ class InstructionHandler {
     if (UNLIKELY(Self()->ObserveAsyncException())) {
       return false;  // Pending exception.
     }
-    if (UNLIKELY(Instrumentation()->HasBranchListeners())) {
-      Instrumentation()->Branch(Self(), shadow_frame_.GetMethod(), DexPC(), offset);
+    if (UNLIKELY(InstrumentationHandler::HasBranchListeners(Instrumentation()))) {
+      InstrumentationHandler::Branch(
+          Self(), shadow_frame_.GetMethod(), DexPC(), offset, Instrumentation());
     }
     if (!transaction_active) {
       // TODO: Do OSR only on back-edges and check if OSR code is ready here.
@@ -346,13 +523,13 @@ class InstructionHandler {
   template<FindFieldType find_type, Primitive::Type field_type>
   HANDLER_ATTRIBUTES bool HandleGet() {
     return DoFieldGet<find_type, field_type, transaction_active>(
-        Self(), shadow_frame_, inst_, inst_data_);
+        Self(), shadow_frame_, inst_, inst_data_, Instrumentation());
   }
 
   template<FindFieldType find_type, Primitive::Type field_type>
   HANDLER_ATTRIBUTES bool HandlePut() {
     return DoFieldPut<find_type, field_type, transaction_active>(
-        Self(), shadow_frame_, inst_, inst_data_);
+        Self(), shadow_frame_, inst_, inst_data_, Instrumentation());
   }
 
   template<InvokeType type, bool is_range>
@@ -486,14 +663,14 @@ class InstructionHandler {
       }
     }
     result.SetL(obj_result);
-    if (UNLIKELY(NeedsMethodExitEvent(Instrumentation()))) {
+    if (UNLIKELY(InstrumentationHandler::NeedsMethodExitEvent(Instrumentation()))) {
       StackHandleScope<1> hs(Self());
       MutableHandle<mirror::Object> h_result(hs.NewHandle(obj_result));
-      if (!SendMethodExitEvents(Self(),
-                                Instrumentation(),
-                                shadow_frame_,
-                                shadow_frame_.GetMethod(),
-                                h_result)) {
+      if (!InstrumentationHandler::SendMethodExitEvents(Self(),
+                                                        Instrumentation(),
+                                                        shadow_frame_,
+                                                        shadow_frame_.GetMethod(),
+                                                        h_result)) {
         DCHECK(Self()->IsExceptionPending());
         // Do not raise exception event if it is caused by other instrumentation event.
         shadow_frame_.SetSkipNextExceptionEvent(true);
@@ -679,8 +856,13 @@ class InstructionHandler {
       gc::AllocatorType allocator_type = Runtime::Current()->GetHeap()->GetCurrentAllocator();
       if (UNLIKELY(c->IsStringClass())) {
         obj = mirror::String::AllocEmptyString(Self(), allocator_type);
+        // Do not record the allocated string in the transaction.
+        // There can be no transaction records for this immutable object.
       } else {
         obj = AllocObjectFromCode(c, Self(), allocator_type);
+        if (obj != nullptr) {
+          TransactionChecker::RecordAllocatedObject(obj);
+        }
       }
     }
     if (UNLIKELY(obj == nullptr)) {
@@ -702,18 +884,17 @@ class InstructionHandler {
     if (UNLIKELY(obj == nullptr)) {
       return false;  // Pending exception.
     }
+    TransactionChecker::RecordAllocatedObject(obj);
     SetVRegReference(A(), obj);
     return true;
   }
 
   HANDLER_ATTRIBUTES bool FILLED_NEW_ARRAY() {
-    return DoFilledNewArray<false, transaction_active>(
-        inst_, shadow_frame_, Self(), ResultRegister());
+    return DoFilledNewArray</*is_range=*/ false>(inst_, shadow_frame_, Self(), ResultRegister());
   }
 
   HANDLER_ATTRIBUTES bool FILLED_NEW_ARRAY_RANGE() {
-    return DoFilledNewArray<true, transaction_active>(
-        inst_, shadow_frame_, Self(), ResultRegister());
+    return DoFilledNewArray</*is_range=*/ true>(inst_, shadow_frame_, Self(), ResultRegister());
   }
 
   HANDLER_ATTRIBUTES bool FILL_ARRAY_DATA() {
@@ -721,11 +902,10 @@ class InstructionHandler {
     const Instruction::ArrayDataPayload* payload =
         reinterpret_cast<const Instruction::ArrayDataPayload*>(payload_addr);
     ObjPtr<mirror::Object> obj = GetVRegReference(A());
+    // If we have an active transaction, record old values before we overwrite them.
+    TransactionChecker::RecordArrayElementsInTransaction(obj, payload->element_count);
     if (!FillArrayData(obj, payload)) {
       return false;  // Pending exception.
-    }
-    if (transaction_active) {
-      RecordArrayElementsInTransaction(obj->AsArray(), payload->element_count);
     }
     return true;
   }

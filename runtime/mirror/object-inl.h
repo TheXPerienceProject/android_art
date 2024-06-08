@@ -393,11 +393,8 @@ template<bool kTransactionActive,
 inline void Object::SetFieldBoolean(MemberOffset field_offset, uint8_t new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
   if (kTransactionActive) {
-    Runtime::Current()->RecordWriteFieldBoolean(
-        this,
-        field_offset,
-        GetFieldBoolean<kVerifyFlags, kIsVolatile>(field_offset),
-        kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldBoolean(
+        this, field_offset, GetFieldBoolean<kVerifyFlags, kIsVolatile>(field_offset), kIsVolatile);
   }
   Verify<kVerifyFlags>();
   SetFieldPrimitive<uint8_t, kIsVolatile>(field_offset, new_value);
@@ -410,10 +407,8 @@ template<bool kTransactionActive,
 inline void Object::SetFieldByte(MemberOffset field_offset, int8_t new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
   if (kTransactionActive) {
-    Runtime::Current()->RecordWriteFieldByte(this,
-                                             field_offset,
-                                             GetFieldByte<kVerifyFlags, kIsVolatile>(field_offset),
-                                             kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldByte(
+        this, field_offset, GetFieldByte<kVerifyFlags, kIsVolatile>(field_offset), kIsVolatile);
   }
   Verify<kVerifyFlags>();
   SetFieldPrimitive<int8_t, kIsVolatile>(field_offset, new_value);
@@ -460,10 +455,8 @@ template<bool kTransactionActive,
 inline void Object::SetFieldChar(MemberOffset field_offset, uint16_t new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
   if (kTransactionActive) {
-    Runtime::Current()->RecordWriteFieldChar(this,
-                                             field_offset,
-                                             GetFieldChar<kVerifyFlags, kIsVolatile>(field_offset),
-                                             kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldChar(
+        this, field_offset, GetFieldChar<kVerifyFlags, kIsVolatile>(field_offset), kIsVolatile);
   }
   Verify<kVerifyFlags>();
   SetFieldPrimitive<uint16_t, kIsVolatile>(field_offset, new_value);
@@ -476,10 +469,8 @@ template<bool kTransactionActive,
 inline void Object::SetFieldShort(MemberOffset field_offset, int16_t new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
   if (kTransactionActive) {
-    Runtime::Current()->RecordWriteFieldChar(this,
-                                             field_offset,
-                                             GetFieldShort<kVerifyFlags, kIsVolatile>(field_offset),
-                                             kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldChar(
+        this, field_offset, GetFieldShort<kVerifyFlags, kIsVolatile>(field_offset), kIsVolatile);
   }
   Verify<kVerifyFlags>();
   SetFieldPrimitive<int16_t, kIsVolatile>(field_offset, new_value);
@@ -504,10 +495,8 @@ template<bool kTransactionActive,
 inline void Object::SetField32(MemberOffset field_offset, int32_t new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
   if (kTransactionActive) {
-    Runtime::Current()->RecordWriteField32(this,
-                                           field_offset,
-                                           GetField32<kVerifyFlags, kIsVolatile>(field_offset),
-                                           kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteField32(
+        this, field_offset, GetField32<kVerifyFlags, kIsVolatile>(field_offset), kIsVolatile);
   }
   Verify<kVerifyFlags>();
   SetFieldPrimitive<int32_t, kIsVolatile>(field_offset, new_value);
@@ -534,10 +523,8 @@ template<bool kTransactionActive,
 inline void Object::SetField64(MemberOffset field_offset, int64_t new_value) {
   VerifyTransaction<kTransactionActive, kCheckTransaction>();
   if (kTransactionActive) {
-    Runtime::Current()->RecordWriteField64(this,
-                                           field_offset,
-                                           GetField64<kVerifyFlags, kIsVolatile>(field_offset),
-                                           kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteField64(
+        this, field_offset, GetField64<kVerifyFlags, kIsVolatile>(field_offset), kIsVolatile);
   }
   Verify<kVerifyFlags>();
   SetFieldPrimitive<int64_t, kIsVolatile>(field_offset, new_value);
@@ -575,7 +562,8 @@ inline bool Object::CasFieldWeakSequentiallyConsistent64(MemberOffset field_offs
   Atomic<int64_t>* atomic_addr = reinterpret_cast<Atomic<int64_t>*>(raw_addr);
   bool success = atomic_addr->CompareAndSetWeakSequentiallyConsistent(old_value, new_value);
   if (kTransactionActive && success) {
-    Runtime::Current()->RecordWriteField64(this, field_offset, old_value, /*is_volatile=*/ true);
+    Runtime::Current()->GetClassLinker()->RecordWriteField64(
+        this, field_offset, old_value, /*is_volatile=*/ true);
   }
   return success;
 }
@@ -590,7 +578,8 @@ inline bool Object::CasFieldStrongSequentiallyConsistent64(MemberOffset field_of
   Atomic<int64_t>* atomic_addr = reinterpret_cast<Atomic<int64_t>*>(raw_addr);
   bool success = atomic_addr->CompareAndSetStrongSequentiallyConsistent(old_value, new_value);
   if (kTransactionActive && success) {
-    Runtime::Current()->RecordWriteField64(this, field_offset, old_value, /*is_volatile=*/ true);
+    Runtime::Current()->GetClassLinker()->RecordWriteField64(
+        this, field_offset, old_value, /*is_volatile=*/ true);
   }
   return success;
 }
@@ -630,7 +619,8 @@ inline void Object::SetFieldObjectWithoutWriteBarrier(MemberOffset field_offset,
   if (kTransactionActive) {
     ObjPtr<Object> old_value =
         GetFieldObject<Object, kVerifyFlags, kWithReadBarrier, kIsVolatile>(field_offset);
-    Runtime::Current()->RecordWriteFieldReference(this, field_offset, old_value, kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldReference(
+        this, field_offset, old_value, kIsVolatile);
   }
   Verify<kVerifyFlags>();
   VerifyWrite<kVerifyFlags>(new_value);
@@ -689,7 +679,7 @@ inline bool Object::CasFieldObjectWithoutWriteBarrier(MemberOffset field_offset,
   Atomic<uint32_t>* atomic_addr = reinterpret_cast<Atomic<uint32_t>*>(raw_addr);
   bool success = atomic_addr->CompareAndSet(old_ref, new_ref, mode, memory_order);
   if (kTransactionActive && success) {
-    Runtime::Current()->RecordWriteFieldReference(
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldReference(
         this, field_offset, old_value, /*is_volatile=*/ true);
   }
   return success;
@@ -731,7 +721,8 @@ inline ObjPtr<Object> Object::CompareAndExchangeFieldObject(MemberOffset field_o
   }
   if (success) {
     if (kTransactionActive) {
-      Runtime::Current()->RecordWriteFieldReference(this, field_offset, witness_value, true);
+      Runtime::Current()->GetClassLinker()->RecordWriteFieldReference(
+          this, field_offset, witness_value, /*is_volatile=*/ true);
     }
     WriteBarrier::ForFieldWrite(this, field_offset, new_value);
   }
@@ -755,7 +746,8 @@ inline ObjPtr<Object> Object::ExchangeFieldObject(MemberOffset field_offset,
     ReadBarrier::AssertToSpaceInvariant(old_value.Ptr());
   }
   if (kTransactionActive) {
-    Runtime::Current()->RecordWriteFieldReference(this, field_offset, old_value, true);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldReference(
+        this, field_offset, old_value, /*is_volatile=*/ true);
   }
   WriteBarrier::ForFieldWrite(this, field_offset, new_value);
   VerifyRead<kVerifyFlags>(old_value);
@@ -777,7 +769,8 @@ inline void Object::UpdateFieldBooleanViaAccessor(MemberOffset field_offset,
   if (kTransactionActive) {
     static const bool kIsVolatile = true;
     uint8_t old_value = GetFieldBoolean<kVerifyFlags, kIsVolatile>(field_offset);
-    Runtime::Current()->RecordWriteFieldBoolean(this, field_offset, old_value, kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldBoolean(
+        this, field_offset, old_value, kIsVolatile);
   }
   Verify<kVerifyFlags>();
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
@@ -792,7 +785,8 @@ inline void Object::UpdateFieldByteViaAccessor(MemberOffset field_offset,
   if (kTransactionActive) {
     static const bool kIsVolatile = true;
     int8_t old_value = GetFieldByte<kVerifyFlags, kIsVolatile>(field_offset);
-    Runtime::Current()->RecordWriteFieldByte(this, field_offset, old_value, kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldByte(
+        this, field_offset, old_value, kIsVolatile);
   }
   Verify<kVerifyFlags>();
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
@@ -807,7 +801,8 @@ inline void Object::UpdateFieldCharViaAccessor(MemberOffset field_offset,
   if (kTransactionActive) {
     static const bool kIsVolatile = true;
     uint16_t old_value = GetFieldChar<kVerifyFlags, kIsVolatile>(field_offset);
-    Runtime::Current()->RecordWriteFieldChar(this, field_offset, old_value, kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldChar(
+        this, field_offset, old_value, kIsVolatile);
   }
   Verify<kVerifyFlags>();
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
@@ -822,7 +817,8 @@ inline void Object::UpdateFieldShortViaAccessor(MemberOffset field_offset,
   if (kTransactionActive) {
     static const bool kIsVolatile = true;
     int16_t old_value = GetFieldShort<kVerifyFlags, kIsVolatile>(field_offset);
-    Runtime::Current()->RecordWriteFieldShort(this, field_offset, old_value, kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteFieldShort(
+        this, field_offset, old_value, kIsVolatile);
   }
   Verify<kVerifyFlags>();
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
@@ -837,7 +833,8 @@ inline void Object::UpdateField32ViaAccessor(MemberOffset field_offset,
   if (kTransactionActive) {
     static const bool kIsVolatile = true;
     int32_t old_value = GetField32<kVerifyFlags, kIsVolatile>(field_offset);
-    Runtime::Current()->RecordWriteField32(this, field_offset, old_value, kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteField32(
+        this, field_offset, old_value, kIsVolatile);
   }
   Verify<kVerifyFlags>();
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
@@ -852,7 +849,8 @@ inline void Object::UpdateField64ViaAccessor(MemberOffset field_offset,
   if (kTransactionActive) {
     static const bool kIsVolatile = true;
     int64_t old_value = GetField64<kVerifyFlags, kIsVolatile>(field_offset);
-    Runtime::Current()->RecordWriteField64(this, field_offset, old_value, kIsVolatile);
+    Runtime::Current()->GetClassLinker()->RecordWriteField64(
+        this, field_offset, old_value, kIsVolatile);
   }
   Verify<kVerifyFlags>();
   uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();

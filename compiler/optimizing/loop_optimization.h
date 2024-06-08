@@ -105,14 +105,14 @@ class HLoopOptimization : public HOptimization {
   };
 
   /*
-   * Vectorization mode during synthesis
+   * Loop synthesis mode during vectorization
    * (sequential peeling/cleanup loop or vector loop).
    */
-  enum class VectorMode {
+  enum class LoopSynthesisMode {
     kSequential,
     kVector
   };
-  friend std::ostream& operator<<(std::ostream& os, const VectorMode& fd_logger);
+  friend std::ostream& operator<<(std::ostream& os, const LoopSynthesisMode& fd_logger);
 
   /*
    * Representation of a unit-stride array reference.
@@ -480,6 +480,7 @@ class HLoopOptimization : public HOptimization {
   bool CanRemoveCycle();  // Whether the current 'iset_' is removable.
 
   bool IsInPredicatedVectorizationMode() const { return predicated_vectorization_mode_; }
+  void MaybeInsertInVectorExternalSet(HInstruction* instruction);
 
   // Compiler options (to query ISA features).
   const CompilerOptions* compiler_options_;
@@ -547,6 +548,12 @@ class HLoopOptimization : public HOptimization {
   // Tracks vector operations that are inserted outside of the loop (preheader, exit)
   // as part of vectorization (e.g. replicate scalar for loop invariants and reduce ops
   // for loop reductions).
+  //
+  // The instructions in the set are live for the whole vectorization process of the current
+  // loop, not just during generation of a particular loop version (as the sets above).
+  //
+  // Currently the set is being only used in the predicated mode - for assigning governing
+  // predicates.
   ScopedArenaSet<HInstruction*>* vector_external_set_;
 
   // A mapping between a basic block of the original loop and its associated PredicateInfo.
@@ -555,7 +562,7 @@ class HLoopOptimization : public HOptimization {
   ScopedArenaSafeMap<HBasicBlock*, BlockPredicateInfo*>* predicate_info_map_;
 
   // Temporary vectorization bookkeeping.
-  VectorMode vector_mode_;  // synthesis mode
+  LoopSynthesisMode synthesis_mode_;  // synthesis mode
   HBasicBlock* vector_preheader_;  // preheader of the new loop
   HBasicBlock* vector_header_;  // header of the new loop
   HBasicBlock* vector_body_;  // body of the new loop

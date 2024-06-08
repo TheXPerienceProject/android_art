@@ -879,23 +879,83 @@ class EXPORT ClassLinker {
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::dex_lock_, !Roles::uninterruptible_);
 
-  // Verifies if the method is accesible according to the SdkChecker (if installed).
+  // Verifies if the method is accessible according to the SdkChecker (if installed).
   virtual bool DenyAccessBasedOnPublicSdk(ArtMethod* art_method) const
       REQUIRES_SHARED(Locks::mutator_lock_);
-  // Verifies if the field is accesible according to the SdkChecker (if installed).
+  // Verifies if the field is accessible according to the SdkChecker (if installed).
   virtual bool DenyAccessBasedOnPublicSdk(ArtField* art_field) const
       REQUIRES_SHARED(Locks::mutator_lock_);
-  // Verifies if the descriptor is accesible according to the SdkChecker (if installed).
+  // Verifies if the descriptor is accessible according to the SdkChecker (if installed).
   virtual bool DenyAccessBasedOnPublicSdk(std::string_view type_descriptor) const;
   // Enable or disable public sdk checks.
   virtual void SetEnablePublicSdkChecks(bool enabled);
 
   // Transaction constraint checks for AOT compilation.
-  virtual bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const
+  virtual bool TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  virtual bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) const
+  virtual bool TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  virtual bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) const
+  virtual bool TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Transaction bookkeeping for AOT compilation.
+  virtual void RecordWriteFieldBoolean(mirror::Object* obj,
+                                       MemberOffset field_offset,
+                                       uint8_t value,
+                                       bool is_volatile);
+  virtual void RecordWriteFieldByte(mirror::Object* obj,
+                                    MemberOffset field_offset,
+                                    int8_t value,
+                                    bool is_volatile);
+  virtual void RecordWriteFieldChar(mirror::Object* obj,
+                                    MemberOffset field_offset,
+                                    uint16_t value,
+                                    bool is_volatile);
+  virtual void RecordWriteFieldShort(mirror::Object* obj,
+                                     MemberOffset field_offset,
+                                     int16_t value,
+                                     bool is_volatile);
+  virtual void RecordWriteField32(mirror::Object* obj,
+                                  MemberOffset field_offset,
+                                  uint32_t value,
+                                  bool is_volatile);
+  virtual void RecordWriteField64(mirror::Object* obj,
+                                  MemberOffset field_offset,
+                                  uint64_t value,
+                                  bool is_volatile);
+  virtual void RecordWriteFieldReference(mirror::Object* obj,
+                                         MemberOffset field_offset,
+                                         ObjPtr<mirror::Object> value,
+                                         bool is_volatile)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  virtual void RecordWriteArray(mirror::Array* array, size_t index, uint64_t value)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  virtual void RecordStrongStringInsertion(ObjPtr<mirror::String> s)
+      REQUIRES(Locks::intern_table_lock_);
+  virtual void RecordWeakStringInsertion(ObjPtr<mirror::String> s)
+      REQUIRES(Locks::intern_table_lock_);
+  virtual void RecordStrongStringRemoval(ObjPtr<mirror::String> s)
+      REQUIRES(Locks::intern_table_lock_);
+  virtual void RecordWeakStringRemoval(ObjPtr<mirror::String> s)
+      REQUIRES(Locks::intern_table_lock_);
+  virtual void RecordResolveString(ObjPtr<mirror::DexCache> dex_cache, dex::StringIndex string_idx)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  virtual void RecordResolveMethodType(ObjPtr<mirror::DexCache> dex_cache,
+                                       dex::ProtoIndex proto_idx)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Aborting transactions for AOT compilation.
+  virtual void ThrowTransactionAbortError(Thread* self)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  virtual void AbortTransactionF(Thread* self, const char* fmt, ...)
+      __attribute__((__format__(__printf__, 3, 4)))
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  virtual void AbortTransactionV(Thread* self, const char* fmt, va_list args)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  virtual bool IsTransactionAborted() const;
+
+  // Vist transaction roots for AOT compilation.
+  virtual void VisitTransactionRoots(RootVisitor* visitor)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   void RemoveDexFromCaches(const DexFile& dex_file);

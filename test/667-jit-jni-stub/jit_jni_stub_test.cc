@@ -39,9 +39,15 @@ extern "C" JNIEXPORT
 void Java_Main_jitGc(JNIEnv*, jclass) {
   CHECK(Runtime::Current()->GetJit() != nullptr);
   jit::JitCodeCache* cache = Runtime::Current()->GetJit()->GetCodeCache();
-  ScopedObjectAccess soa(Thread::Current());
-  cache->InvalidateAllCompiledCode();
-  cache->GarbageCollectCache(Thread::Current());
+  Thread* self = Thread::Current();
+  {
+    ScopedObjectAccess soa(self);
+    cache->InvalidateAllCompiledCode();
+  }
+  cache->DoCollection(self);
+  // Run a second time in case the first run was a no-op due to a concurrent JIT
+  // GC from the JIT thread.
+  cache->DoCollection(self);
 }
 
 extern "C" JNIEXPORT
