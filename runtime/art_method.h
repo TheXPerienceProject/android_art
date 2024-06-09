@@ -1011,7 +1011,6 @@ class EXPORT ArtMethod final {
   ALWAYS_INLINE void UpdateCounter(int32_t new_samples);
   ALWAYS_INLINE void SetHotCounter();
   ALWAYS_INLINE bool CounterIsHot();
-  ALWAYS_INLINE bool CounterHasReached(uint16_t samples, uint16_t threshold);
   ALWAYS_INLINE uint16_t GetCounter();
   ALWAYS_INLINE bool CounterHasChanged(uint16_t threshold);
 
