@@ -16,6 +16,7 @@
 
 #include "tools/tools.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -25,6 +26,7 @@
 #include "android-base/result.h"
 #include "base/common_art_test.h"
 #include "base/globals.h"
+#include "base/pidfd.h"
 #include "base/time_utils.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -167,6 +169,10 @@ class ArtToolsEnsureNoProcessInDirTest : public ArtToolsTest {
  protected:
   void SetUp() override {
     ArtToolsTest::SetUp();
+
+    if (!PidfdOpen(getpid(), /*flags=*/0).ok() && errno == ENOSYS) {
+      GTEST_SKIP() << "'pidfd_open' is not available";
+    }
 
     related_dir_ = scratch_path_ + "/related";
     unrelated_dir_ = scratch_path_ + "/unrelated";
