@@ -2496,7 +2496,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       break;
     case Instruction::THROW: {
       const RegType& res_type = work_line_->GetRegisterType(this, inst->VRegA_11x());
-      if (!reg_types_.JavaLangThrowable(false).IsAssignableFrom(res_type, this)) {
+      if (!reg_types_.JavaLangThrowable().IsAssignableFrom(res_type, this)) {
         if (res_type.IsUninitializedTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "thrown exception not initialized";
         } else if (!res_type.IsReferenceTypes()) {
@@ -3670,12 +3670,12 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
         for (; iterator.HasNext(); iterator.Next()) {
           if (iterator.GetHandlerAddress() == (uint32_t) work_insn_idx_) {
             if (!iterator.GetHandlerTypeIndex().IsValid()) {
-              common_super = &reg_types_.JavaLangThrowable(false);
+              common_super = &reg_types_.JavaLangThrowable();
             } else {
               // Do access checks only on resolved exception classes.
               const RegType& exception =
                   ResolveClass<CheckAccess::kOnResolvedClass>(iterator.GetHandlerTypeIndex());
-              if (!reg_types_.JavaLangThrowable(false).IsAssignableFrom(exception, this)) {
+              if (!reg_types_.JavaLangThrowable().IsAssignableFrom(exception, this)) {
                 DCHECK(!exception.IsUninitializedTypes());  // Comes from dex, shouldn't be uninit.
                 if (exception.IsUnresolvedTypes()) {
                   if (unresolved == nullptr) {
@@ -3694,7 +3694,7 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
                 // odd case, but nothing to do
               } else {
                 common_super = &common_super->Merge(exception, &reg_types_, this);
-                if (FailOrAbort(reg_types_.JavaLangThrowable(false).IsAssignableFrom(
+                if (FailOrAbort(reg_types_.JavaLangThrowable().IsAssignableFrom(
                     *common_super, this),
                     "java.lang.Throwable is not assignable-from common_super at ",
                     work_insn_idx_)) {
