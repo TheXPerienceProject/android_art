@@ -17,10 +17,6 @@
 #ifndef ART_LIBDEXFILE_DEX_COMPACT_DEX_LEVEL_H_
 #define ART_LIBDEXFILE_DEX_COMPACT_DEX_LEVEL_H_
 
-#include <string>
-
-#include "dex_file.h"
-
 namespace art {
 
 // Optimization level for compact dex generation.
@@ -31,18 +27,6 @@ enum class CompactDexLevel {
   // Level fast means optimizations that don't take many resources to perform.
   kCompactDexLevelFast,
 };
-
-#ifdef ART_DEFAULT_COMPACT_DEX_LEVEL
-#define ART_DEFAULT_COMPACT_DEX_LEVEL_VALUE_fast CompactDexLevel::kCompactDexLevelFast
-#define ART_DEFAULT_COMPACT_DEX_LEVEL_VALUE_none CompactDexLevel::kCompactDexLevelNone
-
-#define ART_DEFAULT_COMPACT_DEX_LEVEL_DEFAULT APPEND_TOKENS_AFTER_EVAL( \
-    ART_DEFAULT_COMPACT_DEX_LEVEL_VALUE_, \
-    ART_DEFAULT_COMPACT_DEX_LEVEL)
-
-static_assert(ART_DEFAULT_COMPACT_DEX_LEVEL_DEFAULT == CompactDexLevel::kCompactDexLevelNone,
-              "ART_DEFAULT_COMPACT_DEX_LEVEL_DEFAULT != none is no longer supported");
-#endif
 
 }  // namespace art
 

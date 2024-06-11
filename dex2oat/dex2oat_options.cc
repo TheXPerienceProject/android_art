@@ -417,11 +417,9 @@ Parser CreateDex2oatArgumentParser() {
                     "\n"
                     "Example: --class-loader-context=PCL[lib1.dex:lib2.dex];DLC[lib3.dex]")
           .IntoKey(M::StoredClassLoaderContext)
+      // TODO(b/325430813): Obsolete argument that only prints a warning if used. Delete altogether.
       .Define("--compact-dex-level=_")
-          .WithType<CompactDexLevel>()
-          .WithValueMap({{"none", CompactDexLevel::kCompactDexLevelNone},
-                         {"fast", CompactDexLevel::kCompactDexLevelFast}})
-          .WithHelp("This flag is obsolete and does nothing.")
+          .WithType<std::string>()
           .IntoKey(M::CompactDexLevel)
       .Define("--runtime-arg _")
           .WithType<std::vector<std::string>>().AppendValues()
