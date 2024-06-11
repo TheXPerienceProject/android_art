@@ -112,7 +112,6 @@ art_cc_library_static {
     name: "libart-dex2oat",
     defaults: ["libart-dex2oat-defaults"],
     shared_libs: [
-        "libart-dexlayout",
         "libart",
         "libartpalette",
         "libprofile",
@@ -134,7 +133,6 @@ cc_defaults {
         "libprofile_static_defaults",
     ],
     whole_static_libs: [
-        "libart-dexlayout",
         "libart-dex2oat",
     ],
 }
@@ -148,7 +146,6 @@ art_cc_library_static {
     defaults: [
         "art_defaults",
         "libart-dex2oat_static_defaults",
-        "libart-dexlayout_static_defaults",
         "libart_static_defaults",
         "libartbase_static_defaults",
         "libdexfile_static_defaults",
@@ -163,7 +160,6 @@ art_cc_library_static {
         "libart-dex2oat-defaults",
     ],
     shared_libs: [
-        "libartd-dexlayout",
         "libartd",
         "libartpalette",
         "libprofiled",
@@ -184,7 +180,6 @@ cc_defaults {
         "libprofiled_static_defaults",
     ],
     whole_static_libs: [
-        "libartd-dexlayout",
         "libartd-dex2oat",
     ],
 }
@@ -197,7 +192,6 @@ art_cc_library_static {
         "art_debug_defaults",
         "libartbased_static_defaults",
         "libartd-dex2oat_static_defaults",
-        "libartd-dexlayout_static_defaults",
         "libartd_static_defaults",
         "libdexfiled_static_defaults",
         "libprofiled_static_defaults",
@@ -258,7 +252,6 @@ art_cc_binary {
         android: {
             shared_libs: [
                 "libart",
-                "libart-dexlayout",
                 "libartbase",
                 "libdexfile",
                 "libprofile",
@@ -319,7 +312,6 @@ art_cc_binary {
             shared_libs: [
                 "libartbased",
                 "libartd",
-                "libartd-dexlayout",
                 "libdexfiled",
                 "libprofiled",
             ],
@@ -521,7 +513,6 @@ art_cc_test {
         "libartd-dex2oat",
         "libartd-dex2oat-gtest",
         "libvixld",
-        "libartd-dexlayout",
     ],
 }
 
@@ -537,7 +528,6 @@ art_cc_test {
         "libart-dex2oat",
         "libart-dex2oat-gtest",
         "libvixl",
-        "libart-dexlayout",
     ],
     test_config: "art_standalone_dex2oat_tests.xml",
 }

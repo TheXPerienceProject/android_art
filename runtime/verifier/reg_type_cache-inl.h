@@ -157,17 +157,13 @@ inline const PreciseReferenceType& RegTypeCache::JavaLangInvokeMethodType() {
   return *down_cast<const PreciseReferenceType*>(result);
 }
 
-inline const RegType&  RegTypeCache::JavaLangThrowable(bool precise) {
+inline const RegType& RegTypeCache::JavaLangThrowable() {
   const RegType* result = &FromClass("Ljava/lang/Throwable;",
                                      GetClassRoot<mirror::Throwable>(),
-                                     precise);
-  if (precise) {
-    DCHECK(result->IsPreciseReference());
-    return *down_cast<const PreciseReferenceType*>(result);
-  } else {
-    DCHECK(result->IsReference());
-    return *down_cast<const ReferenceType*>(result);
-  }
+                                     /* precise= */ false);
+  DCHECK(result->IsReference());
+  DCHECK(!result->IsPreciseReference());
+  return *down_cast<const ReferenceType*>(result);
 }
 
 inline const RegType& RegTypeCache::JavaLangObject(bool precise) {

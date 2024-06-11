@@ -682,7 +682,9 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         if (mArtManagerLocal.getPreRebootDexoptJob().isAsyncForOta()) {
             return handleSchedulePrDexoptJob(pw, otaSlot);
         } else {
-            return handleRunPrDexoptJob(pw, otaSlot);
+            // Don't map snapshots when running synchronously. `update_engine` maps snapshots for
+            // us.
+            return handleRunPrDexoptJob(pw, otaSlot, false /* mapSnapshotsForOta */);
         }
     }
 
@@ -692,37 +694,74 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
             return 1;
         }
 
-        boolean isTest = false;
+        String mode = null;
+        String otaSlot = null;
 
-        String opt = getNextOption();
-        if ("--test".equals(opt)) {
-            isTest = true;
-        } else if (opt != null) {
-            pw.println("Error: Unknown option: " + opt);
-            return 1;
-        }
-
-        if (isTest) {
-            try {
-                mArtManagerLocal.getPreRebootDexoptJob().test();
-                pw.println("Success");
-                return 0;
-            } catch (Exception e) {
-                pw.println("Failure");
-                e.printStackTrace(pw);
-                return 2; // "1" is for general errors. Use "2" for the test failure.
+        String opt;
+        while ((opt = getNextOption()) != null) {
+            switch (opt) {
+                case "--slot":
+                    otaSlot = getNextArgRequired();
+                    break;
+                case "--test":
+                case "--run":
+                case "--schedule":
+                case "--cancel":
+                    if (mode != null) {
+                        pw.println("Error: Only one mode can be specified");
+                        return 1;
+                    }
+                    mode = opt;
+                    break;
+                default:
+                    pw.println("Error: Unknown option: " + opt);
+                    return 1;
             }
         }
 
-        pw.println("Error: No option specified");
-        return 1;
+        if (mode == null) {
+            pw.println("Error: No mode specified");
+            return 1;
+        }
+
+        if (otaSlot != null && Binder.getCallingUid() != Process.ROOT_UID) {
+            throw new SecurityException("Only root can specify '--slot'");
+        }
+
+        switch (mode) {
+            case "--test":
+                return handleTestPrDexoptJob(pw);
+            case "--run":
+                return handleRunPrDexoptJob(pw, otaSlot, true /* mapSnapshotsForOta */);
+            case "--schedule":
+                return handleSchedulePrDexoptJob(pw, otaSlot);
+            case "--cancel":
+                return handleCancelPrDexoptJob(pw);
+            default:
+                // Can't happen.
+                throw new IllegalStateException("Unknown mode: " + mode);
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    private int handleRunPrDexoptJob(@NonNull PrintWriter pw, @Nullable String otaSlot) {
+    private int handleTestPrDexoptJob(@NonNull PrintWriter pw) {
+        try {
+            mArtManagerLocal.getPreRebootDexoptJob().test();
+            pw.println("Success");
+            return 0;
+        } catch (Exception e) {
+            pw.println("Failure");
+            e.printStackTrace(pw);
+            return 2; // "1" is for general errors. Use "2" for the test failure.
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private int handleRunPrDexoptJob(
+            @NonNull PrintWriter pw, @Nullable String otaSlot, boolean mapSnapshotsForOta) {
         PreRebootDexoptJob job = mArtManagerLocal.getPreRebootDexoptJob();
 
-        CompletableFuture<Void> future = job.onUpdateReadyStartNow(otaSlot);
+        CompletableFuture<Void> future = job.onUpdateReadyStartNow(otaSlot, mapSnapshotsForOta);
         if (future == null) {
             pw.println("Job disabled by system property");
             return 1;
@@ -750,7 +789,8 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
             }
         });
         readThread.start();
-        pw.println("Job running...  To cancel it, press Ctrl+C.");
+        pw.println("Job running...  To cancel it, press Ctrl+C or run "
+                + "'pm art pr-dexopt-job --cancel' in a separate shell.");
         pw.flush();
 
         try {
@@ -788,6 +828,13 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
                 // Can't happen.
                 throw new IllegalStateException("Unknown result code: " + code);
         }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private int handleCancelPrDexoptJob(@NonNull PrintWriter pw) {
+        mArtManagerLocal.getPreRebootDexoptJob().cancelAny();
+        pw.println("Pre-reboot Dexopt job cancelled");
+        return 0;
     }
 
     @Override
@@ -941,8 +988,8 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         pw.println("    API documentation for 'ArtManagerLocal.dexoptPackages' for details.");
         pw.println();
         pw.println("  on-ota-staged --slot SLOT");
-        pw.println("    Notifies ART Service that an OTA update is staged. ART Service decides");
-        pw.println("    what to do with this notification:");
+        pw.println("    Notify ART Service that an OTA update is staged. ART Service decides what");
+        pw.println("    to do with this notification:");
         pw.println("    - If Pre-reboot Dexopt is disabled or unsupported, the command returns");
         pw.println("      non-zero.");
         pw.println("    - If Pre-reboot Dexopt is enabled in synchronous mode, the command blocks");
@@ -953,6 +1000,29 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         pw.println("      then run by the job scheduler when the device is idle and charging.");
         pw.println("    Options:");
         pw.println("      --slot SLOT The slot that contains the OTA update, '_a' or '_b'.");
+        pw.println("    Note: This command is only supposed to be used by the system. To manually");
+        pw.println("    control the Pre-reboot Dexopt job, use 'pr-dexopt-job' instead.");
+        pw.println();
+        pw.println("  pr-dexopt-job [--run | --schedule | --cancel | --test] [--slot SLOT]");
+        pw.println("    Control the Pre-reboot Dexopt job. One of the mode options must be");
+        pw.println("    specified.");
+        pw.println("    Mode Options:");
+        pw.println("      --run Start a Pre-reboot Dexopt job immediately and waits for it to");
+        pw.println("        finish. This command preempts any pending or running job, previously");
+        pw.println("        scheduled or started automatically by the system or through any");
+        pw.println("        'pr-dexopt-job' command.");
+        pw.println("      --schedule Schedule a Pre-reboot Dexopt job and return immediately. The");
+        pw.println("        job will then be automatically started by the job scheduler when the");
+        pw.println("        device is idle and charging. This command immediately preempts any");
+        pw.println("        pending or running job, previously scheduled or started automatically");
+        pw.println("        by the system or through any 'pr-dexopt-job' command.");
+        pw.println("      --cancel Cancel any pending or running job, previously scheduled or");
+        pw.println("        started automatically by the system or through any 'pr-dexopt-job'");
+        pw.println("        command.");
+        pw.println("      --test The behavior is undefined. Do not use it.");
+        pw.println("    Options:");
+        pw.println("      --slot SLOT The slot that contains the OTA update, '_a' or '_b'. If not");
+        pw.println("        specified, the job is for a Mainline update");
     }
 
     private void enforceRootOrShell() {
