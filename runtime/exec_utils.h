@@ -94,11 +94,16 @@ class EXPORT ExecUtils {
                                          int timeout_sec,
                                          /*out*/ std::string* error_msg) const;
 
-  // Same as above, but also collects stat of the process and calls callbacks. The stat is collected
-  // no matter the child process succeeds or not.
+  // Same as above, but also collects stat of the process, calls callbacks, and supports creating a
+  // new process group. The stat is collected no matter the child process succeeds or not.
+  //
+  // Programs used by artd (odrefresh, dex2oat, profman) should NOT set `new_process_group` to true
+  // when spawning child processes because artd needs to kill an entire process subtree by killing
+  // the process group.
   virtual ExecResult ExecAndReturnResult(const std::vector<std::string>& arg_vector,
                                          int timeout_sec,
                                          const ExecCallbacks& callbacks,
+                                         bool new_process_group,
                                          /*out*/ ProcessStat* stat,
                                          /*out*/ std::string* error_msg) const;
 

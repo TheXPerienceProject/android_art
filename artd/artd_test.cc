@@ -304,6 +304,7 @@ class MockExecUtils : public ExecUtils {
   ExecResult ExecAndReturnResult(const std::vector<std::string>& arg_vector,
                                  int,
                                  const ExecCallbacks& callbacks,
+                                 bool,
                                  ProcessStat* stat,
                                  std::string*) const override {
     Result<int> code = DoExecAndReturnCode(arg_vector, callbacks, stat);
@@ -1155,7 +1156,7 @@ TEST_F(ArtdTest, dexoptCancelledBeforeDex2oat) {
         callbacks.on_end(kPid);
         return Error();
       });
-  EXPECT_CALL(mock_kill_, Call(kPid, SIGKILL));
+  EXPECT_CALL(mock_kill_, Call(-kPid, SIGKILL));
 
   cancellation_signal->cancel();
 
@@ -1188,7 +1189,7 @@ TEST_F(ArtdTest, dexoptCancelledDuringDex2oat) {
         return Error();
       });
 
-  EXPECT_CALL(mock_kill_, Call(kPid, SIGKILL)).WillOnce([&](auto, auto) {
+  EXPECT_CALL(mock_kill_, Call(-kPid, SIGKILL)).WillOnce([&](auto, auto) {
     // Step 4.
     process_killed_cv.notify_one();
     return 0;
@@ -2843,7 +2844,7 @@ TEST_F(ArtdPreRebootTest, preRebootInitCancelled) {
         return Error();
       });
 
-  EXPECT_CALL(mock_kill_, Call(kPid, SIGKILL)).WillOnce([&](auto, auto) {
+  EXPECT_CALL(mock_kill_, Call(-kPid, SIGKILL)).WillOnce([&](auto, auto) {
     // Step 4.
     process_killed_cv.notify_one();
     return 0;
