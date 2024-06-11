@@ -106,9 +106,7 @@ ART_TEST_MODULES_COMMON := \
     art_compiler_host_tests \
     art_compiler_tests \
     art_dexanalyze_tests \
-    art_dexdiag_tests \
     art_dexdump_tests \
-    art_dexlayout_tests \
     art_dexlist_tests \
     art_dexoptanalyzer_tests \
     art_disassembler_tests \
