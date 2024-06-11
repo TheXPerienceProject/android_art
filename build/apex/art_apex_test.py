@@ -475,7 +475,6 @@ class ReleaseChecker:
     # Check internal libraries for ART.
     self._checker.check_native_library('libadbconnection')
     self._checker.check_native_library('libart')
-    self._checker.check_native_library('libart-dexlayout')
     self._checker.check_native_library('libart-disassembler')
     self._checker.check_native_library('libartbase')
     self._checker.check_native_library('libartpalette')
@@ -603,13 +602,10 @@ class DebugChecker:
 
   def run(self):
     # Check binaries for ART.
-    self._checker.check_executable('dexdiag')
     self._checker.check_executable('dexanalyze')
-    self._checker.check_executable('dexlayout')
     self._checker.check_symlinked_multilib_executable('imgdiag')
 
     # Check debug binaries for ART.
-    self._checker.check_executable('dexlayoutd')
     self._checker.check_executable('dexoptanalyzerd')
     self._checker.check_symlinked_multilib_executable('imgdiagd')
     self._checker.check_executable('profmand')
@@ -621,7 +617,6 @@ class DebugChecker:
     self._checker.check_native_library('libadbconnectiond')
     self._checker.check_native_library('libartbased')
     self._checker.check_native_library('libartd')
-    self._checker.check_native_library('libartd-dexlayout')
     self._checker.check_native_library('libartd-disassembler')
     self._checker.check_native_library('libopenjdkjvmd')
     self._checker.check_native_library('libopenjdkjvmtid')
@@ -659,8 +654,8 @@ class DebugTargetChecker:
     # double_loadable:true, cf. go/double_loadable). Also, like in the release
     # package we need to look out for dependencies that should go through
     # exported library stubs (until b/128708192 is fixed).
-    self._checker.check_prefer64_library('libmeminfo')
-    self._checker.check_prefer64_library('libprocinfo')
+    #
+    # (There are currently no debug-only native libraries.)
 
 
 class TestingTargetChecker:
@@ -677,9 +672,7 @@ class TestingTargetChecker:
     self._checker.check_art_test_executable('art_compiler_tests')
     self._checker.check_art_test_executable('art_dex2oat_tests')
     self._checker.check_art_test_executable('art_dexanalyze_tests')
-    self._checker.check_art_test_executable('art_dexdiag_tests')
     self._checker.check_art_test_executable('art_dexdump_tests')
-    self._checker.check_art_test_executable('art_dexlayout_tests')
     self._checker.check_art_test_executable('art_dexlist_tests')
     self._checker.check_art_test_executable('art_dexoptanalyzer_tests')
     self._checker.check_art_test_executable('art_disassembler_tests')
