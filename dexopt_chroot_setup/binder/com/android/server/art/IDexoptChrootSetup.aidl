@@ -27,8 +27,9 @@ interface IDexoptChrootSetup {
      *
      * @param otaSlot The slot that contains the OTA update, "_a" or "_b", or null for a Mainline
      *         update.
+     * @param mapSnapshotsForOta Whether to map/unmap snapshots. Only applicable to an OTA update.
      */
-    void setUp(@nullable @utf8InCpp String otaSlot);
+    void setUp(@nullable @utf8InCpp String otaSlot, boolean mapSnapshotsForOta);
 
     /**
      * Initializes the chroot environment. Can only be called after {@link #setUp}. Apexes and

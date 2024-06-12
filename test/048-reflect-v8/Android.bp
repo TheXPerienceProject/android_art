@@ -25,6 +25,7 @@ java_test {
         "cts",
         "mcts-art",
     ],
+    sdk_version: "test_current",
 }
 
 // Test's expected standard output.

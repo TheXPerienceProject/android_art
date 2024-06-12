@@ -925,10 +925,13 @@ ALWAYS_INLINE static inline void DoGetAccessFlagsHelper(ArtMethod* method)
 }
 
 template <typename T>
-const void* Exchange(uintptr_t ptr, uintptr_t new_value) {
+bool CompareExchange(uintptr_t ptr, uintptr_t old_value, uintptr_t new_value) {
   std::atomic<T>* atomic_addr = reinterpret_cast<std::atomic<T>*>(ptr);
+  T cast_old_value = dchecked_integral_cast<T>(old_value);
   return reinterpret_cast<const void*>(
-      atomic_addr->exchange(dchecked_integral_cast<T>(new_value), std::memory_order_relaxed));
+      atomic_addr->compare_exchange_strong(cast_old_value,
+                                           dchecked_integral_cast<T>(new_value),
+                                           std::memory_order_relaxed));
 }
 
 void ArtMethod::SetEntryPointFromQuickCompiledCodePtrSize(
@@ -940,16 +943,20 @@ void ArtMethod::SetEntryPointFromQuickCompiledCodePtrSize(
 
   // Do an atomic exchange to avoid potentially unregistering JIT code twice.
   MemberOffset offset = EntryPointFromQuickCompiledCodeOffset(pointer_size);
+  uintptr_t old_value = reinterpret_cast<uintptr_t>(current_entry_point);
   uintptr_t new_value = reinterpret_cast<uintptr_t>(entry_point_from_quick_compiled_code);
   uintptr_t ptr = reinterpret_cast<uintptr_t>(this) + offset.Uint32Value();
-  const void* old_value = (pointer_size == PointerSize::k32)
-      ? Exchange<uint32_t>(ptr, new_value)
-      : Exchange<uint64_t>(ptr, new_value);
+  bool success = (pointer_size == PointerSize::k32)
+      ? CompareExchange<uint32_t>(ptr, old_value, new_value)
+      : CompareExchange<uint64_t>(ptr, old_value, new_value);
 
+  // If we successfully updated the entrypoint and the old entrypoint is JITted
+  // code, register the old entrypoint as zombie.
   jit::Jit* jit = Runtime::Current()->GetJit();
-  if (jit != nullptr &&
-      jit->GetCodeCache()->ContainsPc(old_value)) {
-    jit->GetCodeCache()->AddZombieCode(this, old_value);
+  if (success &&
+      jit != nullptr &&
+      jit->GetCodeCache()->ContainsPc(current_entry_point)) {
+    jit->GetCodeCache()->AddZombieCode(this, current_entry_point);
   }
 }
 

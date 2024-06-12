@@ -31,6 +31,7 @@ message PreRebootStats {
         STATUS_FAILED = 3;
         STATUS_FINISHED = 4;
         STATUS_CANCELLED = 5;
+        STATUS_ABORTED_SYSTEM_REQUIREMENTS = 6;
     }
     optional Status status = 1;
 
@@ -56,4 +57,17 @@ message PreRebootStats {
 
     // All job runs. The job may be cancelled and rerun multiple times.
     repeated JobRun job_runs = 7;
+
+    // Number of packages that have Pre-reboot Dexopt artifacts before the reboot. Note that this
+    // isn't necessarily equal to `optimized_package_count` because packages failed to be optimized
+    // may still have some splits successfully optimized.
+    optional int32 packages_with_artifacts_before_reboot_count = 8;
+
+    // The type of the job.
+    enum JobType {
+        JOB_TYPE_UNKNOWN = 0;
+        JOB_TYPE_OTA = 1;
+        JOB_TYPE_MAINLINE = 2;
+    }
+    optional JobType job_type = 9;
 }

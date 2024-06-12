@@ -2170,7 +2170,7 @@ HSPLjava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
 HSPLjava/lang/Integer;->valueOf(Ljava/lang/String;)Ljava/lang/Integer;
 HSPLjava/lang/Integer;->valueOf(Ljava/lang/String;I)Ljava/lang/Integer;
 HSPLjava/lang/InterruptedException;-><init>()V
-HSPLjava/lang/Iterable;->forEach(Ljava/util/function/Consumer;)V+]Ljava/lang/Iterable;megamorphic_types]Ljava/util/function/Consumer;megamorphic_types]Ljava/util/Iterator;megamorphic_types
+HSPLjava/lang/Iterable;->forEach(Ljava/util/function/Consumer;)V+]Ljava/lang/Iterable;megamorphic_types]Ljava/util/Iterator;megamorphic_types]Ljava/util/function/Consumer;missing_types
 HSPLjava/lang/LinkageError;-><init>(Ljava/lang/String;)V
 HSPLjava/lang/Long;-><init>(J)V
 HSPLjava/lang/Long;->bitCount(J)I
@@ -4591,12 +4591,12 @@ HSPLjava/time/ZonedDateTime;->toLocalTime()Ljava/time/LocalTime;
 HSPLjava/time/chrono/AbstractChronology;->equals(Ljava/lang/Object;)Z
 HSPLjava/time/chrono/AbstractChronology;->resolveDate(Ljava/util/Map;Ljava/time/format/ResolverStyle;)Ljava/time/chrono/ChronoLocalDate;
 HSPLjava/time/chrono/ChronoLocalDate;->isSupported(Ljava/time/temporal/TemporalField;)Z
-HSPLjava/time/chrono/ChronoLocalDateTime;->getChronology()Ljava/time/chrono/Chronology;+]Ljava/time/chrono/ChronoLocalDateTime;Ljava/time/LocalDateTime;]Ljava/time/chrono/ChronoLocalDate;Ljava/time/LocalDate;
+HSPLjava/time/chrono/ChronoLocalDateTime;->getChronology()Ljava/time/chrono/Chronology;+]Ljava/time/chrono/ChronoLocalDate;Ljava/time/LocalDate;]Ljava/time/chrono/ChronoLocalDateTime;Ljava/time/LocalDateTime;
 HSPLjava/time/chrono/ChronoLocalDateTime;->query(Ljava/time/temporal/TemporalQuery;)Ljava/lang/Object;
-HSPLjava/time/chrono/ChronoLocalDateTime;->toEpochSecond(Ljava/time/ZoneOffset;)J+]Ljava/time/chrono/ChronoLocalDateTime;Ljava/time/LocalDateTime;]Ljava/time/chrono/ChronoLocalDate;Ljava/time/LocalDate;
-HSPLjava/time/chrono/ChronoZonedDateTime;->getChronology()Ljava/time/chrono/Chronology;+]Ljava/time/chrono/ChronoZonedDateTime;Ljava/time/ZonedDateTime;]Ljava/time/chrono/ChronoLocalDate;Ljava/time/LocalDate;
+HSPLjava/time/chrono/ChronoLocalDateTime;->toEpochSecond(Ljava/time/ZoneOffset;)J+]Ljava/time/chrono/ChronoLocalDate;Ljava/time/LocalDate;]Ljava/time/chrono/ChronoLocalDateTime;Ljava/time/LocalDateTime;
+HSPLjava/time/chrono/ChronoZonedDateTime;->getChronology()Ljava/time/chrono/Chronology;+]Ljava/time/chrono/ChronoLocalDate;Ljava/time/LocalDate;]Ljava/time/chrono/ChronoZonedDateTime;Ljava/time/ZonedDateTime;
 HSPLjava/time/chrono/ChronoZonedDateTime;->query(Ljava/time/temporal/TemporalQuery;)Ljava/lang/Object;
-HSPLjava/time/chrono/ChronoZonedDateTime;->toEpochSecond()J+]Ljava/time/chrono/ChronoZonedDateTime;Ljava/time/ZonedDateTime;]Ljava/time/chrono/ChronoLocalDate;Ljava/time/LocalDate;
+HSPLjava/time/chrono/ChronoZonedDateTime;->toEpochSecond()J+]Ljava/time/chrono/ChronoLocalDate;Ljava/time/LocalDate;]Ljava/time/chrono/ChronoZonedDateTime;Ljava/time/ZonedDateTime;
 HSPLjava/time/chrono/ChronoZonedDateTime;->toInstant()Ljava/time/Instant;+]Ljava/time/chrono/ChronoZonedDateTime;Ljava/time/ZonedDateTime;
 HSPLjava/time/chrono/IsoChronology;->isLeapYear(J)Z
 HSPLjava/time/chrono/IsoChronology;->resolveDate(Ljava/util/Map;Ljava/time/format/ResolverStyle;)Ljava/time/LocalDate;
@@ -5864,7 +5864,7 @@ HSPLjava/util/ImmutableCollections$SetN;->probe(Ljava/lang/Object;)I
 HSPLjava/util/ImmutableCollections;-><clinit>()V
 HSPLjava/util/ImmutableCollections;->listCopy(Ljava/util/Collection;)Ljava/util/List;
 HSPLjava/util/ImmutableCollections;->listFromTrustedArray([Ljava/lang/Object;)Ljava/util/List;
-HSPLjava/util/Iterator;->forEachRemaining(Ljava/util/function/Consumer;)V+]Ljava/util/function/Consumer;megamorphic_types]Ljava/util/Iterator;Landroid/util/MapCollections$ArrayIterator;,Ljava/util/AbstractMap$2$1;,Ljava/util/AbstractList$Itr;,Landroid/util/MapCollections$MapIterator;
+HSPLjava/util/Iterator;->forEachRemaining(Ljava/util/function/Consumer;)V+]Ljava/util/Iterator;Landroid/util/MapCollections$ArrayIterator;,Landroid/util/MapCollections$MapIterator;,Ljava/util/AbstractList$Itr;,Ljava/util/AbstractMap$2$1;]Ljava/util/function/Consumer;megamorphic_types
 HSPLjava/util/JumboEnumSet$EnumSetIterator;-><init>(Ljava/util/JumboEnumSet;)V
 HSPLjava/util/JumboEnumSet$EnumSetIterator;->hasNext()Z
 HSPLjava/util/JumboEnumSet$EnumSetIterator;->next()Ljava/lang/Enum;
@@ -5992,7 +5992,7 @@ HSPLjava/util/List;->of(Ljava/lang/Object;)Ljava/util/List;
 HSPLjava/util/List;->of(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/List;
 HSPLjava/util/List;->of(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/List;
 HSPLjava/util/List;->of([Ljava/lang/Object;)Ljava/util/List;
-HSPLjava/util/List;->sort(Ljava/util/Comparator;)V+]Ljava/util/ListIterator;Ljava/util/ArrayList$SubList$1;,Ljava/util/LinkedList$ListItr;]Ljava/util/List;Ljava/util/ArrayList$SubList;,Ljava/util/LinkedList;
+HSPLjava/util/List;->sort(Ljava/util/Comparator;)V+]Ljava/util/List;Ljava/util/ArrayList$SubList;,Ljava/util/LinkedList;]Ljava/util/ListIterator;Ljava/util/ArrayList$SubList$1;,Ljava/util/LinkedList$ListItr;
 HSPLjava/util/List;->spliterator()Ljava/util/Spliterator;
 HSPLjava/util/Locale$Builder;-><init>()V
 HSPLjava/util/Locale$Builder;->build()Ljava/util/Locale;
@@ -6051,7 +6051,7 @@ HSPLjava/util/Locale;->setDefault(Ljava/util/Locale;)V
 HSPLjava/util/Locale;->toLanguageTag()Ljava/lang/String;
 HSPLjava/util/Locale;->toString()Ljava/lang/String;
 HSPLjava/util/Locale;->writeObject(Ljava/io/ObjectOutputStream;)V
-HSPLjava/util/Map;->computeIfAbsent(Ljava/lang/Object;Ljava/util/function/Function;)Ljava/lang/Object;+]Ljava/util/function/Function;missing_types]Ljava/util/Map;Landroid/util/ArrayMap;
+HSPLjava/util/Map;->computeIfAbsent(Ljava/lang/Object;Ljava/util/function/Function;)Ljava/lang/Object;+]Ljava/util/Map;Landroid/util/ArrayMap;]Ljava/util/function/Function;missing_types
 HSPLjava/util/Map;->entry(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
 HSPLjava/util/Map;->forEach(Ljava/util/function/BiConsumer;)V
 HSPLjava/util/Map;->getOrDefault(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;+]Ljava/util/Map;Landroid/util/ArrayMap;
@@ -6251,7 +6251,7 @@ HSPLjava/util/SimpleTimeZone;->getOffset(J)I
 HSPLjava/util/SimpleTimeZone;->getOffsets(J[I)I
 HSPLjava/util/SimpleTimeZone;->getRawOffset()I
 HSPLjava/util/SimpleTimeZone;->hasSameRules(Ljava/util/TimeZone;)Z
-HSPLjava/util/Spliterator$OfInt;->forEachRemaining(Ljava/util/function/Consumer;)V+]Ljava/util/Spliterator$OfInt;Ljava/util/Spliterators$EmptySpliterator$OfInt;,Ljava/util/stream/Streams$RangeIntSpliterator;,Ljava/util/Spliterators$IntArraySpliterator;,Ljava/lang/StringUTF16$CodePointsSpliteratorForString;
+HSPLjava/util/Spliterator$OfInt;->forEachRemaining(Ljava/util/function/Consumer;)V+]Ljava/util/Spliterator$OfInt;Ljava/lang/StringUTF16$CodePointsSpliteratorForString;,Ljava/util/Spliterators$EmptySpliterator$OfInt;,Ljava/util/Spliterators$IntArraySpliterator;,Ljava/util/stream/Streams$RangeIntSpliterator;
 HSPLjava/util/Spliterator;->getExactSizeIfKnown()J+]Ljava/util/Spliterator;megamorphic_types
 HSPLjava/util/Spliterators$ArraySpliterator;-><init>([Ljava/lang/Object;I)V
 HSPLjava/util/Spliterators$ArraySpliterator;-><init>([Ljava/lang/Object;III)V
@@ -10324,6 +10324,7 @@ Lcom/android/okhttp/okio/Okio$3;
 Lcom/android/okhttp/okio/Okio;
 Lcom/android/okhttp/okio/RealBufferedSink$1;
 Lcom/android/okhttp/okio/RealBufferedSink;
+Lcom/android/okhttp/okio/RealBufferedSource$1;
 Lcom/android/okhttp/okio/RealBufferedSource;
 Lcom/android/okhttp/okio/Segment;
 Lcom/android/okhttp/okio/SegmentPool;
@@ -11706,7 +11707,7 @@ Ljava/util/Collections$EmptySet-IA;
 Ljava/util/Collections$ReverseComparator2;
 Ljava/util/Collections$ReverseComparator;
 Ljava/util/Collections$SequencedSetFromMap;
-Ljava/util/Collections$SingletonMap;
+Ljava/util/Collections$SetFromMap;
 Ljava/util/Collections$SynchronizedList;
 Ljava/util/Collections$SynchronizedNavigableMap;
 Ljava/util/Collections$SynchronizedNavigableSet;
@@ -12128,6 +12129,7 @@ Ljava/util/concurrent/ThreadFactory;
 Ljava/util/concurrent/ThreadLocalRandom;
 Ljava/util/concurrent/ThreadPoolExecutor$AbortPolicy;
 Ljava/util/concurrent/ThreadPoolExecutor$DiscardPolicy;
+Ljava/util/concurrent/ThreadPoolExecutor$Worker;
 Ljava/util/concurrent/TimeUnit$1;
 Ljava/util/concurrent/TimeUnit;
 Ljava/util/concurrent/TimeoutException;

@@ -93,7 +93,7 @@ static void SetPriorityForTid(pid_t tid, int priority) {
   int result = setpriority(PRIO_PROCESS, tid, priority);
   if (result != 0) {
 #if defined(ART_TARGET_ANDROID)
-    PLOG(ERROR) << "Failed to setpriority to :" << priority;
+    PLOG(WARNING) << "Failed to setpriority to :" << priority;
 #endif
     // Setpriority may fail on host due to ulimit issues.
   }

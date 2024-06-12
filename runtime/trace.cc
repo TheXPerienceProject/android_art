@@ -271,8 +271,7 @@ class TraceWriterTask final : public SelfDeletingTask {
         index_(index),
         buffer_(buffer),
         cur_offset_(cur_offset),
-        thread_id_(thread_id),
-        reserve_buf_for_tid_(0) {}
+        thread_id_(thread_id) {}
 
   void Run(Thread* self ATTRIBUTE_UNUSED) override {
     std::unordered_map<ArtMethod*, std::string> method_infos;
@@ -282,23 +281,12 @@ class TraceWriterTask final : public SelfDeletingTask {
     }
     trace_writer_->FlushBuffer(buffer_, cur_offset_, thread_id_, method_infos);
     if (index_ == -1) {
-      // This was a temporary buffer we allocated since there are no more free buffers and we
-      // couldn't find one by flushing the pending tasks either. This should only happen when we
-      // have fewer buffers than the number of threads.
-      if (reserve_buf_for_tid_ == 0) {
-        // Just free the buffer here if it wasn't reserved for any thread.
-        delete[] buffer_;
-      }
-    } else {
-      trace_writer_->FetchTraceBufferForThread(index_, reserve_buf_for_tid_);
+      // This was a temporary buffer we allocated since there are no free buffers and it wasn't
+      // safe to wait for one. This should only happen when we have fewer buffers than the number
+      // of threads.
+      delete[] buffer_;
     }
-  }
-
-  // Reserves the buffer for a particular thread. The thread is free to use this buffer once the
-  // task has finished running. This is used when there are no free buffers for the thread to use.
-  uintptr_t* ReserveBufferForTid(size_t tid) {
-    reserve_buf_for_tid_ = tid;
-    return buffer_;
+    trace_writer_->ReleaseBuffer(index_);
   }
 
  private:
@@ -307,10 +295,6 @@ class TraceWriterTask final : public SelfDeletingTask {
   uintptr_t* buffer_;
   size_t cur_offset_;
   size_t thread_id_;
-  // Sometimes we want to acquire a buffer for a particular thread. This holds
-  // the tid of the thread that we want to acquire the buffer for. If this value
-  // is 0 then it means we can use it for other threads.
-  size_t reserve_buf_for_tid_;
 };
 
 std::vector<ArtMethod*>* Trace::AllocStackTrace() {
@@ -750,6 +734,9 @@ void Trace::StopTracing(bool flush_entries) {
     CHECK_PTHREAD_CALL(pthread_join, (sampling_pthread, nullptr), "sampling thread shutdown");
   }
 
+  // Wakeup any threads waiting for a buffer and abort allocating a buffer.
+  the_trace_->trace_writer_->StopTracing();
+
   // Make a copy of the_trace_, so it can be flushed later. We want to reset
   // the_trace_ to nullptr in suspend all scope to prevent any races
   Trace* the_trace = the_trace_;
@@ -837,6 +824,17 @@ void Trace::FlushThreadBuffer(Thread* self) {
   the_trace_->trace_writer_->FlushBuffer(self, /* is_sync= */ false, /* free_buffer= */ true);
 }
 
+void Trace::ReleaseThreadBuffer(Thread* self) {
+  MutexLock mu(self, *Locks::trace_lock_);
+  // Check if we still need to flush inside the trace_lock_. If we are stopping tracing it is
+  // possible we already deleted the trace and flushed the buffer too.
+  if (the_trace_ == nullptr) {
+    DCHECK_EQ(self->GetMethodTraceBuffer(), nullptr);
+    return;
+  }
+  the_trace_->trace_writer_->ReleaseBufferForThread(self);
+}
+
 void Trace::Abort() {
   // Do not write anything anymore.
   StopTracing(/* flush_entries= */ false);
@@ -919,6 +917,10 @@ TraceWriter::TraceWriter(File* trace_file,
       num_records_(0),
       clock_overhead_ns_(clock_overhead_ns),
       owner_tids_(num_trace_buffers),
+      buffer_pool_lock_("tracing buffer pool lock", kDefaultMutexLevel),
+      buffer_available_("buffer available condition", buffer_pool_lock_),
+      num_waiters_zero_cond_("Num waiters zero", buffer_pool_lock_),
+      num_waiters_for_buffer_(0),
       tracing_lock_("tracing lock", LockLevel::kTracingStreamingLock) {
   // We initialize the start_time_ from the timestamp counter. This may not match
   // with the monotonic timer but we only use this time to calculate the elapsed
@@ -1014,8 +1016,9 @@ void TraceWriter::FinishTracing(int flags, bool flush_entries) {
       // shutdown, any unstarted workers can create problems if they try attaching while shutting
       // down.
       thread_pool_->WaitForWorkersToBeCreated();
-      // Wait for any outstanding writer tasks to finish.
-      thread_pool_->Wait(self, /* do_work= */ true, /* may_hold_locks= */ true);
+      // Wait for any outstanding writer tasks to finish. Let the thread pool worker finish the
+      // tasks to avoid any re-ordering when processing tasks.
+      thread_pool_->Wait(self, /* do_work= */ false, /* may_hold_locks= */ true);
       DCHECK_EQ(thread_pool_->GetTaskCount(self), 0u);
       thread_pool_->StopWorkers(self);
     }
@@ -1225,24 +1228,6 @@ void Trace::ReadClocks(Thread* thread, uint32_t* thread_clock_diff, uint64_t* ti
   }
 }
 
-uintptr_t* TraceWriterThreadPool::FinishTaskAndClaimBuffer(size_t tid) {
-  Thread* self = Thread::Current();
-  TraceWriterTask* task = static_cast<TraceWriterTask*>(TryGetTask(self));
-  if (task == nullptr) {
-    // TODO(mythria): We need to ensure we have at least as many buffers in the pool as the number
-    // of active threads for efficiency. It's a bit unlikely to hit this case and not trivial to
-    // handle this. So we haven't fixed this yet.
-    LOG(WARNING)
-        << "Fewer buffers in the pool than the number of threads. Might cause some slowdown";
-    return nullptr;
-  }
-
-  uintptr_t* buffer = task->ReserveBufferForTid(tid);
-  task->Run(self);
-  task->Finalize();
-  return buffer;
-}
-
 std::string TraceWriter::GetMethodLine(const std::string& method_line, uint32_t method_index) {
   return StringPrintf("%#x\t%s", (method_index << TraceActionBits), method_line.c_str());
 }
@@ -1399,6 +1384,9 @@ void TraceWriter::InitializeTraceBuffers() {
 }
 
 uintptr_t* TraceWriter::AcquireTraceBuffer(size_t tid) {
+  Thread* self = Thread::Current();
+
+  // Fast path, check if there is a free buffer in the pool
   for (size_t index = 0; index < owner_tids_.size(); index++) {
     size_t owner = 0;
     if (owner_tids_[index].compare_exchange_strong(owner, tid)) {
@@ -1406,22 +1394,101 @@ uintptr_t* TraceWriter::AcquireTraceBuffer(size_t tid) {
     }
   }
 
-  // No free buffers, flush the buffer at the start of task queue synchronously and then use that
-  // buffer.
-  uintptr_t* buffer = thread_pool_->FinishTaskAndClaimBuffer(tid);
+  // Increment a counter so we know how many threads are potentially suspended in the tracing code.
+  // We need this when stopping tracing. We need to wait for all these threads to finish executing
+  // this code so we can safely delete the trace related data.
+  num_waiters_for_buffer_.fetch_add(1);
+
+  uintptr_t* buffer = nullptr;
+  // If finish_tracing_ is set to true we shouldn't suspend ourselves. So check for finish_tracing_
+  // before the thread suspension. As an example, consider the following:
+  // T2 is looking for a free buffer in the loop above
+  // T1 calls stop tracing -> Sets finish_tracing_ to true -> Checks that there are no waiters ->
+  // Waiting to suspend all threads.
+  // T2 doesn't find a buffer.
+  // If T2 suspends before checking for finish_tracing_ there is a possibility T1 succeeds entering
+  // SuspendAllScope while thread T2 is still in the TraceWriter code.
+  // To avoid this, we increment the num_waiters_for_buffer and then check for finish_tracing
+  // before suspending the thread. StopTracing sets finish_tracing_ to true first and then checks
+  // for num_waiters_for_buffer. Both these are atomic variables and we use sequential consistency
+  // (acquire for load and release for stores), so all threads see the updates for these variables
+  // in the same order. That ensures we don't suspend in the tracing logic after Trace::StopTracing
+  // has returned. This is required so that we can safely delete tracing data.
+  if (self->IsThreadSuspensionAllowable() && !finish_tracing_.load()) {
+    ScopedThreadSuspension sts(self, ThreadState::kSuspended);
+    while (1) {
+      MutexLock mu(self, buffer_pool_lock_);
+      // Tracing is being stopped, so don't wait for a free buffer. Just return early.
+      if (finish_tracing_.load()) {
+        break;
+      }
+
+      // Check if there's a free buffer in the pool
+      for (size_t index = 0; index < owner_tids_.size(); index++) {
+        size_t owner = 0;
+        if (owner_tids_[index].compare_exchange_strong(owner, tid)) {
+          buffer = trace_buffer_.get() + index * kPerThreadBufSize;
+          break;
+        }
+      }
+
+      // Found a buffer
+      if (buffer != nullptr) {
+        break;
+      }
+
+      if (thread_pool_ == nullptr ||
+          (thread_pool_->GetTaskCount(self) < num_waiters_for_buffer_.load())) {
+        // We have fewer buffers than active threads, just allocate a new one.
+        break;
+      }
+
+      buffer_available_.WaitHoldingLocks(self);
+    }
+  }
+
+  // The thread is no longer in the suspend scope, so decrement the counter.
+  num_waiters_for_buffer_.fetch_sub(1);
+  if (num_waiters_for_buffer_.load() == 0 && finish_tracing_.load()) {
+    MutexLock mu(self, buffer_pool_lock_);
+    num_waiters_zero_cond_.Broadcast(self);
+  }
+
   if (buffer == nullptr) {
-    // We couldn't find a free buffer even after flushing all the tasks. So allocate a new buffer
-    // here. This should only happen if we have more threads than the number of pool buffers.
-    // TODO(mythria): Add a check for the above case here.
+    // Allocate a new buffer. We either don't want to wait or have too few buffers.
     buffer = new uintptr_t[kPerThreadBufSize];
     CHECK(buffer != nullptr);
   }
   return buffer;
 }
 
-void TraceWriter::FetchTraceBufferForThread(int index, size_t tid) {
+void TraceWriter::StopTracing() {
+  Thread* self = Thread::Current();
+  MutexLock mu(self, buffer_pool_lock_);
+  finish_tracing_.store(true);
+  while (num_waiters_for_buffer_.load() != 0) {
+    buffer_available_.Broadcast(self);
+    num_waiters_zero_cond_.WaitHoldingLocks(self);
+  }
+}
+
+void TraceWriter::ReleaseBuffer(int index) {
   // Only the trace_writer_ thread can release the buffer.
-  owner_tids_[index].store(tid);
+  MutexLock mu(Thread::Current(), buffer_pool_lock_);
+  if (index != -1) {
+    owner_tids_[index].store(0);
+  }
+  buffer_available_.Signal(Thread::Current());
+}
+
+void TraceWriter::ReleaseBufferForThread(Thread* self) {
+  uintptr_t* buffer = self->GetMethodTraceBuffer();
+  int index = GetMethodTraceIndex(buffer);
+  if (index == -1) {
+    delete[] buffer;
+  } else {
+    ReleaseBuffer(index);
+  }
 }
 
 int TraceWriter::GetMethodTraceIndex(uintptr_t* current_buffer) {
