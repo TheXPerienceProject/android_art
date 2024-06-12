@@ -18,20 +18,7 @@ LOCAL_PATH := $(call my-dir)
 
 art_path := $(LOCAL_PATH)
 
-########################################################################
-# clean-oat rules
-#
-
 include $(art_path)/build/Android.common_path.mk
-
-.PHONY: clean-oat
-clean-oat: clean-oat-host
-
-.PHONY: clean-oat-host
-clean-oat-host:
-	find $(OUT_DIR) '(' -name '*.oat' -o -name '*.odex' -o -name '*.art' -o -name '*.vdex' ')' -a -type f | xargs rm -f
-	rm -rf $(TMPDIR)/*/test-*/dalvik-cache/*
-	rm -rf $(TMPDIR)/android-data/dalvik-cache/*
 
 ########################################################################
 # cpplint rules to style check art source files
