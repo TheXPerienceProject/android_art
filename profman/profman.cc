@@ -42,7 +42,6 @@
 #include "base/mem_map.h"
 #include "base/scoped_flock.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/time_utils.h"
 #include "base/unix_file/fd_file.h"
 #include "base/utils.h"
@@ -260,20 +259,21 @@ static void ParseUintOption(const char* raw_option,
                             T* out,
                             T min = std::numeric_limits<T>::min(),
                             T max = std::numeric_limits<T>::max()) {
-  DCHECK(EndsWith(option_prefix, "="));
-  DCHECK(StartsWith(raw_option, option_prefix)) << raw_option << " " << option_prefix;
+  DCHECK(option_prefix.ends_with("="));
+  DCHECK(std::string_view(raw_option).starts_with(option_prefix))
+      << raw_option << " " << option_prefix;
   std::string option_name(option_prefix.substr(option_prefix.size() - 1u));
   const char* value_string = raw_option + option_prefix.size();
 
   ParseUintValue(option_name, value_string, out, min, max);
 }
 
-static void ParseBoolOption(const char* raw_option,
+static void ParseBoolOption(std::string_view option,
                             std::string_view option_prefix,
                             bool* out) {
-  DCHECK(EndsWith(option_prefix, "="));
-  DCHECK(StartsWith(raw_option, option_prefix)) << raw_option << " " << option_prefix;
-  const char* value_string = raw_option + option_prefix.size();
+  DCHECK(option_prefix.ends_with("="));
+  DCHECK(option.starts_with(option_prefix)) << option << " " << option_prefix;
+  const std::string_view value_string = option.substr(option_prefix.size());
   android::base::ParseBoolResult result = android::base::ParseBool(value_string);
   if (result == android::base::ParseBoolResult::kError) {
     std::string option_name(option_prefix.substr(option_prefix.size() - 1u));
@@ -289,17 +289,17 @@ enum class OutputProfileType {
   kBprof,
 };
 
-static void ParseOutputProfileType(const char* raw_option,
+static void ParseOutputProfileType(std::string_view option,
                                    std::string_view option_prefix,
                                    OutputProfileType* out) {
-  DCHECK(EndsWith(option_prefix, "="));
-  DCHECK(StartsWith(raw_option, option_prefix)) << raw_option << " " << option_prefix;
-  const char* value_string = raw_option + option_prefix.size();
-  if (strcmp(value_string, "app") == 0) {
+  DCHECK(option_prefix.ends_with("="));
+  DCHECK(option.starts_with(option_prefix)) << option << " " << option_prefix;
+  const std::string_view value_string = option.substr(option_prefix.size());
+  if (value_string == "app") {
     *out = OutputProfileType::kApp;
-  } else if (strcmp(value_string, "boot") == 0) {
+  } else if (value_string == "boot") {
     *out = OutputProfileType::kBoot;
-  } else if (strcmp(value_string, "bprof") == 0) {
+  } else if (value_string == "bprof") {
     *out = OutputProfileType::kBprof;
   } else {
     std::string option_name(option_prefix.substr(option_prefix.size() - 1u));
@@ -356,39 +356,39 @@ class ProfMan final {
         dump_only_ = true;
       } else if (option == "--dump-classes-and-methods") {
         dump_classes_and_methods_ = true;
-      } else if (StartsWith(option, "--create-profile-from=")) {
+      } else if (option.starts_with("--create-profile-from=")) {
         create_profile_from_file_ = std::string(option.substr(strlen("--create-profile-from=")));
-      } else if (StartsWith(option, "--output-profile-type=")) {
-        ParseOutputProfileType(raw_option, "--output-profile-type=", &output_profile_type_);
-      } else if (StartsWith(option, "--dump-output-to-fd=")) {
+      } else if (option.starts_with("--output-profile-type=")) {
+        ParseOutputProfileType(option, "--output-profile-type=", &output_profile_type_);
+      } else if (option.starts_with("--dump-output-to-fd=")) {
         ParseUintOption(raw_option, "--dump-output-to-fd=", &dump_output_to_fd_);
       } else if (option == "--generate-boot-image-profile") {
         generate_boot_image_profile_ = true;
-      } else if (StartsWith(option, "--method-threshold=")) {
+      } else if (option.starts_with("--method-threshold=")) {
         ParseUintOption(raw_option,
                         "--method-threshold=",
                         &boot_image_options_.method_threshold,
                         0u,
                         100u);
-      } else if (StartsWith(option, "--class-threshold=")) {
+      } else if (option.starts_with("--class-threshold=")) {
         ParseUintOption(raw_option,
                         "--class-threshold=",
                         &boot_image_options_.image_class_threshold,
                         0u,
                         100u);
-      } else if (StartsWith(option, "--clean-class-threshold=")) {
+      } else if (option.starts_with("--clean-class-threshold=")) {
         ParseUintOption(raw_option,
                         "--clean-class-threshold=",
                         &boot_image_options_.image_class_clean_threshold,
                         0u,
                         100u);
-      } else if (StartsWith(option, "--preloaded-class-threshold=")) {
+      } else if (option.starts_with("--preloaded-class-threshold=")) {
         ParseUintOption(raw_option,
                         "--preloaded-class-threshold=",
                         &boot_image_options_.preloaded_class_threshold,
                         0u,
                         100u);
-      } else if (StartsWith(option, "--preloaded-classes-denylist=")) {
+      } else if (option.starts_with("--preloaded-classes-denylist=")) {
         std::string preloaded_classes_denylist =
             std::string(option.substr(strlen("--preloaded-classes-denylist=")));
         // Read the user-specified list of methods.
@@ -397,11 +397,11 @@ class ProfMan final {
                 preloaded_classes_denylist.c_str(), nullptr));  // No post-processing.
         boot_image_options_.preloaded_classes_denylist.insert(
             denylist->begin(), denylist->end());
-      } else if (StartsWith(option, "--upgrade-startup-to-hot=")) {
-        ParseBoolOption(raw_option,
+      } else if (option.starts_with("--upgrade-startup-to-hot=")) {
+        ParseBoolOption(option,
                         "--upgrade-startup-to-hot=",
                         &boot_image_options_.upgrade_startup_to_hot);
-      } else if (StartsWith(option, "--special-package=")) {
+      } else if (option.starts_with("--special-package=")) {
         std::vector<std::string> values;
         Split(std::string(option.substr(strlen("--special-package="))), ':', &values);
         if (values.size() != 2) {
@@ -410,46 +410,46 @@ class ProfMan final {
         uint32_t threshold;
         ParseUintValue("special-package", values[1], &threshold, 0u, 100u);
         boot_image_options_.special_packages_thresholds.Overwrite(values[0], threshold);
-      } else if (StartsWith(option, "--debug-append-uses=")) {
-        ParseBoolOption(raw_option,
+      } else if (option.starts_with("--debug-append-uses=")) {
+        ParseBoolOption(option,
                         "--debug-append-uses=",
                         &boot_image_options_.append_package_use_list);
-      } else if (StartsWith(option, "--out-profile-path=")) {
+      } else if (option.starts_with("--out-profile-path=")) {
         boot_profile_out_path_ = std::string(option.substr(strlen("--out-profile-path=")));
-      } else if (StartsWith(option, "--out-preloaded-classes-path=")) {
+      } else if (option.starts_with("--out-preloaded-classes-path=")) {
         preloaded_classes_out_path_ = std::string(
             option.substr(strlen("--out-preloaded-classes-path=")));
-      } else if (StartsWith(option, "--profile-file=")) {
+      } else if (option.starts_with("--profile-file=")) {
         profile_files_.push_back(std::string(option.substr(strlen("--profile-file="))));
-      } else if (StartsWith(option, "--profile-file-fd=")) {
+      } else if (option.starts_with("--profile-file-fd=")) {
         ParseFdForCollection(raw_option, "--profile-file-fd=", &profile_files_fd_);
-      } else if (StartsWith(option, "--reference-profile-file=")) {
+      } else if (option.starts_with("--reference-profile-file=")) {
         reference_profile_file_ = std::string(option.substr(strlen("--reference-profile-file=")));
-      } else if (StartsWith(option, "--reference-profile-file-fd=")) {
+      } else if (option.starts_with("--reference-profile-file-fd=")) {
         ParseUintOption(raw_option, "--reference-profile-file-fd=", &reference_profile_file_fd_);
-      } else if (StartsWith(option, "--dex-location=")) {
+      } else if (option.starts_with("--dex-location=")) {
         dex_locations_.push_back(std::string(option.substr(strlen("--dex-location="))));
-      } else if (StartsWith(option, "--apk-fd=")) {
+      } else if (option.starts_with("--apk-fd=")) {
         ParseFdForCollection(raw_option, "--apk-fd=", &apks_fd_);
-      } else if (StartsWith(option, "--apk=")) {
+      } else if (option.starts_with("--apk=")) {
         apk_files_.push_back(std::string(option.substr(strlen("--apk="))));
-      } else if (StartsWith(option, "--generate-test-profile=")) {
+      } else if (option.starts_with("--generate-test-profile=")) {
         test_profile_ = std::string(option.substr(strlen("--generate-test-profile=")));
-      } else if (StartsWith(option, "--generate-test-profile-num-dex=")) {
+      } else if (option.starts_with("--generate-test-profile-num-dex=")) {
         ParseUintOption(raw_option,
                         "--generate-test-profile-num-dex=",
                         &test_profile_num_dex_);
-      } else if (StartsWith(option, "--generate-test-profile-method-percentage=")) {
+      } else if (option.starts_with("--generate-test-profile-method-percentage=")) {
         ParseUintOption(raw_option,
                         "--generate-test-profile-method-percentage=",
                         &test_profile_method_percerntage_);
-      } else if (StartsWith(option, "--generate-test-profile-class-percentage=")) {
+      } else if (option.starts_with("--generate-test-profile-class-percentage=")) {
         ParseUintOption(raw_option,
                         "--generate-test-profile-class-percentage=",
                         &test_profile_class_percentage_);
-      } else if (StartsWith(option, "--generate-test-profile-seed=")) {
+      } else if (option.starts_with("--generate-test-profile-seed=")) {
         ParseUintOption(raw_option, "--generate-test-profile-seed=", &test_profile_seed_);
-      } else if (StartsWith(option, "--min-new-methods-percent-change=")) {
+      } else if (option.starts_with("--min-new-methods-percent-change=")) {
         uint32_t min_new_methods_percent_change;
         ParseUintOption(raw_option,
                         "--min-new-methods-percent-change=",
@@ -458,7 +458,7 @@ class ProfMan final {
                         100u);
         profile_assistant_options_.SetMinNewMethodsPercentChangeForCompilation(
             min_new_methods_percent_change);
-      } else if (StartsWith(option, "--min-new-classes-percent-change=")) {
+      } else if (option.starts_with("--min-new-classes-percent-change=")) {
         uint32_t min_new_classes_percent_change;
         ParseUintOption(raw_option,
                         "--min-new-classes-percent-change=",
@@ -1050,7 +1050,7 @@ class ProfMan final {
     while (in_stream.good()) {
       std::string dot;
       std::getline(in_stream, dot);
-      if (android::base::StartsWith(dot, "#") || dot.empty()) {
+      if (dot.starts_with("#") || dot.empty()) {
         continue;
       }
       if (process != nullptr) {

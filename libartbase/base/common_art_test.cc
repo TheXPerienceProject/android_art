@@ -46,7 +46,6 @@
 #include "base/runtime_debug.h"
 #include "base/scoped_cap.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/testing.h"
 #include "base/unix_file/fd_file.h"
 #include "dex/art_dex_file_loader.h"
@@ -184,7 +183,7 @@ std::string CommonArtTestImpl::GetAndroidBuildTop() {
       // We are running tests from testcases (extracted from zip) on tradefed.
       // The first path is for remote runs and the second path for local runs.
       if (path.filename() == std::filesystem::path("testcases") ||
-          StartsWith(path.filename().string(), "host_testcases")) {
+          path.filename().string().starts_with("host_testcases")) {
         android_build_top = path.append("art_common");
         break;
       }
@@ -482,7 +481,7 @@ std::vector<std::string> CommonArtTestImpl::GetLibCoreDexLocations(
   if (IsHost()) {
     std::string android_root = GetAndroidRoot();
     std::string build_top = GetAndroidBuildTop();
-    CHECK(android::base::StartsWith(android_root, build_top))
+    CHECK(android_root.starts_with(build_top))
         << " android_root=" << android_root << " build_top=" << build_top;
     prefix = android_root.substr(build_top.size());
   }

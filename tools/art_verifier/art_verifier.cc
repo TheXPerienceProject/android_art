@@ -102,7 +102,7 @@ struct MethodVerifierArgs : public CmdlineArgs {
     }
 
     std::string_view option(raw_option, raw_option_length);
-    if (StartsWith(option, "--dex-file=")) {
+    if (option.starts_with("--dex-file=")) {
       dex_filename_ = raw_option + strlen("--dex-file=");
     } else if (option == "--dex-file-verifier") {
       dex_file_verifier_ = true;
@@ -110,10 +110,10 @@ struct MethodVerifierArgs : public CmdlineArgs {
       method_verifier_verbose_ = true;
     } else if (option == "--verbose-debug") {
       method_verifier_verbose_debug_ = true;
-    } else if (StartsWith(option, "--repetitions=")) {
+    } else if (option.starts_with("--repetitions=")) {
       char* end;
       repetitions_ = strtoul(raw_option + strlen("--repetitions="), &end, 10);
-    } else if (StartsWith(option, "--api-level=")) {
+    } else if (option.starts_with("--api-level=")) {
       char* end;
       api_level_ = strtoul(raw_option + strlen("--api-level="), &end, 10);
     } else {
