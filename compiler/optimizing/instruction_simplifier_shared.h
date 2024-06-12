@@ -62,18 +62,6 @@ inline bool IsSubRightSubLeftShl(HSub *sub) {
 }  // namespace helpers
 
 bool TryCombineMultiplyAccumulate(HMul* mul, InstructionSet isa);
-// For bitwise operations (And/Or/Xor) with a negated input, try to use
-// a negated bitwise instruction.
-bool TryMergeNegatedInput(HBinaryOperation* op);
-
-// Convert
-// i1: AND a, b
-//     SUB a, i1
-// into:
-//     BIC a, a, b
-//
-// It also works if `i1` is AND b, a
-bool TryMergeWithAnd(HSub* instruction);
 
 bool TryExtractArrayAccessAddress(CodeGenerator* codegen,
                                   HInstruction* access,
