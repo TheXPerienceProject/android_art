@@ -25,6 +25,7 @@
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <fstream>
@@ -69,19 +70,6 @@
 #ifndef MAP_FIXED_NOREPLACE
 #define MAP_FIXED_NOREPLACE 0x100000
 #endif
-#ifndef __NR_userfaultfd
-#if defined(__x86_64__)
-#define __NR_userfaultfd 323
-#elif defined(__i386__)
-#define __NR_userfaultfd 374
-#elif defined(__aarch64__)
-#define __NR_userfaultfd 282
-#elif defined(__arm__)
-#define __NR_userfaultfd 388
-#else
-#error "__NR_userfaultfd undefined"
-#endif
-#endif  // __NR_userfaultfd
 #endif  // __BIONIC__
 
 // See aosp/2996596 for where these values came from.

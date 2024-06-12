@@ -18,6 +18,7 @@
 
 #include "code_generator.h"
 #include "common_arm.h"
+#include "instruction_simplifier.h"
 #include "instruction_simplifier_shared.h"
 #include "mirror/array-inl.h"
 #include "mirror/string.h"

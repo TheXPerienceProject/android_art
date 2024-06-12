@@ -60,6 +60,19 @@ class InstructionSimplifier : public HOptimization {
   DISALLOW_COPY_AND_ASSIGN(InstructionSimplifier);
 };
 
+// For bitwise operations (And/Or/Xor) with a negated input, try to use
+// a negated bitwise instruction.
+bool TryMergeNegatedInput(HBinaryOperation* op);
+
+// Convert
+// i1: AND a, b
+//     SUB a, i1
+// into:
+//     BIC a, a, b
+//
+// It also works if `i1` is AND b, a
+bool TryMergeWithAnd(HSub* instruction);
+
 }  // namespace art
 
 #endif  // ART_COMPILER_OPTIMIZING_INSTRUCTION_SIMPLIFIER_H_

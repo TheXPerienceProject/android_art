@@ -33,17 +33,6 @@
 
 #include "macros.h"
 
-
-// When building for linux host, glibc in prebuilts does not include memfd_create system call
-// number. As a temporary testing measure, we add the definition here.
-#if defined(__linux__) && !defined(__NR_memfd_create)
-#if defined(__x86_64__)
-#define __NR_memfd_create 319
-#elif defined(__i386__)
-#define __NR_memfd_create 356
-#endif  // defined(__i386__)
-#endif  // defined(__linux__) && !defined(__NR_memfd_create)
-
 namespace art {
 
 #if defined(__NR_memfd_create)

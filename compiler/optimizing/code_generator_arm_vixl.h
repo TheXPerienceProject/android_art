@@ -124,6 +124,8 @@ using VIXLUInt32Literal = vixl::aarch32::Literal<uint32_t>;
   V(UnsafeCASLong)   /* High register pressure */                          \
   V(SystemArrayCopyChar)                                                   \
   V(LongDivideUnsigned)                                                    \
+  V(IntegerRemainderUnsigned)                                              \
+  V(LongRemainderUnsigned)                                                 \
   V(CRC32Update)                                                           \
   V(CRC32UpdateBytes)                                                      \
   V(CRC32UpdateByteBuffer)                                                 \
