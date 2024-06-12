@@ -43,8 +43,8 @@ BITNESS_AUTO = 'auto'
 BITNESS_ALL = [BITNESS_32, BITNESS_64, BITNESS_MULTILIB, BITNESS_AUTO]
 
 # Architectures supported by APEX packages.
-ARCHS_32 = ["arm", "x86"]
-ARCHS_64 = ["arm64", "riscv64", "x86_64"]
+ARCHS_32 = ['arm', 'x86']
+ARCHS_64 = ['arm64', 'riscv64', 'x86_64']
 
 # Multilib options
 MULTILIB_32 = '32'
@@ -285,19 +285,22 @@ class Checker:
     # TODO(b/123602136): Pass build target information to this script and fix
     # all places where this function in used (or similar workarounds).
     dirs = []
-    for arch in self.possible_archs(multilib):
-      dir = '%s/%s' % (path, arch)
-      found, _ = self.is_dir(dir)
-      if found:
-        dirs.append(dir)
+    for archs_per_bitness in self.possible_archs_per_bitness(multilib):
+      found_dir = False
+      for arch in archs_per_bitness:
+        dir = '%s/%s' % (path, arch)
+        found, _ = self.is_dir(dir)
+        if found:
+          found_dir = True
+          dirs.append(dir)
+      # At least one arch directory per bitness must exist.
+      if not found_dir:
+        self.fail('Arch directories missing in %s - expected at least one of %s',
+                  path, ', '.join(archs_per_bitness))
     return dirs
 
   def check_art_test_executable(self, filename, multilib=None):
-    dirs = self.arch_dirs_for_path(ART_TEST_DIR, multilib)
-    if not dirs:
-      self.fail('Directories for ART test binary missing: %s', filename)
-      return
-    for dir in dirs:
+    for dir in self.arch_dirs_for_path(ART_TEST_DIR, multilib):
       test_path = '%s/%s' % (dir, filename)
       self._expected_file_globs.add(test_path)
       file_obj = self._provider.get(test_path)
@@ -307,11 +310,7 @@ class Checker:
         self.fail('%s is not executable', test_path)
 
   def check_art_test_data(self, filename):
-    dirs = self.arch_dirs_for_path(ART_TEST_DIR)
-    if not dirs:
-      self.fail('Directories for ART test data missing: %s', filename)
-      return
-    for dir in dirs:
+    for dir in self.arch_dirs_for_path(ART_TEST_DIR):
       if not self.check_file('%s/%s' % (dir, filename)):
         return
 
@@ -327,12 +326,6 @@ class Checker:
     if not lib_is_file and not lib64_is_file:
       self.fail('Library missing: %s', filename)
 
-  def check_dexpreopt(self, basename):
-    dirs = self.arch_dirs_for_path('javalib')
-    for dir in dirs:
-      for ext in ['art', 'oat', 'vdex']:
-        self.check_file('%s/%s.%s' % (dir, basename, ext))
-
   def check_java_library(self, basename):
     return self.check_file('javalib/%s.jar' % basename)
 
@@ -340,8 +333,9 @@ class Checker:
     self._expected_file_globs.add(path_glob)
 
   def check_optional_art_test_executable(self, filename):
-    for arch in self.possible_archs():
-      self.ignore_path('%s/%s/%s' % (ART_TEST_DIR, arch, filename))
+    for archs_per_bitness in self.possible_archs_per_bitness():
+      for arch in archs_per_bitness:
+        self.ignore_path('%s/%s/%s' % (ART_TEST_DIR, arch, filename))
 
   def check_no_superfluous_files(self):
     def recurse(dir_path):
@@ -382,8 +376,8 @@ class Checker:
     """Check lib64/basename.so, or lib/basename.so on 32 bit only."""
     raise NotImplementedError
 
-  def possible_archs(self, multilib=None):
-    """Returns names of possible archs."""
+  def possible_archs_per_bitness(self, multilib=None):
+    """Returns a list of lists of possible architectures per bitness."""
     raise NotImplementedError
 
 class Arch32Checker(Checker):
@@ -410,8 +404,8 @@ class Arch32Checker(Checker):
   def check_prefer64_library(self, basename):
     self.check_native_library(basename)
 
-  def possible_archs(self, multilib=None):
-    return ARCHS_32
+  def possible_archs_per_bitness(self, multilib=None):
+    return [ARCHS_32]
 
 class Arch64Checker(Checker):
   def __init__(self, provider):
@@ -437,8 +431,8 @@ class Arch64Checker(Checker):
   def check_prefer64_library(self, basename):
     self.check_native_library(basename)
 
-  def possible_archs(self, multilib=None):
-    return ARCHS_64
+  def possible_archs_per_bitness(self, multilib=None):
+    return [ARCHS_64]
 
 
 class MultilibChecker(Checker):
@@ -468,13 +462,13 @@ class MultilibChecker(Checker):
   def check_prefer64_library(self, basename):
     self.check_file('lib64/%s.so' % basename)
 
-  def possible_archs(self, multilib=None):
+  def possible_archs_per_bitness(self, multilib=None):
     if multilib is None or multilib == MULTILIB_BOTH:
-      return ARCHS_32 + ARCHS_64
+      return [ARCHS_32, ARCHS_64]
     if multilib == MULTILIB_FIRST or multilib == MULTILIB_64:
-      return ARCHS_64
+      return [ARCHS_64]
     elif multilib == MULTILIB_32:
-      return ARCHS_32
+      return [ARCHS_32]
     self.fail('Unrecognized multilib option "%s"', multilib)
 
 
@@ -577,15 +571,6 @@ class ReleaseChecker:
     self._checker.check_optional_native_library('libclang_rt.hwasan*')
     self._checker.check_optional_native_library('libclang_rt.ubsan*')
 
-    # Check dexpreopt files for libcore bootclasspath jars.
-    self._checker.check_dexpreopt('boot')
-    self._checker.check_dexpreopt('boot-apache-xml')
-    self._checker.check_dexpreopt('boot-bouncycastle')
-    self._checker.check_dexpreopt('boot-core-libart')
-    self._checker.check_dexpreopt('boot-okhttp')
-    if isEnvTrue('EMMA_INSTRUMENT_FRAMEWORK'):
-      # In coverage builds the ART boot image includes jacoco.
-      self._checker.check_dexpreopt('boot-jacocoagent')
 
 class ReleaseTargetChecker:
   def __init__(self, checker):
@@ -606,7 +591,7 @@ class ReleaseTargetChecker:
     self._checker.check_executable('artd')
     self._checker.check_executable('dexopt_chroot_setup')
     self._checker.check_executable('oatdump')
-    self._checker.check_executable("odrefresh")
+    self._checker.check_executable('odrefresh')
     self._checker.check_symlinked_multilib_executable('dex2oat')
 
     # Check internal libraries for ART.
@@ -614,7 +599,7 @@ class ReleaseTargetChecker:
     self._checker.check_native_library('libperfetto_hprof')
 
     # Check internal Java libraries
-    self._checker.check_java_library("service-art")
+    self._checker.check_java_library('service-art')
     self._checker.check_file('javalib/service-art.jar.prof')
 
     # Check exported native libraries for Managed Core Library.
@@ -808,7 +793,7 @@ class TestingTargetChecker:
     self._checker.check_art_test_data('art-gtest-jars-SuperWithAccessChecks.dex')
 
     # Fuzzer cases
-    self._checker.check_art_test_data("fuzzer_corpus.zip")
+    self._checker.check_art_test_data('fuzzer_corpus.zip')
 
 
 class NoSuperfluousFilesChecker:
@@ -906,32 +891,32 @@ class Tree:
 # Note: do not sys.exit early, for __del__ cleanup.
 def art_apex_test_main(test_args):
   if test_args.host and test_args.flattened:
-    logging.error("Both of --host and --flattened set")
+    logging.error('Both of --host and --flattened set')
     return 1
   if test_args.list and test_args.tree:
-    logging.error("Both of --list and --tree set")
+    logging.error('Both of --list and --tree set')
     return 1
   if test_args.size and not (test_args.list or test_args.tree):
-    logging.error("--size set but neither --list nor --tree set")
+    logging.error('--size set but neither --list nor --tree set')
     return 1
   if not test_args.flattened and not test_args.tmpdir:
-    logging.error("Need a tmpdir.")
+    logging.error('Need a tmpdir.')
     return 1
   if not test_args.flattened and not test_args.host:
     if not test_args.deapexer:
-      logging.error("Need deapexer.")
+      logging.error('Need deapexer.')
       return 1
     if not test_args.debugfs:
-      logging.error("Need debugfs.")
+      logging.error('Need debugfs.')
       return 1
     if not test_args.fsckerofs:
-      logging.error("Need fsck.erofs.")
+      logging.error('Need fsck.erofs.')
       return 1
 
   if test_args.host:
     # Host APEX.
     if test_args.flavor not in [FLAVOR_DEBUG, FLAVOR_AUTO]:
-      logging.error("Using option --host with non-Debug APEX")
+      logging.error('Using option --host with non-Debug APEX')
       return 1
     # Host APEX is always a debug flavor (for now).
     test_args.flavor = FLAVOR_DEBUG
@@ -1055,7 +1040,7 @@ def art_apex_test_default(test_parser):
   failed = False
 
   if not os.path.exists(test_args.debugfs):
-    logging.error("Cannot find debugfs (default path %s). Please build it, e.g., m debugfs",
+    logging.error('Cannot find debugfs (default path %s). Please build it, e.g., m debugfs',
                   test_args.debugfs)
     sys.exit(1)
 
@@ -1074,7 +1059,7 @@ def art_apex_test_default(test_parser):
     test_args.apex = '%s/system/apex/%s' % (product_out, config['name'])
     if not os.path.exists(test_args.apex):
       failed = True
-      logging.error("Cannot find APEX %s. Please build it first.", test_args.apex)
+      logging.error('Cannot find APEX %s. Please build it first.', test_args.apex)
       continue
     test_args.flavor = config['flavor']
     test_args.host = config['host']
@@ -1084,7 +1069,7 @@ def art_apex_test_default(test_parser):
     sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Check integrity of an ART APEX.')
 
   parser.add_argument('apex', help='APEX file input')
