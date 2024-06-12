@@ -47,10 +47,6 @@ cc_library {
     export_static_lib_headers: [
         "libfstab",
     ],
-    whole_static_libs: [
-        // TODO(b/270049598): Investigate the cost of libc++fs compared to its utility.
-        "libc++fs",
-    ],
     apex_available: [
         "com.android.art",
         "com.android.art.debug",
