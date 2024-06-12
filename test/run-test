@@ -286,11 +286,6 @@ if True:
       run_args += ["--prebuild"]
       prebuild_mode = "yes"
       shift()
-    elif arg == "--compact-dex-level":
-      option = arg
-      shift()
-      run_args += [f'"{option}" "{arg}"']
-      shift()
     elif arg == "--strip-dex":
       run_args += ["--strip-dex"]
       shift()
@@ -773,7 +768,6 @@ if True:
         "    -O                    Run non-debug rather than debug build (off by default).\n"
         "    -Xcompiler-option     Pass an option to the compiler.\n"
         "    --runtime-option      Pass an option to the runtime.\n"
-        "    --compact-dex-level   Specify a compact dex level to the compiler.\n"
         "    --debug               Wait for the default debugger to attach.\n"
         "    --debug-agent <agent-path>\n"
         "                          Wait for the given debugger agent to attach. Currently\n"
