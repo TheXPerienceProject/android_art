@@ -1527,6 +1527,7 @@ class HLoopInformationOutwardIterator : public ValueObject {
   M(ArraySet, Instruction)                                              \
   M(Below, Condition)                                                   \
   M(BelowOrEqual, Condition)                                            \
+  M(BitwiseNegatedRight, BinaryOperation)                               \
   M(BooleanNot, UnaryOperation)                                         \
   M(BoundsCheck, Instruction)                                           \
   M(BoundType, Instruction)                                             \
@@ -1657,7 +1658,6 @@ class HLoopInformationOutwardIterator : public ValueObject {
 #define FOR_EACH_CONCRETE_INSTRUCTION_SHARED(M)
 #else
 #define FOR_EACH_CONCRETE_INSTRUCTION_SHARED(M)                         \
-  M(BitwiseNegatedRight, Instruction)                                   \
   M(DataProcWithShifterOp, Instruction)                                 \
   M(MultiplyAccumulate, Instruction)                                    \
   M(IntermediateAddressIndex, Instruction)
@@ -8387,6 +8387,63 @@ class HParallelMove final : public HExpression<0> {
 
  private:
   ArenaVector<MoveOperands> moves_;
+};
+
+class HBitwiseNegatedRight final : public HBinaryOperation {
+ public:
+  HBitwiseNegatedRight(DataType::Type result_type,
+                       InstructionKind op,
+                       HInstruction* left,
+                       HInstruction* right,
+                       uint32_t dex_pc = kNoDexPc)
+      : HBinaryOperation(
+            kBitwiseNegatedRight, result_type, left, right, SideEffects::None(), dex_pc),
+        op_kind_(op) {
+    DCHECK(op == HInstruction::kAnd || op == HInstruction::kOr || op == HInstruction::kXor) << op;
+  }
+
+  template <typename T, typename U>
+  auto Compute(T x, U y) const -> decltype(x & ~y) {
+    static_assert(std::is_same<decltype(x & ~y), decltype(x | ~y)>::value &&
+                      std::is_same<decltype(x & ~y), decltype(x ^ ~y)>::value,
+                  "Inconsistent negated bitwise types");
+    switch (op_kind_) {
+      case HInstruction::kAnd:
+        return x & ~y;
+      case HInstruction::kOr:
+        return x | ~y;
+      case HInstruction::kXor:
+        return x ^ ~y;
+      default:
+        LOG(FATAL) << "Unreachable";
+        UNREACHABLE();
+    }
+  }
+
+  bool InstructionDataEquals(const HInstruction* other) const override {
+    return op_kind_ == other->AsBitwiseNegatedRight()->op_kind_;
+  }
+
+  HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()),
+                                                  GetDexPc());
+  }
+
+  HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()),
+                                                   GetDexPc());
+  }
+
+  InstructionKind GetOpKind() const { return op_kind_; }
+
+  DECLARE_INSTRUCTION(BitwiseNegatedRight);
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(BitwiseNegatedRight);
+
+ private:
+  // Specifies the bitwise operation, which will be then negated.
+  const InstructionKind op_kind_;
 };
 
 // This instruction computes an intermediate address pointing in the 'middle' of an object. The
