@@ -32,7 +32,6 @@
 #include "ti_thread.h"
 
 #include <android-base/logging.h>
-#include <android-base/strings.h>
 
 #include "art_field-inl.h"
 #include "art_jvmti.h"
@@ -130,9 +129,9 @@ struct ThreadCallback : public art::ThreadLifecycleCallback {
         self->GetThreadName(name);
         if (name != "JDWP" && name != "Signal Catcher" && name != "perfetto_hprof_listener" &&
             name != art::metrics::MetricsReporter::kBackgroundThreadName &&
-            !android::base::StartsWith(name, "Jit thread pool") &&
-            !android::base::StartsWith(name, "Heap thread pool worker thread") &&
-            !android::base::StartsWith(name, "Runtime worker thread")) {
+            !name.starts_with("Jit thread pool") &&
+            !name.starts_with("Heap thread pool worker thread") &&
+            !name.starts_with("Runtime worker thread")) {
           LOG(FATAL) << "Unexpected thread before start: " << name << " id: "
                      << self->GetThreadId();
         }

@@ -58,7 +58,6 @@ namespace dexopt_chroot_setup {
 namespace {
 
 using ::android::base::ConsumePrefix;
-using ::android::base::EndsWith;
 using ::android::base::Error;
 using ::android::base::Join;
 using ::android::base::NoDestructor;
@@ -210,7 +209,7 @@ Result<void> BindMount(const std::string& source, const std::string& target) {
 }
 
 Result<void> BindMountRecursive(const std::string& source, const std::string& target) {
-  CHECK(!EndsWith(source, '/'));
+  CHECK(!source.ends_with('/'));
   OR_RETURN(BindMount(source, target));
 
   // Mount and make slave one by one. Do not use MS_REC because we don't want to mount a child if
@@ -222,7 +221,7 @@ Result<void> BindMountRecursive(const std::string& source, const std::string& ta
   // The list is in mount order.
   std::vector<FstabEntry> entries = OR_RETURN(GetProcMountsDescendantsOfPath(source));
   for (const FstabEntry& entry : entries) {
-    CHECK(!EndsWith(entry.mount_point, '/'));
+    CHECK(!entry.mount_point.ends_with('/'));
     std::string_view sub_dir = entry.mount_point;
     CHECK(ConsumePrefix(&sub_dir, source));
     if (sub_dir.empty()) {

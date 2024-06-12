@@ -105,7 +105,6 @@ using ::android::base::Result;
 using ::android::base::ScopeGuard;
 using ::android::base::SetProperty;
 using ::android::base::Split;
-using ::android::base::StartsWith;
 using ::android::base::StringPrintf;
 using ::android::base::Timer;
 using ::android::modules::sdklevel::IsAtLeastU;
@@ -253,9 +252,9 @@ std::vector<art_apex::ModuleInfo> GenerateModuleInfoList(
 
 // Returns a rewritten path based on environment variables for interesting paths.
 std::string RewriteParentDirectoryIfNeeded(const std::string& path) {
-  if (StartsWith(path, "/system/")) {
+  if (path.starts_with("/system/")) {
     return GetAndroidRoot() + path.substr(7);
-  } else if (StartsWith(path, "/system_ext/")) {
+  } else if (path.starts_with("/system_ext/")) {
     return GetSystemExtRoot() + path.substr(11);
   } else {
     return path;
@@ -494,7 +493,7 @@ Result<void> AddBootClasspathFds(/*inout*/ CmdlineBuilder& args,
     // Special treatment for Compilation OS. JARs in staged APEX may not be visible to Android, and
     // may only be visible in the VM where the staged APEX is mounted. On the contrary, JARs in
     // /system is not available by path in the VM, and can only made available via (remote) FDs.
-    if (StartsWith(jar, "/apex/")) {
+    if (jar.starts_with("/apex/")) {
       bcp_fds.emplace_back("-1");
     } else {
       std::string actual_path = RewriteParentDirectoryIfNeeded(jar);
@@ -892,7 +891,7 @@ std::vector<std::string> OnDeviceRefresh::GetArtBcpJars() const {
   std::string art_root = GetArtRoot() + "/";
   std::vector<std::string> art_bcp_jars;
   for (const std::string& jar : dex2oat_boot_classpath_jars_) {
-    if (StartsWith(jar, art_root)) {
+    if (jar.starts_with(art_root)) {
       art_bcp_jars.push_back(jar);
     }
   }
@@ -904,7 +903,7 @@ std::vector<std::string> OnDeviceRefresh::GetFrameworkBcpJars() const {
   std::string art_root = GetArtRoot() + "/";
   std::vector<std::string> framework_bcp_jars;
   for (const std::string& jar : dex2oat_boot_classpath_jars_) {
-    if (!StartsWith(jar, art_root)) {
+    if (!jar.starts_with(art_root)) {
       framework_bcp_jars.push_back(jar);
     }
   }
@@ -1093,7 +1092,7 @@ WARN_UNUSED bool OnDeviceRefresh::CheckSystemPropertiesAreDefault() const {
   // `cache-info.xml` exists, we call `CheckSystemPropertiesHaveNotChanged` instead.
   DCHECK(std::none_of(std::begin(kCheckedSystemPropertyPrefixes),
                       std::end(kCheckedSystemPropertyPrefixes),
-                      [](const char* prefix) { return StartsWith(prefix, "persist."); }));
+                      [](std::string_view prefix) { return prefix.starts_with("persist."); }));
 
   const OdrSystemProperties& system_properties = config_.GetSystemProperties();
 

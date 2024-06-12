@@ -41,7 +41,6 @@ namespace {
 using ::android::base::GetProperty;
 using ::android::base::ParseBool;
 using ::android::base::ParseBoolResult;
-using ::android::base::StartsWith;
 using ::art::odrefresh::CompilationOptions;
 using ::art::odrefresh::ExitCode;
 using ::art::odrefresh::kCheckedSystemPropertyPrefixes;
@@ -117,7 +116,7 @@ std::string GetEnvironmentVariableOrDefault(const char* name, std::string defaul
 }
 
 bool ArgumentMatches(std::string_view argument, std::string_view prefix, std::string* value) {
-  if (android::base::StartsWith(argument, prefix)) {
+  if (argument.starts_with(prefix)) {
     *value = std::string(argument.substr(prefix.size()));
     return true;
   }
@@ -202,13 +201,13 @@ int InitializeConfig(int argc, char** argv, OdrConfig* config) {
 }
 
 void GetSystemProperties(std::unordered_map<std::string, std::string>* system_properties) {
-  SystemPropertyForeach([&](const char* name, const char* value) {
+  SystemPropertyForeach([&](std::string_view name, const char* value) {
     if (strlen(value) == 0) {
       return;
     }
     for (const char* prefix : kCheckedSystemPropertyPrefixes) {
-      if (StartsWith(name, prefix)) {
-        (*system_properties)[name] = value;
+      if (name.starts_with(prefix)) {
+        (*system_properties)[std::string(name)] = value;
       }
     }
   });

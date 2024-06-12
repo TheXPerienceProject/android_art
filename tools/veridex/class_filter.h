@@ -17,7 +17,9 @@
 #ifndef ART_TOOLS_VERIDEX_CLASS_FILTER_H_
 #define ART_TOOLS_VERIDEX_CLASS_FILTER_H_
 
-#include <android-base/strings.h>
+#include <vector>
+#include <string>
+#include <string_view>
 
 namespace art {
 
@@ -25,13 +27,13 @@ class ClassFilter {
  public:
   explicit ClassFilter(const std::vector<std::string>& prefixes) : prefixes_(prefixes) {}
 
-  bool Matches(const char* class_descriptor) const {
+  bool Matches(std::string_view class_descriptor) const {
     if (prefixes_.empty()) {
       return true;
     }
 
     for (const std::string& filter : prefixes_) {
-      if (android::base::StartsWith(class_descriptor, filter)) {
+      if (class_descriptor.starts_with(filter)) {
         return true;
       }
     }
