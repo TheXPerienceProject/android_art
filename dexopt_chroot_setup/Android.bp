@@ -50,7 +50,7 @@ art_cc_binary {
     shared_libs: [
         "libart",
         "libartbase",
-        "libarttools", // Contains "libc++fs".
+        "libarttools",
         "libbase",
     ],
     apex_available: [
@@ -76,7 +76,7 @@ art_cc_test {
         ":art-gtest-jars-Main",
     ],
     static_libs: [
-        "libarttools", // Contains "libc++fs".
+        "libarttools",
         "libbase",
         "libgmock",
         "libselinux",
@@ -95,7 +95,7 @@ cc_fuzz {
         "libart",
         "libartbase",
         "liblog",
-        "libarttools", // Contains "libc++fs".
+        "libarttools",
     ],
     fuzz_config: {
         cc: [
