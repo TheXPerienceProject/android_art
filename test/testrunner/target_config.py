@@ -160,8 +160,7 @@ target_config = {
     },
     'art-heap-poisoning' : {
         'run-test' : ['--interpreter',
-                      '--optimizing',
-                      '--cdex-none'],
+                      '--optimizing'],
         'env' : {
             'ART_USE_READ_BARRIER' : 'false',
             'ART_HEAP_POISONING' : 'true'
