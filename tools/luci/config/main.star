@@ -206,8 +206,7 @@ def add_builder(name,
                 cc=True,
                 gen_cc=True,
                 gcstress=False,
-                heap_poisoning=False,
-                cdex=False):
+                heap_poisoning=False):
     def check_arg(value, valid_values):
       if value not in valid_values:
         fail("Argument '{}' was expected to be on of {}".format(value, valid_values))
@@ -224,7 +223,6 @@ def add_builder(name,
     short_name = short_name.replace("-x86_64", "-x64")
     short_name = short_name.replace("-ndebug-build_only", "-bo")
     short_name = short_name.replace("-non-gen-cc", "-ngen")
-    short_name = short_name.replace("-cdex-fast", "-cdx")
     short_name = short_name.replace("-debug", "-dbg")
     short_name = short_name.replace("-ndebug", "-ndbg")
 
@@ -242,7 +240,6 @@ def add_builder(name,
     testrunner_args = ['--verbose', '--host'] if mode == 'host' else ['--target', '--verbose']
     testrunner_args += ['--debug'] if debug else ['--ndebug']
     testrunner_args += ['--gcstress'] if gcstress else []
-    testrunner_args += ['--cdex-fast'] if cdex else []
 
     properties = {
         "builder_group": "client.art",
@@ -256,7 +253,6 @@ def add_builder(name,
         "generational_cc": gen_cc,
         "gcstress": gcstress,
         "heap_poisoning": heap_poisoning,
-        "cdex_level": "fast" if cdex else False,
         "testrunner_args": testrunner_args,
     }
 
@@ -286,7 +282,6 @@ add_builder("host-x86-debug", 'host', 'x86', 32, debug=True)
 add_builder("host-x86-ndebug", 'host', 'x86', 32)
 add_builder("host-x86-gcstress-debug", 'host', 'x86', 32, debug=True, gcstress=True)
 add_builder("host-x86-poison-debug", 'host', 'x86', 32, debug=True, heap_poisoning=True)
-add_builder("host-x86_64-cdex-fast", 'host', 'x86', 64, cdex=True, debug=True)
 add_builder("host-x86_64-cms", 'host', 'x86', 64, cc=False, debug=True, gen_cc=False)
 add_builder("host-x86_64-debug", 'host', 'x86', 64, debug=True)
 add_builder("host-x86_64-non-gen-cc", 'host', 'x86', 64, debug=True, gen_cc=False)
