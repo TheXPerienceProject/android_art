@@ -766,7 +766,7 @@ static void WaitUntilSingleThreaded() {
 #if defined(__linux__)
   // Read num_threads field from /proc/self/stat, avoiding higher-level IO libraries that may
   // break atomicity of the read.
-  static constexpr size_t kNumTries = 1500;
+  static constexpr size_t kNumTries = 2000;
   static constexpr size_t kNumThreadsIndex = 20;
   static constexpr size_t BUF_SIZE = 500;
   static constexpr size_t BUF_PRINT_SIZE = 150;  // Only log this much on failure to limit length.
@@ -797,7 +797,7 @@ static void WaitUntilSingleThreaded() {
     if (millis == 0) {
       millis = MilliTime();
     }
-    usleep(1000);
+    usleep(tries < 10 ? 1000 : 2000);
   }
   buf[std::min(BUF_PRINT_SIZE, bytes_read)] = '\0';  // Truncate buf before printing.
   LOG(ERROR) << "Not single threaded: bytes_read = " << bytes_read << " stat contents = \"" << buf
