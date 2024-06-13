@@ -32,6 +32,8 @@ message PreRebootStats {
         STATUS_FINISHED = 4;
         STATUS_CANCELLED = 5;
         STATUS_ABORTED_SYSTEM_REQUIREMENTS = 6;
+        STATUS_NOT_SCHEDULED_DISABLED = 7;
+        STATUS_NOT_SCHEDULED_JOB_SCHEDULER = 8;
     }
     optional Status status = 1;
 

@@ -25,7 +25,6 @@
 #include "arch/instruction_set_features.h"
 #include "art_method-inl.h"
 #include "base/runtime_debug.h"
-#include "base/string_view_cpp20.h"
 #include "base/variant_map.h"
 #include "class_linker.h"
 #include "cmdline_parser.h"

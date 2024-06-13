@@ -47,7 +47,6 @@
 #include "base/os.h"
 #include "base/pointer_size.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/systrace.h"
 #include "base/unix_file/fd_file.h"
 #include "base/utils.h"
@@ -758,7 +757,7 @@ bool OatFileBase::Setup(int zip_fd,
     }
     // Check that the base location of a multidex location matches the last seen primary location.
     if (is_multidex &&
-        (!StartsWith(dex_file_location, primary_location) ||
+        (!dex_file_location.starts_with(primary_location) ||
              dex_file_location[primary_location.size()] != DexFileLoader::kMultiDexSeparator)) {
       *error_msg = ErrorPrintf("unexpected multidex location '%s', unrelated to '%s'",
                                dex_file_location.c_str(),
@@ -774,7 +773,7 @@ bool OatFileBase::Setup(int zip_fd,
       if (dex_file_location.find('/') == std::string::npos &&
           dex_file_name.size() > dex_file_location.size() &&
           dex_file_name[dex_file_name.size() - dex_file_location.size() - 1u] == '/' &&
-          EndsWith(dex_file_name, dex_file_location)) {
+          dex_file_name.ends_with(dex_file_location)) {
         dex_file_location = dex_file_name;
       }
     }

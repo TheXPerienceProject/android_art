@@ -490,6 +490,34 @@ public class PreRebootStatsReporterTest {
                 ArtStatsLog.PRE_REBOOT_DEXOPT_JOB_ENDED__JOB_TYPE__JOB_TYPE_MAINLINE);
     }
 
+    @Test
+    public void testNotScheduled() throws Exception {
+        var reporter = new PreRebootStatsReporter(mInjector);
+
+        reporter.recordJobNotScheduled(
+                Status.STATUS_NOT_SCHEDULED_DISABLED, false /* isOtaUpdate */);
+        checkProto(PreRebootStats.newBuilder()
+                           .setStatus(Status.STATUS_NOT_SCHEDULED_DISABLED)
+                           .setJobType(JobType.JOB_TYPE_MAINLINE)
+                           .build());
+
+        {
+            var reporterAfterReboot = new PreRebootStatsReporter(mInjector);
+            var afterRebootSession = reporterAfterReboot.new AfterRebootSession();
+
+            afterRebootSession.report();
+        }
+
+        verify(mInjector).writeStats(ArtStatsLog.PREREBOOT_DEXOPT_JOB_ENDED,
+                ArtStatsLog.PRE_REBOOT_DEXOPT_JOB_ENDED__STATUS__STATUS_NOT_SCHEDULED_DISABLED,
+                0 /* optimizedPackageCount */, 0 /* failedPackageCount */,
+                0 /* skippedPackageCount */, 0 /* totalPackageCount */, -1 /* jobDurationMillis */,
+                -1 /* jobLatencyMillis */, 0 /* packagesWithArtifactsAfterRebootCount */,
+                0 /* packagesWithArtifactsUsableAfterRebootCount */, 0 /* jobRunCount */,
+                0 /* packagesWithArtifactsBeforeRebootCount */,
+                ArtStatsLog.PRE_REBOOT_DEXOPT_JOB_ENDED__JOB_TYPE__JOB_TYPE_MAINLINE);
+    }
+
     private void checkProto(PreRebootStats expected) throws Exception {
         PreRebootStats actual;
         try (InputStream in = new FileInputStream(mTempFile.getPath())) {

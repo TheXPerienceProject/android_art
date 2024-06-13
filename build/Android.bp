@@ -88,8 +88,6 @@ art_global_defaults {
 
     name: "art_defaults",
 
-    cpp_std: "gnu++17", // TODO(b/311052584): fix C++20 build and revert this line
-
     // This is the default visibility for the //art package, but we repeat it
     // here so that it gets merged with other visibility rules in modules
     // extending these defaults.

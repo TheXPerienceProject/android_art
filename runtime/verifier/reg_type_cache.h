@@ -66,10 +66,10 @@ static constexpr size_t kDefaultArenaBitVectorBytes = 8;
 
 class RegTypeCache {
  public:
-  RegTypeCache(ClassLinker* class_linker,
+  RegTypeCache(Thread* self,
+               ClassLinker* class_linker,
                bool can_load_classes,
                ScopedArenaAllocator& allocator,
-               VariableSizedHandleScope& handles,
                bool can_suspend = true);
   const art::verifier::RegType& GetFromId(uint16_t id) const;
   // Find a RegType, returns null if not found.
@@ -149,7 +149,7 @@ class RegTypeCache {
   void Dump(std::ostream& os) REQUIRES_SHARED(Locks::mutator_lock_);
   const RegType& RegTypeFromPrimitiveType(Primitive::Type) const;
 
-  ClassLinker* GetClassLinker() {
+  ClassLinker* GetClassLinker() const {
     return class_linker_;
   }
 
@@ -205,7 +205,7 @@ class RegTypeCache {
   ScopedArenaAllocator& allocator_;
 
   // Handle scope containing classes.
-  VariableSizedHandleScope& handles_;
+  VariableSizedHandleScope handles_;
   ScopedNullHandle<mirror::Class> null_handle_;
 
   ClassLinker* class_linker_;

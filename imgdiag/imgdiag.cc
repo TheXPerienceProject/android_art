@@ -35,7 +35,6 @@
 #include "art_method-inl.h"
 #include "base/array_ref.h"
 #include "base/os.h"
-#include "base/string_view_cpp20.h"
 #include "base/unix_file/fd_file.h"
 #include "class_linker.h"
 #include "cmdline.h"
@@ -1531,8 +1530,8 @@ class ImgDiagDumper {
       for (const android::procinfo::MapInfo& map_info : maps) {
         // The map name ends with ']' if it's an anonymous memmap. We need to special case that
         // to find the boot image map in some cases.
-        if (EndsWith(map_info.name, image_location_base_name) ||
-            EndsWith(map_info.name, image_location_base_name + "]")) {
+        if (map_info.name.ends_with(image_location_base_name) ||
+            map_info.name.ends_with(image_location_base_name + "]")) {
           if ((map_info.flags & PROT_WRITE) != 0) {
             return map_info;
           }
@@ -1866,14 +1865,14 @@ struct ImgDiagArgs : public CmdlineArgs {
     }
 
     std::string_view option(raw_option, raw_option_length);
-    if (StartsWith(option, "--image-diff-pid=")) {
+    if (option.starts_with("--image-diff-pid=")) {
       const char* image_diff_pid = raw_option + strlen("--image-diff-pid=");
 
       if (!android::base::ParseInt(image_diff_pid, &image_diff_pid_)) {
         *error_msg = "Image diff pid out of range";
         return kParseError;
       }
-    } else if (StartsWith(option, "--zygote-diff-pid=")) {
+    } else if (option.starts_with("--zygote-diff-pid=")) {
       const char* zygote_diff_pid = raw_option + strlen("--zygote-diff-pid=");
 
       if (!android::base::ParseInt(zygote_diff_pid, &zygote_diff_pid_)) {

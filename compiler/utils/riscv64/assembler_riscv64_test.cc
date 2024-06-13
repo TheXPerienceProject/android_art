@@ -152,7 +152,7 @@ class AssemblerRISCV64Test : public AssemblerTest<Riscv64Assembler,
     if (march_override_.has_value()) {
       auto it = std::find_if(result.begin(),
                              result.end(),
-                             [](const std::string& s) { return StartsWith(s, "-march="); });
+                             [](const std::string& s) { return s.starts_with("-march="); });
       CHECK(it != result.end());
       *it = march_override_.value();
     }
