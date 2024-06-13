@@ -17,6 +17,7 @@
 package com.android.server.art;
 
 import static com.android.server.art.model.ArtFlags.ScheduleStatus;
+import static com.android.server.art.proto.PreRebootStats.Status;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -158,6 +159,8 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
         updateOtaSlotLocked(otaSlot);
         mMapSnapshotsForOta = mapSnapshotsForOta;
         if (!isEnabled()) {
+            mInjector.getStatsReporter().recordJobNotScheduled(
+                    Status.STATUS_NOT_SCHEDULED_DISABLED, isOtaUpdate());
             return null;
         }
         mInjector.getStatsReporter().recordJobScheduled(false /* isAsync */, isOtaUpdate());
@@ -198,6 +201,8 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
         }
 
         if (!isEnabled()) {
+            mInjector.getStatsReporter().recordJobNotScheduled(
+                    Status.STATUS_NOT_SCHEDULED_DISABLED, isOtaUpdate());
             return ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP;
         }
 
@@ -232,6 +237,8 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
             return ArtFlags.SCHEDULE_SUCCESS;
         } else {
             AsLog.i("Failed to schedule Pre-reboot Dexopt Job");
+            mInjector.getStatsReporter().recordJobNotScheduled(
+                    Status.STATUS_NOT_SCHEDULED_JOB_SCHEDULER, isOtaUpdate());
             return ArtFlags.SCHEDULE_JOB_SCHEDULER_FAILURE;
         }
     }
