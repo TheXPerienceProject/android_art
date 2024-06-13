@@ -179,11 +179,15 @@ class MethodVerifier {
   }
 
   ClassLinker* GetClassLinker() const {
-    return class_linker_;
+    return reg_types_.GetClassLinker();
   }
 
   bool IsAotMode() const {
-    return flags_.aot_mode_;
+    return const_flags_.aot_mode_;
+  }
+
+  bool CanLoadClasses() const {
+    return const_flags_.can_load_classes_;
   }
 
   VerifierDeps* GetVerifierDeps() const {
@@ -285,9 +289,6 @@ class MethodVerifier {
   // The thread we're verifying on.
   Thread* const self_;
 
-  // Handles for classes in the `RegTypeCache`.
-  VariableSizedHandleScope handles_;
-
   // Arena allocator.
   ArenaStack arena_stack_;
   ScopedArenaAllocator allocator_;
@@ -319,6 +320,7 @@ class MethodVerifier {
   std::vector<VerifyError> failures_;
   // Error messages associated with failures.
   std::vector<std::ostringstream*> failure_messages_;
+
   struct {
     // Is there a pending hard failure?
     bool have_pending_hard_failure_ : 1;
@@ -329,21 +331,21 @@ class MethodVerifier {
     // instructions that would hard fail the verification.
     // Note: this flag is reset after processing each instruction.
     bool have_pending_runtime_throw_failure_ : 1;
-
-    // Verify in AoT mode?
-    bool aot_mode_ : 1;
   } flags_;
 
-  // Info message log use primarily for verifier diagnostics.
-  std::ostringstream info_messages_;
+  struct {
+    // Verify in AoT mode?
+    bool aot_mode_ : 1;
+
+    // Whether the `MethodVerifer` can load classes.
+    bool can_load_classes_ : 1;
+  } const const_flags_;
 
   // Bitset of the encountered failure types. Bits are according to the values in VerifyError.
   uint32_t encountered_failure_types_;
 
-  const bool can_load_classes_;
-
-  // Classlinker to use when resolving.
-  ClassLinker* class_linker_;
+  // Info message log use primarily for verifier diagnostics.
+  std::ostringstream info_messages_;
 
   // The verifier deps object we are going to report type assigability
   // constraints to. Can be null for runtime verification.
