@@ -32,7 +32,6 @@
 #include "base/file_utils.h"
 #include "base/logging.h"
 #include "base/mutex.h"
-#include "base/string_view_cpp20.h"
 #include "base/utils.h"
 #include "noop_compiler_callbacks.h"
 #include "oat/oat_file_assistant_context.h"
@@ -115,9 +114,9 @@ struct CmdlineArgs {
     for (int i = 0; i < argc; i++) {
       const char* const raw_option = argv[i];
       const std::string_view option(raw_option);
-      if (StartsWith(option, "--boot-image=")) {
+      if (option.starts_with("--boot-image=")) {
         Split(raw_option + strlen("--boot-image="), ':', &boot_image_locations_);
-      } else if (StartsWith(option, "--instruction-set=")) {
+      } else if (option.starts_with("--instruction-set=")) {
         const char* const instruction_set_str = raw_option + strlen("--instruction-set=");
         instruction_set_ = GetInstructionSetFromString(instruction_set_str);
         if (instruction_set_ == InstructionSet::kNone) {
@@ -133,7 +132,7 @@ struct CmdlineArgs {
         }
         ++i;
         runtime_args_.push_back(argv[i]);
-      } else if (StartsWith(option, "--output=")) {
+      } else if (option.starts_with("--output=")) {
         output_name_ = std::string(option.substr(strlen("--output=")));
         const char* filename = output_name_.c_str();
         out_.reset(new std::ofstream(filename));
@@ -303,12 +302,12 @@ struct CmdlineArgs {
   void ParseBootclasspath() {
     std::optional<std::string_view> bcp_str = std::nullopt;
     std::optional<std::string_view> bcp_location_str = std::nullopt;
-    for (const char* arg : runtime_args_) {
-      if (StartsWith(arg, "-Xbootclasspath:")) {
-          bcp_str = arg + strlen("-Xbootclasspath:");
+    for (std::string_view arg : runtime_args_) {
+      if (arg.starts_with("-Xbootclasspath:")) {
+          bcp_str = arg.substr(strlen("-Xbootclasspath:"));
       }
-      if (StartsWith(arg, "-Xbootclasspath-locations:")) {
-          bcp_location_str = arg + strlen("-Xbootclasspath-locations:");
+      if (arg.starts_with("-Xbootclasspath-locations:")) {
+          bcp_location_str = arg.substr(strlen("-Xbootclasspath-locations:"));
       }
     }
 

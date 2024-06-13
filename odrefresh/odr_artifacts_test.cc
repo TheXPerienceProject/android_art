@@ -19,7 +19,6 @@
 #include "arch/instruction_set.h"
 #include "base/common_art_test.h"
 #include "base/file_utils.h"
-#include "base/string_view_cpp20.h"
 #include "odrefresh/odrefresh.h"
 
 namespace art {
@@ -32,7 +31,7 @@ TEST(OdrArtifactsTest, ForBootImage) {
   setenv("ART_APEX_DATA", kOdrefreshArtifactDirectory, /* overwrite */ 1);
 
   const std::string image_location = GetApexDataBootImage("/system/framework/framework.jar");
-  EXPECT_TRUE(StartsWith(image_location, GetArtApexData()));
+  EXPECT_TRUE(image_location.starts_with(GetArtApexData()));
 
   const std::string image_filename =
       GetSystemImageFilename(image_location.c_str(), InstructionSet::kArm64);
@@ -51,7 +50,7 @@ TEST(OdrArtifactsTest, ForSystemServer) {
   setenv("ART_APEX_DATA", kOdrefreshArtifactDirectory, /* overwrite */ 1);
 
   const std::string image_location = GetApexDataImage("/system/framework/services.jar");
-  EXPECT_TRUE(StartsWith(image_location, GetArtApexData()));
+  EXPECT_TRUE(image_location.starts_with(GetArtApexData()));
 
   const std::string image_filename =
       GetSystemImageFilename(image_location.c_str(), InstructionSet::kX86);

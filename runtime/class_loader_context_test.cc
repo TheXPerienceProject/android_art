@@ -29,7 +29,6 @@
 #include "art_method-alloc-inl.h"
 #include "base/dchecked_vector.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "class_linker.h"
 #include "class_root-inl.h"
 #include "common_runtime_test.h"
@@ -210,7 +209,7 @@ class ClassLoaderContextTest : public CommonRuntimeTest {
           // If the opened location is relative (it was open from a relative path without a
           // classpath_dir) it might not match the expected location which is absolute in tests).
           // So we compare the endings (the checksum will validate it's actually the same file).
-          ASSERT_TRUE(EndsWith(expected_location, opened_location))
+          ASSERT_TRUE(expected_location.ends_with(opened_location))
               << expected_location << " " << opened_location;
         } else {
           ASSERT_EQ(expected_location, opened_location);
@@ -234,7 +233,7 @@ class ClassLoaderContextTest : public CommonRuntimeTest {
           // If the opened location is relative (it was open from a relative path without a
           // classpath_dir) it might not match the expected location which is absolute in tests).
           // So we compare the endings (the checksum will validate it's actually the same file).
-          ASSERT_TRUE(EndsWith(expected_location, opened_location))
+          ASSERT_TRUE(expected_location.ends_with(opened_location))
               << expected_location << " " << opened_location;
         } else {
           ASSERT_EQ(expected_location, opened_location);
@@ -377,7 +376,7 @@ class ClassLoaderContextTest : public CommonRuntimeTest {
   // TODO We should somehow support this in all situations. b/72042237.
   bool CreateRelativeString(const std::string& in, const char* cwd, std::string* out) {
     int cwd_len = strlen(cwd);
-    if (!android::base::StartsWith(in, cwd) || (cwd_len < 1)) {
+    if (!in.starts_with(cwd) || (cwd_len < 1)) {
       return false;
     }
     bool contains_trailing_slash = (cwd[cwd_len - 1] == '/');

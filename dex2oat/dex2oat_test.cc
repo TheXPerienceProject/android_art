@@ -31,7 +31,6 @@
 #include "arch/instruction_set_features.h"
 #include "base/macros.h"
 #include "base/mutex-inl.h"
-#include "base/string_view_cpp20.h"
 #include "base/utils.h"
 #include "base/zip_archive.h"
 #include "common_runtime_test.h"
@@ -140,7 +139,7 @@ class Dex2oatTest : public Dex2oatEnvironmentTest {
         return s == loc_arg;
       }));
       CHECK(std::any_of(extra_args.begin(), extra_args.end(), [](const std::string& s) {
-        return StartsWith(s, "--zip-fd=");
+        return s.starts_with("--zip-fd=");
       }));
     } else {
       dex_locations.push_back(dex_location);
