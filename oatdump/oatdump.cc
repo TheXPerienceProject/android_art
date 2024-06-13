@@ -48,7 +48,6 @@
 #include "base/safe_map.h"
 #include "base/stats-inl.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/unix_file/fd_file.h"
 #include "class_linker-inl.h"
 #include "class_linker.h"
@@ -3042,7 +3041,7 @@ class IMTDumper {
           table_index++;
 
           std::string p_name = ptr2->PrettyMethod(true);
-          if (android::base::StartsWith(p_name, method)) {
+          if (p_name.starts_with(method)) {
             std::cerr << "  Slot "
                       << index
                       << " ("
@@ -3055,7 +3054,7 @@ class IMTDumper {
         }
       } else {
         std::string p_name = ptr->PrettyMethod(true);
-        if (android::base::StartsWith(p_name, method)) {
+        if (p_name.starts_with(method)) {
           std::cerr << "  Slot " << index << " (1)" << std::endl;
           std::cerr << "    " << p_name << std::endl;
         } else {
@@ -3068,7 +3067,7 @@ class IMTDumper {
               for (ArtMethod& iface_method : iface->GetMethods(pointer_size)) {
                 if (ImTable::GetImtIndex(&iface_method) == index) {
                   std::string i_name = iface_method.PrettyMethod(true);
-                  if (android::base::StartsWith(i_name, method)) {
+                  if (i_name.starts_with(method)) {
                     std::cerr << "  Slot " << index << " (1)" << std::endl;
                     std::cerr << "    " << p_name << " (" << i_name << ")" << std::endl;
                   }
@@ -3087,7 +3086,7 @@ class IMTDumper {
     while (in_stream.good()) {
       std::string dot;
       std::getline(in_stream, dot);
-      if (android::base::StartsWith(dot, "#") || dot.empty()) {
+      if (dot.starts_with("#") || dot.empty()) {
         continue;
       }
       output.push_back(dot);
@@ -3159,11 +3158,11 @@ struct OatdumpArgs : public CmdlineArgs {
     }
 
     std::string_view option(raw_option, raw_option_length);
-    if (StartsWith(option, "--oat-file=")) {
+    if (option.starts_with("--oat-file=")) {
       oat_filename_ = raw_option + strlen("--oat-file=");
-    } else if (StartsWith(option, "--dex-file=")) {
+    } else if (option.starts_with("--dex-file=")) {
       dex_filename_ = raw_option + strlen("--dex-file=");
-    } else if (StartsWith(option, "--image=")) {
+    } else if (option.starts_with("--image=")) {
       image_location_ = raw_option + strlen("--image=");
     } else if (option == "--no-dump:vmap") {
       dump_vmap_ = false;
@@ -3173,31 +3172,31 @@ struct OatdumpArgs : public CmdlineArgs {
       disassemble_code_ = false;
     } else if (option =="--header-only") {
       dump_header_only_ = true;
-    } else if (StartsWith(option, "--symbolize=")) {
+    } else if (option.starts_with("--symbolize=")) {
       oat_filename_ = raw_option + strlen("--symbolize=");
       symbolize_ = true;
-    } else if (StartsWith(option, "--only-keep-debug")) {
+    } else if (option.starts_with("--only-keep-debug")) {
       only_keep_debug_ = true;
-    } else if (StartsWith(option, "--class-filter=")) {
+    } else if (option.starts_with("--class-filter=")) {
       class_filter_ = raw_option + strlen("--class-filter=");
-    } else if (StartsWith(option, "--method-filter=")) {
+    } else if (option.starts_with("--method-filter=")) {
       method_filter_ = raw_option + strlen("--method-filter=");
-    } else if (StartsWith(option, "--list-classes")) {
+    } else if (option.starts_with("--list-classes")) {
       list_classes_ = true;
-    } else if (StartsWith(option, "--list-methods")) {
+    } else if (option.starts_with("--list-methods")) {
       list_methods_ = true;
-    } else if (StartsWith(option, "--export-dex-to=")) {
+    } else if (option.starts_with("--export-dex-to=")) {
       export_dex_location_ = raw_option + strlen("--export-dex-to=");
-    } else if (StartsWith(option, "--addr2instr=")) {
+    } else if (option.starts_with("--addr2instr=")) {
       if (!android::base::ParseUint(raw_option + strlen("--addr2instr="), &addr2instr_)) {
         *error_msg = "Address conversion failed";
         return kParseError;
       }
-    } else if (StartsWith(option, "--app-image=")) {
+    } else if (option.starts_with("--app-image=")) {
       app_image_ = raw_option + strlen("--app-image=");
-    } else if (StartsWith(option, "--app-oat=")) {
+    } else if (option.starts_with("--app-oat=")) {
       app_oat_ = raw_option + strlen("--app-oat=");
-    } else if (StartsWith(option, "--dump-imt=")) {
+    } else if (option.starts_with("--dump-imt=")) {
       imt_dump_ = std::string(option.substr(strlen("--dump-imt=")));
     } else if (option == "--dump-imt-stats") {
       imt_stat_dump_ = true;

@@ -44,7 +44,6 @@
 #include "base/os.h"
 #include "base/pointer_size.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/systrace.h"
 #include "base/time_utils.h"
 #include "base/utils.h"
@@ -1472,7 +1471,7 @@ static bool CheckAndRemoveImageChecksum(uint32_t component_count,
                                         /*out*/std::string* error_msg) {
   std::string image_checksum;
   ImageSpace::AppendImageChecksum(component_count, checksum, &image_checksum);
-  if (!StartsWith(*oat_checksums, image_checksum)) {
+  if (!oat_checksums->starts_with(image_checksum)) {
     *error_msg = StringPrintf("Image checksum mismatch, expected %s to start with %s",
                               std::string(*oat_checksums).c_str(),
                               image_checksum.c_str());
@@ -2184,7 +2183,7 @@ bool ImageSpace::BootImageLayout::Load(FilenameFn&& filename_fn,
           DCHECK_NE(slash_pos, std::string::npos);
           base_location = bcp_component.substr(0u, slash_pos + 1u) + base_name;
         } else {
-          DCHECK(EndsWith(path, "/*"));
+          DCHECK(path.ends_with("/*"));
           base_location = path.substr(0u, path.size() - 1u) + base_name;
         }
         std::string err_msg;  // Ignored.
@@ -3415,7 +3414,7 @@ bool ImageSpace::ValidateApexVersions(const OatHeader& oat_header,
   // For a boot image, it can be generated from a subset of the bootclasspath.
   // For an app image, some dex files get compiled with a subset of the bootclasspath.
   // For such cases, the OAT APEX versions will be a prefix of the runtime APEX versions.
-  if (!android::base::StartsWith(apex_versions, oat_apex_versions)) {
+  if (!apex_versions.starts_with(oat_apex_versions)) {
     *error_msg = StringPrintf(
         "ValidateApexVersions found APEX versions mismatch between oat file '%s' and the runtime "
         "(Oat file: '%s', Runtime: '%s')",
@@ -3569,7 +3568,7 @@ size_t ImageSpace::CheckAndCountBCPComponents(std::string_view oat_boot_class_pa
   std::string_view remaining_bcp(oat_boot_class_path);
   bool bcp_ok = false;
   for (const std::string& location : boot_class_path) {
-    if (!StartsWith(remaining_bcp, location)) {
+    if (!remaining_bcp.starts_with(location)) {
       break;
     }
     remaining_bcp.remove_prefix(location.size());
@@ -3578,7 +3577,7 @@ size_t ImageSpace::CheckAndCountBCPComponents(std::string_view oat_boot_class_pa
       bcp_ok = true;
       break;
     }
-    if (!StartsWith(remaining_bcp, ":")) {
+    if (!remaining_bcp.starts_with(":")) {
       break;
     }
     remaining_bcp.remove_prefix(1u);
@@ -3629,7 +3628,7 @@ bool ImageSpace::VerifyBootClassPathChecksums(
   // Verify image checksums.
   size_t bcp_pos = 0u;
   size_t image_pos = 0u;
-  while (image_pos != num_image_spaces && StartsWith(oat_checksums, "i")) {
+  while (image_pos != num_image_spaces && oat_checksums.starts_with("i")) {
     // Verify the current image checksum.
     const ImageHeader& current_header = image_spaces[image_pos]->GetImageHeader();
     uint32_t image_space_count = current_header.GetImageSpaceCount();
@@ -3667,7 +3666,7 @@ bool ImageSpace::VerifyBootClassPathChecksums(
     image_pos += image_space_count;
     bcp_pos += component_count;
 
-    if (!StartsWith(oat_checksums, ":")) {
+    if (!oat_checksums.starts_with(":")) {
       // Check that we've reached the end of checksums and BCP.
       if (!oat_checksums.empty()) {
          *error_msg = StringPrintf("Expected ':' separator or end of checksums, remaining %s.",

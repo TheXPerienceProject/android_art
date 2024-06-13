@@ -32,7 +32,6 @@
 #include "base/mem_map.h"
 #include "base/os.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/unix_file/fd_file.h"
 #include "dex/art_dex_file_loader.h"
 #include "dex/class_accessor-inl.h"
@@ -807,15 +806,15 @@ class HiddenApi final {
         for (int i = 1; i < argc; ++i) {
           const char* raw_option = argv[i];
           const std::string_view option(raw_option);
-          if (StartsWith(option, "--input-dex=")) {
+          if (option.starts_with("--input-dex=")) {
             boot_dex_paths_.push_back(std::string(option.substr(strlen("--input-dex="))));
-          } else if (StartsWith(option, "--output-dex=")) {
+          } else if (option.starts_with("--output-dex=")) {
             output_dex_paths_.push_back(std::string(option.substr(strlen("--output-dex="))));
-          } else if (StartsWith(option, "--api-flags=")) {
+          } else if (option.starts_with("--api-flags=")) {
             api_flags_path_ = std::string(option.substr(strlen("--api-flags=")));
           } else if (option == "--no-force-assign-all") {
             force_assign_all_ = false;
-          } else if (StartsWith(option, "--max-hiddenapi-level=")) {
+          } else if (option.starts_with("--max-hiddenapi-level=")) {
             std::string value = std::string(option.substr(strlen("--max-hiddenapi-level=")));
             max_hiddenapi_level_ = ApiList::FromName(value);
           } else {
@@ -827,30 +826,30 @@ class HiddenApi final {
         for (int i = 1; i < argc; ++i) {
           const char* raw_option = argv[i];
           const std::string_view option(raw_option);
-          if (StartsWith(option, "--dependency-stub-dex=")) {
+          if (option.starts_with("--dependency-stub-dex=")) {
             const std::string path(std::string(option.substr(strlen("--dependency-stub-dex="))));
             dependency_stub_dex_paths_.push_back(path);
             // Add path to the boot dex path to resolve dependencies.
             boot_dex_paths_.push_back(path);
-          } else if (StartsWith(option, "--boot-dex=")) {
+          } else if (option.starts_with("--boot-dex=")) {
             boot_dex_paths_.push_back(std::string(option.substr(strlen("--boot-dex="))));
-          } else if (StartsWith(option, "--public-stub-classpath=")) {
+          } else if (option.starts_with("--public-stub-classpath=")) {
             stub_classpaths_.push_back(std::make_pair(
                 std::string(option.substr(strlen("--public-stub-classpath="))),
                 ApiStubs::Kind::kPublicApi));
-          } else if (StartsWith(option, "--system-stub-classpath=")) {
+          } else if (option.starts_with("--system-stub-classpath=")) {
             stub_classpaths_.push_back(std::make_pair(
                 std::string(option.substr(strlen("--system-stub-classpath="))),
                 ApiStubs::Kind::kSystemApi));
-          } else if (StartsWith(option, "--test-stub-classpath=")) {
+          } else if (option.starts_with("--test-stub-classpath=")) {
             stub_classpaths_.push_back(std::make_pair(
                 std::string(option.substr(strlen("--test-stub-classpath="))),
                 ApiStubs::Kind::kTestApi));
-          } else if (StartsWith(option, "--core-platform-stub-classpath=")) {
+          } else if (option.starts_with("--core-platform-stub-classpath=")) {
             stub_classpaths_.push_back(std::make_pair(
                 std::string(option.substr(strlen("--core-platform-stub-classpath="))),
                 ApiStubs::Kind::kCorePlatformApi));
-          } else if (StartsWith(option, "--out-api-flags=")) {
+          } else if (option.starts_with("--out-api-flags=")) {
             api_flags_path_ = std::string(option.substr(strlen("--out-api-flags=")));
           } else if (option == "--fragment") {
             fragment_ = true;

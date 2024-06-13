@@ -37,7 +37,6 @@
 #include "base/logging.h"  // For VLOG
 #include "base/pointer_size.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/systrace.h"
 #include "base/time_utils.h"
 #include "base/timing_logger.h"
@@ -2305,7 +2304,7 @@ class InitializeClassVisitor : public CompilationVisitor {
             // We need to initialize static fields, we only do this for image classes that aren't
             // marked with the $NoPreloadHolder (which implies this should not be initialized
             // early).
-            can_init_static_fields = !EndsWith(std::string_view(descriptor), "$NoPreloadHolder;");
+            can_init_static_fields = !std::string_view(descriptor).ends_with("$NoPreloadHolder;");
           } else {
             CHECK(is_app_image);
             // The boot image case doesn't need to recursively initialize the dependencies with
@@ -2432,7 +2431,7 @@ class InitializeClassVisitor : public CompilationVisitor {
 
     if (compiler_options.CompileArtTest()) {
       // For stress testing and unit-testing the clinit check in compiled code feature.
-      if (kIsDebugBuild || EndsWith(std::string_view(descriptor), "$NoPreloadHolder;")) {
+      if (kIsDebugBuild || std::string_view(descriptor).ends_with("$NoPreloadHolder;")) {
         klass->SetInBootImageAndNotInPreloadedClasses();
       }
     }

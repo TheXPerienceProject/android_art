@@ -27,7 +27,6 @@
 #include "base/logging.h"  // For InitLogging.
 #include "base/mutex.h"
 #include "base/os.h"
-#include "base/string_view_cpp20.h"
 #include "base/utils.h"
 #include "class_linker.h"
 #include "class_loader_context.h"
@@ -164,7 +163,7 @@ class DexoptAnalyzer final {
       const char* raw_option = argv[i];
       const std::string_view option(raw_option);
 
-      if (StartsWith(option, "--profile-analysis-result=")) {
+      if (option.starts_with("--profile-analysis-result=")) {
         int parse_result = std::stoi(std::string(
             option.substr(strlen("--profile-analysis-result="))), nullptr, 0);
         if (parse_result != static_cast<int>(ProfileAnalysisResult::kOptimize) &&
@@ -173,20 +172,20 @@ class DexoptAnalyzer final {
           Usage("Invalid --profile-analysis-result= %d", parse_result);
         }
         profile_analysis_result_ = static_cast<ProfileAnalysisResult>(parse_result);
-      } else if (StartsWith(option, "--dex-file=")) {
+      } else if (option.starts_with("--dex-file=")) {
         dex_file_ = std::string(option.substr(strlen("--dex-file=")));
-      } else if (StartsWith(option, "--compiler-filter=")) {
+      } else if (option.starts_with("--compiler-filter=")) {
         const char* filter_str = raw_option + strlen("--compiler-filter=");
         if (!CompilerFilter::ParseCompilerFilter(filter_str, &compiler_filter_)) {
           Usage("Invalid compiler filter '%s'", raw_option);
         }
-      } else if (StartsWith(option, "--isa=")) {
+      } else if (option.starts_with("--isa=")) {
         const char* isa_str = raw_option + strlen("--isa=");
         isa_ = GetInstructionSetFromString(isa_str);
         if (isa_ == InstructionSet::kNone) {
           Usage("Invalid isa '%s'", raw_option);
         }
-      } else if (StartsWith(option, "--image=")) {
+      } else if (option.starts_with("--image=")) {
         image_ = std::string(option.substr(strlen("--image=")));
       } else if (option == "--runtime-arg") {
         if (i + 1 == argc) {
@@ -194,31 +193,31 @@ class DexoptAnalyzer final {
         }
         ++i;
         runtime_args_.push_back(argv[i]);
-      } else if (StartsWith(option, "--android-data=")) {
+      } else if (option.starts_with("--android-data=")) {
         // Overwrite android-data if needed (oat file assistant relies on a valid directory to
         // compute dalvik-cache folder). This is mostly used in tests.
         const char* new_android_data = raw_option + strlen("--android-data=");
         setenv("ANDROID_DATA", new_android_data, 1);
       } else if (option == "--downgrade") {
         downgrade_ = true;
-      } else if (StartsWith(option, "--oat-fd=")) {
+      } else if (option.starts_with("--oat-fd=")) {
         oat_fd_ = std::stoi(std::string(option.substr(strlen("--oat-fd="))), nullptr, 0);
         if (oat_fd_ < 0) {
           Usage("Invalid --oat-fd %d", oat_fd_);
         }
-      } else if (StartsWith(option, "--vdex-fd=")) {
+      } else if (option.starts_with("--vdex-fd=")) {
         vdex_fd_ = std::stoi(std::string(option.substr(strlen("--vdex-fd="))), nullptr, 0);
         if (vdex_fd_ < 0) {
           Usage("Invalid --vdex-fd %d", vdex_fd_);
         }
-      } else if (StartsWith(option, "--zip-fd=")) {
+      } else if (option.starts_with("--zip-fd=")) {
         zip_fd_ = std::stoi(std::string(option.substr(strlen("--zip-fd="))), nullptr, 0);
         if (zip_fd_ < 0) {
           Usage("Invalid --zip-fd %d", zip_fd_);
         }
-      } else if (StartsWith(option, "--class-loader-context=")) {
+      } else if (option.starts_with("--class-loader-context=")) {
         context_str_ = std::string(option.substr(strlen("--class-loader-context=")));
-      } else if (StartsWith(option, "--class-loader-context-fds=")) {
+      } else if (option.starts_with("--class-loader-context-fds=")) {
         std::string str_context_fds_arg =
             std::string(option.substr(strlen("--class-loader-context-fds=")));
         std::vector<std::string> str_fds = android::base::Split(str_context_fds_arg, ":");

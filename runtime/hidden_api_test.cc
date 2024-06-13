@@ -201,7 +201,7 @@ class HiddenApiTest : public CommonRuntimeTest {
     // that may run in parallel. b/238730923
     const std::string_view suffix = ".jar";
     const std::string_view placeholder = "XXXXXX";  // See `mkstemps()`.
-    ASSERT_TRUE(EndsWith(location, suffix));
+    ASSERT_TRUE(location.ends_with(suffix));
     std::unique_ptr<char[]> unique_location(new char[location.length() + placeholder.length() + 1]);
     ASSERT_TRUE(unique_location != nullptr);
     size_t stem_length = location.length() - suffix.length();

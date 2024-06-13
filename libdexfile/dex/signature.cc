@@ -21,8 +21,6 @@
 #include <ostream>
 #include <type_traits>
 
-#include "base/string_view_cpp20.h"
-
 namespace art {
 
 using dex::TypeList;
@@ -62,7 +60,7 @@ bool Signature::operator==(std::string_view rhs) const {
     return false;
   }
   std::string_view tail(rhs);
-  if (!StartsWith(tail, "(")) {
+  if (!tail.starts_with("(")) {
     return false;  // Invalid signature
   }
   tail.remove_prefix(1);  // "(";
@@ -70,13 +68,13 @@ bool Signature::operator==(std::string_view rhs) const {
   if (params != nullptr) {
     for (uint32_t i = 0; i < params->Size(); ++i) {
       std::string_view param = dex_file_->GetTypeDescriptorView(params->GetTypeItem(i).type_idx_);
-      if (!StartsWith(tail, param)) {
+      if (!tail.starts_with(param)) {
         return false;
       }
       tail.remove_prefix(param.length());
     }
   }
-  if (!StartsWith(tail, ")")) {
+  if (!tail.starts_with(")")) {
     return false;
   }
   tail.remove_prefix(1);  // ")";

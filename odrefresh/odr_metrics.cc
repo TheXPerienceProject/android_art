@@ -28,7 +28,6 @@
 
 #include <android-base/logging.h>
 #include <base/os.h>
-#include <base/string_view_cpp20.h>
 #include <odr_fs_utils.h>
 #include <odr_metrics_record.h>
 
@@ -37,7 +36,7 @@ namespace odrefresh {
 
 OdrMetrics::OdrMetrics(const std::string& cache_directory, const std::string& metrics_file)
     : cache_directory_(cache_directory), metrics_file_(metrics_file) {
-  DCHECK(StartsWith(metrics_file_, "/"));
+  DCHECK(metrics_file.starts_with("/"));
 
   // Remove existing metrics file if it exists.
   if (OS::FileExists(metrics_file.c_str())) {
