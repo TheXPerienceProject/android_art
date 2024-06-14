@@ -622,27 +622,27 @@ void GetDalvikCache(const char* subdir,
 
 // Returns a path formed by encoding the dex location into the filename. The path returned will be
 // rooted at `cache_location`.
-static bool GetLocationEncodedFilename(const char* location,
-                                       const char* cache_location,
+static bool GetLocationEncodedFilename(std::string_view location,
+                                       std::string_view cache_location,
                                        std::string* filename,
                                        std::string* error_msg) {
-  if (location[0] != '/') {
-    *error_msg = StringPrintf("Expected path in location to be absolute: %s", location);
+  if (!location.starts_with('/')) {
+    *error_msg = "Expected path in location to be absolute: " + std::string(location);
     return false;
   }
-  std::string cache_file(&location[1]);  // skip leading slash
-  if (!android::base::EndsWith(location, ".dex") && !android::base::EndsWith(location, ".art") &&
-      !android::base::EndsWith(location, ".oat")) {
-    cache_file += "/";
-    cache_file += kClassesDex;
+  *filename = cache_location;
+  *filename += location;  // Including the leading slash.
+  size_t replace_start = cache_location.length() + /* skip the leading slash from `location` */ 1u;
+  std::replace(filename->begin() + replace_start, filename->end(), '/', '@');
+  if (!location.ends_with(".dex") && !location.ends_with(".art") && !location.ends_with(".oat")) {
+    *filename += "@";
+    *filename += kClassesDex;
   }
-  std::replace(cache_file.begin(), cache_file.end(), '/', '@');
-  *filename = StringPrintf("%s/%s", cache_location, cache_file.c_str());
   return true;
 }
 
-bool GetDalvikCacheFilename(const char* location,
-                            const char* cache_location,
+bool GetDalvikCacheFilename(std::string_view location,
+                            std::string_view cache_location,
                             std::string* filename,
                             std::string* error_msg) {
   return GetLocationEncodedFilename(location, cache_location, filename, error_msg);
@@ -669,8 +669,8 @@ static std::string GetApexDataDalvikCacheFilename(std::string_view dex_location,
     // Result:
     // "/data/misc/apexdata/com.android.art/dalvik-cache/arm/system@framework@xyz.jar@classes.odex"
     std::string result, unused_error_msg;
-    GetDalvikCacheFilename(std::string{dex_location}.c_str(),
-                           apex_data_dalvik_cache.c_str(),
+    GetDalvikCacheFilename(dex_location,
+                           apex_data_dalvik_cache,
                            &result,
                            &unused_error_msg);
     return ReplaceFileExtension(result, file_extension);
@@ -724,8 +724,7 @@ std::string GetSystemOdexFilenameForApex(std::string_view location, InstructionS
   DCHECK(LocationIsOnApex(location));
   std::string dir = GetAndroidRoot() + "/framework/oat/" + GetInstructionSetString(isa);
   std::string result, error_msg;
-  bool ret =
-      GetLocationEncodedFilename(std::string{location}.c_str(), dir.c_str(), &result, &error_msg);
+  bool ret = GetLocationEncodedFilename(location, dir, &result, &error_msg);
   // This should never fail. The function fails only if the location is not absolute, and a location
   // on /apex is always absolute.
   DCHECK(ret) << error_msg;
@@ -764,7 +763,7 @@ std::string ReplaceFileExtension(std::string_view filename, std::string_view new
 
 bool LocationIsOnArtApexData(std::string_view location) {
   const std::string art_apex_data = GetArtApexData();
-  return android::base::StartsWith(location, art_apex_data);
+  return location.starts_with(art_apex_data);
 }
 
 bool LocationIsOnArtModule(std::string_view full_path) {
@@ -773,7 +772,7 @@ bool LocationIsOnArtModule(std::string_view full_path) {
   if (module_path.empty()) {
     return false;
   }
-  return android::base::StartsWith(full_path, module_path);
+  return full_path.starts_with(module_path);
 }
 
 static bool StartsWithSlash(const char* str) {
@@ -821,7 +820,7 @@ static bool IsLocationOn(std::string_view full_path,
     path_prefix.append(subdir);
   }
 
-  return android::base::StartsWith(full_path, path_prefix);
+  return full_path.starts_with(path_prefix);
 }
 
 bool LocationIsOnSystemFramework(std::string_view full_path) {
@@ -853,11 +852,11 @@ bool LocationIsOnI18nModule(std::string_view full_path) {
 }
 
 bool LocationIsOnApex(std::string_view full_path) {
-  return android::base::StartsWith(full_path, kApexDefaultPath);
+  return full_path.starts_with(kApexDefaultPath);
 }
 
 std::string_view ApexNameFromLocation(std::string_view full_path) {
-  if (!android::base::StartsWith(full_path, kApexDefaultPath)) {
+  if (!full_path.starts_with(kApexDefaultPath)) {
     return {};
   }
   size_t start = strlen(kApexDefaultPath);
@@ -874,7 +873,7 @@ bool LocationIsOnSystem(const std::string& location) {
   LOG(FATAL) << "LocationIsOnSystem is unsupported on Windows.";
   return false;
 #else
-  return android::base::StartsWith(location, GetAndroidRoot());
+  return location.starts_with(GetAndroidRoot());
 #endif
 }
 

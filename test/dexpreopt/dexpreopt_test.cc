@@ -113,8 +113,8 @@ android::base::Result<std::vector<std::string>> GetZygoteExpectedArtifacts(Instr
     const std::string& jar = jars[i];
     std::string basename =
         i == 0 ? "boot.oat" : "boot-" + ReplaceFileExtension(android::base::Basename(jar), "oat");
-    std::string dir = android::base::StartsWith(jar, art_root) ? GetPrebuiltPrimaryBootImageDir() :
-                                                                 android_root + "/framework";
+    std::string dir = jar.starts_with(art_root) ? GetPrebuiltPrimaryBootImageDir()
+                                                : android_root + "/framework";
     std::string oat_file = android::base::StringPrintf(
         "%s/%s/%s", dir.c_str(), GetInstructionSetString(isa), basename.c_str());
 
@@ -174,7 +174,7 @@ android::base::Result<std::vector<std::string>> GetMappedFiles(pid_t pid,
   }
   std::vector<std::string> files;
   for (const android::procinfo::MapInfo& map : maps) {
-    if ((map.flags & flags) && android::base::EndsWith(map.name, extension)) {
+    if ((map.flags & flags) && map.name.ends_with(extension)) {
       files.push_back(map.name);
     }
   }

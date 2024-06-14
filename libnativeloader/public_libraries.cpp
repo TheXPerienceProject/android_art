@@ -126,8 +126,8 @@ void ReadExtensionLibraries(const char* dirname, std::vector<std::string>* sonam
 
         Result<std::vector<std::string>> ret = ReadConfig(
             config_file_path, [&company_name](const struct ConfigEntry& entry) -> Result<bool> {
-              if (android::base::StartsWith(entry.soname, "lib") &&
-                  android::base::EndsWith(entry.soname, "." + company_name + ".so")) {
+              if (entry.soname.starts_with("lib") &&
+                  entry.soname.ends_with("." + company_name + ".so")) {
                 return true;
               } else {
                 return Errorf(
