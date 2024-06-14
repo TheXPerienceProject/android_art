@@ -118,7 +118,6 @@ using ::android::base::ParseInt;
 using ::android::base::ReadFileToString;
 using ::android::base::Result;
 using ::android::base::Split;
-using ::android::base::StartsWith;
 using ::android::base::Tokenize;
 using ::android::base::Trim;
 using ::android::base::WriteStringToFd;
@@ -1939,7 +1938,7 @@ Result<BuildSystemProperties> BuildSystemProperties::Create(const std::string& f
   std::unordered_map<std::string, std::string> system_properties;
   for (const std::string& raw_line : Split(content, "\n")) {
     std::string line = Trim(raw_line);
-    if (line.empty() || StartsWith(line, '#')) {
+    if (line.empty() || line.starts_with('#')) {
       continue;
     }
     size_t pos = line.find('=');

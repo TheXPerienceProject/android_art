@@ -59,7 +59,6 @@ using ::android::base::function_ref;
 using ::android::base::ReadFileToString;
 using ::android::base::Readlink;
 using ::android::base::Result;
-using ::android::base::StartsWith;
 using ::android::base::unique_fd;
 using ::android::fs_mgr::Fstab;
 using ::android::fs_mgr::FstabEntry;
@@ -181,7 +180,7 @@ bool PathStartsWith(std::string_view path, std::string_view prefix) {
   CHECK(!prefix.empty() && !path.empty() && prefix[0] == '/' && path[0] == '/')
       << ART_FORMAT("path={}, prefix={}", path, prefix);
   ConsumeSuffix(&prefix, "/");
-  return StartsWith(path, prefix) &&
+  return path.starts_with(prefix) &&
          (path.length() == prefix.length() || path[prefix.length()] == '/');
 }
 
@@ -197,7 +196,7 @@ static Result<std::vector<FstabEntry>> GetProcMountsMatches(
     // field, according to fstab(5). In addition, ignore any other entries whose mount points are
     // not absolute paths, just in case there are other fs types that also have an meaningless mount
     // point.
-    if (entry.fs_type == "swap" || !StartsWith(entry.mount_point, '/')) {
+    if (entry.fs_type == "swap" || !entry.mount_point.starts_with('/')) {
       continue;
     }
     if (predicate(entry.mount_point)) {

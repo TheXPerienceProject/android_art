@@ -23,7 +23,6 @@
 #include "aidl/com/android/server/art/BnArtd.h"
 #include "android-base/errors.h"
 #include "android-base/result.h"
-#include "android-base/strings.h"
 #include "arch/instruction_set.h"
 #include "base/file_utils.h"
 #include "base/macros.h"
@@ -45,7 +44,6 @@ using ::aidl::com::android::server::art::OutputProfile;
 using ::aidl::com::android::server::art::ProfilePath;
 using ::aidl::com::android::server::art::RuntimeArtifactsPath;
 using ::aidl::com::android::server::art::VdexPath;
-using ::android::base::EndsWith;
 using ::android::base::Error;
 using ::android::base::Result;
 using ::art::service::ValidateDexPath;
@@ -335,7 +333,7 @@ bool PreRebootFlag(const VdexPath& vdex_path) {
 }
 
 bool IsPreRebootStagedFile(std::string_view filename) {
-  return EndsWith(filename, kPreRebootSuffix);
+  return filename.ends_with(kPreRebootSuffix);
 }
 
 void TestOnlySetListRootDir(std::string_view root_dir) { gListRootDir = root_dir; }

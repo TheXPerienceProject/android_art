@@ -236,7 +236,7 @@ static void Addr2line(const std::string& map_src,
                       std::unique_ptr<Addr2linePipe>* pipe /* inout */) {
   std::array<const char*, 3> kIgnoreSuffixes{ ".dex", ".jar", ".vdex" };
   for (const char* ignore_suffix : kIgnoreSuffixes) {
-    if (android::base::EndsWith(map_src, ignore_suffix)) {
+    if (map_src.ends_with(ignore_suffix)) {
       // Ignore file names that do not have map information addr2line can consume. e.g. vdex
       // files are special frames injected for the interpreter so they don't have any line
       // number information available.

@@ -153,34 +153,36 @@ static std::string StrippedCommandLine() {
   bool saw_zip_fd = false;
   bool saw_compiler_filter = false;
   for (int i = 0; i < original_argc; ++i) {
-    if (android::base::StartsWith(original_argv[i], "--zip-fd=")) {
+    std::string_view arg(original_argv[i]);
+    if (arg.starts_with("--zip-fd=")) {
       saw_zip_fd = true;
     }
-    if (android::base::StartsWith(original_argv[i], "--compiler-filter=")) {
+    if (arg.starts_with("--compiler-filter=")) {
       saw_compiler_filter = true;
     }
   }
 
   // Now filter out things.
   for (int i = 0; i < original_argc; ++i) {
+    std::string_view arg(original_argv[i]);
     // All runtime-arg parameters are dropped.
-    if (strcmp(original_argv[i], "--runtime-arg") == 0) {
+    if (arg == "--runtime-arg") {
       i++;  // Drop the next part, too.
       continue;
     }
 
     // Any instruction-setXXX is dropped.
-    if (android::base::StartsWith(original_argv[i], "--instruction-set")) {
+    if (arg.starts_with("--instruction-set")) {
       continue;
     }
 
     // The boot image is dropped.
-    if (android::base::StartsWith(original_argv[i], "--boot-image=")) {
+    if (arg.starts_with("--boot-image=")) {
       continue;
     }
 
     // The image format is dropped.
-    if (android::base::StartsWith(original_argv[i], "--image-format=")) {
+    if (arg.starts_with("--image-format=")) {
       continue;
     }
 
@@ -189,16 +191,16 @@ static std::string StrippedCommandLine() {
     // However, we prefer to drop this when we saw --zip-fd.
     if (saw_zip_fd) {
       // Drop anything --zip-X, --dex-X, --oat-X, --swap-X, or --app-image-X
-      if (android::base::StartsWith(original_argv[i], "--zip-") ||
-          android::base::StartsWith(original_argv[i], "--dex-") ||
-          android::base::StartsWith(original_argv[i], "--oat-") ||
-          android::base::StartsWith(original_argv[i], "--swap-") ||
-          android::base::StartsWith(original_argv[i], "--app-image-")) {
+      if (arg.starts_with("--zip-") ||
+          arg.starts_with("--dex-") ||
+          arg.starts_with("--oat-") ||
+          arg.starts_with("--swap-") ||
+          arg.starts_with("--app-image-")) {
         continue;
       }
     }
 
-    command.push_back(original_argv[i]);
+    command.push_back(std::string(arg));
   }
 
   if (!saw_compiler_filter) {
@@ -725,8 +727,8 @@ class Dex2Oat final {
 
     if (!IsBootImage() && boot_image_filename_.empty()) {
       DCHECK(!IsBootImageExtension());
-      if (std::any_of(runtime_args_.begin(), runtime_args_.end(), [](const char* arg) {
-            return android::base::StartsWith(arg, "-Xbootclasspath:");
+      if (std::any_of(runtime_args_.begin(), runtime_args_.end(), [](std::string_view arg) {
+            return arg.starts_with("-Xbootclasspath:");
           })) {
         LOG(WARNING) << "--boot-image is not specified while -Xbootclasspath is specified. Running "
                         "dex2oat in imageless mode";
@@ -1615,7 +1617,7 @@ class Dex2Oat final {
       TimingLogger::ScopedTiming t3("Loading image checksum", timings_);
       std::string full_bcp = android::base::Join(runtime->GetBootClassPathLocations(), ':');
       std::string extension_part = ":" + android::base::Join(dex_locations_, ':');
-      if (!android::base::EndsWith(full_bcp, extension_part)) {
+      if (!full_bcp.ends_with(extension_part)) {
         LOG(ERROR) << "Full boot class path does not end with extension parts, full: " << full_bcp
             << ", extension: " << extension_part.substr(1u);
         return dex2oat::ReturnCode::kOther;
@@ -1873,7 +1875,7 @@ class Dex2Oat final {
           for (const std::string& filter : no_inline_filters) {
             // Use dex_file->GetLocation() rather than dex_file->GetBaseLocation(). This
             // allows tests to specify <test-dexfile>!classes2.dex if needed but if the
-            // base location passes the StartsWith() test, so do all extra locations.
+            // base location passes the `starts_with()` test, so do all extra locations.
             std::string dex_location = dex_file->GetLocation();
             if (filter.find('/') == std::string::npos) {
               // The filter does not contain the path. Remove the path from dex_location as well.
@@ -1883,7 +1885,7 @@ class Dex2Oat final {
               }
             }
 
-            if (android::base::StartsWith(dex_location, filter)) {
+            if (dex_location.starts_with(filter)) {
               VLOG(compiler) << "Disabling inlining from " << dex_file->GetLocation();
               no_inline_from_dex_files.push_back(dex_file);
               break;
