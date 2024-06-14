@@ -72,7 +72,6 @@ endif # HOST_OS != darwin
 # product rules
 
 include $(art_path)/tools/ahat/Android.mk
-include $(art_path)/tools/dexfuzz/Android.mk
 
 ART_HOST_DEPENDENCIES := \
   $(ART_HOST_EXECUTABLES) \
