@@ -1007,7 +1007,8 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         pw.println("    Note: This command is only supposed to be used by the system. To manually");
         pw.println("    control the Pre-reboot Dexopt job, use 'pr-dexopt-job' instead.");
         pw.println();
-        pw.println("  pr-dexopt-job [--run | --schedule | --cancel | --test] [--slot SLOT]");
+        pw.println("  pr-dexopt-job [--version | --run | --schedule | --cancel | --test]");
+        pw.println("      [--slot SLOT]");
         pw.println("    Control the Pre-reboot Dexopt job. One of the mode options must be");
         pw.println("    specified.");
         pw.println("    Mode Options:");
