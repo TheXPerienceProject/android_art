@@ -703,6 +703,7 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
                 case "--slot":
                     otaSlot = getNextArgRequired();
                     break;
+                case "--version":
                 case "--test":
                 case "--run":
                 case "--schedule":
@@ -729,6 +730,9 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         }
 
         switch (mode) {
+            case "--version":
+                pw.println(2);
+                return 0;
             case "--test":
                 return handleTestPrDexoptJob(pw);
             case "--run":
@@ -1007,6 +1011,7 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         pw.println("    Control the Pre-reboot Dexopt job. One of the mode options must be");
         pw.println("    specified.");
         pw.println("    Mode Options:");
+        pw.println("      --version Show the version of the Pre-reboot Dexopt job.");
         pw.println("      --run Start a Pre-reboot Dexopt job immediately and waits for it to");
         pw.println("        finish. This command preempts any pending or running job, previously");
         pw.println("        scheduled or started automatically by the system or through any");
