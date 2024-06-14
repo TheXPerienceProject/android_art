@@ -122,6 +122,18 @@ Result<void> CreateDir(const std::string& path) {
   return {};
 }
 
+Result<void> Unmount(const std::string& target) {
+  if (umount2(target.c_str(), UMOUNT_NOFOLLOW) == 0) {
+    return {};
+  }
+  LOG(WARNING) << ART_FORMAT(
+      "Failed to umount2 '{}': {}. Retrying with MNT_DETACH", target, strerror(errno));
+  if (umount2(target.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) == 0) {
+    return {};
+  }
+  return ErrnoErrorf("Failed to umount2 '{}'", target);
+}
+
 Result<void> BindMount(const std::string& source, const std::string& target) {
   // Don't bind-mount repeatedly.
   CHECK(!PathStartsWith(source, DexoptChrootSetup::CHROOT_DIR));
@@ -201,9 +213,7 @@ Result<void> BindMount(const std::string& source, const std::string& target) {
             /*data=*/nullptr) != 0) {
     return ErrnoErrorf("Failed to bind-mount '{}' at '{}'", *kBindMountTmpDir, target);
   }
-  if (umount2(kBindMountTmpDir->c_str(), UMOUNT_NOFOLLOW) != 0) {
-    return ErrnoErrorf("Failed to umount2 '{}'", *kBindMountTmpDir);
-  }
+  OR_RETURN(Unmount(*kBindMountTmpDir));
   LOG(INFO) << ART_FORMAT("Bind-mounted '{}' at '{}'", source, target);
   return {};
 }
@@ -518,9 +528,7 @@ Result<void> DexoptChrootSetup::TearDownChroot() const {
   // The list is in mount order.
   std::vector<FstabEntry> entries = OR_RETURN(GetProcMountsDescendantsOfPath(CHROOT_DIR));
   for (auto it = entries.rbegin(); it != entries.rend(); it++) {
-    if (umount2(it->mount_point.c_str(), UMOUNT_NOFOLLOW) != 0) {
-      return ErrnoErrorf("Failed to umount2 '{}'", it->mount_point);
-    }
+    OR_RETURN(Unmount(it->mount_point));
     LOG(INFO) << ART_FORMAT("Unmounted '{}'", it->mount_point);
   }
 
@@ -533,9 +541,8 @@ Result<void> DexoptChrootSetup::TearDownChroot() const {
     LOG(INFO) << ART_FORMAT("Removed '{}'", CHROOT_DIR);
   }
 
-  if (!OR_RETURN(GetProcMountsDescendantsOfPath(*kBindMountTmpDir)).empty() &&
-      umount2(kBindMountTmpDir->c_str(), UMOUNT_NOFOLLOW) != 0) {
-    return ErrnoErrorf("Failed to umount2 '{}'", *kBindMountTmpDir);
+  if (!OR_RETURN(GetProcMountsDescendantsOfPath(*kBindMountTmpDir)).empty()) {
+    OR_RETURN(Unmount(*kBindMountTmpDir));
   }
 
   std::filesystem::remove_all(*kBindMountTmpDir, ec);
