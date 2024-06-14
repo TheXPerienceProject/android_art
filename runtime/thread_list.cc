@@ -55,11 +55,8 @@
 #include "well_known_classes.h"
 
 #if ART_USE_FUTEXES
-#include "linux/futex.h"
-#include "sys/syscall.h"
-#ifndef SYS_futex
-#define SYS_futex __NR_futex
-#endif
+#include <linux/futex.h>
+#include <sys/syscall.h>
 #endif  // ART_USE_FUTEXES
 
 namespace art HIDDEN {
@@ -1487,6 +1484,19 @@ void ThreadList::Unregister(Thread* self, bool should_run_callbacks) {
     // This is important if there are realtime threads. b/111277984
     usleep(1);
     // We failed to remove the thread due to a suspend request or the like, loop and try again.
+  }
+
+  // We flush the trace buffer in Thread::Destroy. We have to check again here because once the
+  // Thread::Destroy finishes we wait for any active suspend requests to finish before deleting
+  // the thread. If a new trace was started during the wait period we may allocate the trace buffer
+  // again. The trace buffer would only contain the method entry events for the methods on the stack
+  // of an exiting thread. It is not required to flush these entries but we need to release the
+  // buffer. Ideally we should either not generate trace events for a thread that is exiting or use
+  // a different mechanism to report the initial events on a trace start that doesn't use per-thread
+  // buffer. Both these approaches are not trivial to implement, so we are going with the approach
+  // of just releasing the buffer here.
+  if (UNLIKELY(self->GetMethodTraceBuffer() != nullptr)) {
+    Trace::ReleaseThreadBuffer(self);
   }
   delete self;
 

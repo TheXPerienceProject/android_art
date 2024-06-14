@@ -21,10 +21,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#ifdef __BIONIC__
-#include <sys/pidfd.h>
-#endif
-
 #include <chrono>
 #include <climits>
 #include <condition_variable>
@@ -45,6 +41,7 @@
 #include "android-base/strings.h"
 #include "android-base/unique_fd.h"
 #include "base/macros.h"
+#include "base/pidfd.h"
 #include "base/utils.h"
 #include "runtime.h"
 
@@ -324,17 +321,7 @@ bool ExecUtils::Exec(const std::vector<std::string>& arg_vector, std::string* er
   return true;
 }
 
-unique_fd ExecUtils::PidfdOpen(pid_t pid) const {
-#ifdef __BIONIC__
-  return unique_fd(pidfd_open(pid, /*flags=*/0));
-#else
-  // There is no glibc wrapper for pidfd_open.
-#ifndef SYS_pidfd_open
-  constexpr int SYS_pidfd_open = 434;
-#endif
-  return unique_fd(syscall(SYS_pidfd_open, pid, /*flags=*/0));
-#endif
-}
+unique_fd ExecUtils::PidfdOpen(pid_t pid) const { return art::PidfdOpen(pid, /*flags=*/0); }
 
 std::string ExecUtils::GetProcStat(pid_t pid) const {
   std::string stat_content;
