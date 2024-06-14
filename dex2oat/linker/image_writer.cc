@@ -85,6 +85,8 @@
 #include "runtime.h"
 #include "scoped_thread_state_change-inl.h"
 #include "subtype_check.h"
+#include "thread-current-inl.h"  // For AssertOnly1Thread.
+#include "thread_list.h"         // For AssertOnly1Thread.
 #include "well_known_classes-inl.h"
 
 using ::art::mirror::Class;
@@ -2525,11 +2527,18 @@ void ImageWriter::LayoutHelper::AssignImageBinSlot(
   bin_objects_[oat_index][enum_cast<size_t>(bin)].push_back(object.Ptr());
 }
 
+static inline void AssertOnly1Thread() REQUIRES(!Locks::thread_list_lock_) {
+  if (kIsDebugBuild) {
+    Runtime::Current()->GetThreadList()->CheckOnly1Thread(Thread::Current());
+  }
+}
+
 void ImageWriter::CalculateNewObjectOffsets() {
   Thread* const self = Thread::Current();
   Runtime* const runtime = Runtime::Current();
   gc::Heap* const heap = runtime->GetHeap();
 
+  AssertOnly1Thread();
   // Leave space for the header, but do not write it yet, we need to
   // know where image_roots is going to end up
   image_objects_offset_begin_ = RoundUp(sizeof(ImageHeader), kObjectAlignment);  // 64-bit-alignment
@@ -2564,10 +2573,12 @@ void ImageWriter::CalculateNewObjectOffsets() {
   // Deflate monitors before we visit roots since deflating acquires the monitor lock. Acquiring
   // this lock while holding other locks may cause lock order violations.
   {
-    auto deflate_monitor = [](mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_) {
-      Monitor::Deflate(Thread::Current(), obj);
-    };
+    auto deflate_monitor =
+        // NO_THREAD_SAFETY_ANALYSIS: We don't really hold mutator_lock_ exclusively.
+        [](mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_)
+            NO_THREAD_SAFETY_ANALYSIS { Monitor::Deflate(Thread::Current(), obj); };
     heap->VisitObjects(deflate_monitor);
+    // This does not update the MonitorList, which is thus rendered invalid, and is no longer used.
   }
 
   // From this point on, there shall be no GC anymore and no objects shall be allocated.
