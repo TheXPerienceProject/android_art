@@ -994,6 +994,8 @@ void Monitor::NotifyAll(Thread* self) {
 }
 
 bool Monitor::Deflate(Thread* self, ObjPtr<mirror::Object> obj) {
+  // No other relevant code is running. We should hold mutator_lock_ exclusively, but
+  // ImageWriter cheats, since it's single-threaded.
   DCHECK(obj != nullptr);
   // Don't need volatile since we only deflate with mutators suspended.
   LockWord lw(obj->GetLockWord(false));
@@ -1362,6 +1364,7 @@ void Monitor::DoNotify(Thread* self, ObjPtr<mirror::Object> obj, bool notify_all
 
 uint32_t Monitor::GetLockOwnerThreadId(ObjPtr<mirror::Object> obj) {
   DCHECK(obj != nullptr);
+  Locks::mutator_lock_->AssertSharedHeld(Thread::Current());
   LockWord lock_word = obj->GetLockWord(true);
   switch (lock_word.GetState()) {
     case LockWord::kHashCode:
@@ -1372,6 +1375,8 @@ uint32_t Monitor::GetLockOwnerThreadId(ObjPtr<mirror::Object> obj) {
       return lock_word.ThinLockOwner();
     case LockWord::kFatLocked: {
       Monitor* mon = lock_word.FatLockMonitor();
+      // Since we hold a share of the mutator lock, the obj lock cannot be deflated here.
+      // Since our caller holds a reference to obj, mon cannot be reclaimed.
       return mon->GetOwnerThreadId();
     }
     default: {
@@ -1691,8 +1696,7 @@ class MonitorDeflateVisitor : public IsMarkedVisitor {
  public:
   MonitorDeflateVisitor() : self_(Thread::Current()), deflate_count_(0) {}
 
-  mirror::Object* IsMarked(mirror::Object* object) override
-      REQUIRES_SHARED(Locks::mutator_lock_) {
+  mirror::Object* IsMarked(mirror::Object* object) override REQUIRES(Locks::mutator_lock_) {
     if (Monitor::Deflate(self_, object)) {
       DCHECK_NE(object->GetLockWord(true).GetState(), LockWord::kFatLocked);
       ++deflate_count_;
