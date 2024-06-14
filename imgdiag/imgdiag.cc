@@ -440,7 +440,9 @@ struct ParentInfo {
 using ParentMap = std::unordered_map<mirror::Object*, ParentInfo>;
 
 // Returns the "path" from root class to an object in the format:
-// <class_descriptor>(.<field_name>:<field_type_descriptor>)*
+// <dex_location> <class_descriptor>(.<field_name>:<field_type_descriptor>)*
+// <dex_location> is either a full path to the dex file where the class is
+// defined or "primitive" if the class is a primitive array.
 std::string GetPathFromClass(mirror::Object* obj, const ParentMap& parent_map)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   auto parent_info_it = parent_map.find(obj);
@@ -459,7 +461,17 @@ std::string GetPathFromClass(mirror::Object* obj, const ParentMap& parent_map)
   CHECK(class_obj->IsClass());
 
   std::string temp;
-  path = class_obj->AsClass()->GetDescriptor(&temp) + path;
+  ObjPtr<mirror::Class> klass = class_obj->AsClass();
+  path = klass->GetDescriptor(&temp) + path;
+
+  // Prepend dex location to the path.
+  // Use array value type if class is an array.
+  while (klass->IsArrayClass()) {
+    klass = klass->GetComponentType();
+  }
+  std::string dex_location = klass->IsPrimitive() ? "primitive" : klass->GetDexFile().GetLocation();
+  path = ART_FORMAT("{} {}", dex_location, path);
+
   return path;
 }
 
