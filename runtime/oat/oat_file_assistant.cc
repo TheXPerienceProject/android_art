@@ -701,7 +701,7 @@ bool OatFileAssistant::DexLocationToOatFilename(const std::string& location,
   // TODO: The oat file assistant should be the definitive place for
   // determining the oat file name from the dex location, not
   // GetDalvikCacheFilename.
-  return GetDalvikCacheFilename(location.c_str(), dalvik_cache.c_str(), oat_filename, error_msg);
+  return GetDalvikCacheFilename(location, dalvik_cache, oat_filename, error_msg);
 }
 
 bool OatFileAssistant::GetRequiredDexChecksum(std::optional<uint32_t>* checksum,

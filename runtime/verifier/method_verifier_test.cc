@@ -65,7 +65,7 @@ class MethodVerifierTest : public CommonRuntimeTest {
                                                      /* api_level= */ 0u,
                                                      &error_msg);
 
-    if (android::base::StartsWith(descriptor, "Ljava/lang/invoke")) {
+    if (descriptor.starts_with("Ljava/lang/invoke")) {
       ASSERT_TRUE(failure == FailureKind::kSoftFailure ||
                   failure == FailureKind::kNoFailure) << error_msg;
 

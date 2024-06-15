@@ -483,7 +483,7 @@ std::optional<std::string> FindApexNamespaceName(const std::string& location) {
   // /apex/modulename/...
   //
   // And we extract from it 'modulename', and then apply mangling rule to get namespace name for it.
-  if (android::base::StartsWith(location, kApexPath)) {
+  if (location.starts_with(kApexPath)) {
     size_t start_index = strlen(kApexPath);
     size_t slash_index = location.find_first_of('/', start_index);
     LOG_ALWAYS_FATAL_IF((slash_index == std::string::npos),
