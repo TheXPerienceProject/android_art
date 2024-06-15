@@ -74,7 +74,7 @@ class Monitor {
 
   // Return the thread id of the lock owner or 0 when there is no owner.
   EXPORT static uint32_t GetLockOwnerThreadId(ObjPtr<mirror::Object> obj)
-      NO_THREAD_SAFETY_ANALYSIS;  // TODO: Reading lock owner without holding lock is racy.
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // NO_THREAD_SAFETY_ANALYSIS for mon->Lock.
   EXPORT static ObjPtr<mirror::Object> MonitorEnter(Thread* thread,
@@ -138,7 +138,7 @@ class Monitor {
   void SetObject(ObjPtr<mirror::Object> object) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Provides no memory ordering guarantees.
-  Thread* GetOwner() const {
+  Thread* GetOwner() const REQUIRES_SHARED(Locks::mutator_lock_) {
     return owner_.load(std::memory_order_relaxed);
   }
 
@@ -165,11 +165,11 @@ class Monitor {
                                 uint32_t hash_code,
                                 int attempt_of_4 = 0) REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Not exclusive because ImageWriter calls this during a Heap::VisitObjects() that
-  // does not allow a thread suspension in the middle. TODO: maybe make this exclusive.
-  // NO_THREAD_SAFETY_ANALYSIS for monitor->monitor_lock_.
+  // Try to deflate the monitor associated with obj. Only called when we logically hold
+  // mutator_lock_ exclusively. ImageWriter calls this without actually invoking SuspendAll, but
+  // it is already entirely single-threaded.
   EXPORT static bool Deflate(Thread* self, ObjPtr<mirror::Object> obj)
-      REQUIRES_SHARED(Locks::mutator_lock_) NO_THREAD_SAFETY_ANALYSIS;
+      REQUIRES(Locks::mutator_lock_);
 
 #ifndef __LP64__
   void* operator new(size_t size) {
@@ -295,7 +295,8 @@ class Monitor {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Provides no memory ordering guarantees.
-  uint32_t GetOwnerThreadId() REQUIRES(!monitor_lock_);
+  uint32_t GetOwnerThreadId() REQUIRES(!Locks::thread_list_lock_)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Set locking_method_ and locking_dex_pc_ corresponding to owner's current stack.
   // owner is either self or suspended.
