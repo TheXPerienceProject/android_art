@@ -90,6 +90,13 @@ class FSObject:
     return '%s(dir=%r,exec=%r,symlink=%r,size=%d)' \
              % (self.name, self.is_dir, self.is_exec, self.is_symlink, self.size)
 
+  def type_descr(self):
+    if self.is_dir:
+      return 'directory'
+    if self.is_symlink:
+      return 'symlink'
+    return 'file'
+
 
 class TargetApexProvider:
   def __init__(self, apex):
@@ -238,6 +245,18 @@ class Checker:
     self._expected_file_globs.add(path)
     return ok
 
+  def check_dir(self, path):
+    ok, msg = self.is_dir(path)
+    if not ok:
+      self.fail(msg, path)
+    self._expected_file_globs.add(path)
+    return ok
+
+  def check_optional_file(self, path):
+    if not self._provider.get(path):
+      return True
+    return self.check_file(path)
+
   def check_executable(self, filename):
     path = 'bin/%s' % filename
     if not self.check_file(path):
@@ -324,23 +343,22 @@ class Checker:
     for arch in self.possible_archs():
       self.ignore_path('%s/%s/%s' % (ART_TEST_DIR, arch, filename))
 
-  def check_no_superfluous_files(self, dir_path):
-    paths = []
-    for name in sorted(self._provider.read_dir(dir_path).keys()):
-      if name not in ('.', '..'):
-        paths.append(os.path.join(dir_path, name))
-    expected_paths = set()
-    dir_prefix = dir_path + '/'
-    for path_glob in self._expected_file_globs:
-      expected_paths |= set(fnmatch.filter(paths, path_glob))
-      # If there are globs in subdirectories of dir_path we want to match their
-      # path segments at this directory level.
-      if path_glob.startswith(dir_prefix):
-        subpath = path_glob[len(dir_prefix):]
-        subpath_first_segment, _, _ = subpath.partition('/')
-        expected_paths |= set(fnmatch.filter(paths, dir_prefix + subpath_first_segment))
-    for unexpected_path in set(paths) - expected_paths:
-      self.fail('Unexpected file \'%s\'', unexpected_path)
+  def check_no_superfluous_files(self):
+    def recurse(dir_path):
+      paths = []
+      for name, fsobj in sorted(self._provider.read_dir(dir_path).items(), key=lambda p: p[0]):
+        if name in ('.', '..'):
+          continue
+        path = os.path.join(dir_path, name)
+        paths.append(path)
+        if fsobj.is_dir:
+          recurse(path)
+      for path_glob in self._expected_file_globs:
+        paths = [path for path in paths if not fnmatch.fnmatch(path, path_glob)]
+      for unexpected_path in paths:
+        fs_object = self._provider.get(unexpected_path)
+        self.fail('Unexpected %s: %s', fs_object.type_descr(), unexpected_path)
+    recurse('')
 
   # Just here for docs purposes, even if it isn't good Python style.
 
@@ -369,6 +387,10 @@ class Checker:
     raise NotImplementedError
 
 class Arch32Checker(Checker):
+  def __init__(self, provider):
+    super().__init__(provider)
+    self.lib_dirs = ['lib']
+
   def check_symlinked_multilib_executable(self, filename):
     self.check_executable('%s32' % filename)
     self.check_executable_symlink(filename)
@@ -392,6 +414,10 @@ class Arch32Checker(Checker):
     return ARCHS_32
 
 class Arch64Checker(Checker):
+  def __init__(self, provider):
+    super().__init__(provider)
+    self.lib_dirs = ['lib64']
+
   def check_symlinked_multilib_executable(self, filename):
     self.check_executable('%s64' % filename)
     self.check_executable_symlink(filename)
@@ -416,6 +442,10 @@ class Arch64Checker(Checker):
 
 
 class MultilibChecker(Checker):
+  def __init__(self, provider):
+    super().__init__(provider)
+    self.lib_dirs = ['lib', 'lib64']
+
   def check_symlinked_multilib_executable(self, filename):
     self.check_executable('%s32' % filename)
     self.check_executable('%s64' % filename)
@@ -456,8 +486,31 @@ class ReleaseChecker:
     return 'Release Checker'
 
   def run(self):
-    # Check the Protocol Buffers APEX manifest.
+    # Check the root directory.
+    self._checker.check_dir('bin')
+    self._checker.check_dir('etc')
+    self._checker.check_dir('javalib')
+    for lib_dir in self._checker.lib_dirs:
+      self._checker.check_dir(lib_dir)
     self._checker.check_file('apex_manifest.pb')
+
+    # Check etc.
+    self._checker.check_file('etc/boot-image.prof')
+    self._checker.check_dir('etc/classpaths')
+    self._checker.check_file('etc/classpaths/bootclasspath.pb')
+    self._checker.check_file('etc/classpaths/systemserverclasspath.pb')
+    self._checker.check_dir('etc/compatconfig')
+    self._checker.check_file('etc/compatconfig/libcore-platform-compat-config.xml')
+    self._checker.check_file('etc/init.rc')
+    self._checker.check_file('etc/linker.config.pb')
+    self._checker.check_file('etc/sdkinfo.pb')
+
+    # Check flagging files that don't get added in builds on master-art.
+    # TODO(b/345713436): Make flags work on master-art.
+    self._checker.check_optional_file('etc/aconfig_flags.pb')
+    self._checker.check_optional_file('etc/flag.map')
+    self._checker.check_optional_file('etc/flag.val')
+    self._checker.check_optional_file('etc/package.map')
 
     # Check binaries for ART.
     self._checker.check_executable('dexdump')
@@ -502,7 +555,7 @@ class ReleaseChecker:
     # Check internal native library dependencies.
     #
     # Any internal dependency not listed here will cause a failure in
-    # NoSuperfluousLibrariesChecker. Internal dependencies are generally just
+    # NoSuperfluousFilesChecker. Internal dependencies are generally just
     # implementation details, but in the release package we want to track them
     # because a) they add to the package size and the RAM usage (in particular
     # if the library is also present in /system or another APEX and hence might
@@ -666,6 +719,11 @@ class TestingTargetChecker:
     return 'Testing (Target) Checker'
 
   def run(self):
+    # Check test directories.
+    self._checker.check_dir(ART_TEST_DIR)
+    for arch_dir in self._checker.arch_dirs_for_path(ART_TEST_DIR):
+      self._checker.check_dir(arch_dir)
+
     # Check ART test binaries.
     self._checker.check_art_test_executable('art_artd_tests')
     self._checker.check_art_test_executable('art_cmdline_tests')
@@ -752,40 +810,16 @@ class TestingTargetChecker:
     # Fuzzer cases
     self._checker.check_art_test_data("fuzzer_corpus.zip")
 
-class NoSuperfluousBinariesChecker:
+
+class NoSuperfluousFilesChecker:
   def __init__(self, checker):
     self._checker = checker
 
   def __str__(self):
-    return 'No superfluous binaries checker'
+    return 'No superfluous files checker'
 
   def run(self):
-    self._checker.check_no_superfluous_files('bin')
-
-
-class NoSuperfluousLibrariesChecker:
-  def __init__(self, checker):
-    self._checker = checker
-
-  def __str__(self):
-    return 'No superfluous libraries checker'
-
-  def run(self):
-    self._checker.check_no_superfluous_files('javalib')
-    self._checker.check_no_superfluous_files('lib')
-    self._checker.check_no_superfluous_files('lib64')
-
-
-class NoSuperfluousArtTestsChecker:
-  def __init__(self, checker):
-    self._checker = checker
-
-  def __str__(self):
-    return 'No superfluous ART tests checker'
-
-  def run(self):
-    for arch in self._checker.possible_archs():
-      self._checker.check_no_superfluous_files('%s/%s' % (ART_TEST_DIR, arch))
+    self._checker.check_no_superfluous_files()
 
 
 class List:
@@ -984,13 +1018,8 @@ def art_apex_test_main(test_args):
   if test_args.flavor == FLAVOR_TESTING:
     checkers.append(TestingTargetChecker(base_checker))
 
-  # These checkers must be last.
-  checkers.append(NoSuperfluousBinariesChecker(base_checker))
-  checkers.append(NoSuperfluousArtTestsChecker(base_checker))
-  if not test_args.host:
-    # We only care about superfluous libraries on target, where their absence
-    # can be vital to ensure they get picked up from the right package.
-    checkers.append(NoSuperfluousLibrariesChecker(base_checker))
+  # This checker must be last.
+  checkers.append(NoSuperfluousFilesChecker(base_checker))
 
   failed = False
   for checker in checkers:

@@ -47,7 +47,7 @@ cc_library {
     shared_libs: [
         "libart",
         "libartbase",
-        "libarttools", // Contains "libc++fs".
+        "libarttools",
         "libbase",
     ],
     sdclang: false,
@@ -66,7 +66,7 @@ cc_library {
     shared_libs: [
         "libartd",
         "libartbased",
-        "libarttools", // Contains "libc++fs".
+        "libarttools",
         "libbase",
     ],
 }
