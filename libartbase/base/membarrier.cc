@@ -26,9 +26,8 @@
 #endif
 #include "macros.h"
 
-#if defined(__BIONIC__)
+#if __has_include(<linux/membarrier.h>)
 
-#include <atomic>
 #include <linux/membarrier.h>
 
 #define CHECK_MEMBARRIER_CMD(art_value, membarrier_value) \
@@ -41,11 +40,11 @@ CHECK_MEMBARRIER_CMD(art::MembarrierCommand::kRegisterPrivateExpedited,
 CHECK_MEMBARRIER_CMD(art::MembarrierCommand::kPrivateExpedited, MEMBARRIER_CMD_PRIVATE_EXPEDITED);
 #undef CHECK_MEMBARRIER_CMD
 
-#endif  // __BIONIC
+#endif  // __has_include(<linux/membarrier.h>)
 
 namespace art {
 
-#if defined(__NR_membarrier)
+#if defined(__linux__)
 
 static bool IsMemBarrierSupported() {
   // Check kernel version supports membarrier(2).
@@ -64,7 +63,7 @@ static bool IsMemBarrierSupported() {
     return false;
   }
 #if defined(__BIONIC__)
-  // Avoid calling membarrier on older Android versions where membarrier may be barred by secomp
+  // Avoid calling membarrier on older Android versions where membarrier may be barred by seccomp
   // causing the current process to be killed. The probing here could be considered expensive so
   // endeavour not to repeat too often.
   int api_level = android_get_device_api_level();
@@ -84,15 +83,13 @@ int membarrier(MembarrierCommand command) {
   return syscall(__NR_membarrier, static_cast<int>(command), 0);
 }
 
-#else  // __NR_membarrier
+#else  // __linux__
 
 int membarrier([[maybe_unused]] MembarrierCommand command) {
-  // In principle this could be supported on linux, but Android's prebuilt glibc does not include
-  // the system call number definitions (b/111199492).
   errno = ENOSYS;
   return -1;
 }
 
-#endif  // __NR_membarrier
+#endif  // __linux__
 
 }  // namespace art

@@ -34,7 +34,6 @@
 #include "base/file_utils.h"
 #include "base/macros.h"
 #include "base/mem_map.h"
-#include "base/string_view_cpp20.h"
 #include "base/unix_file/fd_file.h"
 #include "base/utils.h"
 #include "dex/art_dex_file_loader.h"
@@ -129,7 +128,7 @@ class Dex2oatImageTest : public CommonRuntimeTest {
   }
 
   void CopyDexFiles(const std::string& dir, /*inout*/std::vector<std::string>* dex_files) {
-    CHECK(EndsWith(dir, "/"));
+    CHECK(dir.ends_with("/"));
     for (std::string& dex_file : *dex_files) {
       size_t slash_pos = dex_file.rfind('/');
       CHECK(OS::FileExists(dex_file.c_str())) << dex_file;
@@ -356,7 +355,7 @@ TEST_F(Dex2oatImageTest, TestExtension) {
   ASSERT_FALSE(tail_ok) << error_msg;
 
   // Now compile the tail against both "head" and "mid".
-  CHECK(StartsWith(extra_args.back(), "--boot-image="));
+  CHECK(extra_args.back().starts_with("--boot-image="));
   extra_args.back() = "--boot-image=" + base_location + ':' + mid_location;
   tail_ok = CompileBootImage(extra_args, filename_prefix, tail_dex_files, &error_msg);
   ASSERT_TRUE(tail_ok) << error_msg;

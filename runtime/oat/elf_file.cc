@@ -1434,9 +1434,8 @@ bool ElfFileImpl<ElfTypes>::Strip(File* file, std::string* error_msg) {
       section_headers_original_indexes.push_back(0);
       continue;
     }
-    if (android::base::StartsWith(name, ".debug")
-        || (strcmp(name, ".strtab") == 0)
-        || (strcmp(name, ".symtab") == 0)) {
+    std::string_view name_sv(name);
+    if (name_sv.starts_with(".debug") || (name_sv == ".strtab") || (name_sv == ".symtab")) {
       continue;
     }
     section_headers.push_back(*sh);

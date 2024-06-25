@@ -89,8 +89,8 @@ union ValueConverter {
   // standard-layout struct members.
   StorageWrapper storage_;
   ValueWrapper value_;
-#if __cplusplus >= 202000L
-#error "When upgrading to C++20, remove this error and check that this is OK for all use cases."
+#if defined(__cpp_lib_is_layout_compatible)
+#error "When upgrading to a libc++ with this functionality, remove this error and check that this is OK for all use cases."
   static_assert(std::is_layout_compatible_v<StorageWrapper, ValueWrapper>);
 #endif
 

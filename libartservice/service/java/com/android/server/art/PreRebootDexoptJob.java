@@ -17,6 +17,7 @@
 package com.android.server.art;
 
 import static com.android.server.art.model.ArtFlags.ScheduleStatus;
+import static com.android.server.art.proto.PreRebootStats.Status;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -147,16 +148,19 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
     /**
      * Same as above, but starts the job immediately, instead of going through the job scheduler.
      *
+     * @param mapSnapshotsForOta whether to map/unmap snapshots. Only applicable to an OTA update.
      * @return The future of the job, or null if Pre-reboot Dexopt is not enabled.
      */
     @Nullable
-    public synchronized CompletableFuture<Void> onUpdateReadyStartNow(@Nullable String otaSlot) {
+    public synchronized CompletableFuture<Void> onUpdateReadyStartNow(
+            @Nullable String otaSlot, boolean mapSnapshotsForOta) {
         cancelAnyLocked();
         resetLocked();
         updateOtaSlotLocked(otaSlot);
-        // Don't map snapshots when running synchronously. `update_engine` maps snapshots for us.
-        mMapSnapshotsForOta = false;
+        mMapSnapshotsForOta = mapSnapshotsForOta;
         if (!isEnabled()) {
+            mInjector.getStatsReporter().recordJobNotScheduled(
+                    Status.STATUS_NOT_SCHEDULED_DISABLED, isOtaUpdate());
             return null;
         }
         mInjector.getStatsReporter().recordJobScheduled(false /* isAsync */, isOtaUpdate());
@@ -172,6 +176,11 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
     public synchronized void cancelGiven(
             @NonNull CompletableFuture<Void> job, boolean expectInterrupt) {
         cancelGivenLocked(job, expectInterrupt);
+    }
+
+    /** @see #cancelAnyLocked */
+    public synchronized void cancelAny() {
+        cancelAnyLocked();
     }
 
     @VisibleForTesting
@@ -192,6 +201,8 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
         }
 
         if (!isEnabled()) {
+            mInjector.getStatsReporter().recordJobNotScheduled(
+                    Status.STATUS_NOT_SCHEDULED_DISABLED, isOtaUpdate());
             return ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP;
         }
 
@@ -226,6 +237,8 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
             return ArtFlags.SCHEDULE_SUCCESS;
         } else {
             AsLog.i("Failed to schedule Pre-reboot Dexopt Job");
+            mInjector.getStatsReporter().recordJobNotScheduled(
+                    Status.STATUS_NOT_SCHEDULED_JOB_SCHEDULER, isOtaUpdate());
             return ArtFlags.SCHEDULE_JOB_SCHEDULER_FAILURE;
         }
     }

@@ -339,7 +339,7 @@ struct PageInfoArgs : public CmdlineArgs {
     }
 
     std::string_view option(raw_option, raw_option_length);
-    if (StartsWith(option, "--pid=")) {
+    if (option.starts_with("--pid=")) {
       // static_assert(std::is_signed_t
       const char* value = raw_option + strlen("--pid=");
       if (!android::base::ParseInt(value, &pid_)) {
@@ -348,7 +348,7 @@ struct PageInfoArgs : public CmdlineArgs {
       }
     } else if (option == "--count-zero-pages") {
       count_zero_pages_ = true;
-    } else if (StartsWith(option, "--dump-page-info=")) {
+    } else if (option.starts_with("--dump-page-info=")) {
       const char* value = raw_option + strlen("--dump-page-info=");
       virtual_page_index_ = 0;
       if (!android::base::ParseUint(value, &virtual_page_index_.value())) {

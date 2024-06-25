@@ -21,7 +21,6 @@
 #include "arch/instruction_set_features.h"
 #include "art_method-inl.h"
 #include "base/logging.h"  // For VLOG
-#include "base/string_view_cpp20.h"
 #include "base/systrace.h"
 #include "base/time_utils.h"
 #include "base/timing_logger.h"
@@ -89,7 +88,7 @@ void JitCompiler::ParseCompilerOptions() {
   for (const std::string& option : runtime->GetCompilerOptions()) {
     VLOG(compiler) << "JIT compiler option " << option;
     std::string error_msg;
-    if (StartsWith(option, "--instruction-set-variant=")) {
+    if (option.starts_with("--instruction-set-variant=")) {
       const char* str = option.c_str() + strlen("--instruction-set-variant=");
       VLOG(compiler) << "JIT instruction set variant " << str;
       instruction_set_features = InstructionSetFeatures::FromVariantAndHwcap(
@@ -97,7 +96,7 @@ void JitCompiler::ParseCompilerOptions() {
       if (instruction_set_features == nullptr) {
         LOG(WARNING) << "Error parsing " << option << " message=" << error_msg;
       }
-    } else if (StartsWith(option, "--instruction-set-features=")) {
+    } else if (option.starts_with("--instruction-set-features=")) {
       const char* str = option.c_str() + strlen("--instruction-set-features=");
       VLOG(compiler) << "JIT instruction set features " << str;
       if (instruction_set_features == nullptr) {
@@ -178,7 +177,8 @@ bool JitCompiler::CompileMethod(
     Thread* self, JitMemoryRegion* region, ArtMethod* method, CompilationKind compilation_kind) {
   SCOPED_TRACE << "JIT compiling "
                << method->PrettyMethod()
-               << " (kind=" << compilation_kind << ")";
+               << " (kind=" << compilation_kind << ")"
+               << " from " << method->GetDexFile()->GetLocation();
 
   DCHECK(!method->IsProxyMethod());
   DCHECK(method->GetDeclaringClass()->IsResolved());

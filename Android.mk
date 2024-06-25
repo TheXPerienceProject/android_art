@@ -18,22 +18,7 @@ LOCAL_PATH := $(call my-dir)
 
 art_path := $(LOCAL_PATH)
 
-include $(art_path)/tools/veridex/Android.mk
-
-########################################################################
-# clean-oat rules
-#
-
 include $(art_path)/build/Android.common_path.mk
-
-.PHONY: clean-oat
-clean-oat: clean-oat-host
-
-.PHONY: clean-oat-host
-clean-oat-host:
-	find $(OUT_DIR) '(' -name '*.oat' -o -name '*.odex' -o -name '*.art' -o -name '*.vdex' ')' -a -type f | xargs rm -f
-	rm -rf $(TMPDIR)/*/test-*/dalvik-cache/*
-	rm -rf $(TMPDIR)/android-data/dalvik-cache/*
 
 ########################################################################
 # cpplint rules to style check art source files
@@ -62,7 +47,6 @@ LOCAL_REQUIRED_MODULES := \
 # APEX builds when HOST_PREFER_32_BIT is set (b/120617876).
 ifneq ($(HOST_PREFER_32_BIT),true)
 LOCAL_REQUIRED_MODULES += \
-    dexdiag \
     dexlist \
     oatdump \
 
@@ -75,7 +59,6 @@ endif # HOST_OS != darwin
 # product rules
 
 include $(art_path)/tools/ahat/Android.mk
-include $(art_path)/tools/dexfuzz/Android.mk
 
 ART_HOST_DEPENDENCIES := \
   $(ART_HOST_EXECUTABLES) \

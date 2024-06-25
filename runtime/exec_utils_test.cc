@@ -17,8 +17,10 @@
 #include "exec_utils.h"
 
 #include <sys/utsname.h>
+#include <unistd.h>
 
 #include <csignal>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -221,11 +223,15 @@ TEST_P(ExecUtilsTest, ExecStat) {
   EXPECT_CALL(*exec_utils_, DoGetUptimeMs()).WillOnce(Return(1620344887ll));
   EXPECT_CALL(*exec_utils_, GetTicksPerSec()).WillOnce(Return(100));
 
-  ASSERT_EQ(
-      exec_utils_
-          ->ExecAndReturnResult(command, /*timeout_sec=*/-1, ExecCallbacks(), &stat, &error_msg)
-          .status,
-      ExecResult::kExited)
+  ASSERT_EQ(exec_utils_
+                ->ExecAndReturnResult(command,
+                                      /*timeout_sec=*/-1,
+                                      ExecCallbacks(),
+                                      /*new_process_group=*/false,
+                                      &stat,
+                                      &error_msg)
+                .status,
+            ExecResult::kExited)
       << error_msg;
 
   EXPECT_EQ(stat.cpu_time_ms, 990);
@@ -247,11 +253,15 @@ TEST_P(ExecUtilsTest, ExecStatNoStartTime) {
   EXPECT_CALL(*exec_utils_, DoGetUptimeMs()).WillOnce(Return(1620344887ll));
   EXPECT_CALL(*exec_utils_, GetTicksPerSec()).WillOnce(Return(100));
 
-  ASSERT_EQ(
-      exec_utils_
-          ->ExecAndReturnResult(command, /*timeout_sec=*/-1, ExecCallbacks(), &stat, &error_msg)
-          .status,
-      ExecResult::kExited)
+  ASSERT_EQ(exec_utils_
+                ->ExecAndReturnResult(command,
+                                      /*timeout_sec=*/-1,
+                                      ExecCallbacks(),
+                                      /*new_process_group=*/false,
+                                      &stat,
+                                      &error_msg)
+                .status,
+            ExecResult::kExited)
       << error_msg;
 
   EXPECT_EQ(stat.cpu_time_ms, 0);
@@ -268,11 +278,15 @@ TEST_P(ExecUtilsTest, ExecStatNoUptime) {
   EXPECT_CALL(*exec_utils_, DoGetUptimeMs())
       .WillOnce(Return(Result<int64_t>(Errorf("Failed to get uptime"))));
 
-  ASSERT_EQ(
-      exec_utils_
-          ->ExecAndReturnResult(command, /*timeout_sec=*/-1, ExecCallbacks(), &stat, &error_msg)
-          .status,
-      ExecResult::kExited)
+  ASSERT_EQ(exec_utils_
+                ->ExecAndReturnResult(command,
+                                      /*timeout_sec=*/-1,
+                                      ExecCallbacks(),
+                                      /*new_process_group=*/false,
+                                      &stat,
+                                      &error_msg)
+                .status,
+            ExecResult::kExited)
       << error_msg;
 
   EXPECT_EQ(stat.cpu_time_ms, 0);
@@ -293,11 +307,15 @@ TEST_P(ExecUtilsTest, ExecStatFailed) {
   EXPECT_CALL(*exec_utils_, GetTicksPerSec()).WillOnce(Return(100));
 
   // This will always time out.
-  ASSERT_EQ(
-      exec_utils_
-          ->ExecAndReturnResult(command, /*timeout_sec=*/1, ExecCallbacks(), &stat, &error_msg)
-          .status,
-      ExecResult::kTimedOut);
+  ASSERT_EQ(exec_utils_
+                ->ExecAndReturnResult(command,
+                                      /*timeout_sec=*/1,
+                                      ExecCallbacks(),
+                                      /*new_process_group=*/false,
+                                      &stat,
+                                      &error_msg)
+                .status,
+            ExecResult::kTimedOut);
 
   EXPECT_EQ(stat.cpu_time_ms, 990);
   EXPECT_EQ(stat.wall_time_ms, 1007);
@@ -323,6 +341,51 @@ TEST_P(ExecUtilsTest, ExecCallbacks) {
                                        .on_start = on_start.AsStdFunction(),
                                        .on_end = on_end.AsStdFunction(),
                                    },
+                                   /*new_process_group=*/false,
+                                   /*stat=*/nullptr,
+                                   &error_msg);
+}
+
+TEST_P(ExecUtilsTest, ExecNewProcessGroupTrue) {
+  auto on_end = [](pid_t pid) {
+    pid_t pgid = getpgid(pid);
+    ASSERT_GE(pgid, 0) << strerror(errno);
+    ASSERT_EQ(pgid, pid);
+  };
+
+  std::vector<std::string> command;
+  command.push_back(GetBin("id"));
+
+  std::string error_msg;
+  exec_utils_->ExecAndReturnResult(command,
+                                   /*timeout_sec=*/-1,
+                                   ExecCallbacks{
+                                       .on_end = on_end,
+                                   },
+                                   /*new_process_group=*/true,
+                                   /*stat=*/nullptr,
+                                   &error_msg);
+}
+
+TEST_P(ExecUtilsTest, ExecNewProcessGroupFalse) {
+  auto on_end = [](pid_t pid) {
+    pid_t pgid = getpgid(pid);
+    ASSERT_GE(pgid, 0) << strerror(errno);
+    pid_t parent_pgid = getpgid(0);
+    ASSERT_GE(parent_pgid, 0) << strerror(errno);
+    ASSERT_EQ(pgid, parent_pgid);
+  };
+
+  std::vector<std::string> command;
+  command.push_back(GetBin("id"));
+
+  std::string error_msg;
+  exec_utils_->ExecAndReturnResult(command,
+                                   /*timeout_sec=*/-1,
+                                   ExecCallbacks{
+                                       .on_end = on_end,
+                                   },
+                                   /*new_process_group=*/false,
                                    /*stat=*/nullptr,
                                    &error_msg);
 }

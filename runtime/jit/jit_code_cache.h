@@ -414,7 +414,6 @@ class JitCodeCache {
   }
 
   ProfilingInfo* GetProfilingInfo(ArtMethod* method, Thread* self);
-  void ResetHotnessCounter(ArtMethod* method, Thread* self);
   void MaybeUpdateInlineCache(ArtMethod* method,
                               uint32_t dex_pc,
                               ObjPtr<mirror::Class> cls,

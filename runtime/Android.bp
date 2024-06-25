@@ -630,13 +630,8 @@ cc_defaults {
         "libbase",
         "liblzma",
     ],
-    exclude_static_libs: [
-        // This library comes from the static version of libunwindstack.
-        "libz",
-    ],
     shared_libs: [
         "liblog",
-        "libz",
     ],
 }
 

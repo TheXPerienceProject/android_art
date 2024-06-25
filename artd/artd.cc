@@ -118,7 +118,6 @@ using ::android::base::ParseInt;
 using ::android::base::ReadFileToString;
 using ::android::base::Result;
 using ::android::base::Split;
-using ::android::base::StartsWith;
 using ::android::base::Tokenize;
 using ::android::base::Trim;
 using ::android::base::WriteStringToFd;
@@ -1210,7 +1209,8 @@ ScopedAStatus ArtdCancellationSignal::cancel() {
   std::lock_guard<std::mutex> lock(mu_);
   is_cancelled_ = true;
   for (pid_t pid : pids_) {
-    int res = kill_(pid, SIGKILL);
+    // Kill the whole process group.
+    int res = kill_(-pid, SIGKILL);
     DCHECK_EQ(res, 0);
   }
   return ScopedAStatus::ok();
@@ -1229,7 +1229,7 @@ ExecCallbacks ArtdCancellationSignal::CreateExecCallbacks() {
             pids_.insert(pid);
             // Handle cancellation signals sent before the process starts.
             if (is_cancelled_) {
-              int res = kill_(pid, SIGKILL);
+              int res = kill_(-pid, SIGKILL);
               DCHECK_EQ(res, 0);
             }
           },
@@ -1719,8 +1719,10 @@ Result<int> Artd::ExecAndReturnCode(const std::vector<std::string>& args,
                                     const ExecCallbacks& callbacks,
                                     ProcessStat* stat) const {
   std::string error_msg;
-  ExecResult result =
-      exec_utils_->ExecAndReturnResult(args, timeout_sec, callbacks, stat, &error_msg);
+  // Create a new process group so that we can kill the process subtree at once by killing the
+  // process group.
+  ExecResult result = exec_utils_->ExecAndReturnResult(
+      args, timeout_sec, callbacks, /*new_process_group=*/true, stat, &error_msg);
   if (result.status != ExecResult::kExited) {
     return Error() << error_msg;
   }
@@ -1936,7 +1938,7 @@ Result<BuildSystemProperties> BuildSystemProperties::Create(const std::string& f
   std::unordered_map<std::string, std::string> system_properties;
   for (const std::string& raw_line : Split(content, "\n")) {
     std::string line = Trim(raw_line);
-    if (line.empty() || StartsWith(line, '#')) {
+    if (line.empty() || line.starts_with('#')) {
       continue;
     }
     size_t pos = line.find('=');

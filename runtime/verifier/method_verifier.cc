@@ -2496,7 +2496,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       break;
     case Instruction::THROW: {
       const RegType& res_type = work_line_->GetRegisterType(this, inst->VRegA_11x());
-      if (!reg_types_.JavaLangThrowable(false).IsAssignableFrom(res_type, this)) {
+      if (!reg_types_.JavaLangThrowable().IsAssignableFrom(res_type, this)) {
         if (res_type.IsUninitializedTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "thrown exception not initialized";
         } else if (!res_type.IsReferenceTypes()) {
@@ -2859,7 +2859,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       ArtMethod* called_method = VerifyInvocationArgs(inst, type, is_range);
       const RegType* return_type = nullptr;
       if (called_method != nullptr) {
-        ObjPtr<mirror::Class> return_type_class = can_load_classes_
+        ObjPtr<mirror::Class> return_type_class = CanLoadClasses()
             ? called_method->ResolveReturnType()
             : called_method->LookupResolvedReturnType();
         if (return_type_class != nullptr) {
@@ -2867,7 +2867,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                                    return_type_class,
                                    return_type_class->CannotBeAssignedFromOtherTypes());
         } else {
-          DCHECK_IMPLIES(can_load_classes_, self_->IsExceptionPending());
+          DCHECK_IMPLIES(CanLoadClasses(), self_->IsExceptionPending());
           self_->ClearException();
         }
       }
@@ -2904,7 +2904,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       } else {
         is_constructor = called_method->IsConstructor();
         return_type_descriptor = called_method->GetReturnTypeDescriptor();
-        ObjPtr<mirror::Class> return_type_class = can_load_classes_
+        ObjPtr<mirror::Class> return_type_class = CanLoadClasses()
             ? called_method->ResolveReturnType()
             : called_method->LookupResolvedReturnType();
         if (return_type_class != nullptr) {
@@ -2912,7 +2912,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                                    return_type_class,
                                    return_type_class->CannotBeAssignedFromOtherTypes());
         } else {
-          DCHECK_IMPLIES(can_load_classes_, self_->IsExceptionPending());
+          DCHECK_IMPLIES(CanLoadClasses(), self_->IsExceptionPending());
           self_->ClearException();
         }
       }
@@ -3589,10 +3589,10 @@ template <bool kVerifierDebug>
 template <CheckAccess C>
 const RegType& MethodVerifier<kVerifierDebug>::ResolveClass(dex::TypeIndex class_idx) {
   ClassLinker* linker = GetClassLinker();
-  ObjPtr<mirror::Class> klass = can_load_classes_
+  ObjPtr<mirror::Class> klass = CanLoadClasses()
       ? linker->ResolveType(class_idx, dex_cache_, class_loader_)
       : linker->LookupResolvedType(class_idx, dex_cache_.Get(), class_loader_.Get());
-  if (can_load_classes_ && klass == nullptr) {
+  if (CanLoadClasses() && klass == nullptr) {
     DCHECK(self_->IsExceptionPending());
     self_->ClearException();
   }
@@ -3670,12 +3670,12 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
         for (; iterator.HasNext(); iterator.Next()) {
           if (iterator.GetHandlerAddress() == (uint32_t) work_insn_idx_) {
             if (!iterator.GetHandlerTypeIndex().IsValid()) {
-              common_super = &reg_types_.JavaLangThrowable(false);
+              common_super = &reg_types_.JavaLangThrowable();
             } else {
               // Do access checks only on resolved exception classes.
               const RegType& exception =
                   ResolveClass<CheckAccess::kOnResolvedClass>(iterator.GetHandlerTypeIndex());
-              if (!reg_types_.JavaLangThrowable(false).IsAssignableFrom(exception, this)) {
+              if (!reg_types_.JavaLangThrowable().IsAssignableFrom(exception, this)) {
                 DCHECK(!exception.IsUninitializedTypes());  // Comes from dex, shouldn't be uninit.
                 if (exception.IsUnresolvedTypes()) {
                   if (unresolved == nullptr) {
@@ -3694,7 +3694,7 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
                 // odd case, but nothing to do
               } else {
                 common_super = &common_super->Merge(exception, &reg_types_, this);
-                if (FailOrAbort(reg_types_.JavaLangThrowable(false).IsAssignableFrom(
+                if (FailOrAbort(reg_types_.JavaLangThrowable().IsAssignableFrom(
                     *common_super, this),
                     "java.lang.Throwable is not assignable-from common_super at ",
                     work_insn_idx_)) {
@@ -4703,13 +4703,13 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
     }
 
     ObjPtr<mirror::Class> field_type_class =
-        can_load_classes_ ? field->ResolveType() : field->LookupResolvedType();
+        CanLoadClasses() ? field->ResolveType() : field->LookupResolvedType();
     if (field_type_class != nullptr) {
       field_type = &FromClass(field->GetTypeDescriptor(),
                               field_type_class,
                               field_type_class->CannotBeAssignedFromOtherTypes());
     } else {
-      DCHECK_IMPLIES(can_load_classes_, self_->IsExceptionPending());
+      DCHECK_IMPLIES(CanLoadClasses(), self_->IsExceptionPending());
       self_->ClearException();
     }
   } else if (IsSdkVersionSetAndAtLeast(api_level_, SdkVersion::kP)) {
@@ -4941,10 +4941,9 @@ MethodVerifier::MethodVerifier(Thread* self,
                                bool allow_thread_suspension,
                                bool aot_mode)
     : self_(self),
-      handles_(self),
       arena_stack_(arena_pool),
       allocator_(&arena_stack_),
-      reg_types_(class_linker, can_load_classes, allocator_, handles_, allow_thread_suspension),
+      reg_types_(self, class_linker, can_load_classes, allocator_, allow_thread_suspension),
       reg_table_(allocator_),
       work_insn_idx_(dex::kDexNoIndex),
       dex_method_idx_(dex_method_idx),
@@ -4952,10 +4951,9 @@ MethodVerifier::MethodVerifier(Thread* self,
       class_def_(class_def),
       code_item_accessor_(*dex_file, code_item),
       // TODO: make it designated initialization when we compile as C++20.
-      flags_({false, false, aot_mode}),
+      flags_({false, false}),
+      const_flags_({aot_mode, can_load_classes}),
       encountered_failure_types_(0),
-      can_load_classes_(can_load_classes),
-      class_linker_(class_linker),
       verifier_deps_(verifier_deps),
       link_(nullptr) {
 }
