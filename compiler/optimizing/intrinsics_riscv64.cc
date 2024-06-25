@@ -595,7 +595,7 @@ void IntrinsicCodeGeneratorRISCV64::VisitLongNumberOfTrailingZeros(HInvoke* invo
   EmitIntegralUnOp(invoke, [&](XRegister rd, XRegister rs1) { __ Ctz(rd, rs1); });
 }
 
-static void GenerateDivideUnsigned(HInvoke* invoke, CodeGeneratorRISCV64* codegen) {
+static void GenerateDivRemUnsigned(HInvoke* invoke, bool is_div, CodeGeneratorRISCV64* codegen) {
   LocationSummary* locations = invoke->GetLocations();
   Riscv64Assembler* assembler = codegen->GetAssembler();
   DataType::Type type = invoke->GetType();
@@ -611,10 +611,18 @@ static void GenerateDivideUnsigned(HInvoke* invoke, CodeGeneratorRISCV64* codege
   codegen->AddSlowPath(slow_path);
   __ Beqz(divisor, slow_path->GetEntryLabel());
 
-  if (type == DataType::Type::kInt32) {
-    __ Divuw(out, dividend, divisor);
+  if (is_div) {
+    if (type == DataType::Type::kInt32) {
+      __ Divuw(out, dividend, divisor);
+    } else {
+      __ Divu(out, dividend, divisor);
+    }
   } else {
-    __ Divu(out, dividend, divisor);
+    if (type == DataType::Type::kInt32) {
+      __ Remuw(out, dividend, divisor);
+    } else {
+      __ Remu(out, dividend, divisor);
+    }
   }
 
   __ Bind(slow_path->GetExitLabel());
@@ -625,7 +633,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitIntegerDivideUnsigned(HInvoke* invok
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitIntegerDivideUnsigned(HInvoke* invoke) {
-  GenerateDivideUnsigned(invoke, codegen_);
+  GenerateDivRemUnsigned(invoke, /*is_div=*/true, codegen_);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitLongDivideUnsigned(HInvoke* invoke) {
@@ -633,7 +641,23 @@ void IntrinsicLocationsBuilderRISCV64::VisitLongDivideUnsigned(HInvoke* invoke) 
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitLongDivideUnsigned(HInvoke* invoke) {
-  GenerateDivideUnsigned(invoke, codegen_);
+  GenerateDivRemUnsigned(invoke, /*is_div=*/true, codegen_);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitIntegerRemainderUnsigned(HInvoke* invoke) {
+  CreateIntIntToIntSlowPathCallLocations(allocator_, invoke);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitIntegerRemainderUnsigned(HInvoke* invoke) {
+  GenerateDivRemUnsigned(invoke, /*is_div=*/false, codegen_);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitLongRemainderUnsigned(HInvoke* invoke) {
+  CreateIntIntToIntSlowPathCallLocations(allocator_, invoke);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitLongRemainderUnsigned(HInvoke* invoke) {
+  GenerateDivRemUnsigned(invoke, /*is_div=*/false, codegen_);
 }
 
 #define VISIT_INTRINSIC(name, low, high, type, start_index)                              \

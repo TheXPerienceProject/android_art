@@ -69,6 +69,8 @@ static constexpr FloatRegister non_volatile_xmm_regs[] = { XMM12, XMM13, XMM14, 
   V(FP16Compare)                               \
   V(FP16Min)                                   \
   V(FP16Max)                                   \
+  V(IntegerRemainderUnsigned)                  \
+  V(LongRemainderUnsigned)                     \
   V(StringStringIndexOf)                       \
   V(StringStringIndexOfAfter)                  \
   V(StringBufferAppend)                        \

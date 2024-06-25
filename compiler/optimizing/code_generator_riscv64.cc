@@ -5440,6 +5440,37 @@ void InstructionCodeGeneratorRISCV64::VisitRiscv64ShiftAdd(HRiscv64ShiftAdd* ins
   }
 }
 
+void LocationsBuilderRISCV64::VisitBitwiseNegatedRight(HBitwiseNegatedRight* instruction) {
+  DCHECK(codegen_->GetInstructionSetFeatures().HasZbb());
+  DCHECK(DataType::IsIntegralType(instruction->GetType())) << instruction->GetType();
+
+  LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
+  locations->SetInAt(0, Location::RequiresRegister());
+  locations->SetInAt(1, Location::RequiresRegister());
+  locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
+}
+
+void InstructionCodeGeneratorRISCV64::VisitBitwiseNegatedRight(HBitwiseNegatedRight* instruction) {
+  LocationSummary* locations = instruction->GetLocations();
+  XRegister lhs = locations->InAt(0).AsRegister<XRegister>();
+  XRegister rhs = locations->InAt(1).AsRegister<XRegister>();
+  XRegister dst = locations->Out().AsRegister<XRegister>();
+
+  switch (instruction->GetOpKind()) {
+    case HInstruction::kAnd:
+      __ Andn(dst, lhs, rhs);
+      break;
+    case HInstruction::kOr:
+      __ Orn(dst, lhs, rhs);
+      break;
+    case HInstruction::kXor:
+      __ Xnor(dst, lhs, rhs);
+      break;
+    default:
+      LOG(FATAL) << "Unreachable";
+  }
+}
+
 void LocationsBuilderRISCV64::VisitVecReplicateScalar(HVecReplicateScalar* instruction) {
   UNUSED(instruction);
   LOG(FATAL) << "Unimplemented";

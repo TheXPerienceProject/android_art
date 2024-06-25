@@ -434,14 +434,19 @@ static bool ShouldCompileBasedOnProfile(const CompilerOptions& compiler_options,
         compiler_options.GetProfileCompilationInfo();
     DCHECK(profile_compilation_info != nullptr);
 
-    // Compile only hot methods, it is the profile saver's job to decide
-    // what startup methods to mark as hot.
     bool result = profile_compilation_info->IsHotMethod(profile_index, method_ref.index);
+
+    // On non-low RAM devices, compile startup methods to potentially speed up
+    // startup.
+    if (!result && Runtime::Current()->GetHeap()->IsLowMemoryMode()) {
+      result = profile_compilation_info->IsStartupMethod(profile_index, method_ref.index);
+    }
 
     if (kDebugProfileGuidedCompilation) {
       LOG(INFO) << "[ProfileGuidedCompilation] "
           << (result ? "Compiled" : "Skipped") << " method:" << method_ref.PrettyMethod(true);
     }
+
 
     return result;
   }

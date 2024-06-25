@@ -73,6 +73,27 @@ public class Main {
   /// CHECK-START-ARM:   int Main.$opt$noinline$notAnd(int, int) disassembly (after)
   /// CHECK:                            bic r{{\d+}}, r{{\d+}}, r{{\d+}}
 
+
+  /// CHECK-START-RISCV64:   int Main.$opt$noinline$notAnd(int, int) instruction_simplifier_riscv64 (before)
+  /// CHECK:       <<Base:i\d+>>        ParameterValue
+  /// CHECK:       <<Mask:i\d+>>        ParameterValue
+  /// CHECK:       <<Not:i\d+>>         Not [<<Mask>>]
+  /// CHECK:       <<Op:i\d+>>          And [<<Base>>,<<Not>>]
+  /// CHECK:                            Return [<<Op>>]
+
+  /// CHECK-START-RISCV64:   int Main.$opt$noinline$notAnd(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK:       <<Base:i\d+>>        ParameterValue
+  /// CHECK:       <<Mask:i\d+>>        ParameterValue
+  /// CHECK:       <<NegOp:i\d+>>       BitwiseNegatedRight [<<Base>>,<<Mask>>] kind:And
+  /// CHECK:                            Return [<<NegOp>>]
+
+  /// CHECK-START-RISCV64:   int Main.$opt$noinline$notAnd(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        Not
+  /// CHECK-NOT:                        And
+
+  /// CHECK-START-RISCV64:   int Main.$opt$noinline$notAnd(int, int) disassembly (after)
+  /// CHECK:                            andn a{{\d+}}, a{{\d+}}, a{{\d+}}
+
   public static int $opt$noinline$notAnd(int base, int mask) {
     return base & ~mask;
   }
@@ -122,6 +143,27 @@ public class Main {
   /// CHECK-START-ARM:   long Main.$opt$noinline$notOr(long, long) disassembly (after)
   /// CHECK:                            orn r{{\d+}}, r{{\d+}}, r{{\d+}}
 
+
+  /// CHECK-START-RISCV64:   long Main.$opt$noinline$notOr(long, long) instruction_simplifier_riscv64 (before)
+  /// CHECK:       <<Base:j\d+>>        ParameterValue
+  /// CHECK:       <<Mask:j\d+>>        ParameterValue
+  /// CHECK:       <<Not:j\d+>>         Not [<<Mask>>]
+  /// CHECK:       <<Op:j\d+>>          Or [<<Base>>,<<Not>>]
+  /// CHECK:                            Return [<<Op>>]
+
+  /// CHECK-START-RISCV64:   long Main.$opt$noinline$notOr(long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK:       <<Base:j\d+>>        ParameterValue
+  /// CHECK:       <<Mask:j\d+>>        ParameterValue
+  /// CHECK:       <<NegOp:j\d+>>       BitwiseNegatedRight [<<Base>>,<<Mask>>] kind:Or
+  /// CHECK:                            Return [<<NegOp>>]
+
+  /// CHECK-START-RISCV64:   long Main.$opt$noinline$notOr(long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        Not
+  /// CHECK-NOT:                        Or
+
+  /// CHECK-START-RISCV64:   long Main.$opt$noinline$notOr(long, long) disassembly (after)
+  /// CHECK:                            orn a{{\d+}}, a{{\d+}}, a{{\d+}}
+
   public static long $opt$noinline$notOr(long base, long mask) {
     return base | ~mask;
   }
@@ -168,6 +210,27 @@ public class Main {
   /// CHECK-START-ARM:   int Main.$opt$noinline$notXor(int, int) instruction_simplifier_arm (after)
   /// CHECK-NOT:                        BitwiseNegatedRight
 
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notXor(int, int) instruction_simplifier_riscv64 (before)
+  /// CHECK:       <<Base:i\d+>>        ParameterValue
+  /// CHECK:       <<Mask:i\d+>>        ParameterValue
+  /// CHECK:       <<Not:i\d+>>         Not [<<Mask>>]
+  /// CHECK:       <<Op:i\d+>>          Xor [<<Base>>,<<Not>>]
+  /// CHECK:                            Return [<<Op>>]
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notXor(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK:       <<Base:i\d+>>        ParameterValue
+  /// CHECK:       <<Mask:i\d+>>        ParameterValue
+  /// CHECK:       <<NegOp:i\d+>>       BitwiseNegatedRight [<<Base>>,<<Mask>>] kind:Xor
+  /// CHECK:                            Return [<<NegOp>>]
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notXor(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        Not
+  /// CHECK-NOT:                        Xor
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notXor(int, int) disassembly (after)
+  /// CHECK:                            xnor a{{\d+}}, a{{\d+}}, a{{\d+}}
+
   public static int $opt$noinline$notXor(int base, int mask) {
     return base ^ ~mask;
   }
@@ -198,6 +261,20 @@ public class Main {
   /// CHECK:                            Return [<<Op>>]
 
   /// CHECK-START-ARM:   int Main.$opt$noinline$notAndConstant(int) instruction_simplifier_arm (after)
+  /// CHECK:       <<Base:i\d+>>        ParameterValue
+  /// CHECK:       <<Constant:i\d+>>    IntConstant
+  /// CHECK:       <<NegOp:i\d+>>       BitwiseNegatedRight [<<Constant>>,<<Base>>] kind:And
+  /// CHECK:                            Return [<<NegOp>>]
+
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notAndConstant(int) instruction_simplifier_riscv64 (before)
+  /// CHECK:       <<Base:i\d+>>        ParameterValue
+  /// CHECK:       <<Constant:i\d+>>    IntConstant
+  /// CHECK:       <<Not:i\d+>>         Not [<<Base>>]
+  /// CHECK:       <<Op:i\d+>>          And [<<Not>>,<<Constant>>]
+  /// CHECK:                            Return [<<Op>>]
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notAndConstant(int) instruction_simplifier_riscv64 (after)
   /// CHECK:       <<Base:i\d+>>        ParameterValue
   /// CHECK:       <<Constant:i\d+>>    IntConstant
   /// CHECK:       <<NegOp:i\d+>>       BitwiseNegatedRight [<<Constant>>,<<Base>>] kind:And
@@ -258,6 +335,30 @@ public class Main {
   /// CHECK-START-ARM:   int Main.$opt$noinline$notAndMultipleUses(int, int) instruction_simplifier_arm (after)
   /// CHECK-NOT:                        BitwiseNegatedRight
 
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notAndMultipleUses(int, int) instruction_simplifier_riscv64 (before)
+  /// CHECK:       <<Base:i\d+>>        ParameterValue
+  /// CHECK:       <<Mask:i\d+>>        ParameterValue
+  /// CHECK:       <<One:i\d+>>         IntConstant
+  /// CHECK:       <<Not:i\d+>>         Not [<<Mask>>]
+  /// CHECK:       <<Op1:i\d+>>         And [<<Not>>,<<One>>]
+  /// CHECK:       <<Op2:i\d+>>         And [<<Base>>,<<Not>>]
+  /// CHECK:       <<Add:i\d+>>         Add [<<Op1>>,<<Op2>>]
+  /// CHECK:                            Return [<<Add>>]
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notAndMultipleUses(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK:       <<Base:i\d+>>        ParameterValue
+  /// CHECK:       <<Mask:i\d+>>        ParameterValue
+  /// CHECK:       <<One:i\d+>>         IntConstant
+  /// CHECK:       <<Not:i\d+>>         Not [<<Mask>>]
+  /// CHECK:       <<Op1:i\d+>>         And [<<Not>>,<<One>>]
+  /// CHECK:       <<Op2:i\d+>>         And [<<Base>>,<<Not>>]
+  /// CHECK:       <<Add:i\d+>>         Add [<<Op1>>,<<Op2>>]
+  /// CHECK:                            Return [<<Add>>]
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$notAndMultipleUses(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        BitwiseNegatedRight
+
   public static int $opt$noinline$notAndMultipleUses(int base, int mask) {
     int tmp = ~mask;
     return (tmp & 0x1) + (base & tmp);
@@ -274,6 +375,9 @@ public class Main {
   /// CHECK-NOT:                        BitwiseNegatedRight
 
   /// CHECK-START-ARM:   int Main.$opt$noinline$deMorganOr(int, int) instruction_simplifier_arm (after)
+  /// CHECK-NOT:                        BitwiseNegatedRight
+
+  /// CHECK-START-RISCV64: int Main.$opt$noinline$deMorganOr(int, int) instruction_simplifier_riscv64 (after)
   /// CHECK-NOT:                        BitwiseNegatedRight
 
   public static int $opt$noinline$deMorganOr(int a, int b) {
@@ -309,6 +413,21 @@ public class Main {
 
   /// CHECK-START-ARM64: int Main.$noinline$AndSubIntoBic(int, int) instruction_simplifier_arm64 (after)
   /// CHECK:     BitwiseNegatedRight kind:And
+
+
+  /// CHECK-START-RISCV64: int Main.$noinline$AndSubIntoBic(int, int) instruction_simplifier_riscv64 (before)
+  /// CHECK:       <<HAnd:i\d+>>        And [<<Left:i\d+>>,<<Right:i\d+>>]
+  /// CHECK:                            Sub [<<Left>>,<<HAnd>>]
+
+  /// CHECK-START-RISCV64: int Main.$noinline$AndSubIntoBic(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        And
+
+  /// CHECK-START-RISCV64: int Main.$noinline$AndSubIntoBic(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        Sub
+
+  /// CHECK-START-RISCV64: int Main.$noinline$AndSubIntoBic(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK:                            BitwiseNegatedRight kind:And
+
   public static int $noinline$AndSubIntoBic(int a, int b) {
       return a - (a & b);
   }
@@ -342,6 +461,21 @@ public class Main {
 
   /// CHECK-START-ARM64: int Main.$noinline$AndSubIntoBic_v2(int, int) instruction_simplifier_arm64 (after)
   /// CHECK:     BitwiseNegatedRight kind:And
+
+
+  /// CHECK-START-RISCV64: int Main.$noinline$AndSubIntoBic_v2(int, int) instruction_simplifier_riscv64 (before)
+  /// CHECK:       <<HAnd:i\d+>>        And [<<Left:i\d+>>,<<Right:i\d+>>]
+  /// CHECK:                            Sub [<<Right>>,<<HAnd>>]
+
+  /// CHECK-START-RISCV64: int Main.$noinline$AndSubIntoBic_v2(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        And
+
+  /// CHECK-START-RISCV64: int Main.$noinline$AndSubIntoBic_v2(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        Sub
+
+  /// CHECK-START-RISCV64: int Main.$noinline$AndSubIntoBic_v2(int, int) instruction_simplifier_riscv64 (after)
+  /// CHECK:                            BitwiseNegatedRight kind:And
+
   public static int $noinline$AndSubIntoBic_v2(int a, int b) {
       return b - (a & b);
   }
