@@ -104,6 +104,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -134,6 +135,11 @@ public final class ArtManagerLocal {
     // A temporary object for holding stats while staged files are being committed, used in two
     // places: `onBoot` and the `BroadcastReceiver` of `ACTION_BOOT_COMPLETED`.
     @Nullable private PreRebootStatsReporter.AfterRebootSession mStatsAfterRebootSession = null;
+
+    // A lock that prevents the cleanup from cleaning up dexopt temp files while dexopt is running.
+    // The method that does the cleanup should acquire a write lock; the methods that do dexopt
+    // should acquire a read lock.
+    @NonNull private ReentrantReadWriteLock mCleanupLock = new ReentrantReadWriteLock();
 
     @Deprecated
     public ArtManagerLocal() {
@@ -368,9 +374,12 @@ public final class ArtManagerLocal {
     public DexoptResult dexoptPackage(@NonNull PackageManagerLocal.FilteredSnapshot snapshot,
             @NonNull String packageName, @NonNull DexoptParams params,
             @NonNull CancellationSignal cancellationSignal) {
+        mCleanupLock.readLock().lock();
         try (var pin = mInjector.createArtdPin()) {
             return mInjector.getDexoptHelper().dexopt(
                     snapshot, List.of(packageName), params, cancellationSignal, Runnable::run);
+        } finally {
+            mCleanupLock.readLock().unlock();
         }
     }
 
@@ -480,6 +489,7 @@ public final class ArtManagerLocal {
         ExecutorService dexoptExecutor =
                 Executors.newFixedThreadPool(ReasonMapping.getConcurrencyForReason(reason));
         Map<Integer, DexoptResult> dexoptResults = new HashMap<>();
+        mCleanupLock.readLock().lock();
         try (var pin = mInjector.createArtdPin()) {
             if (reason.equals(ReasonMapping.REASON_BG_DEXOPT)) {
                 DexoptResult downgradeResult = maybeDowngradePackages(snapshot,
@@ -510,6 +520,7 @@ public final class ArtManagerLocal {
             }
             return dexoptResults;
         } finally {
+            mCleanupLock.readLock().unlock();
             dexoptExecutor.shutdown();
         }
     }
@@ -1055,6 +1066,7 @@ public final class ArtManagerLocal {
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public long cleanup(@NonNull PackageManagerLocal.FilteredSnapshot snapshot) {
+        mCleanupLock.writeLock().lock();
         try (var pin = mInjector.createArtdPin()) {
             mInjector.getDexUseManager().cleanup();
 
@@ -1101,6 +1113,8 @@ public final class ArtManagerLocal {
         } catch (RemoteException e) {
             Utils.logArtdException(e);
             return 0;
+        } finally {
+            mCleanupLock.writeLock().unlock();
         }
     }
 

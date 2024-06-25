@@ -90,6 +90,15 @@ public class PreRebootStatsReporter {
         save(statsBuilder);
     }
 
+    public void recordJobNotScheduled(@NonNull Status reason, boolean isOtaUpdate) {
+        Utils.check(reason == Status.STATUS_NOT_SCHEDULED_DISABLED
+                || reason == Status.STATUS_NOT_SCHEDULED_JOB_SCHEDULER);
+        PreRebootStats.Builder statsBuilder = PreRebootStats.newBuilder();
+        statsBuilder.setStatus(reason).setJobType(
+                isOtaUpdate ? JobType.JOB_TYPE_OTA : JobType.JOB_TYPE_MAINLINE);
+        save(statsBuilder);
+    }
+
     public void recordJobStarted() {
         PreRebootStats.Builder statsBuilder = load();
         if (statsBuilder.getStatus() == Status.STATUS_UNKNOWN) {
@@ -261,6 +270,12 @@ public class PreRebootStatsReporter {
             case STATUS_ABORTED_SYSTEM_REQUIREMENTS:
                 return ArtStatsLog
                         .PRE_REBOOT_DEXOPT_JOB_ENDED__STATUS__STATUS_ABORTED_SYSTEM_REQUIREMENTS;
+            case STATUS_NOT_SCHEDULED_DISABLED:
+                return ArtStatsLog
+                        .PRE_REBOOT_DEXOPT_JOB_ENDED__STATUS__STATUS_NOT_SCHEDULED_DISABLED;
+            case STATUS_NOT_SCHEDULED_JOB_SCHEDULER:
+                return ArtStatsLog
+                        .PRE_REBOOT_DEXOPT_JOB_ENDED__STATUS__STATUS_NOT_SCHEDULED_JOB_SCHEDULER;
             default:
                 throw new IllegalStateException("Unknown status: " + status.getNumber());
         }

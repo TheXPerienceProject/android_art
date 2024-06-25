@@ -21,7 +21,6 @@
 
 #include "base/macros.h"
 #include "base/mutex.h"
-#include "base/string_view_cpp20.h"
 
 namespace art HIDDEN {
 
