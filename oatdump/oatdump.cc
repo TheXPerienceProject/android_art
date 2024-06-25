@@ -65,7 +65,6 @@
 #include "dex/dex_instruction-inl.h"
 #include "dex/string_reference.h"
 #include "dex/type_lookup_table.h"
-#include "dexlayout.h"
 #include "disassembler.h"
 #include "elf/elf_builder.h"
 #include "gc/accounting/space_bitmap-inl.h"
@@ -662,57 +661,9 @@ class OatDumper {
           continue;
         }
 
-        // If a CompactDex file is detected within a Vdex container, DexLayout is used to convert
-        // back to a StandardDex file. Since the converted DexFile will most likely not reproduce
-        // the original input Dex file, the `update_checksum_` option is used to recompute the
-        // checksum. If the vdex container does not contain cdex resources (`used_dexlayout` is
-        // false), ExportDexFile() enforces a reproducible checksum verification.
-        if (vdex_dex_file->IsCompactDexFile()) {
-          Options options;
-          options.compact_dex_level_ = CompactDexLevel::kCompactDexLevelNone;
-          options.update_checksum_ = true;
-          DexLayout dex_layout(options, /*info=*/ nullptr, /*out_file=*/ nullptr, /*header=*/ nullptr);
-          std::unique_ptr<art::DexContainer> dex_container;
-          bool result = dex_layout.ProcessDexFile(vdex_dex_file->GetLocation().c_str(),
-                                                  vdex_dex_file.get(),
-                                                  i,
-                                                  &dex_container,
-                                                  &error_msg);
-          if (!result) {
-            os << "DexLayout failed to process Dex file: " + error_msg;
-            success = false;
-            break;
-          }
-          DexContainer::Section* main_section = dex_container->GetMainSection();
-          CHECK_EQ(dex_container->GetDataSection()->Size(), 0u);
-
-          ArtDexFileLoader dex_file_loader(
-              main_section->Begin(), main_section->Size(), vdex_dex_file->GetLocation());
-          std::unique_ptr<const DexFile> dex(dex_file_loader.Open(vdex_file->GetLocationChecksum(i),
-                                                                  /*oat_dex_file=*/nullptr,
-                                                                  /*verify=*/false,
-                                                                  /*verify_checksum=*/true,
-                                                                  &error_msg));
-          if (dex == nullptr) {
-            os << "Failed to load DexFile from layout container: " + error_msg;
-            success = false;
-            break;
-          }
-          if (dex->IsCompactDexFile()) {
-            os <<"CompactDex conversion to StandardDex failed";
-            success = false;
-            break;
-          }
-
-          if (!ExportDexFile(os, *oat_dex_file, dex.get(), /*used_dexlayout=*/ true)) {
-            success = false;
-            break;
-          }
-        } else {
-          if (!ExportDexFile(os, *oat_dex_file, vdex_dex_file.get(), /*used_dexlayout=*/ false)) {
-            success = false;
-            break;
-          }
+        if (!ExportDexFile(os, *oat_dex_file, vdex_dex_file.get(), /*used_dexlayout=*/ false)) {
+          success = false;
+          break;
         }
         i++;
       }

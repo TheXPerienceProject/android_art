@@ -78,7 +78,6 @@
 #include "dex/quick_compiler_callbacks.h"
 #include "dex/verification_results.h"
 #include "dex2oat_options.h"
-#include "dexlayout.h"
 #include "driver/compiler_driver.h"
 #include "driver/compiler_options.h"
 #include "driver/compiler_options_map-inl.h"
@@ -1060,9 +1059,10 @@ class Dex2Oat final {
 
     M& args = *args_uptr;
 
+    std::string compact_dex_level;
     std::unique_ptr<ParserOptions> parser_options(new ParserOptions());
 
-    AssignIfExists(args, M::CompactDexLevel, &compact_dex_level_);
+    AssignIfExists(args, M::CompactDexLevel, &compact_dex_level);
     AssignIfExists(args, M::DexFiles, &dex_filenames_);
     AssignIfExists(args, M::DexLocations, &dex_locations_);
     AssignIfExists(args, M::DexFds, &dex_fds_);
@@ -1112,9 +1112,8 @@ class Dex2Oat final {
     AssignIfExists(args, M::PublicSdk, &public_sdk_);
     AssignIfExists(args, M::ApexVersions, &apex_versions_argument_);
 
-    if (compact_dex_level_ != CompactDexLevel::kCompactDexLevelNone) {
+    if (!compact_dex_level.empty()) {
       LOG(WARNING) << "Obsolete flag --compact-dex-level ignored";
-      compact_dex_level_ = CompactDexLevel::kCompactDexLevelNone;
     }
 
     AssignIfExists(args, M::TargetInstructionSet, &compiler_options_->instruction_set_);
@@ -1226,12 +1225,6 @@ class Dex2Oat final {
                 << ", we override thread number to 1 to have determinism. It was " << thread_count_
                 << ".";
       thread_count_ = 1;
-    }
-
-    // For debuggable apps, we do not want to generate compact dex as class
-    // redefinition will want a proper dex file.
-    if (compiler_options_->GetDebuggable()) {
-      compact_dex_level_ = CompactDexLevel::kCompactDexLevelNone;
     }
 
     PaletteShouldReportDex2oatCompilation(&should_report_dex2oat_compilation_);
@@ -2349,18 +2342,6 @@ class Dex2Oat final {
     return profile_compilation_info_ != nullptr && !profile_compilation_info_->IsEmpty();
   }
 
-  bool DoGenerateCompactDex() const {
-    return compact_dex_level_ != CompactDexLevel::kCompactDexLevelNone;
-  }
-
-  bool DoDexLayoutOptimizations() const {
-    // Only run dexlayout when being asked to generate compact dex. We do this
-    // to avoid having multiple arguments being passed to dex2oat and the main
-    // user of dex2oat (installd) will have the same reasons for
-    // disabling/enabling compact dex and dex layout.
-    return DoGenerateCompactDex();
-  }
-
   bool DoOatLayoutOptimizations() const {
     return DoProfileGuidedOptimizations();
   }
@@ -2655,13 +2636,12 @@ class Dex2Oat final {
     for (const std::unique_ptr<File>& oat_file : oat_files_) {
       elf_writers_.emplace_back(linker::CreateElfWriterQuick(*compiler_options_, oat_file.get()));
       elf_writers_.back()->Start();
-      bool do_oat_writer_layout = DoDexLayoutOptimizations() || DoOatLayoutOptimizations();
+      bool do_oat_writer_layout = DoOatLayoutOptimizations();
       oat_writers_.emplace_back(new linker::OatWriter(
           *compiler_options_,
           verification_results_.get(),
           timings_,
-          do_oat_writer_layout ? profile_compilation_info_.get() : nullptr,
-          compact_dex_level_));
+          do_oat_writer_layout ? profile_compilation_info_.get() : nullptr));
     }
   }
 
@@ -2967,9 +2947,6 @@ class Dex2Oat final {
   std::string android_root_;
   std::string no_inline_from_string_;
   bool force_allow_oj_inlines_ = false;
-
-  // TODO(b/256664509): Clean this up.
-  CompactDexLevel compact_dex_level_ = CompactDexLevel::kCompactDexLevelNone;
 
   std::vector<std::unique_ptr<linker::ElfWriter>> elf_writers_;
   std::vector<std::unique_ptr<linker::OatWriter>> oat_writers_;
