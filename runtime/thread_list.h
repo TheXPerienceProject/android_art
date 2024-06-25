@@ -204,6 +204,11 @@ class ThreadList {
 
   size_t Size() REQUIRES(Locks::thread_list_lock_) { return list_.size(); }
 
+  void CheckOnly1Thread(Thread* self) REQUIRES(!Locks::thread_list_lock_) {
+    MutexLock mu(self, *Locks::thread_list_lock_);
+    CHECK_EQ(Size(), 1u);
+  }
+
   void DumpNativeStacks(std::ostream& os)
       REQUIRES(!Locks::thread_list_lock_);
 
