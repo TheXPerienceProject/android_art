@@ -1461,7 +1461,10 @@ void Class::ClearDontCompileFlagOnAllMethods(PointerSize pointer_size) {
 void Class::SetSkipAccessChecksFlagOnAllMethods(PointerSize pointer_size) {
   DCHECK(IsVerified());
   for (auto& m : GetMethods(pointer_size)) {
-    if (m.IsManagedAndInvokable()) {
+    // Copied methods that have code come from default interface methods. The
+    // flag should be set on these copied methods at the point of copy, which is
+    // after the interface has been verified.
+    if (m.IsManagedAndInvokable() && !m.IsCopied()) {
       m.SetSkipAccessChecks();
     }
   }
