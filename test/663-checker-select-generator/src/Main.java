@@ -235,11 +235,11 @@ public class Main {
 
   // Check that we don't generate a select since we only have a single return.
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValueWithReturn(boolean) builder (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueWithReturn(boolean, boolean) builder (after)
   /// CHECK:       <<Const10:i\d+>> IntConstant 10
   /// CHECK:       Return [<<Const10>>]
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValueWithReturn(boolean) builder (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueWithReturn(boolean, boolean) builder (after)
   /// CHECK:       Return
   /// CHECK-NOT:   Return
   private static int $noinline$testDoubleDiamondSameValueWithReturn(boolean bool_param_1, boolean bool_param_2) {

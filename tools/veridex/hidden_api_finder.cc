@@ -59,7 +59,7 @@ void HiddenApiFinder::CollectAccesses(VeridexResolver* resolver,
   // Note: we collect strings constants only referenced in code items as the string table
   // contains other kind of strings (eg types).
   for (ClassAccessor accessor : dex_file.GetClasses()) {
-    if (class_filter.Matches(accessor.GetDescriptor())) {
+    if (class_filter.Matches(accessor.GetDescriptorView())) {
       for (const ClassAccessor::Method& method : accessor.GetMethods()) {
         CodeItemInstructionAccessor codes = method.GetInstructions();
         const uint32_t max_pc = codes.InsnsSizeInCodeUnits();

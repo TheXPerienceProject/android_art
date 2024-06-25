@@ -632,7 +632,6 @@ cc_defaults {
     ],
     shared_libs: [
         "liblog",
-        "libz",
     ],
 }
 

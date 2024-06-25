@@ -896,12 +896,12 @@ TEST_F(ClassLinkerTest, GetDexFiles) {
   jobject jclass_loader = LoadDex("Nested");
   std::vector<const DexFile*> dex_files(GetDexFiles(jclass_loader));
   ASSERT_EQ(dex_files.size(), 1U);
-  EXPECT_TRUE(android::base::EndsWith(dex_files[0]->GetLocation(), "Nested.jar"));
+  EXPECT_TRUE(dex_files[0]->GetLocation().ends_with("Nested.jar"));
 
   jobject jclass_loader2 = LoadDex("MultiDex");
   std::vector<const DexFile*> dex_files2(GetDexFiles(jclass_loader2));
   ASSERT_EQ(dex_files2.size(), 2U);
-  EXPECT_TRUE(android::base::EndsWith(dex_files2[0]->GetLocation(), "MultiDex.jar"));
+  EXPECT_TRUE(dex_files2[0]->GetLocation().ends_with("MultiDex.jar"));
 }
 
 TEST_F(ClassLinkerTest, FindClassNested) {
