@@ -37,7 +37,6 @@
 #include "base/macros.h"
 #include "base/os.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/systrace.h"
 #include "base/utils.h"
 #include "base/zip_archive.h"
@@ -588,8 +587,8 @@ bool OatFileAssistant::IsAnonymousVdexBasename(const std::string& basename) {
   DCHECK(basename.find('/') == std::string::npos);
   // `basename` must have format: <kAnonymousDexPrefix><checksum><kVdexExtension>
   if (basename.size() < strlen(kAnonymousDexPrefix) + strlen(kVdexExtension) + 1 ||
-      !android::base::StartsWith(basename, kAnonymousDexPrefix) ||
-      !android::base::EndsWith(basename, kVdexExtension)) {
+      !basename.starts_with(kAnonymousDexPrefix) ||
+      !basename.ends_with(kVdexExtension)) {
     return false;
   }
   // Check that all characters between the prefix and extension are decimal digits.
@@ -702,7 +701,7 @@ bool OatFileAssistant::DexLocationToOatFilename(const std::string& location,
   // TODO: The oat file assistant should be the definitive place for
   // determining the oat file name from the dex location, not
   // GetDalvikCacheFilename.
-  return GetDalvikCacheFilename(location.c_str(), dalvik_cache.c_str(), oat_filename, error_msg);
+  return GetDalvikCacheFilename(location, dalvik_cache, oat_filename, error_msg);
 }
 
 bool OatFileAssistant::GetRequiredDexChecksum(std::optional<uint32_t>* checksum,
@@ -767,7 +766,7 @@ bool OatFileAssistant::ValidateBootClassPathChecksums(OatFileAssistantContext* o
   while (bcp_index < oat_bcp_size) {
     static_assert(gc::space::ImageSpace::kImageChecksumPrefix == 'i', "Format prefix check");
     static_assert(gc::space::ImageSpace::kDexFileChecksumPrefix == 'd', "Format prefix check");
-    if (StartsWith(oat_checksums, "i") && !found_d) {
+    if (oat_checksums.starts_with("i") && !found_d) {
       const std::vector<OatFileAssistantContext::BootImageInfo>& boot_image_info_list =
           ofa_context->GetBootImageInfoList(isa);
       if (boot_image_index >= boot_image_info_list.size()) {
@@ -788,7 +787,7 @@ bool OatFileAssistant::ValidateBootClassPathChecksums(OatFileAssistantContext* o
 
       bcp_index += boot_image_info.component_count;
       boot_image_index++;
-    } else if (StartsWith(oat_checksums, "d")) {
+    } else if (oat_checksums.starts_with("d")) {
       found_d = true;
       const std::vector<std::string>* bcp_checksums =
           ofa_context->GetBcpChecksums(bcp_index, error_msg);
@@ -1057,7 +1056,7 @@ const OatFile* OatFileAssistant::OatFileInfo::GetFile() {
 
   std::string error_msg;
   bool executable = oat_file_assistant_->load_executable_;
-  if (android::base::EndsWith(filename_, kVdexExtension)) {
+  if (filename_.ends_with(kVdexExtension)) {
     executable = false;
     // Check to see if there is a vdex file we can make use of.
     std::unique_ptr<VdexFile> vdex;
@@ -1091,7 +1090,7 @@ const OatFile* OatFileAssistant::OatFileInfo::GetFile() {
                                         oat_file_assistant_->context_,
                                         &error_msg));
     }
-  } else if (android::base::EndsWith(filename_, kDmExtension)) {
+  } else if (filename_.ends_with(kDmExtension)) {
     executable = false;
     // Check to see if there is a vdex file we can make use of.
     std::unique_ptr<ZipArchive> dm_file(ZipArchive::Open(filename_.c_str(), &error_msg));
@@ -1186,7 +1185,7 @@ bool OatFileAssistant::OatFileInfo::ShouldRecompileForFilter(CompilerFilter::Fil
     const char* oat_boot_class_path_checksums =
         file->GetOatHeader().GetStoreValueByKey(OatHeader::kBootClassPathChecksumsKey);
     if (oat_boot_class_path_checksums != nullptr &&
-        !StartsWith(oat_boot_class_path_checksums, "i") &&
+        oat_boot_class_path_checksums[0] != 'i' &&
         oat_file_assistant_->IsPrimaryBootImageUsable()) {
       DCHECK(!file->GetOatHeader().RequiresImage());
       VLOG(oat) << "Should recompile: primaryBootImageBecomesUsable";

@@ -48,7 +48,6 @@
 #include "base/safe_map.h"
 #include "base/stats-inl.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/unix_file/fd_file.h"
 #include "class_linker-inl.h"
 #include "class_linker.h"
@@ -65,7 +64,6 @@
 #include "dex/dex_instruction-inl.h"
 #include "dex/string_reference.h"
 #include "dex/type_lookup_table.h"
-#include "dexlayout.h"
 #include "disassembler.h"
 #include "elf/elf_builder.h"
 #include "gc/accounting/space_bitmap-inl.h"
@@ -662,57 +660,9 @@ class OatDumper {
           continue;
         }
 
-        // If a CompactDex file is detected within a Vdex container, DexLayout is used to convert
-        // back to a StandardDex file. Since the converted DexFile will most likely not reproduce
-        // the original input Dex file, the `update_checksum_` option is used to recompute the
-        // checksum. If the vdex container does not contain cdex resources (`used_dexlayout` is
-        // false), ExportDexFile() enforces a reproducible checksum verification.
-        if (vdex_dex_file->IsCompactDexFile()) {
-          Options options;
-          options.compact_dex_level_ = CompactDexLevel::kCompactDexLevelNone;
-          options.update_checksum_ = true;
-          DexLayout dex_layout(options, /*info=*/ nullptr, /*out_file=*/ nullptr, /*header=*/ nullptr);
-          std::unique_ptr<art::DexContainer> dex_container;
-          bool result = dex_layout.ProcessDexFile(vdex_dex_file->GetLocation().c_str(),
-                                                  vdex_dex_file.get(),
-                                                  i,
-                                                  &dex_container,
-                                                  &error_msg);
-          if (!result) {
-            os << "DexLayout failed to process Dex file: " + error_msg;
-            success = false;
-            break;
-          }
-          DexContainer::Section* main_section = dex_container->GetMainSection();
-          CHECK_EQ(dex_container->GetDataSection()->Size(), 0u);
-
-          ArtDexFileLoader dex_file_loader(
-              main_section->Begin(), main_section->Size(), vdex_dex_file->GetLocation());
-          std::unique_ptr<const DexFile> dex(dex_file_loader.Open(vdex_file->GetLocationChecksum(i),
-                                                                  /*oat_dex_file=*/nullptr,
-                                                                  /*verify=*/false,
-                                                                  /*verify_checksum=*/true,
-                                                                  &error_msg));
-          if (dex == nullptr) {
-            os << "Failed to load DexFile from layout container: " + error_msg;
-            success = false;
-            break;
-          }
-          if (dex->IsCompactDexFile()) {
-            os <<"CompactDex conversion to StandardDex failed";
-            success = false;
-            break;
-          }
-
-          if (!ExportDexFile(os, *oat_dex_file, dex.get(), /*used_dexlayout=*/ true)) {
-            success = false;
-            break;
-          }
-        } else {
-          if (!ExportDexFile(os, *oat_dex_file, vdex_dex_file.get(), /*used_dexlayout=*/ false)) {
-            success = false;
-            break;
-          }
+        if (!ExportDexFile(os, *oat_dex_file, vdex_dex_file.get(), /*used_dexlayout=*/ false)) {
+          success = false;
+          break;
         }
         i++;
       }
@@ -3091,7 +3041,7 @@ class IMTDumper {
           table_index++;
 
           std::string p_name = ptr2->PrettyMethod(true);
-          if (android::base::StartsWith(p_name, method)) {
+          if (p_name.starts_with(method)) {
             std::cerr << "  Slot "
                       << index
                       << " ("
@@ -3104,7 +3054,7 @@ class IMTDumper {
         }
       } else {
         std::string p_name = ptr->PrettyMethod(true);
-        if (android::base::StartsWith(p_name, method)) {
+        if (p_name.starts_with(method)) {
           std::cerr << "  Slot " << index << " (1)" << std::endl;
           std::cerr << "    " << p_name << std::endl;
         } else {
@@ -3117,7 +3067,7 @@ class IMTDumper {
               for (ArtMethod& iface_method : iface->GetMethods(pointer_size)) {
                 if (ImTable::GetImtIndex(&iface_method) == index) {
                   std::string i_name = iface_method.PrettyMethod(true);
-                  if (android::base::StartsWith(i_name, method)) {
+                  if (i_name.starts_with(method)) {
                     std::cerr << "  Slot " << index << " (1)" << std::endl;
                     std::cerr << "    " << p_name << " (" << i_name << ")" << std::endl;
                   }
@@ -3136,7 +3086,7 @@ class IMTDumper {
     while (in_stream.good()) {
       std::string dot;
       std::getline(in_stream, dot);
-      if (android::base::StartsWith(dot, "#") || dot.empty()) {
+      if (dot.starts_with("#") || dot.empty()) {
         continue;
       }
       output.push_back(dot);
@@ -3208,11 +3158,11 @@ struct OatdumpArgs : public CmdlineArgs {
     }
 
     std::string_view option(raw_option, raw_option_length);
-    if (StartsWith(option, "--oat-file=")) {
+    if (option.starts_with("--oat-file=")) {
       oat_filename_ = raw_option + strlen("--oat-file=");
-    } else if (StartsWith(option, "--dex-file=")) {
+    } else if (option.starts_with("--dex-file=")) {
       dex_filename_ = raw_option + strlen("--dex-file=");
-    } else if (StartsWith(option, "--image=")) {
+    } else if (option.starts_with("--image=")) {
       image_location_ = raw_option + strlen("--image=");
     } else if (option == "--no-dump:vmap") {
       dump_vmap_ = false;
@@ -3222,31 +3172,31 @@ struct OatdumpArgs : public CmdlineArgs {
       disassemble_code_ = false;
     } else if (option =="--header-only") {
       dump_header_only_ = true;
-    } else if (StartsWith(option, "--symbolize=")) {
+    } else if (option.starts_with("--symbolize=")) {
       oat_filename_ = raw_option + strlen("--symbolize=");
       symbolize_ = true;
-    } else if (StartsWith(option, "--only-keep-debug")) {
+    } else if (option.starts_with("--only-keep-debug")) {
       only_keep_debug_ = true;
-    } else if (StartsWith(option, "--class-filter=")) {
+    } else if (option.starts_with("--class-filter=")) {
       class_filter_ = raw_option + strlen("--class-filter=");
-    } else if (StartsWith(option, "--method-filter=")) {
+    } else if (option.starts_with("--method-filter=")) {
       method_filter_ = raw_option + strlen("--method-filter=");
-    } else if (StartsWith(option, "--list-classes")) {
+    } else if (option.starts_with("--list-classes")) {
       list_classes_ = true;
-    } else if (StartsWith(option, "--list-methods")) {
+    } else if (option.starts_with("--list-methods")) {
       list_methods_ = true;
-    } else if (StartsWith(option, "--export-dex-to=")) {
+    } else if (option.starts_with("--export-dex-to=")) {
       export_dex_location_ = raw_option + strlen("--export-dex-to=");
-    } else if (StartsWith(option, "--addr2instr=")) {
+    } else if (option.starts_with("--addr2instr=")) {
       if (!android::base::ParseUint(raw_option + strlen("--addr2instr="), &addr2instr_)) {
         *error_msg = "Address conversion failed";
         return kParseError;
       }
-    } else if (StartsWith(option, "--app-image=")) {
+    } else if (option.starts_with("--app-image=")) {
       app_image_ = raw_option + strlen("--app-image=");
-    } else if (StartsWith(option, "--app-oat=")) {
+    } else if (option.starts_with("--app-oat=")) {
       app_oat_ = raw_option + strlen("--app-oat=");
-    } else if (StartsWith(option, "--dump-imt=")) {
+    } else if (option.starts_with("--dump-imt=")) {
       imt_dump_ = std::string(option.substr(strlen("--dump-imt=")));
     } else if (option == "--dump-imt-stats") {
       imt_stat_dump_ = true;

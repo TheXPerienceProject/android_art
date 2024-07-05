@@ -17,21 +17,13 @@
 #include <sys/capability.h>
 #include <sys/resource.h>
 #include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
-#include <csignal>
-#include <filesystem>
-#include <functional>
 #include <string>
-#include <utility>
 
 #include "android-base/file.h"
 #include "android-base/logging.h"
-#include "android-base/scopeguard.h"
 #include "android-base/strings.h"
 #include "base/common_art_test.h"
-#include "base/file_utils.h"
 #include "base/globals.h"
 #include "base/macros.h"
 #include "base/os.h"
@@ -40,16 +32,16 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "system/thread_defs.h"
+#include "testing.h"
 
 #ifdef ART_TARGET_ANDROID
 #include "android-modules-utils/sdk_level.h"
 #endif
 
 namespace art {
+namespace tools {
 namespace {
 
-using ::android::base::make_scope_guard;
-using ::android::base::ScopeGuard;
 using ::android::base::Split;
 using ::testing::Contains;
 using ::testing::ElementsAre;
@@ -58,45 +50,6 @@ using ::testing::Not;
 
 constexpr uid_t kRoot = 0;
 constexpr uid_t kNobody = 9999;
-
-std::string GetArtBin(const std::string& name) {
-  return ART_FORMAT("{}/bin/{}", GetArtRoot(), name);
-}
-
-std::string GetBin(const std::string& name) {
-  return ART_FORMAT("{}/bin/{}", GetAndroidRoot(), name);
-}
-
-// Executes the command, waits for it to finish, and keeps it in a waitable state until the current
-// scope exits.
-std::pair<pid_t, ScopeGuard<std::function<void()>>> ScopedExecAndWait(
-    std::vector<std::string>& args) {
-  std::vector<char*> execv_args;
-  execv_args.reserve(args.size() + 1);
-  for (std::string& arg : args) {
-    execv_args.push_back(arg.data());
-  }
-  execv_args.push_back(nullptr);
-
-  pid_t pid = fork();
-  if (pid == 0) {
-    execv(execv_args[0], execv_args.data());
-    UNREACHABLE();
-  } else if (pid > 0) {
-    siginfo_t info;
-    CHECK_EQ(TEMP_FAILURE_RETRY(waitid(P_PID, pid, &info, WEXITED | WNOWAIT)), 0);
-    CHECK_EQ(info.si_code, CLD_EXITED);
-    CHECK_EQ(info.si_status, 0);
-    std::function<void()> cleanup([=] {
-      siginfo_t info;
-      CHECK_EQ(TEMP_FAILURE_RETRY(waitid(P_PID, pid, &info, WEXITED)), 0);
-    });
-    return std::make_pair(pid, make_scope_guard(std::move(cleanup)));
-  } else {
-    LOG(FATAL) << "Failed to call fork";
-    UNREACHABLE();
-  }
-}
 
 // Grants the current process the given root capability.
 void SetCap(cap_flag_t flag, cap_value_t value) {
@@ -156,7 +109,7 @@ TEST_F(ArtExecTest, SetTaskProfiles) {
                                 GetBin("sh"),
                                 "-c",
                                 "cat /proc/self/cgroup > " + filename};
-  auto [pid, scope_guard] = ScopedExecAndWait(args);
+  auto [pid, scope_guard] = ScopedExec(args, /*wait=*/true);
   std::string cgroup;
   ASSERT_TRUE(android::base::ReadFileToString(filename, &cgroup));
   EXPECT_THAT(cgroup, HasSubstr(":cpuset:/foreground\n"));
@@ -164,7 +117,7 @@ TEST_F(ArtExecTest, SetTaskProfiles) {
 
 TEST_F(ArtExecTest, SetPriority) {
   std::vector<std::string> args{art_exec_bin_, "--set-priority=background", "--", GetBin("true")};
-  auto [pid, scope_guard] = ScopedExecAndWait(args);
+  auto [pid, scope_guard] = ScopedExec(args, /*wait=*/true);
   EXPECT_EQ(getpriority(PRIO_PROCESS, pid), ANDROID_PRIORITY_BACKGROUND);
 }
 
@@ -180,13 +133,13 @@ TEST_F(ArtExecTest, DropCapabilities) {
   // inherited root capability: CAP_FOWNER).
   {
     std::vector<std::string> args{art_exec_bin_, "--", GetBin("true")};
-    auto [pid, scope_guard] = ScopedExecAndWait(args);
+    auto [pid, scope_guard] = ScopedExec(args, /*wait=*/true);
     ASSERT_TRUE(GetCap(pid, CAP_EFFECTIVE, CAP_FOWNER));
   }
 
   {
     std::vector<std::string> args{art_exec_bin_, "--drop-capabilities", "--", GetBin("true")};
-    auto [pid, scope_guard] = ScopedExecAndWait(args);
+    auto [pid, scope_guard] = ScopedExec(args, /*wait=*/true);
     EXPECT_FALSE(GetCap(pid, CAP_EFFECTIVE, CAP_FOWNER));
   }
 }
@@ -218,7 +171,7 @@ TEST_F(ArtExecTest, CloseFds) {
                                            file3->Fd(),
                                            filename)};
 
-  ScopedExecAndWait(args);
+  ScopedExec(args, /*wait=*/true);
 
   std::string open_fds;
   ASSERT_TRUE(android::base::ReadFileToString(filename, &open_fds));
@@ -235,7 +188,7 @@ TEST_F(ArtExecTest, Env) {
   std::vector<std::string> args{
       art_exec_bin_, "--env=FOO=BAR", "--", GetBin("sh"), "-c", "env > " + filename};
 
-  ScopedExecAndWait(args);
+  ScopedExec(args, /*wait=*/true);
 
   std::string envs;
   ASSERT_TRUE(android::base::ReadFileToString(filename, &envs));
@@ -256,7 +209,7 @@ TEST_F(ArtExecTest, ProcessNameSuffix) {
                                 "/proc/self/cmdline",
                                 filename};
 
-  ScopedExecAndWait(args);
+  ScopedExec(args, /*wait=*/true);
 
   std::string cmdline;
   ASSERT_TRUE(android::base::ReadFileToString(filename, &cmdline));
@@ -265,4 +218,5 @@ TEST_F(ArtExecTest, ProcessNameSuffix) {
 }
 
 }  // namespace
+}  // namespace tools
 }  // namespace art

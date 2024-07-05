@@ -26,7 +26,6 @@
 #include "base/mutex-inl.h"
 #include "base/sdk_version.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/systrace.h"
 #include "check_jni.h"
 #include "dex/dex_file-inl.h"
@@ -640,7 +639,7 @@ bool JavaVMExt::ShouldTrace(ArtMethod* method) {
       "Lorg/apache/harmony/",
   };
   for (size_t i = 0; i < arraysize(gBuiltInPrefixes); ++i) {
-    if (StartsWith(class_name, gBuiltInPrefixes[i])) {
+    if (class_name.starts_with(gBuiltInPrefixes[i])) {
       return false;
     }
   }

@@ -16,7 +16,7 @@
 
 set -e # Stop on error - the caller script may not have this set.
 
-export ASM_JAR="${ANDROID_BUILD_TOP}/prebuilts/misc/common/asm/asm-9.2.jar"
+export ASM_JAR="${ANDROID_BUILD_TOP}/prebuilts/misc/common/asm/asm-9.6.jar"
 
 # Move original classes to intermediate location.
 mv classes intermediate-classes

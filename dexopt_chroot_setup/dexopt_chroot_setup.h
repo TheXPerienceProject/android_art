@@ -30,15 +30,20 @@ namespace dexopt_chroot_setup {
 // A service that sets up the chroot environment for Pre-reboot Dexopt.
 class DexoptChrootSetup : public aidl::com::android::server::art::BnDexoptChrootSetup {
  public:
-  ndk::ScopedAStatus setUp(const std::optional<std::string>& in_otaSlot) override;
+  ndk::ScopedAStatus setUp(const std::optional<std::string>& in_otaSlot,
+                           bool in_mapSnapshotsForOta) override;
+
+  ndk::ScopedAStatus init() override;
 
   ndk::ScopedAStatus tearDown() override;
 
   android::base::Result<void> Start();
 
  private:
-  android::base::Result<void> SetUpChroot(const std::optional<std::string>& ota_slot) const
-      REQUIRES(mu_);
+  android::base::Result<void> SetUpChroot(const std::optional<std::string>& ota_slot,
+                                          bool map_snapshots_for_ota) const REQUIRES(mu_);
+
+  android::base::Result<void> InitChroot() const REQUIRES(mu_);
 
   android::base::Result<void> TearDownChroot() const REQUIRES(mu_);
 

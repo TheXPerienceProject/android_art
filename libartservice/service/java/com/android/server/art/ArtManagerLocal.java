@@ -74,6 +74,7 @@ import com.android.server.art.model.DexoptParams;
 import com.android.server.art.model.DexoptResult;
 import com.android.server.art.model.DexoptStatus;
 import com.android.server.art.model.OperationProgress;
+import com.android.server.art.prereboot.PreRebootStatsReporter;
 import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.AndroidPackageSplit;
@@ -103,6 +104,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -129,6 +131,15 @@ public final class ArtManagerLocal {
     @NonNull private final Injector mInjector;
 
     private boolean mShouldCommitPreRebootStagedFiles = false;
+
+    // A temporary object for holding stats while staged files are being committed, used in two
+    // places: `onBoot` and the `BroadcastReceiver` of `ACTION_BOOT_COMPLETED`.
+    @Nullable private PreRebootStatsReporter.AfterRebootSession mStatsAfterRebootSession = null;
+
+    // A lock that prevents the cleanup from cleaning up dexopt temp files while dexopt is running.
+    // The method that does the cleanup should acquire a write lock; the methods that do dexopt
+    // should acquire a read lock.
+    @NonNull private ReentrantReadWriteLock mCleanupLock = new ReentrantReadWriteLock();
 
     @Deprecated
     public ArtManagerLocal() {
@@ -363,9 +374,12 @@ public final class ArtManagerLocal {
     public DexoptResult dexoptPackage(@NonNull PackageManagerLocal.FilteredSnapshot snapshot,
             @NonNull String packageName, @NonNull DexoptParams params,
             @NonNull CancellationSignal cancellationSignal) {
+        mCleanupLock.readLock().lock();
         try (var pin = mInjector.createArtdPin()) {
             return mInjector.getDexoptHelper().dexopt(
                     snapshot, List.of(packageName), params, cancellationSignal, Runnable::run);
+        } finally {
+            mCleanupLock.readLock().unlock();
         }
     }
 
@@ -475,6 +489,7 @@ public final class ArtManagerLocal {
         ExecutorService dexoptExecutor =
                 Executors.newFixedThreadPool(ReasonMapping.getConcurrencyForReason(reason));
         Map<Integer, DexoptResult> dexoptResults = new HashMap<>();
+        mCleanupLock.readLock().lock();
         try (var pin = mInjector.createArtdPin()) {
             if (reason.equals(ReasonMapping.REASON_BG_DEXOPT)) {
                 DexoptResult downgradeResult = maybeDowngradePackages(snapshot,
@@ -505,6 +520,7 @@ public final class ArtManagerLocal {
             }
             return dexoptResults;
         } finally {
+            mCleanupLock.readLock().unlock();
             dexoptExecutor.shutdown();
         }
     }
@@ -876,6 +892,8 @@ public final class ArtManagerLocal {
                 // to commit files for secondary dex files because they are not decrypted before
                 // then.
                 mShouldCommitPreRebootStagedFiles = true;
+                mStatsAfterRebootSession =
+                        mInjector.getPreRebootStatsReporter().new AfterRebootSession();
                 commitPreRebootStagedFiles(snapshot, false /* forSecondary */);
             }
             dexoptPackages(snapshot, bootReason, new CancellationSignal(), progressCallbackExecutor,
@@ -903,6 +921,8 @@ public final class ArtManagerLocal {
                     try (var snapshot = mInjector.getPackageManagerLocal().withFilteredSnapshot()) {
                         commitPreRebootStagedFiles(snapshot, true /* forSecondary */);
                     }
+                    mStatsAfterRebootSession.reportAsync();
+                    mStatsAfterRebootSession = null;
                 }
             }, new IntentFilter(Intent.ACTION_BOOT_COMPLETED));
         }
@@ -923,13 +943,7 @@ public final class ArtManagerLocal {
     @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void onApexStaged(@NonNull String[] stagedApexModuleNames) {
-        // TODO(b/311377497): Check system requirements.
-        mInjector.getPreRebootDexoptJob().unschedule();
-        // Although `unschedule` implies `cancel`, we explicitly call `cancel` here to wait for
-        // the job to exit, if it's running.
-        mInjector.getPreRebootDexoptJob().cancel(true /* blocking */);
-        mInjector.getPreRebootDexoptJob().updateOtaSlot(null);
-        mInjector.getPreRebootDexoptJob().schedule();
+        mInjector.getPreRebootDexoptJob().onUpdateReady(null /* otaSlot */);
     }
 
     /**
@@ -1052,6 +1066,7 @@ public final class ArtManagerLocal {
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public long cleanup(@NonNull PackageManagerLocal.FilteredSnapshot snapshot) {
+        mCleanupLock.writeLock().lock();
         try (var pin = mInjector.createArtdPin()) {
             mInjector.getDexUseManager().cleanup();
 
@@ -1098,6 +1113,8 @@ public final class ArtManagerLocal {
         } catch (RemoteException e) {
             Utils.logArtdException(e);
             return 0;
+        } finally {
+            mCleanupLock.writeLock().unlock();
         }
     }
 
@@ -1105,7 +1122,7 @@ public final class ArtManagerLocal {
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     private void commitPreRebootStagedFiles(
             @NonNull PackageManagerLocal.FilteredSnapshot snapshot, boolean forSecondary) {
-        try {
+        try (var pin = mInjector.createArtdPin()) {
             // Because we don't know for which packages the Pre-reboot Dexopt job has generated
             // staged files, we call artd for all dexoptable packages, which is a superset of the
             // packages that we actually expect to have staged files.
@@ -1138,7 +1155,10 @@ public final class ArtManagerLocal {
                     // ones generated by background dexopt, committing the artifacts while failing
                     // to commit the profile can potentially cause a permanent performance
                     // regression.
-                    mInjector.getArtd().commitPreRebootStagedFiles(artifacts, profiles);
+                    if (mInjector.getArtd().commitPreRebootStagedFiles(artifacts, profiles)) {
+                        mStatsAfterRebootSession.recordPackageWithArtifacts(
+                                pkgState.getPackageName());
+                    }
                 } catch (ServiceSpecificException e) {
                     AsLog.e("Failed to commit Pre-reboot staged files for package '"
                                     + pkgState.getPackageName() + "'",
@@ -1649,6 +1669,12 @@ public final class ArtManagerLocal {
         @NonNull
         public DexMetadataHelper getDexMetadataHelper() {
             return new DexMetadataHelper();
+        }
+
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+        @NonNull
+        public PreRebootStatsReporter getPreRebootStatsReporter() {
+            return new PreRebootStatsReporter();
         }
     }
 }

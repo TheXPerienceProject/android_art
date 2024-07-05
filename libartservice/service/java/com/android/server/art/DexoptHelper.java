@@ -141,21 +141,37 @@ public class DexoptHelper {
                 PackageState pkgState = pkgStates.get(i);
                 CancellationSignal childCancellationSignal = childCancellationSignals.get(i);
                 futures.add(CompletableFuture.supplyAsync(() -> {
-                    return dexoptPackage(pkgState, params, childCancellationSignal);
+                    AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
+                    if (canDexoptPackage(pkgState)
+                            && (params.getFlags() & ArtFlags.FLAG_FOR_SINGLE_SPLIT) != 0) {
+                        // Throws if the split is not found.
+                        PrimaryDexUtils.getDexInfoBySplitName(pkg, params.getSplitName());
+                    }
+                    try {
+                        return dexoptPackage(pkgState, pkg, params, childCancellationSignal);
+                    } catch (RuntimeException e) {
+                        AsLog.wtf("Unexpected package-level exception during dexopt", e);
+                        return PackageDexoptResult.create(pkgState.getPackageName(),
+                                new ArrayList<>() /* dexContainerFileDexoptResults */,
+                                DexoptResult.DEXOPT_FAILED);
+                    }
                 }, dexoptExecutor));
             }
 
             if (progressCallback != null) {
                 CompletableFuture.runAsync(() -> {
-                    progressCallback.accept(
-                            OperationProgress.create(0 /* current */, futures.size()));
+                    progressCallback.accept(OperationProgress.create(
+                            0 /* current */, futures.size(), null /* packageDexoptResult */));
                 }, progressCallbackExecutor);
                 AtomicInteger current = new AtomicInteger(0);
                 for (CompletableFuture<PackageDexoptResult> future : futures) {
-                    future.thenRunAsync(() -> {
-                        progressCallback.accept(OperationProgress.create(
-                                current.incrementAndGet(), futures.size()));
-                    }, progressCallbackExecutor);
+                    future.thenAcceptAsync(result -> {
+                              progressCallback.accept(OperationProgress.create(
+                                      current.incrementAndGet(), futures.size(), result));
+                          }, progressCallbackExecutor).exceptionally(t -> {
+                        AsLog.e("Failed to update progress", t);
+                        return null;
+                    });
                 }
             }
 
@@ -201,21 +217,15 @@ public class DexoptHelper {
      */
     @NonNull
     private PackageDexoptResult dexoptPackage(@NonNull PackageState pkgState,
-            @NonNull DexoptParams params, @NonNull CancellationSignal cancellationSignal) {
+            @NonNull AndroidPackage pkg, @NonNull DexoptParams params,
+            @NonNull CancellationSignal cancellationSignal) {
         List<DexContainerFileDexoptResult> results = new ArrayList<>();
         Function<Integer, PackageDexoptResult> createResult = (packageLevelStatus)
                 -> PackageDexoptResult.create(
                         pkgState.getPackageName(), results, packageLevelStatus);
 
-        AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
-
         if (!canDexoptPackage(pkgState)) {
             return createResult.apply(null /* packageLevelStatus */);
-        }
-
-        if ((params.getFlags() & ArtFlags.FLAG_FOR_SINGLE_SPLIT) != 0) {
-            // Throws if the split is not found.
-            PrimaryDexUtils.getDexInfoBySplitName(pkg, params.getSplitName());
         }
 
         try (var tracing = new Utils.Tracing("dexopt")) {

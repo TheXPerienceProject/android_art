@@ -252,6 +252,9 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
 
         lenient().when(mArtd.isInDalvikCache(any())).thenReturn(mParams.mIsInDalvikCache);
 
+        // By default, no artifacts exist.
+        lenient().when(mArtd.getArtifactsVisibility(any())).thenReturn(FileVisibility.NOT_FOUND);
+
         if (mParams.mCallbackReturnedCompilerFilter != null) {
             mConfig.setAdjustCompilerFilterCallback(
                     Runnable::run, (packageName, originalCompilerFilter, reason) -> {
@@ -310,6 +313,15 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
         lenient()
                 .when(mDexMetadataHelperInjector.openZipFile(any()))
                 .thenThrow(NoSuchFileException.class);
+
+        if (mParams.mIsPreReboot) {
+            doReturn(FileVisibility.OTHER_READABLE)
+                    .when(mArtd)
+                    .getDexFileVisibility("/somewhere/app/foo/base.apk");
+            doReturn(FileVisibility.OTHER_READABLE)
+                    .when(mArtd)
+                    .getDexFileVisibility("/somewhere/app/foo/split_0.apk");
+        }
 
         // The first one is normal.
         doReturn(dexoptIsNeeded())

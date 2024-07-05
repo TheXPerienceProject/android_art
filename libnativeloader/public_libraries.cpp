@@ -34,6 +34,7 @@
 #include <log/log.h>
 
 #if defined(ART_TARGET_ANDROID)
+#include <android-modules-utils/sdk_level.h>
 #include <android/sysprop/VndkProperties.sysprop.h>
 #endif
 
@@ -125,8 +126,8 @@ void ReadExtensionLibraries(const char* dirname, std::vector<std::string>* sonam
 
         Result<std::vector<std::string>> ret = ReadConfig(
             config_file_path, [&company_name](const struct ConfigEntry& entry) -> Result<bool> {
-              if (android::base::StartsWith(entry.soname, "lib") &&
-                  android::base::EndsWith(entry.soname, "." + company_name + ".so")) {
+              if (entry.soname.starts_with("lib") &&
+                  entry.soname.ends_with("." + company_name + ".so")) {
                 return true;
               } else {
                 return Errorf(
@@ -426,12 +427,11 @@ const std::map<std::string, std::string>& apex_public_libraries() {
 
 bool is_product_treblelized() {
 #if defined(ART_TARGET_ANDROID)
-  // Product is not treblelized iff launching version is prior to R and
-  // ro.product.vndk.version is not defined
-  static bool product_treblelized =
-      !(android::base::GetIntProperty("ro.product.first_api_level", 0) < __ANDROID_API_R__ &&
-        !android::sysprop::VndkProperties::product_vndk_version().has_value());
-  return product_treblelized;
+  // Product is treblelized iff the sdk version is newer than U
+  // or launching version is R or newer or ro.product.vndk.version is defined
+  return android::modules::sdklevel::IsAtLeastV() ||
+         android::base::GetIntProperty("ro.product.first_api_level", 0) >= __ANDROID_API_R__ ||
+         android::sysprop::VndkProperties::product_vndk_version().has_value();
 #else
   return false;
 #endif

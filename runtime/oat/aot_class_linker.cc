@@ -22,23 +22,24 @@
 #include "dex/class_reference.h"
 #include "gc/heap.h"
 #include "handle_scope-inl.h"
-#include "interpreter/active_transaction_checker.h"
 #include "mirror/class-inl.h"
 #include "runtime.h"
+#include "scoped_thread_state_change-inl.h"
+#include "transaction.h"
 #include "verifier/verifier_enums.h"
 
 namespace art HIDDEN {
 
 AotClassLinker::AotClassLinker(InternTable* intern_table)
-    : ClassLinker(intern_table, /*fast_class_not_found_exceptions=*/ false) {}
+    : ClassLinker(intern_table, /*fast_class_not_found_exceptions=*/ false),
+      preinitialization_transactions_() {}
 
 AotClassLinker::~AotClassLinker() {}
 
 bool AotClassLinker::CanAllocClass() {
   // AllocClass doesn't work under transaction, so we abort.
-  if (Runtime::Current()->IsActiveTransaction()) {
-    Runtime::Current()->AbortTransactionAndThrowAbortError(
-        Thread::Current(), "Can't resolve type within transaction.");
+  if (IsActiveTransaction()) {
+    AbortTransactionF(Thread::Current(), "Can't resolve type within transaction.");
     return false;
   }
   return ClassLinker::CanAllocClass();
@@ -49,8 +50,7 @@ bool AotClassLinker::InitializeClass(Thread* self,
                                      Handle<mirror::Class> klass,
                                      bool can_init_statics,
                                      bool can_init_parents) {
-  Runtime* const runtime = Runtime::Current();
-  bool strict_mode = runtime->IsActiveStrictTransactionMode();
+  bool strict_mode = IsActiveStrictTransactionMode();
 
   DCHECK(klass != nullptr);
   if (klass->IsInitialized() || klass->IsInitializing()) {
@@ -61,10 +61,12 @@ bool AotClassLinker::InitializeClass(Thread* self,
   // in a dex file belonging to the boot image we're compiling against.
   // However, we must allow the initialization of TransactionAbortError,
   // VerifyError, etc. outside of a transaction.
-  if (!strict_mode && runtime->GetHeap()->ObjectIsInBootImageSpace(klass->GetDexCache())) {
-    if (runtime->IsActiveTransaction()) {
-      runtime->AbortTransactionAndThrowAbortError(self, "Can't initialize " + klass->PrettyTypeOf()
-           + " because it is defined in a boot image dex file.");
+  if (!strict_mode &&
+      Runtime::Current()->GetHeap()->ObjectIsInBootImageSpace(klass->GetDexCache())) {
+    if (IsActiveTransaction()) {
+      AbortTransactionF(self,
+                        "Can't initialize %s because it is defined in a boot image dex file.",
+                        klass->PrettyTypeOf().c_str());
       return false;
     }
     CHECK(klass->IsThrowableClass()) << klass->PrettyDescriptor();
@@ -72,8 +74,9 @@ bool AotClassLinker::InitializeClass(Thread* self,
 
   // When in strict_mode, don't initialize a class if it belongs to boot but not initialized.
   if (strict_mode && klass->IsBootStrapClassLoaded()) {
-    runtime->AbortTransactionAndThrowAbortError(self, "Can't resolve "
-        + klass->PrettyTypeOf() + " because it is an uninitialized boot class.");
+    AbortTransactionF(self,
+                      "Can't resolve %s because it is an uninitialized boot class.",
+                      klass->PrettyTypeOf().c_str());
     return false;
   }
 
@@ -81,21 +84,22 @@ bool AotClassLinker::InitializeClass(Thread* self,
   // the transaction and rolled back after klass's change is commited.
   if (strict_mode && !klass->IsInterface() && klass->HasSuperClass()) {
     if (klass->GetSuperClass()->GetStatus() == ClassStatus::kInitializing) {
-      runtime->AbortTransactionAndThrowAbortError(self, "Can't resolve "
-          + klass->PrettyTypeOf() + " because it's superclass is not initialized.");
+      AbortTransactionF(self,
+                        "Can't resolve %s because it's superclass is not initialized.",
+                        klass->PrettyTypeOf().c_str());
       return false;
     }
   }
 
   if (strict_mode) {
-    runtime->EnterTransactionMode(/*strict=*/ true, klass.Get());
+    EnterTransactionMode(/*strict=*/ true, klass.Get());
   }
   bool success = ClassLinker::InitializeClass(self, klass, can_init_statics, can_init_parents);
 
   if (strict_mode) {
     if (success) {
       // Exit Transaction if success.
-      runtime->ExitTransactionMode();
+      ExitTransactionMode();
     } else {
       // If not successfully initialized, don't rollback immediately, leave the cleanup to compiler
       // driver which needs abort message and exception.
@@ -251,21 +255,260 @@ void AotClassLinker::SetEnablePublicSdkChecks(bool enabled) {
   }
 }
 
-bool AotClassLinker::TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) const {
-  DCHECK(Runtime::Current()->IsActiveTransaction());
-  return interpreter::ActiveTransactionChecker::WriteConstraint(self, obj);
+// Transaction support.
+
+bool AotClassLinker::IsActiveTransaction() const {
+  bool result = Runtime::Current()->IsActiveTransaction();
+  DCHECK_EQ(result, !preinitialization_transactions_.empty() && !GetTransaction()->IsRollingBack());
+  return result;
 }
 
-bool AotClassLinker::TransactionWriteValueConstraint(
-    Thread* self, ObjPtr<mirror::Object> value) const {
-  DCHECK(Runtime::Current()->IsActiveTransaction());
-  return interpreter::ActiveTransactionChecker::WriteValueConstraint(self, value);
+void AotClassLinker::EnterTransactionMode(bool strict, mirror::Class* root) {
+  Runtime* runtime = Runtime::Current();
+  ArenaPool* arena_pool = nullptr;
+  ArenaStack* arena_stack = nullptr;
+  if (preinitialization_transactions_.empty()) {  // Top-level transaction?
+    // Make initialized classes visibly initialized now. If that happened during the transaction
+    // and then the transaction was aborted, we would roll back the status update but not the
+    // ClassLinker's bookkeeping structures, so these classes would never be visibly initialized.
+    {
+      Thread* self = Thread::Current();
+      StackHandleScope<1> hs(self);
+      HandleWrapper<mirror::Class> h(hs.NewHandleWrapper(&root));
+      ScopedThreadSuspension sts(self, ThreadState::kNative);
+      MakeInitializedClassesVisiblyInitialized(Thread::Current(), /*wait=*/ true);
+    }
+    // Pass the runtime `ArenaPool` to the transaction.
+    arena_pool = runtime->GetArenaPool();
+  } else {
+    // Pass the `ArenaStack` from previous transaction to the new one.
+    arena_stack = preinitialization_transactions_.front().GetArenaStack();
+  }
+  preinitialization_transactions_.emplace_front(strict, root, arena_stack, arena_pool);
+  runtime->SetActiveTransaction();
 }
 
-bool AotClassLinker::TransactionAllocationConstraint(Thread* self,
-                                                     ObjPtr<mirror::Class> klass) const {
-  DCHECK(Runtime::Current()->IsActiveTransaction());
-  return interpreter::ActiveTransactionChecker::AllocationConstraint(self, klass);
+void AotClassLinker::ExitTransactionMode() {
+  DCHECK(IsActiveTransaction());
+  preinitialization_transactions_.pop_front();
+  if (preinitialization_transactions_.empty()) {
+    Runtime::Current()->ClearActiveTransaction();
+  } else {
+    DCHECK(IsActiveTransaction());  // Trigger the DCHECK() in `IsActiveTransaction()`.
+  }
+}
+
+void AotClassLinker::RollbackAllTransactions() {
+  // If transaction is aborted, all transactions will be kept in the list.
+  // Rollback and exit all of them.
+  while (IsActiveTransaction()) {
+    RollbackAndExitTransactionMode();
+  }
+}
+
+void AotClassLinker::RollbackAndExitTransactionMode() {
+  DCHECK(IsActiveTransaction());
+  Runtime::Current()->ClearActiveTransaction();
+  preinitialization_transactions_.front().Rollback();
+  preinitialization_transactions_.pop_front();
+  if (!preinitialization_transactions_.empty()) {
+    Runtime::Current()->SetActiveTransaction();
+  }
+}
+
+const Transaction* AotClassLinker::GetTransaction() const {
+  DCHECK(!preinitialization_transactions_.empty());
+  return &preinitialization_transactions_.front();
+}
+
+Transaction* AotClassLinker::GetTransaction() {
+  DCHECK(!preinitialization_transactions_.empty());
+  return &preinitialization_transactions_.front();
+}
+
+bool AotClassLinker::IsActiveStrictTransactionMode() const {
+  return IsActiveTransaction() && GetTransaction()->IsStrict();
+}
+
+bool AotClassLinker::TransactionWriteConstraint(Thread* self, ObjPtr<mirror::Object> obj) {
+  DCHECK(IsActiveTransaction());
+  if (GetTransaction()->WriteConstraint(obj)) {
+    Runtime* runtime = Runtime::Current();
+    DCHECK(runtime->GetHeap()->ObjectIsInBootImageSpace(obj) || obj->IsClass());
+    const char* extra = runtime->GetHeap()->ObjectIsInBootImageSpace(obj) ? "boot image " : "";
+    AbortTransactionF(
+        self, "Can't set fields of %s%s", extra, obj->PrettyTypeOf().c_str());
+    return true;
+  }
+  return false;
+}
+
+bool AotClassLinker::TransactionWriteValueConstraint(Thread* self, ObjPtr<mirror::Object> value) {
+  DCHECK(IsActiveTransaction());
+  if (GetTransaction()->WriteValueConstraint(value)) {
+    DCHECK(value != nullptr);
+    const char* description = value->IsClass() ? "class" : "instance of";
+    ObjPtr<mirror::Class> klass = value->IsClass() ? value->AsClass() : value->GetClass();
+    AbortTransactionF(
+        self, "Can't store reference to %s %s", description, klass->PrettyDescriptor().c_str());
+    return true;
+  }
+  return false;
+}
+
+bool AotClassLinker::TransactionReadConstraint(Thread* self, ObjPtr<mirror::Object> obj) {
+  DCHECK(obj->IsClass());
+  if (GetTransaction()->ReadConstraint(obj)) {
+    AbortTransactionF(self,
+                      "Can't read static fields of %s since it does not belong to clinit's class.",
+                      obj->PrettyTypeOf().c_str());
+    return true;
+  }
+  return false;
+}
+
+bool AotClassLinker::TransactionAllocationConstraint(Thread* self, ObjPtr<mirror::Class> klass) {
+  DCHECK(IsActiveTransaction());
+  if (klass->IsFinalizable()) {
+    AbortTransactionF(self,
+                      "Allocating finalizable object in transaction: %s",
+                      klass->PrettyDescriptor().c_str());
+    return true;
+  }
+  return false;
+}
+
+void AotClassLinker::RecordWriteFieldBoolean(mirror::Object* obj,
+                                             MemberOffset field_offset,
+                                             uint8_t value,
+                                             bool is_volatile) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWriteFieldBoolean(obj, field_offset, value, is_volatile);
+}
+
+void AotClassLinker::RecordWriteFieldByte(mirror::Object* obj,
+                                          MemberOffset field_offset,
+                                          int8_t value,
+                                          bool is_volatile) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWriteFieldByte(obj, field_offset, value, is_volatile);
+}
+
+void AotClassLinker::RecordWriteFieldChar(mirror::Object* obj,
+                                          MemberOffset field_offset,
+                                          uint16_t value,
+                                          bool is_volatile) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWriteFieldChar(obj, field_offset, value, is_volatile);
+}
+
+void AotClassLinker::RecordWriteFieldShort(mirror::Object* obj,
+                                           MemberOffset field_offset,
+                                           int16_t value,
+                                           bool is_volatile) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWriteFieldShort(obj, field_offset, value, is_volatile);
+}
+
+void AotClassLinker::RecordWriteField32(mirror::Object* obj,
+                                        MemberOffset field_offset,
+                                        uint32_t value,
+                                        bool is_volatile) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWriteField32(obj, field_offset, value, is_volatile);
+}
+
+void AotClassLinker::RecordWriteField64(mirror::Object* obj,
+                                        MemberOffset field_offset,
+                                        uint64_t value,
+                                        bool is_volatile) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWriteField64(obj, field_offset, value, is_volatile);
+}
+
+void AotClassLinker::RecordWriteFieldReference(mirror::Object* obj,
+                                               MemberOffset field_offset,
+                                               ObjPtr<mirror::Object> value,
+                                               bool is_volatile) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWriteFieldReference(obj, field_offset, value.Ptr(), is_volatile);
+}
+
+void AotClassLinker::RecordWriteArray(mirror::Array* array, size_t index, uint64_t value) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWriteArray(array, index, value);
+}
+
+void AotClassLinker::RecordStrongStringInsertion(ObjPtr<mirror::String> s) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordStrongStringInsertion(s);
+}
+
+void AotClassLinker::RecordWeakStringInsertion(ObjPtr<mirror::String> s) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWeakStringInsertion(s);
+}
+
+void AotClassLinker::RecordStrongStringRemoval(ObjPtr<mirror::String> s) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordStrongStringRemoval(s);
+}
+
+void AotClassLinker::RecordWeakStringRemoval(ObjPtr<mirror::String> s) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordWeakStringRemoval(s);
+}
+
+void AotClassLinker::RecordResolveString(ObjPtr<mirror::DexCache> dex_cache,
+                                         dex::StringIndex string_idx) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordResolveString(dex_cache, string_idx);
+}
+
+void AotClassLinker::RecordResolveMethodType(ObjPtr<mirror::DexCache> dex_cache,
+                                             dex::ProtoIndex proto_idx) {
+  DCHECK(IsActiveTransaction());
+  GetTransaction()->RecordResolveMethodType(dex_cache, proto_idx);
+}
+
+void AotClassLinker::ThrowTransactionAbortError(Thread* self) {
+  DCHECK(IsActiveTransaction());
+  // Passing nullptr means we rethrow an exception with the earlier transaction abort message.
+  GetTransaction()->ThrowAbortError(self, nullptr);
+}
+
+void AotClassLinker::AbortTransactionF(Thread* self, const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  AbortTransactionV(self, fmt, args);
+  va_end(args);
+}
+
+void AotClassLinker::AbortTransactionV(Thread* self, const char* fmt, va_list args) {
+  CHECK(IsActiveTransaction());
+  // Constructs abort message.
+  std::string abort_message;
+  android::base::StringAppendV(&abort_message, fmt, args);
+  // Throws an exception so we can abort the transaction and rollback every change.
+  //
+  // Throwing an exception may cause its class initialization. If we mark the transaction
+  // aborted before that, we may warn with a false alarm. Throwing the exception before
+  // marking the transaction aborted avoids that.
+  // But now the transaction can be nested, and abort the transaction will relax the constraints
+  // for constructing stack trace.
+  GetTransaction()->Abort(abort_message);
+  GetTransaction()->ThrowAbortError(self, &abort_message);
+}
+
+bool AotClassLinker::IsTransactionAborted() const {
+  DCHECK(IsActiveTransaction());
+  return GetTransaction()->IsAborted();
+}
+
+void AotClassLinker::VisitTransactionRoots(RootVisitor* visitor) {
+  for (Transaction& transaction : preinitialization_transactions_) {
+    transaction.VisitRoots(visitor);
+  }
 }
 
 }  // namespace art

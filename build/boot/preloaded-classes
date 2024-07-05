@@ -88,6 +88,7 @@ com.android.okhttp.HttpUrl$1
 com.android.okhttp.HttpUrl$Builder$ParseResult
 com.android.okhttp.HttpUrl$Builder
 com.android.okhttp.HttpUrl
+com.android.okhttp.HttpsHandler
 com.android.okhttp.Interceptor$Chain
 com.android.okhttp.MediaType
 com.android.okhttp.OkCacheContainer
@@ -168,6 +169,7 @@ com.android.okhttp.internal.http.StatusLine
 com.android.okhttp.internal.http.StreamAllocation
 com.android.okhttp.internal.huc.DelegatingHttpsURLConnection
 com.android.okhttp.internal.huc.HttpURLConnectionImpl
+com.android.okhttp.internal.huc.HttpsURLConnectionImpl
 com.android.okhttp.internal.io.FileSystem$1
 com.android.okhttp.internal.io.FileSystem
 com.android.okhttp.internal.io.RealConnection
@@ -198,7 +200,9 @@ com.android.okhttp.okio.Okio$1
 com.android.okhttp.okio.Okio$2
 com.android.okhttp.okio.Okio$3
 com.android.okhttp.okio.Okio
+com.android.okhttp.okio.RealBufferedSink$1
 com.android.okhttp.okio.RealBufferedSink
+com.android.okhttp.okio.RealBufferedSource$1
 com.android.okhttp.okio.RealBufferedSource
 com.android.okhttp.okio.Segment
 com.android.okhttp.okio.SegmentPool
@@ -391,6 +395,7 @@ com.android.org.bouncycastle.jcajce.provider.keystore.PKCS12$Mappings
 com.android.org.bouncycastle.jcajce.provider.keystore.bc.BcKeyStoreSpi$Std
 com.android.org.bouncycastle.jcajce.provider.keystore.bc.BcKeyStoreSpi$StoreEntry
 com.android.org.bouncycastle.jcajce.provider.keystore.bc.BcKeyStoreSpi
+com.android.org.bouncycastle.jcajce.provider.symmetric.AES$ECB
 com.android.org.bouncycastle.jcajce.provider.symmetric.AES$Mappings
 com.android.org.bouncycastle.jcajce.provider.symmetric.AES
 com.android.org.bouncycastle.jcajce.provider.symmetric.ARC4$Mappings
@@ -468,6 +473,8 @@ dalvik.annotation.optimization.NeverInline
 dalvik.system.AppSpecializationHooks
 dalvik.system.BaseDexClassLoader$Reporter
 dalvik.system.BaseDexClassLoader
+dalvik.system.BlockGuard$2
+dalvik.system.BlockGuard$3
 dalvik.system.BlockGuard$BlockGuardPolicyException
 dalvik.system.BlockGuard$Policy
 dalvik.system.BlockGuard$VmPolicy
@@ -568,6 +575,7 @@ java.io.ObjectInputStream$ValidationList
 java.io.ObjectInputStream
 java.io.ObjectOutput
 java.io.ObjectOutputStream$1
+java.io.ObjectOutputStream$BlockDataOutputStream
 java.io.ObjectOutputStream$Caches
 java.io.ObjectOutputStream$DebugTraceInfoStack
 java.io.ObjectOutputStream$HandleTable
@@ -621,6 +629,7 @@ java.io.StringWriter
 java.io.SyncFailedException
 java.io.UTFDataFormatException
 java.io.UncheckedIOException
+java.io.UnixFileSystem
 java.io.UnsupportedEncodingException
 java.io.WriteAbortedException
 java.io.Writer
@@ -757,6 +766,7 @@ java.lang.String$$ExternalSyntheticLambda1
 java.lang.String$$ExternalSyntheticLambda2
 java.lang.String$$ExternalSyntheticLambda3
 java.lang.String$CaseInsensitiveComparator-IA
+java.lang.String$CaseInsensitiveComparator
 java.lang.String
 java.lang.StringBuffer
 java.lang.StringBuilder
@@ -783,6 +793,7 @@ java.lang.ThreadGroup
 java.lang.ThreadLocal$ThreadLocalMap$Entry
 java.lang.ThreadLocal$ThreadLocalMap-IA
 java.lang.ThreadLocal$ThreadLocalMap
+java.lang.ThreadLocal
 java.lang.Throwable$PrintStreamOrWriter-IA
 java.lang.Throwable$PrintStreamOrWriter
 java.lang.Throwable$SentinelHolder
@@ -1017,7 +1028,9 @@ java.net.Inet4Address
 java.net.Inet6Address$Inet6AddressHolder-IA
 java.net.Inet6Address$Inet6AddressHolder
 java.net.Inet6Address
+java.net.Inet6AddressImpl
 java.net.InetAddress$1
+java.net.InetAddress$InetAddressHolder
 java.net.InetAddress
 java.net.InetAddressImpl
 java.net.InetSocketAddress$InetSocketAddressHolder-IA
@@ -1080,6 +1093,7 @@ java.nio.BufferUnderflowException
 java.nio.ByteBuffer
 java.nio.ByteBufferAsCharBuffer
 java.nio.ByteBufferAsDoubleBuffer
+java.nio.ByteBufferAsShortBuffer
 java.nio.ByteOrder
 java.nio.CharBuffer
 java.nio.DirectByteBuffer$MemoryRef
@@ -1265,6 +1279,7 @@ java.security.Security$1
 java.security.Security
 java.security.SecurityPermission
 java.security.Signature$CipherAdapter
+java.security.Signature$Delegate
 java.security.Signature
 java.security.SignatureException
 java.security.SignatureSpi
@@ -1572,6 +1587,7 @@ java.util.Collections$SequencedSetFromMap
 java.util.Collections$SynchronizedList
 java.util.Collections$SynchronizedNavigableMap
 java.util.Collections$SynchronizedNavigableSet
+java.util.Collections$SynchronizedRandomAccessList
 java.util.Collections$SynchronizedSortedMap
 java.util.Collections$SynchronizedSortedSet
 java.util.Collections$UnmodifiableList$1
@@ -1673,6 +1689,7 @@ java.util.IdentityHashMap$ValueIterator
 java.util.IdentityHashMap$Values-IA
 java.util.IdentityHashMap$Values
 java.util.IdentityHashMap
+java.util.IllegalFormatArgumentIndexException
 java.util.IllegalFormatCodePointException
 java.util.IllegalFormatConversionException
 java.util.IllegalFormatException
@@ -1684,16 +1701,16 @@ java.util.ImmutableCollections$AbstractImmutableCollection
 java.util.ImmutableCollections$AbstractImmutableList
 java.util.ImmutableCollections$AbstractImmutableMap
 java.util.ImmutableCollections$AbstractImmutableSet
+java.util.ImmutableCollections$Access$1
 java.util.ImmutableCollections$Access
 java.util.ImmutableCollections$ListN-IA
-java.util.ImmutableCollections$MapN$1
-java.util.ImmutableCollections$MapN$MapNIterator
 java.util.ImmutableCollections$SubList
 java.util.InputMismatchException
 java.util.Iterator
 java.util.JumboEnumSet$EnumSetIterator
 java.util.JumboEnumSet
-java.util.KeyValueHolder
+java.util.LinkedHashMap$LinkedEntryIterator
+java.util.LinkedHashMap$LinkedEntrySet
 java.util.LinkedHashMap$LinkedHashIterator
 java.util.LinkedHashMap$ReversedLinkedHashMapView
 java.util.LinkedHashMap
@@ -1807,6 +1824,7 @@ java.util.TooManyListenersException
 java.util.TreeMap$AscendingSubMap$AscendingEntrySetView
 java.util.TreeMap$AscendingSubMap
 java.util.TreeMap$DescendingSubMap
+java.util.TreeMap$KeySet
 java.util.TreeMap$NavigableSubMap$DescendingSubMapKeyIterator
 java.util.TreeMap$NavigableSubMap$EntrySetView
 java.util.TreeMap$NavigableSubMap$SubMapEntryIterator
@@ -1848,6 +1866,7 @@ java.util.concurrent.BlockingQueue
 java.util.concurrent.Callable
 java.util.concurrent.CancellationException
 java.util.concurrent.CompletableFuture$AltResult
+java.util.concurrent.CompletableFuture$AsyncRun
 java.util.concurrent.CompletableFuture$AsyncSupply
 java.util.concurrent.CompletableFuture$AsynchronousCompletionTask
 java.util.concurrent.CompletableFuture$Completion
@@ -1978,6 +1997,7 @@ java.util.concurrent.SynchronousQueue
 java.util.concurrent.ThreadFactory
 java.util.concurrent.ThreadPoolExecutor$AbortPolicy
 java.util.concurrent.ThreadPoolExecutor$DiscardPolicy
+java.util.concurrent.ThreadPoolExecutor$Worker
 java.util.concurrent.TimeUnit$1
 java.util.concurrent.TimeUnit
 java.util.concurrent.TimeoutException
@@ -2146,6 +2166,8 @@ java.util.stream.Collectors$$ExternalSyntheticLambda23
 java.util.stream.Collectors$$ExternalSyntheticLambda24
 java.util.stream.Collectors$$ExternalSyntheticLambda25
 java.util.stream.Collectors$$ExternalSyntheticLambda26
+java.util.stream.Collectors$$ExternalSyntheticLambda27
+java.util.stream.Collectors$$ExternalSyntheticLambda28
 java.util.stream.Collectors$$ExternalSyntheticLambda30
 java.util.stream.Collectors$$ExternalSyntheticLambda34
 java.util.stream.Collectors$$ExternalSyntheticLambda37
@@ -2188,6 +2210,7 @@ java.util.stream.DistinctOps$1$2
 java.util.stream.DistinctOps
 java.util.stream.DoublePipeline$$ExternalSyntheticLambda0
 java.util.stream.DoublePipeline$$ExternalSyntheticLambda4
+java.util.stream.DoublePipeline$$ExternalSyntheticLambda5
 java.util.stream.DoublePipeline$$ExternalSyntheticLambda7
 java.util.stream.DoublePipeline$$ExternalSyntheticLambda9
 java.util.stream.DoublePipeline$StatelessOp
@@ -2220,6 +2243,7 @@ java.util.stream.IntPipeline$9
 java.util.stream.IntPipeline$StatelessOp
 java.util.stream.IntPipeline
 java.util.stream.IntStream
+java.util.stream.LongPipeline$$ExternalSyntheticLambda2
 java.util.stream.LongPipeline$$ExternalSyntheticLambda3
 java.util.stream.LongPipeline$$ExternalSyntheticLambda4
 java.util.stream.LongPipeline$$ExternalSyntheticLambda7
@@ -2285,6 +2309,8 @@ java.util.stream.ReduceOps$ReduceOp
 java.util.stream.ReduceOps
 java.util.stream.ReferencePipeline$$ExternalSyntheticLambda0
 java.util.stream.ReferencePipeline$$ExternalSyntheticLambda1
+java.util.stream.ReferencePipeline$15$1
+java.util.stream.ReferencePipeline$15
 java.util.stream.ReferencePipeline$2$1
 java.util.stream.ReferencePipeline$3$1
 java.util.stream.ReferencePipeline$4$1
@@ -2332,6 +2358,7 @@ java.util.stream.Streams$AbstractStreamBuilderImpl
 java.util.stream.Streams$ConcatSpliterator$OfRef
 java.util.stream.Streams$ConcatSpliterator
 java.util.stream.Streams$RangeIntSpliterator
+java.util.stream.Streams$StreamBuilderImpl
 java.util.stream.Streams
 java.util.stream.TerminalOp
 java.util.stream.TerminalSink
@@ -2343,10 +2370,12 @@ java.util.zip.CheckedInputStream
 java.util.zip.Checksum$1
 java.util.zip.Checksum
 java.util.zip.DataFormatException
+java.util.zip.Deflater$DeflaterZStreamRef-IA
 java.util.zip.Deflater$DeflaterZStreamRef
 java.util.zip.Deflater
 java.util.zip.DeflaterOutputStream
 java.util.zip.GZIPInputStream$1
+java.util.zip.GZIPInputStream
 java.util.zip.GZIPOutputStream
 java.util.zip.Inflater$InflaterZStreamRef-IA
 java.util.zip.Inflater$InflaterZStreamRef
@@ -2365,11 +2394,9 @@ java.util.zip.ZipFile$Source$End
 java.util.zip.ZipFile$Source$Key
 java.util.zip.ZipFile$Source
 java.util.zip.ZipFile$ZipEntryIterator
-java.util.zip.ZipFile$ZipFileInflaterInputStream
 java.util.zip.ZipFile$ZipFileInputStream
 java.util.zip.ZipFile
 java.util.zip.ZipInputStream
-java.util.zip.ZipOutputStream
 java.util.zip.ZipUtils
 javax.crypto.AEADBadTagException
 javax.crypto.BadPaddingException
@@ -2493,10 +2520,13 @@ jdk.internal.access.JavaUtilCollectionAccess
 jdk.internal.access.SharedSecrets
 jdk.internal.math.FDBigInteger
 jdk.internal.math.FloatingDecimal$1
+jdk.internal.math.FloatingDecimal$ASCIIToBinaryBuffer
 jdk.internal.math.FloatingDecimal$ASCIIToBinaryConverter
+jdk.internal.math.FloatingDecimal$BinaryToASCIIBuffer
 jdk.internal.math.FloatingDecimal$BinaryToASCIIConverter
 jdk.internal.math.FloatingDecimal$ExceptionalBinaryToASCIIBuffer
 jdk.internal.math.FloatingDecimal$HexFloatPattern
+jdk.internal.math.FloatingDecimal$PreparedASCIIToBinaryBuffer
 jdk.internal.math.FloatingDecimal
 jdk.internal.math.FormattedFloatingDecimal$1
 jdk.internal.math.FormattedFloatingDecimal$Form
@@ -2507,7 +2537,6 @@ jdk.internal.misc.Unsafe
 jdk.internal.misc.UnsafeConstants
 jdk.internal.misc.VM
 jdk.internal.ref.CleanerFactory
-jdk.internal.ref.CleanerImpl$PhantomCleanableRef
 jdk.internal.ref.CleanerImpl
 jdk.internal.ref.PhantomCleanable
 jdk.internal.reflect.Reflection
@@ -2533,6 +2562,7 @@ libcore.icu.TimeZoneNames$ZoneStringsCache
 libcore.icu.TimeZoneNames
 libcore.internal.StringPool
 libcore.io.AsynchronousCloseMonitor
+libcore.io.BlockGuardOs
 libcore.io.BufferIterator
 libcore.io.ClassPathURLStreamHandler$ClassPathURLConnection$1
 libcore.io.ClassPathURLStreamHandler$ClassPathURLConnection
@@ -2582,6 +2612,7 @@ libcore.util.FP16
 libcore.util.HexEncoding
 libcore.util.NativeAllocationRegistry$CleanerRunner
 libcore.util.NativeAllocationRegistry$CleanerThunk
+libcore.util.NativeAllocationRegistry
 libcore.util.Objects
 libcore.util.SneakyThrow
 libcore.util.XmlObjectFactory
@@ -2598,11 +2629,14 @@ org.apache.harmony.xml.ExpatParser$ExpatLocator
 org.apache.harmony.xml.ExpatParser$ParseException
 org.apache.harmony.xml.ExpatParser
 org.apache.harmony.xml.ExpatReader
+org.apache.harmony.xml.dom.AttrImpl
 org.apache.harmony.xml.dom.CDATASectionImpl
 org.apache.harmony.xml.dom.CharacterDataImpl
 org.apache.harmony.xml.dom.CommentImpl
 org.apache.harmony.xml.dom.DOMImplementationImpl
+org.apache.harmony.xml.dom.DocumentImpl
 org.apache.harmony.xml.dom.DocumentTypeImpl
+org.apache.harmony.xml.dom.ElementImpl
 org.apache.harmony.xml.dom.EntityReferenceImpl
 org.apache.harmony.xml.dom.InnerNodeImpl
 org.apache.harmony.xml.dom.LeafNodeImpl
@@ -2610,6 +2644,7 @@ org.apache.harmony.xml.dom.NodeImpl$1
 org.apache.harmony.xml.dom.NodeImpl
 org.apache.harmony.xml.dom.NodeListImpl
 org.apache.harmony.xml.dom.ProcessingInstructionImpl
+org.apache.harmony.xml.dom.TextImpl
 org.apache.harmony.xml.parsers.DocumentBuilderFactoryImpl
 org.apache.harmony.xml.parsers.DocumentBuilderImpl
 org.apache.harmony.xml.parsers.SAXParserFactoryImpl
@@ -2749,6 +2784,7 @@ sun.nio.ch.Util$BufferCache
 sun.nio.ch.Util
 sun.nio.cs.ArrayDecoder
 sun.nio.cs.ArrayEncoder
+sun.nio.cs.StreamDecoder
 sun.nio.cs.StreamEncoder
 sun.nio.cs.ThreadLocalCoders$1
 sun.nio.cs.ThreadLocalCoders$2
@@ -2760,6 +2796,7 @@ sun.nio.fs.AbstractPath
 sun.nio.fs.DefaultFileSystemProvider
 sun.nio.fs.DynamicFileAttributeView
 sun.nio.fs.FileOwnerAttributeViewImpl
+sun.nio.fs.LinuxFileSystem
 sun.nio.fs.LinuxFileSystemProvider
 sun.nio.fs.NativeBuffer$Deallocator
 sun.nio.fs.NativeBuffer
@@ -2775,6 +2812,7 @@ sun.nio.fs.UnixFileAttributeViews$Posix
 sun.nio.fs.UnixFileAttributeViews
 sun.nio.fs.UnixFileAttributes$UnixAsBasicFileAttributes
 sun.nio.fs.UnixFileAttributes
+sun.nio.fs.UnixFileKey
 sun.nio.fs.UnixFileModeAttribute
 sun.nio.fs.UnixFileStoreAttributes
 sun.nio.fs.UnixFileSystem
@@ -2833,6 +2871,7 @@ sun.security.provider.certpath.OCSPResponse$SingleResponse
 sun.security.provider.certpath.OCSPResponse
 sun.security.provider.certpath.PKIX$ValidatorParams
 sun.security.provider.certpath.PKIX
+sun.security.provider.certpath.PKIXCertPathValidator
 sun.security.provider.certpath.PKIXMasterCertPathValidator
 sun.security.provider.certpath.PolicyChecker
 sun.security.provider.certpath.PolicyNodeImpl
@@ -2862,6 +2901,7 @@ sun.security.util.DerInputStream
 sun.security.util.DerOutputStream
 sun.security.util.DerValue
 sun.security.util.DisabledAlgorithmConstraints$Constraint$Operator
+sun.security.util.DisabledAlgorithmConstraints$Constraint-IA
 sun.security.util.DisabledAlgorithmConstraints$Constraint
 sun.security.util.DisabledAlgorithmConstraints$Constraints
 sun.security.util.DisabledAlgorithmConstraints$KeySizeConstraint
@@ -3026,6 +3066,7 @@ sun.util.logging.PlatformLogger
 [Ldalvik.system.DexPathList$NativeLibraryElement;
 [Ljava.io.File$PathStatus;
 [Ljava.io.File;
+[Ljava.io.InputStream;
 [Ljava.io.ObjectInputStream$HandleTable$HandleList;
 [Ljava.io.ObjectStreamClass$ClassDataSlot;
 [Ljava.io.ObjectStreamClass$MemberSignature;

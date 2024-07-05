@@ -141,7 +141,7 @@ inline void DexCache::SetResolvedString(dex::StringIndex string_idx, ObjPtr<Stri
   Runtime* const runtime = Runtime::Current();
   if (UNLIKELY(runtime->IsActiveTransaction())) {
     DCHECK(runtime->IsAotCompiler());
-    runtime->RecordResolveString(this, string_idx);
+    runtime->GetClassLinker()->RecordResolveString(this, string_idx);
   }
   // TODO: Fine-grained marking, so that we don't need to go through all arrays in full.
   WriteBarrier::ForEveryFieldWrite(this);
@@ -188,7 +188,7 @@ inline void DexCache::SetResolvedMethodType(dex::ProtoIndex proto_idx, MethodTyp
   Runtime* const runtime = Runtime::Current();
   if (UNLIKELY(runtime->IsActiveTransaction())) {
     DCHECK(runtime->IsAotCompiler());
-    runtime->RecordResolveMethodType(this, proto_idx);
+    runtime->GetClassLinker()->RecordResolveMethodType(this, proto_idx);
   }
   // TODO: Fine-grained marking, so that we don't need to go through all arrays in full.
   WriteBarrier::ForEveryFieldWrite(this);

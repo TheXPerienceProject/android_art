@@ -37,7 +37,6 @@
 #include "base/logging.h"  // For VLOG
 #include "base/pointer_size.h"
 #include "base/stl_util.h"
-#include "base/string_view_cpp20.h"
 #include "base/systrace.h"
 #include "base/time_utils.h"
 #include "base/timing_logger.h"
@@ -434,14 +433,19 @@ static bool ShouldCompileBasedOnProfile(const CompilerOptions& compiler_options,
         compiler_options.GetProfileCompilationInfo();
     DCHECK(profile_compilation_info != nullptr);
 
-    // Compile only hot methods, it is the profile saver's job to decide
-    // what startup methods to mark as hot.
     bool result = profile_compilation_info->IsHotMethod(profile_index, method_ref.index);
+
+    // On non-low RAM devices, compile startup methods to potentially speed up
+    // startup.
+    if (!result && Runtime::Current()->GetHeap()->IsLowMemoryMode()) {
+      result = profile_compilation_info->IsStartupMethod(profile_index, method_ref.index);
+    }
 
     if (kDebugProfileGuidedCompilation) {
       LOG(INFO) << "[ProfileGuidedCompilation] "
           << (result ? "Compiled" : "Skipped") << " method:" << method_ref.PrettyMethod(true);
     }
+
 
     return result;
   }
@@ -2229,7 +2233,7 @@ class InitializeClassVisitor : public CompilationVisitor {
     const dex::TypeId& class_type_id = dex_file.GetTypeId(class_def->class_idx_);
     const char* descriptor = dex_file.GetStringData(class_type_id.descriptor_idx_);
     StackHandleScope<3> hs(self);
-    ClassLinker* const class_linker = manager_->GetClassLinker();
+    AotClassLinker* const class_linker = down_cast<AotClassLinker*>(manager_->GetClassLinker());
     Runtime* const runtime = Runtime::Current();
     const CompilerOptions& compiler_options = manager_->GetCompiler()->GetCompilerOptions();
     const bool is_boot_image = compiler_options.IsBootImage();
@@ -2300,7 +2304,7 @@ class InitializeClassVisitor : public CompilationVisitor {
             // We need to initialize static fields, we only do this for image classes that aren't
             // marked with the $NoPreloadHolder (which implies this should not be initialized
             // early).
-            can_init_static_fields = !EndsWith(std::string_view(descriptor), "$NoPreloadHolder;");
+            can_init_static_fields = !std::string_view(descriptor).ends_with("$NoPreloadHolder;");
           } else {
             CHECK(is_app_image);
             // The boot image case doesn't need to recursively initialize the dependencies with
@@ -2338,7 +2342,7 @@ class InitializeClassVisitor : public CompilationVisitor {
             DCHECK(exception_initialized);
 
             // Run the class initializer in transaction mode.
-            runtime->EnterTransactionMode(is_app_image, klass.Get());
+            class_linker->EnterTransactionMode(is_app_image, klass.Get());
 
             bool success = class_linker->EnsureInitialized(self, klass, true, true);
             // TODO we detach transaction from runtime to indicate we quit the transactional
@@ -2349,7 +2353,7 @@ class InitializeClassVisitor : public CompilationVisitor {
               ScopedAssertNoThreadSuspension ants("Transaction end");
 
               if (success) {
-                runtime->ExitTransactionMode();
+                class_linker->ExitTransactionMode();
                 DCHECK(!runtime->IsActiveTransaction());
 
                 if (is_boot_image || is_boot_image_extension) {
@@ -2370,7 +2374,7 @@ class InitializeClassVisitor : public CompilationVisitor {
                   *file_log << exception->Dump() << "\n";
                 }
                 self->ClearException();
-                runtime->RollbackAllTransactions();
+                class_linker->RollbackAllTransactions();
                 CHECK_EQ(old_status, klass->GetStatus()) << "Previous class status not restored";
               }
             }
@@ -2419,15 +2423,15 @@ class InitializeClassVisitor : public CompilationVisitor {
       self->GetJniEnv()->AssertLocalsEmpty();
     }
 
-    if (!klass->IsVisiblyInitialized() &&
+    if (!klass->IsInitialized() &&
         (is_boot_image || is_boot_image_extension) &&
-        !compiler_options.IsPreloadedClass(PrettyDescriptor(descriptor).c_str())) {
+        !compiler_options.IsPreloadedClass(PrettyDescriptor(descriptor))) {
       klass->SetInBootImageAndNotInPreloadedClasses();
     }
 
     if (compiler_options.CompileArtTest()) {
       // For stress testing and unit-testing the clinit check in compiled code feature.
-      if (kIsDebugBuild || EndsWith(std::string_view(descriptor), "$NoPreloadHolder;")) {
+      if (kIsDebugBuild || std::string_view(descriptor).ends_with("$NoPreloadHolder;")) {
         klass->SetInBootImageAndNotInPreloadedClasses();
       }
     }

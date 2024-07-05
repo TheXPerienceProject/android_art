@@ -630,13 +630,8 @@ cc_defaults {
         "libbase",
         "liblzma",
     ],
-    exclude_static_libs: [
-        // This library comes from the static version of libunwindstack.
-        "libz",
-    ],
     shared_libs: [
         "liblog",
-        "libz",
     ],
 }
 
@@ -950,6 +945,7 @@ art_cc_defaults {
     ],
     srcs: [
         "common_runtime_test.cc",
+        "common_transaction_test.cc",
         "dexopt_test.cc",
     ],
     static_libs: [
@@ -1095,6 +1091,7 @@ art_cc_defaults {
         "intern_table_test.cc",
         "interpreter/safe_math_test.cc",
         "interpreter/unstarted_runtime_test.cc",
+        "interpreter/unstarted_runtime_transaction_test.cc",
         "jit/jit_memory_region_test.cc",
         "jit/profile_saver_test.cc",
         "jit/profiling_info_test.cc",

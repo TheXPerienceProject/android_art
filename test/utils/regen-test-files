@@ -273,7 +273,6 @@ art_gtest_module_names = sorted(art_gtest_user_module_names + art_gtest_eng_only
 # removing them from this set (in order to promote them to
 # presubmits).
 art_gtest_postsubmit_only_module_names = [
-    "libnativebridge-tests",
 ]
 
 # ART gtests supported in MTS that do not need root access to the device.
@@ -542,12 +541,13 @@ class Generator:
 
     # Optional test metadata (JSON file).
     metadata = self.get_test_metadata(run_test)
+    is_cts_test = "cts" in metadata.get("test_suites", [])
 
     run_test_module_name = ART_RUN_TEST_MODULE_NAME_PREFIX + run_test
 
     # Set the test configuration template.
     if self.is_runnable(run_test):
-      if "cts" in metadata.get("test_suites", []):
+      if is_cts_test:
         test_config_template = "art-run-test-target-cts-template"
       elif self.is_slow(run_test):
         test_config_template = "art-run-test-target-slow-template"
@@ -576,6 +576,16 @@ class Generator:
           // Include the Java source files in the test's artifacts, to make Checker assertions
           // available to the TradeFed test runner.
           include_srcs: true,"""
+
+    # Set the version of the SDK to compile the Java test module
+    # against, if needed.
+    sdk_version_prop = ""
+    if is_cts_test:
+      # Have CTS test modules use the test API (`test_current`) so
+      # that they do not depend on the framework private platform API
+      # (`private`), which is the default.
+      sdk_version_prop = """
+          sdk_version: "test_current","""
 
     # The default source directory is `src`, except if `src-art` exists.
     if os.path.isdir(os.path.join(run_test_path, "src-art")):
@@ -616,7 +626,7 @@ class Generator:
           data: [
               ":{run_test_module_name}-expected-stdout",
               ":{run_test_module_name}-expected-stderr",
-          ],{test_suites_prop}{include_srcs_prop}
+          ],{test_suites_prop}{include_srcs_prop}{sdk_version_prop}
       }}
       """))
 

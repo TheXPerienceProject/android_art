@@ -85,6 +85,8 @@
 #include "runtime.h"
 #include "scoped_thread_state_change-inl.h"
 #include "subtype_check.h"
+#include "thread-current-inl.h"  // For AssertOnly1Thread.
+#include "thread_list.h"         // For AssertOnly1Thread.
 #include "well_known_classes-inl.h"
 
 using ::art::mirror::Class;
@@ -452,8 +454,6 @@ static void ClearDexFileCookies() REQUIRES_SHARED(Locks::mutator_lock_) {
 }
 
 bool ImageWriter::PrepareImageAddressSpace(TimingLogger* timings) {
-  target_ptr_size_ = InstructionSetPointerSize(compiler_options_.GetInstructionSet());
-
   Thread* const self = Thread::Current();
 
   gc::Heap* const heap = Runtime::Current()->GetHeap();
@@ -2527,11 +2527,18 @@ void ImageWriter::LayoutHelper::AssignImageBinSlot(
   bin_objects_[oat_index][enum_cast<size_t>(bin)].push_back(object.Ptr());
 }
 
+static inline void AssertOnly1Thread() REQUIRES(!Locks::thread_list_lock_) {
+  if (kIsDebugBuild) {
+    Runtime::Current()->GetThreadList()->CheckOnly1Thread(Thread::Current());
+  }
+}
+
 void ImageWriter::CalculateNewObjectOffsets() {
   Thread* const self = Thread::Current();
   Runtime* const runtime = Runtime::Current();
   gc::Heap* const heap = runtime->GetHeap();
 
+  AssertOnly1Thread();
   // Leave space for the header, but do not write it yet, we need to
   // know where image_roots is going to end up
   image_objects_offset_begin_ = RoundUp(sizeof(ImageHeader), kObjectAlignment);  // 64-bit-alignment
@@ -2566,10 +2573,12 @@ void ImageWriter::CalculateNewObjectOffsets() {
   // Deflate monitors before we visit roots since deflating acquires the monitor lock. Acquiring
   // this lock while holding other locks may cause lock order violations.
   {
-    auto deflate_monitor = [](mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_) {
-      Monitor::Deflate(Thread::Current(), obj);
-    };
+    auto deflate_monitor =
+        // NO_THREAD_SAFETY_ANALYSIS: We don't really hold mutator_lock_ exclusively.
+        [](mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_)
+            NO_THREAD_SAFETY_ANALYSIS { Monitor::Deflate(Thread::Current(), obj); };
     heap->VisitObjects(deflate_monitor);
+    // This does not update the MonitorList, which is thus rendered invalid, and is no longer used.
   }
 
   // From this point on, there shall be no GC anymore and no objects shall be allocated.
@@ -3506,35 +3515,52 @@ const uint8_t* ImageWriter::GetQuickCode(ArtMethod* method, const ImageInfo& ima
   return quick_code;
 }
 
+static inline uint32_t ResetNterpFastPathFlags(
+    uint32_t access_flags, ArtMethod* orig, InstructionSet isa)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  DCHECK(orig != nullptr);
+  DCHECK(!orig->IsProxyMethod());  // `UnstartedRuntime` does not support creating proxy classes.
+  DCHECK(!orig->IsRuntimeMethod());
+
+  // Clear old nterp fast path flags.
+  access_flags = ArtMethod::ClearNterpFastPathFlags(access_flags);
+
+  // Check if nterp fast paths are available on the target ISA.
+  std::string_view shorty = orig->GetShortyView();  // Use orig, copy's class not yet ready.
+  uint32_t new_nterp_flags = GetNterpFastPathFlags(shorty, access_flags, isa);
+
+  // Add the new nterp fast path flags, if any.
+  return access_flags | new_nterp_flags;
+}
+
 void ImageWriter::CopyAndFixupMethod(ArtMethod* orig,
                                      ArtMethod* copy,
                                      size_t oat_index) {
-  if (orig->IsAbstract()) {
-    // Ignore the single-implementation info for abstract method.
-    // Do this on orig instead of copy, otherwise there is a crash due to methods
-    // are copied before classes.
-    // TODO: handle fixup of single-implementation method for abstract method.
-    orig->SetHasSingleImplementation(false);
-    orig->SetSingleImplementation(
-        nullptr, Runtime::Current()->GetClassLinker()->GetImagePointerSize());
-  }
-
-  if (!orig->IsRuntimeMethod()) {
-    // If we're compiling a boot image and we have a profile, set methods as
-    // being shared memory (to avoid dirtying them with hotness counter). We
-    // expect important methods to be AOT, and non-important methods to be run
-    // in the interpreter.
-    if (CompilerFilter::DependsOnProfile(compiler_options_.GetCompilerFilter()) &&
-        (compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension())) {
-      orig->SetMemorySharedMethod();
-    }
-  }
-
   memcpy(copy, orig, ArtMethod::Size(target_ptr_size_));
 
   CopyAndFixupReference(copy->GetDeclaringClassAddressWithoutBarrier(),
                         orig->GetDeclaringClassUnchecked<kWithoutReadBarrier>());
-  ResetNterpFastPathFlags(copy, orig);
+
+  if (!orig->IsRuntimeMethod()) {
+    uint32_t access_flags = orig->GetAccessFlags();
+    if (ArtMethod::IsAbstract(access_flags)) {
+      // Ignore the single-implementation info for abstract method.
+      // TODO: handle fixup of single-implementation method for abstract method.
+      access_flags = ArtMethod::SetHasSingleImplementation(access_flags, /*single_impl=*/ false);
+      copy->SetSingleImplementation(nullptr, target_ptr_size_);
+    } else if (mark_memory_shared_methods_ && LIKELY(!ArtMethod::IsIntrinsic(access_flags))) {
+      access_flags = ArtMethod::SetMemorySharedMethod(access_flags);
+      copy->SetHotCounter();
+    }
+
+    InstructionSet isa = compiler_options_.GetInstructionSet();
+    if (isa != kRuntimeISA) {
+      access_flags = ResetNterpFastPathFlags(access_flags, orig, isa);
+    } else {
+      DCHECK_EQ(access_flags, ResetNterpFastPathFlags(access_flags, orig, isa));
+    }
+    copy->SetAccessFlags(access_flags);
+  }
 
   // OatWriter replaces the code_ with an offset value. Here we re-adjust to a pointer relative to
   // oat_begin_
@@ -3754,11 +3780,17 @@ ImageWriter::ImageWriter(const CompilerOptions& compiler_options,
                          jobject class_loader,
                          const std::vector<std::string>* dirty_image_objects)
     : compiler_options_(compiler_options),
+      target_ptr_size_(InstructionSetPointerSize(compiler_options.GetInstructionSet())),
+      // If we're compiling a boot image and we have a profile, set methods as being shared
+      // memory (to avoid dirtying them with hotness counter). We expect important methods
+      // to be AOT, and non-important methods to be run in the interpreter.
+      mark_memory_shared_methods_(
+          CompilerFilter::DependsOnProfile(compiler_options_.GetCompilerFilter()) &&
+              (compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension())),
       boot_image_begin_(Runtime::Current()->GetHeap()->GetBootImagesStartAddress()),
       boot_image_size_(Runtime::Current()->GetHeap()->GetBootImagesSize()),
       global_image_begin_(reinterpret_cast<uint8_t*>(image_begin)),
       image_objects_offset_begin_(0),
-      target_ptr_size_(InstructionSetPointerSize(compiler_options.GetInstructionSet())),
       image_infos_(oat_filenames.size()),
       jni_stub_map_(JniStubKeyHash(compiler_options.GetInstructionSet()),
                     JniStubKeyEquals(compiler_options.GetInstructionSet())),
@@ -3839,33 +3871,6 @@ void ImageWriter::CopyAndFixupPointer(
 template <typename ValueType>
 void ImageWriter::CopyAndFixupPointer(void* object, MemberOffset offset, ValueType src_value) {
   return CopyAndFixupPointer(object, offset, src_value, target_ptr_size_);
-}
-
-void ImageWriter::ResetNterpFastPathFlags(ArtMethod* copy, ArtMethod* orig) {
-  DCHECK(copy != nullptr);
-  DCHECK(orig != nullptr);
-  if (orig->IsRuntimeMethod() || orig->IsProxyMethod()) {
-    return;  // !IsRuntimeMethod() and !IsProxyMethod() for GetShortyView()
-  }
-
-  // Clear old nterp fast path flags.
-  if (copy->HasNterpEntryPointFastPathFlag()) {
-    copy->ClearNterpEntryPointFastPathFlag();  // Flag has other uses, clear it conditionally.
-  }
-  copy->ClearNterpInvokeFastPathFlag();
-
-  // Check if nterp fast paths available on target ISA.
-  std::string_view shorty = orig->GetShortyView();  // Use orig, copy's class not yet ready.
-  uint32_t new_nterp_flags =
-      GetNterpFastPathFlags(shorty, copy->GetAccessFlags(), compiler_options_.GetInstructionSet());
-
-  // Set new nterp fast path flags, if approporiate.
-  if ((new_nterp_flags & kAccNterpEntryPointFastPathFlag) != 0) {
-    copy->SetNterpEntryPointFastPathFlag();
-  }
-  if ((new_nterp_flags & kAccNterpInvokeFastPathFlag) != 0) {
-    copy->SetNterpInvokeFastPathFlag();
-  }
 }
 
 }  // namespace linker

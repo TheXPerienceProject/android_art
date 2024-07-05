@@ -160,13 +160,10 @@ target_config = {
     },
     'art-heap-poisoning' : {
         'run-test' : ['--interpreter',
-                      '--optimizing',
-                      '--cdex-none'],
+                      '--optimizing'],
         'env' : {
             'ART_USE_READ_BARRIER' : 'false',
-            'ART_HEAP_POISONING' : 'true',
-            # Disable compact dex to get coverage of standard dex file usage.
-            'ART_DEFAULT_COMPACT_DEX_LEVEL' : 'none'
+            'ART_HEAP_POISONING' : 'true'
         }
     },
     'art-preopt' : {
@@ -204,9 +201,7 @@ target_config = {
         'make' :  'test-art-host-gtest',
         'env': {
             'ART_DEFAULT_GC_TYPE' : 'SS',
-            'ART_USE_READ_BARRIER' : 'false',
-            # Disable compact dex to get coverage of standard dex file usage.
-            'ART_DEFAULT_COMPACT_DEX_LEVEL' : 'none'
+            'ART_USE_READ_BARRIER' : 'false'
         }
     },
     # TODO: Consider removing this configuration when it is no longer used by

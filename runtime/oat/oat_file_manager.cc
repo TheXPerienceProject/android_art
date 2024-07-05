@@ -829,7 +829,7 @@ void OatFileManager::RunBackgroundVerification(const std::vector<const DexFile*>
 
   std::string dex_location = dex_files[0]->GetLocation();
   const std::string& data_dir = Runtime::Current()->GetProcessDataDirectory();
-  if (!android::base::StartsWith(dex_location, data_dir)) {
+  if (!dex_location.starts_with(data_dir)) {
     // For now, we only run background verification for secondary dex files.
     // Running it for primary or split APKs could have some undesirable
     // side-effects, like overloading the device on app startup.

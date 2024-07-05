@@ -118,6 +118,14 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                     continue;
                 }
 
+                if (mInjector.isPreReboot() && !isDexFileFound(dexInfo)) {
+                    // In the pre-reboot case, it's possible that a dex file doesn't exist in the
+                    // new system image. Although code below can gracefully handle failures, those
+                    // failures can be red herrings in metrics and bug reports, so we skip
+                    // non-existing dex files to avoid them.
+                    continue;
+                }
+
                 DexMetadataInfo dmInfo =
                         mInjector.getDexMetadataHelper().getDexMetadataInfo(buildDmPath(dexInfo));
 
@@ -199,6 +207,27 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                                               .setFlags(mParams.getFlags())
                                               .setNeedsToBePublic(needsToBeShared)
                                               .build();
+
+                        if (mInjector.isPreReboot()) {
+                            ArtifactsPath existingArtifacts =
+                                    AidlUtils.buildArtifactsPathAsInputPreReboot(
+                                            target.dexInfo().dexPath(), target.isa(),
+                                            target.isInDalvikCache());
+                            if (mInjector.getArtd().getArtifactsVisibility(existingArtifacts)
+                                    != FileVisibility.NOT_FOUND) {
+                                // Because `getDexoptNeeded` doesn't check Pre-reboot artifacts, we
+                                // do a simple check here to handle job resuming. If the Pre-reboot
+                                // artifacts exist, we assume they are up-to-date because
+                                // `PreRebootDexoptJob` would otherwise clean them up, so we skip
+                                // this dex file. The profile and the dex file may have been changed
+                                // since the last cancelled job run, but we don't handle such cases
+                                // because we are supposed to dexopt every dex file only once for
+                                // each ISA.
+                                extendedStatusFlags |=
+                                        DexoptResult.EXTENDED_SKIPPED_PRE_REBOOT_ALREADY_EXIST;
+                                continue;
+                            }
+                        }
 
                         GetDexoptNeededResult getDexoptNeededResult =
                                 getDexoptNeeded(target, options);
@@ -637,6 +666,11 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
      * (S_IROTH).
      */
     protected abstract boolean isDexFilePublic(@NonNull DexInfoType dexInfo);
+
+    /**
+     * Returns true if the dex file is found.
+     */
+    protected abstract boolean isDexFileFound(@NonNull DexInfoType dexInfo);
 
     /**
      * Returns a list of external profiles (e.g., a DM profile) that the reference profile can be

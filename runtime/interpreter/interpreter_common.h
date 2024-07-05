@@ -66,38 +66,6 @@
 namespace art HIDDEN {
 namespace interpreter {
 
-// We declare the helper class for transaction checks here but it shall be defined
-// only when compiling the transactional interpreter.
-class ActiveTransactionChecker;
-
-// Define the helper class that does not do any transaction checks.
-class InactiveTransactionChecker {
- public:
-  ALWAYS_INLINE static bool WriteConstraint([[maybe_unused]] Thread* self,
-                                            [[maybe_unused]] ObjPtr<mirror::Object> obj)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    return false;
-  }
-
-  ALWAYS_INLINE static bool WriteValueConstraint([[maybe_unused]] Thread* self,
-                                                 [[maybe_unused]] ObjPtr<mirror::Object> value)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    return false;
-  }
-
-  ALWAYS_INLINE static bool ReadConstraint([[maybe_unused]] Thread* self,
-                                           [[maybe_unused]] ObjPtr<mirror::Object> value)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    return false;
-  }
-
-  ALWAYS_INLINE static bool AllocationConstraint([[maybe_unused]] Thread* self,
-                                                 [[maybe_unused]] ObjPtr<mirror::Class> klass)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    return false;
-  }
-};
-
 void ThrowNullPointerExceptionFromInterpreter()
     REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -142,9 +110,6 @@ static inline bool DoMonitorCheckOnExit(Thread* self, ShadowFrame* frame)
   return true;
 }
 
-void RecordArrayElementsInTransaction(ObjPtr<mirror::Array> array, int32_t count)
-    REQUIRES_SHARED(Locks::mutator_lock_);
-
 // Invokes the given method. This is part of the invocation support and is used by DoInvoke,
 // DoFastInvoke and DoInvokeVirtualQuick functions.
 // Returns true on success, otherwise throws an exception and returns false.
@@ -184,29 +149,11 @@ NeedsMethodExitEvent(const instrumentation::Instrumentation* ins)
 COLD_ATTR void UnlockHeldMonitors(Thread* self, ShadowFrame* shadow_frame)
     REQUIRES_SHARED(Locks::mutator_lock_);
 
-static inline ALWAYS_INLINE void PerformNonStandardReturn(
-      Thread* self,
-      ShadowFrame& frame,
-      JValue& result,
-      const instrumentation::Instrumentation* instrumentation,
-      uint16_t num_dex_inst,
-      bool unlock_monitors = true) REQUIRES_SHARED(Locks::mutator_lock_) {
-  ObjPtr<mirror::Object> thiz(frame.GetThisObject(num_dex_inst));
-  StackHandleScope<1u> hs(self);
-  if (UNLIKELY(self->IsExceptionPending())) {
-    LOG(WARNING) << "Suppressing exception for non-standard method exit: "
-                 << self->GetException()->Dump();
-    self->ClearException();
-  }
-  if (unlock_monitors) {
-    UnlockHeldMonitors(self, &frame);
-    DoMonitorCheckOnExit(self, &frame);
-  }
-  result = JValue();
-  if (UNLIKELY(NeedsMethodExitEvent(instrumentation))) {
-    SendMethodExitEvents(self, instrumentation, frame, frame.GetMethod(), result);
-  }
-}
+void PerformNonStandardReturn(Thread* self,
+                              ShadowFrame& frame,
+                              JValue& result,
+                              const instrumentation::Instrumentation* instrumentation,
+                              bool unlock_monitors = true) REQUIRES_SHARED(Locks::mutator_lock_);
 
 // Handles all invoke-XXX/range instructions except for invoke-polymorphic[/range].
 // Returns true on success, otherwise throws an exception and returns false.
@@ -373,201 +320,6 @@ static inline void GetFieldInfo(Thread* self,
   }
 }
 
-// Handles iget-XXX and sget-XXX instructions.
-// Returns true on success, otherwise throws an exception and returns false.
-template<FindFieldType find_type,
-         Primitive::Type field_type,
-         bool transaction_active = false>
-ALWAYS_INLINE bool DoFieldGet(Thread* self,
-                              ShadowFrame& shadow_frame,
-                              const Instruction* inst,
-                              uint16_t inst_data) REQUIRES_SHARED(Locks::mutator_lock_) {
-  const bool is_static = (find_type == StaticObjectRead) || (find_type == StaticPrimitiveRead);
-  bool should_report = Runtime::Current()->GetInstrumentation()->HasFieldReadListeners();
-  ArtField* field = nullptr;
-  MemberOffset offset(0u);
-  bool is_volatile;
-  GetFieldInfo(self,
-               shadow_frame.GetMethod(),
-               reinterpret_cast<const uint16_t*>(inst),
-               is_static,
-               /*resolve_field_type=*/ false,
-               &field,
-               &is_volatile,
-               &offset);
-  if (self->IsExceptionPending()) {
-    return false;
-  }
-
-  ObjPtr<mirror::Object> obj;
-  if (is_static) {
-    obj = field->GetDeclaringClass();
-    using TransactionChecker = typename std::conditional_t<
-        transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
-    if (TransactionChecker::ReadConstraint(self, obj)) {
-      return false;
-    }
-  } else {
-    obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
-    if (should_report || obj == nullptr) {
-      field = ResolveFieldWithAccessChecks(self,
-                                           Runtime::Current()->GetClassLinker(),
-                                           inst->VRegC_22c(),
-                                           shadow_frame.GetMethod(),
-                                           /* is_static= */ false,
-                                           /* is_put= */ false,
-                                           /* resolve_field_type= */ false);
-      if (obj == nullptr) {
-        ThrowNullPointerExceptionForFieldAccess(
-            field, shadow_frame.GetMethod(), /* is_read= */ true);
-        return false;
-      }
-      // Reload in case suspension happened during field resolution.
-      obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
-    }
-  }
-
-  uint32_t vregA = is_static ? inst->VRegA_21c(inst_data) : inst->VRegA_22c(inst_data);
-  JValue result;
-  if (should_report) {
-    DCHECK(field != nullptr);
-    if (UNLIKELY(!DoFieldGetCommon<field_type>(self, shadow_frame, obj, field, &result))) {
-      // Instrumentation threw an error!
-      CHECK(self->IsExceptionPending());
-      return false;
-    }
-  }
-
-#define FIELD_GET(prim, type, jtype, vreg)                                      \
-  case Primitive::kPrim ##prim:                                                 \
-    shadow_frame.SetVReg ##vreg(vregA,                                          \
-        should_report ? result.Get ##jtype()                                    \
-                      : is_volatile ? obj->GetField ## type ## Volatile(offset) \
-                                    : obj->GetField ##type(offset));            \
-    break;
-
-  switch (field_type) {
-    FIELD_GET(Boolean, Boolean, Z, )
-    FIELD_GET(Byte, Byte, B, )
-    FIELD_GET(Char, Char, C, )
-    FIELD_GET(Short, Short, S, )
-    FIELD_GET(Int, 32, I, )
-    FIELD_GET(Long, 64, J, Long)
-#undef FIELD_GET
-    case Primitive::kPrimNot:
-      shadow_frame.SetVRegReference(
-          vregA,
-          should_report ? result.GetL()
-                        : is_volatile ? obj->GetFieldObjectVolatile<mirror::Object>(offset)
-                                      : obj->GetFieldObject<mirror::Object>(offset));
-      break;
-    default:
-      LOG(FATAL) << "Unreachable: " << field_type;
-      UNREACHABLE();
-  }
-  return true;
-}
-
-// Handles iput-XXX and sput-XXX instructions.
-// Returns true on success, otherwise throws an exception and returns false.
-template<FindFieldType find_type, Primitive::Type field_type, bool transaction_active>
-ALWAYS_INLINE bool DoFieldPut(Thread* self,
-                              const ShadowFrame& shadow_frame,
-                              const Instruction* inst,
-                              uint16_t inst_data)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
-  bool should_report = Runtime::Current()->GetInstrumentation()->HasFieldWriteListeners();
-  bool is_static = (find_type == StaticObjectWrite) || (find_type == StaticPrimitiveWrite);
-  uint32_t vregA = is_static ? inst->VRegA_21c(inst_data) : inst->VRegA_22c(inst_data);
-  bool resolve_field_type = (shadow_frame.GetVRegReference(vregA) != nullptr);
-  ArtField* field = nullptr;
-  MemberOffset offset(0u);
-  bool is_volatile;
-  GetFieldInfo(self,
-               shadow_frame.GetMethod(),
-               reinterpret_cast<const uint16_t*>(inst),
-               is_static,
-               resolve_field_type,
-               &field,
-               &is_volatile,
-               &offset);
-  if (self->IsExceptionPending()) {
-    return false;
-  }
-
-  ObjPtr<mirror::Object> obj;
-  if (is_static) {
-    obj = field->GetDeclaringClass();
-  } else {
-    obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
-    if (should_report || obj == nullptr) {
-      field = ResolveFieldWithAccessChecks(self,
-                                           Runtime::Current()->GetClassLinker(),
-                                           inst->VRegC_22c(),
-                                           shadow_frame.GetMethod(),
-                                           /* is_static= */ false,
-                                           /* is_put= */ true,
-                                           resolve_field_type);
-      if (UNLIKELY(obj == nullptr)) {
-        ThrowNullPointerExceptionForFieldAccess(
-            field, shadow_frame.GetMethod(), /* is_read= */ false);
-        return false;
-      }
-      // Reload in case suspension happened during field resolution.
-      obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
-    }
-  }
-  using TransactionChecker = typename std::conditional_t<
-      transaction_active, ActiveTransactionChecker, InactiveTransactionChecker>;
-  if (TransactionChecker::WriteConstraint(self, obj)) {
-    return false;
-  }
-
-  JValue value = GetFieldValue<field_type>(shadow_frame, vregA);
-
-  if (field_type == Primitive::kPrimNot &&
-      TransactionChecker::WriteValueConstraint(self, value.GetL())) {
-    return false;
-  }
-  if (should_report) {
-    return DoFieldPutCommon<field_type, transaction_active>(self,
-                                                            shadow_frame,
-                                                            obj,
-                                                            field,
-                                                            value);
-  }
-#define FIELD_SET(prim, type, jtype) \
-  case Primitive::kPrim ## prim: \
-    if (is_volatile) { \
-      obj->SetField ## type ## Volatile<transaction_active>(offset, value.Get ## jtype()); \
-    } else { \
-      obj->SetField ## type<transaction_active>(offset, value.Get ## jtype()); \
-    } \
-    break;
-
-  switch (field_type) {
-    FIELD_SET(Boolean, Boolean, Z)
-    FIELD_SET(Byte, Byte, B)
-    FIELD_SET(Char, Char, C)
-    FIELD_SET(Short, Short, S)
-    FIELD_SET(Int, 32, I)
-    FIELD_SET(Long, 64, J)
-    FIELD_SET(Not, Object, L)
-    case Primitive::kPrimVoid: {
-      LOG(FATAL) << "Unreachable " << field_type;
-      break;
-    }
-  }
-#undef FIELD_SET
-
-  if (transaction_active) {
-    if (UNLIKELY(self->IsExceptionPending())) {
-      return false;
-    }
-  }
-  return true;
-}
-
 // Handles string resolution for const-string and const-string-jumbo instructions. Also ensures the
 // java.lang.String class is initialized.
 static inline ObjPtr<mirror::String> ResolveString(Thread* self,
@@ -669,7 +421,7 @@ static inline bool DoLongRemainder(ShadowFrame& shadow_frame,
 
 // Handles filled-new-array and filled-new-array-range instructions.
 // Returns true on success, otherwise throws an exception and returns false.
-template <bool is_range, bool transaction_active>
+template <bool is_range>
 bool DoFilledNewArray(const Instruction* inst,
                       const ShadowFrame& shadow_frame,
                       Thread* self,

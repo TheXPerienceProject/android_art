@@ -64,7 +64,7 @@ cc_defaults {
     ],
     srcs: ["odrefresh_main.cc"],
     shared_libs: [
-        "libarttools", // Contains "libc++fs".
+        "libarttools",
         "libbase",
         "libdexfile",
     ],

@@ -22,12 +22,21 @@ interface IDexoptChrootSetup {
     const @utf8InCpp String CHROOT_DIR = PRE_REBOOT_DEXOPT_DIR + "/chroot";
 
     /**
-     * Sets up the chroot environment.
+     * Sets up the chroot environment. All files in chroot, except apexes and the linker config, are
+     * accessible after this method is called.
      *
      * @param otaSlot The slot that contains the OTA update, "_a" or "_b", or null for a Mainline
      *         update.
+     * @param mapSnapshotsForOta Whether to map/unmap snapshots. Only applicable to an OTA update.
      */
-    void setUp(@nullable @utf8InCpp String otaSlot);
+    void setUp(@nullable @utf8InCpp String otaSlot, boolean mapSnapshotsForOta);
+
+    /**
+     * Initializes the chroot environment. Can only be called after {@link #setUp}. Apexes and
+     * the linker config in chroot are accessible, and binaries are executable in chroot, after
+     * this method is called.
+     */
+    void init();
 
     /** Tears down the chroot environment. */
     void tearDown();

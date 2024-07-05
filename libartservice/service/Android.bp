@@ -32,6 +32,7 @@ cc_defaults {
     ],
     export_include_dirs: ["native"],
     shared_libs: [
+        "liblog", // Used by "JNIHelp.h".
         "libnativehelper",
     ],
 }
@@ -46,7 +47,7 @@ cc_library {
     shared_libs: [
         "libart",
         "libartbase",
-        "libarttools", // Contains "libc++fs".
+        "libarttools",
         "libbase",
     ],
     sdclang: false,
@@ -65,7 +66,7 @@ cc_library {
     shared_libs: [
         "libartd",
         "libartbased",
-        "libarttools", // Contains "libc++fs".
+        "libarttools",
         "libbase",
     ],
 }

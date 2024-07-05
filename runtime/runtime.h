@@ -20,7 +20,6 @@
 #include <jni.h>
 #include <stdio.h>
 
-#include <forward_list>
 #include <iosfwd>
 #include <memory>
 #include <optional>
@@ -35,7 +34,6 @@
 #include "base/mem_map.h"
 #include "base/metrics/metrics.h"
 #include "base/os.h"
-#include "base/string_view_cpp20.h"
 #include "base/unix_file/fd_file.h"
 #include "compat_framework.h"
 #include "deoptimization_kind.h"
@@ -120,7 +118,6 @@ class ThreadList;
 class ThreadPool;
 class Trace;
 struct TraceConfig;
-class Transaction;
 
 using RuntimeOptions = std::vector<std::pair<std::string, const void*>>;
 
@@ -482,9 +479,6 @@ class Runtime {
   void VisitNonThreadRoots(RootVisitor* visitor)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  void VisitTransactionRoots(RootVisitor* visitor)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
   // Sweep system weaks, the system weak is deleted if the visitor return null. Otherwise, the
   // system weak is updated to be the visitor's returned value.
   EXPORT void SweepSystemWeaks(IsMarkedVisitor* visitor) REQUIRES_SHARED(Locks::mutator_lock_);
@@ -626,75 +620,19 @@ class Runtime {
                        const std::string& ref_profile_filename,
                        int32_t code_type);
 
-  // Transaction support.
-  EXPORT bool IsActiveTransaction() const;
-  // EnterTransactionMode may suspend.
-  EXPORT void EnterTransactionMode(bool strict, mirror::Class* root)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  EXPORT void ExitTransactionMode();
-  EXPORT void RollbackAllTransactions() REQUIRES_SHARED(Locks::mutator_lock_);
-  // Transaction rollback and exit transaction are always done together, it's convenience to
-  // do them in one function.
-  void RollbackAndExitTransactionMode() REQUIRES_SHARED(Locks::mutator_lock_);
-  bool IsTransactionAborted() const;
-  const Transaction* GetTransaction() const;
-  Transaction* GetTransaction();
-  bool IsActiveStrictTransactionMode() const;
+  void SetActiveTransaction() {
+    DCHECK(IsAotCompiler());
+    active_transaction_ = true;
+  }
 
-  void AbortTransactionAndThrowAbortError(Thread* self, const std::string& abort_message)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  void ThrowTransactionAbortError(Thread* self)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  void ClearActiveTransaction() {
+    DCHECK(IsAotCompiler());
+    active_transaction_ = false;
+  }
 
-  void AbortTransactionF(Thread* self, const char* fmt, ...)
-      __attribute__((__format__(__printf__, 3, 4)))
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void AbortTransactionV(Thread* self, const char* fmt, va_list args)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void RecordWriteFieldBoolean(mirror::Object* obj,
-                               MemberOffset field_offset,
-                               uint8_t value,
-                               bool is_volatile);
-  void RecordWriteFieldByte(mirror::Object* obj,
-                            MemberOffset field_offset,
-                            int8_t value,
-                            bool is_volatile);
-  void RecordWriteFieldChar(mirror::Object* obj,
-                            MemberOffset field_offset,
-                            uint16_t value,
-                            bool is_volatile);
-  void RecordWriteFieldShort(mirror::Object* obj,
-                             MemberOffset field_offset,
-                             int16_t value,
-                             bool is_volatile);
-  EXPORT void RecordWriteField32(mirror::Object* obj,
-                                 MemberOffset field_offset,
-                                 uint32_t value,
-                                 bool is_volatile);
-  void RecordWriteField64(mirror::Object* obj,
-                          MemberOffset field_offset,
-                          uint64_t value,
-                          bool is_volatile);
-  EXPORT void RecordWriteFieldReference(mirror::Object* obj,
-                                        MemberOffset field_offset,
-                                        ObjPtr<mirror::Object> value,
-                                        bool is_volatile) REQUIRES_SHARED(Locks::mutator_lock_);
-  EXPORT void RecordWriteArray(mirror::Array* array, size_t index, uint64_t value)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  void RecordStrongStringInsertion(ObjPtr<mirror::String> s)
-      REQUIRES(Locks::intern_table_lock_);
-  void RecordWeakStringInsertion(ObjPtr<mirror::String> s)
-      REQUIRES(Locks::intern_table_lock_);
-  void RecordStrongStringRemoval(ObjPtr<mirror::String> s)
-      REQUIRES(Locks::intern_table_lock_);
-  void RecordWeakStringRemoval(ObjPtr<mirror::String> s)
-      REQUIRES(Locks::intern_table_lock_);
-  void RecordResolveString(ObjPtr<mirror::DexCache> dex_cache, dex::StringIndex string_idx)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  void RecordResolveMethodType(ObjPtr<mirror::DexCache> dex_cache, dex::ProtoIndex proto_idx)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  bool IsActiveTransaction() {
+    return active_transaction_;
+  }
 
   void SetFaultMessage(const std::string& message);
 
@@ -1401,11 +1339,12 @@ class Runtime {
   // If true, then we dump the GC cumulative timings on shutdown.
   bool dump_gc_performance_on_shutdown_;
 
-  // Transactions used for pre-initializing classes at compilation time.
-  // Support nested transactions, maintain a list containing all transactions. Transactions are
-  // handled under a stack discipline. Because GC needs to go over all transactions, we choose list
-  // as substantial data structure instead of stack.
-  std::forward_list<Transaction> preinitialization_transactions_;
+  // Transactions are handled by the `AotClassLinker` but we keep a simple flag
+  // in the `Runtime` for quick transaction checks.
+  // Code that's not AOT-specific but needs some transaction-specific behavior
+  // shall check this flag and, for an active transaction, make virtual calls
+  // through `ClassLinker` to `AotClassLinker` to implement that behavior.
+  bool active_transaction_;
 
   // If kNone, verification is disabled. kEnable by default.
   verifier::VerifyMode verify_;

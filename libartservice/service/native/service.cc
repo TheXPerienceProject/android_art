@@ -23,17 +23,21 @@
 
 #include "android-base/errors.h"
 #include "android-base/file.h"
+#include "android-base/properties.h"
 #include "android-base/result.h"
 #include "class_loader_context.h"
 #include "gc/heap.h"
+#include "nativehelper/JNIHelp.h"
 #include "nativehelper/utils.h"
 #include "runtime.h"
+#include "tools/tools.h"
 
 namespace art {
 namespace service {
 
 using ::android::base::Dirname;
 using ::android::base::Result;
+using ::android::base::SetProperty;
 
 Result<void> ValidateAbsoluteNormalPath(const std::string& path_str) {
   if (path_str.empty()) {
@@ -132,6 +136,33 @@ Java_com_android_server_art_ArtJni_validateClassLoaderContextNative(
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_android_server_art_ArtJni_getGarbageCollectorNative(JNIEnv* env, jobject) {
   return CREATE_UTF_OR_RETURN(env, GetGarbageCollector()).release();
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_android_server_art_ArtJni_setPropertyNative(
+    JNIEnv* env, jobject, jstring j_key, jstring j_value) {
+  std::string key(GET_UTF_OR_RETURN_VOID(env, j_key));
+  std::string value(GET_UTF_OR_RETURN_VOID(env, j_value));
+  if (!SetProperty(key, value)) {
+    jniThrowExceptionFmt(env,
+                         "java/lang/IllegalStateException",
+                         "Failed to set property '%s' to '%s'",
+                         key.c_str(),
+                         value.c_str());
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_android_server_art_ArtJni_ensureNoProcessInDirNative(
+    JNIEnv* env, jobject, jstring j_dir, jint j_timeout_ms) {
+  if (j_timeout_ms < 0) {
+    jniThrowExceptionFmt(
+        env, "java/lang/IllegalArgumentException", "Negative timeout '%d'", j_timeout_ms);
+    return;
+  }
+  std::string dir(GET_UTF_OR_RETURN_VOID(env, j_dir));
+  if (Result<void> result = tools::EnsureNoProcessInDir(dir, j_timeout_ms, /*try_kill=*/true);
+      !result.ok()) {
+    jniThrowException(env, "java/io/IOException", result.error().message().c_str());
+  }
 }
 
 }  // namespace service

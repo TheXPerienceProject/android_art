@@ -359,11 +359,15 @@ class EXPORT ArtMethod final {
   }
 
   void SetMemorySharedMethod() REQUIRES_SHARED(Locks::mutator_lock_) {
-    uint32_t access_flags = GetAccessFlags();
-    if (!IsIntrinsic(access_flags) && !IsAbstract(access_flags)) {
-      AddAccessFlags(kAccMemorySharedMethod);
-      SetHotCounter();
-    }
+    DCHECK(!IsIntrinsic());
+    DCHECK(!IsAbstract());
+    AddAccessFlags(kAccMemorySharedMethod);
+  }
+
+  static uint32_t SetMemorySharedMethod(uint32_t access_flags) {
+    DCHECK(!IsIntrinsic(access_flags));
+    DCHECK(!IsAbstract(access_flags));
+    return access_flags | kAccMemorySharedMethod;
   }
 
   void ClearMemorySharedMethod() REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -597,6 +601,15 @@ class EXPORT ArtMethod final {
     ClearAccessFlags(kAccNterpInvokeFastPathFlag);
   }
 
+  static uint32_t ClearNterpFastPathFlags(uint32_t access_flags) {
+    // `kAccNterpEntryPointFastPathFlag` has a different use for native methods.
+    if (!IsNative(access_flags)) {
+      access_flags &= ~kAccNterpEntryPointFastPathFlag;
+    }
+    access_flags &= ~kAccNterpInvokeFastPathFlag;
+    return access_flags;
+  }
+
   // Returns whether the method is a string constructor. The method must not
   // be a class initializer. (Class initializers are called from a different
   // context where we do not need to check for string constructors.)
@@ -766,11 +779,7 @@ class EXPORT ArtMethod final {
   }
   ALWAYS_INLINE void SetEntryPointFromQuickCompiledCodePtrSize(
       const void* entry_point_from_quick_compiled_code, PointerSize pointer_size)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    SetNativePointer(EntryPointFromQuickCompiledCodeOffset(pointer_size),
-                     entry_point_from_quick_compiled_code,
-                     pointer_size);
-  }
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   static constexpr MemberOffset DataOffset(PointerSize pointer_size) {
     return MemberOffset(PtrSizedFieldsOffset(pointer_size) + OFFSETOF_MEMBER(
@@ -812,6 +821,15 @@ class EXPORT ArtMethod final {
 
   ALWAYS_INLINE bool HasSingleImplementationFlag() const {
     return (GetAccessFlags() & kAccSingleImplementation) != 0;
+  }
+
+  static uint32_t SetHasSingleImplementation(uint32_t access_flags, bool single_impl) {
+    DCHECK(!IsIntrinsic(access_flags)) << "conflict with intrinsic bits";
+    if (single_impl) {
+      return access_flags | kAccSingleImplementation;
+    } else {
+      return access_flags & ~kAccSingleImplementation;
+    }
   }
 
   // Takes a method and returns a 'canonical' one if the method is default (and therefore
@@ -993,7 +1011,6 @@ class EXPORT ArtMethod final {
   ALWAYS_INLINE void UpdateCounter(int32_t new_samples);
   ALWAYS_INLINE void SetHotCounter();
   ALWAYS_INLINE bool CounterIsHot();
-  ALWAYS_INLINE bool CounterHasReached(uint16_t samples, uint16_t threshold);
   ALWAYS_INLINE uint16_t GetCounter();
   ALWAYS_INLINE bool CounterHasChanged(uint16_t threshold);
 
@@ -1191,6 +1208,8 @@ class EXPORT ArtMethod final {
 
   // Used by GetName and GetNameView to share common code.
   const char* GetRuntimeMethodName() REQUIRES_SHARED(Locks::mutator_lock_);
+
+  friend class RuntimeImageHelper;  // For SetNativePointer.
 
   DISALLOW_COPY_AND_ASSIGN(ArtMethod);  // Need to use CopyFrom to deal with 32 vs 64 bits.
 };

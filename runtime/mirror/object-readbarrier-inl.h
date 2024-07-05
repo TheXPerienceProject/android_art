@@ -20,6 +20,7 @@
 #include "object.h"
 
 #include "base/atomic.h"
+#include "class_linker.h"
 #include "heap_poisoning.h"
 #include "lock_word-inl.h"
 #include "object_reference-inl.h"
@@ -54,7 +55,8 @@ inline bool Object::CasField32(MemberOffset field_offset,
 
   bool success = atomic_addr->CompareAndSet(old_value, new_value, mode, memory_order);
   if (kTransactionActive && success) {
-    Runtime::Current()->RecordWriteField32(this, field_offset, old_value, /*is_volatile=*/ true);
+    Runtime::Current()->GetClassLinker()->RecordWriteField32(
+        this, field_offset, old_value, /*is_volatile=*/ true);
   }
   return success;
 }

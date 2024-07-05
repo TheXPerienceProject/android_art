@@ -813,60 +813,58 @@ struct CmdlineType<ProfileSaverOptions> : CmdlineTypeParser<ProfileSaverOptions>
     // The rest of these options are always the wildcard from '-Xps-*'
     std::string suffix = RemovePrefix(option);
 
-    if (android::base::StartsWith(option, "min-save-period-ms:")) {
+    if (option.starts_with("min-save-period-ms:")) {
       CmdlineType<unsigned int> type_parser;
       return ParseInto(existing,
              &ProfileSaverOptions::min_save_period_ms_,
              type_parser.Parse(suffix));
     }
-    if (android::base::StartsWith(option, "min-first-save-ms:")) {
+    if (option.starts_with("min-first-save-ms:")) {
       CmdlineType<unsigned int> type_parser;
       return ParseInto(existing,
              &ProfileSaverOptions::min_first_save_ms_,
              type_parser.Parse(suffix));
     }
-    if (android::base::StartsWith(option, "save-resolved-classes-delay-ms:")) {
+    if (option.starts_with("save-resolved-classes-delay-ms:")) {
       CmdlineType<unsigned int> type_parser;
       return ParseInto(existing,
              &ProfileSaverOptions::save_resolved_classes_delay_ms_,
              type_parser.Parse(suffix));
     }
-    if (android::base::StartsWith(option, "hot-startup-method-samples:")) {
-      CmdlineType<unsigned int> type_parser;
-      return ParseInto(existing,
-             &ProfileSaverOptions::hot_startup_method_samples_,
-             type_parser.Parse(suffix));
+    if (option.starts_with("hot-startup-method-samples:")) {
+      LOG(WARNING) << "-Xps-hot-startup-method-samples option is deprecated";
+      return Result::SuccessNoValue();
     }
-    if (android::base::StartsWith(option, "min-methods-to-save:")) {
+    if (option.starts_with("min-methods-to-save:")) {
       CmdlineType<unsigned int> type_parser;
       return ParseInto(existing,
              &ProfileSaverOptions::min_methods_to_save_,
              type_parser.Parse(suffix));
     }
-    if (android::base::StartsWith(option, "min-classes-to-save:")) {
+    if (option.starts_with("min-classes-to-save:")) {
       CmdlineType<unsigned int> type_parser;
       return ParseInto(existing,
              &ProfileSaverOptions::min_classes_to_save_,
              type_parser.Parse(suffix));
     }
-    if (android::base::StartsWith(option, "min-notification-before-wake:")) {
+    if (option.starts_with("min-notification-before-wake:")) {
       CmdlineType<unsigned int> type_parser;
       return ParseInto(existing,
              &ProfileSaverOptions::min_notification_before_wake_,
              type_parser.Parse(suffix));
     }
-    if (android::base::StartsWith(option, "max-notification-before-wake:")) {
+    if (option.starts_with("max-notification-before-wake:")) {
       CmdlineType<unsigned int> type_parser;
       return ParseInto(existing,
              &ProfileSaverOptions::max_notification_before_wake_,
              type_parser.Parse(suffix));
     }
-    if (android::base::StartsWith(option, "inline-cache-threshold:")) {
+    if (option.starts_with("inline-cache-threshold:")) {
       CmdlineType<uint16_t> type_parser;
       return ParseInto(
           existing, &ProfileSaverOptions::inline_cache_threshold_, type_parser.Parse(suffix));
     }
-    if (android::base::StartsWith(option, "profile-path:")) {
+    if (option.starts_with("profile-path:")) {
       existing.profile_path_ = suffix;
       return Result::SuccessNoValue();
     }

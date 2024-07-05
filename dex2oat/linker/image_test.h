@@ -247,8 +247,7 @@ inline void ImageTest::DoCompile(ImageHeader::StorageMode storage_mode,
         oat_writers.emplace_back(new OatWriter(*compiler_options_,
                                                verification_results_.get(),
                                                &timings,
-                                               /*profile_compilation_info*/nullptr,
-                                               CompactDexLevel::kCompactDexLevelNone));
+                                               /*profile_compilation_info*/nullptr));
       }
 
       std::vector<OutputStream*> rodata;

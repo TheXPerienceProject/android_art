@@ -18,37 +18,7 @@ LOCAL_PATH := $(call my-dir)
 
 art_path := $(LOCAL_PATH)
 
-include $(art_path)/tools/veridex/Android.mk
-
-########################################################################
-# clean-oat rules
-#
-
 include $(art_path)/build/Android.common_path.mk
-
-.PHONY: clean-oat
-clean-oat: clean-oat-host clean-oat-target
-
-.PHONY: clean-oat-host
-clean-oat-host:
-	find $(OUT_DIR) '(' -name '*.oat' -o -name '*.odex' -o -name '*.art' -o -name '*.vdex' ')' -a -type f | xargs rm -f
-	rm -rf $(TMPDIR)/*/test-*/dalvik-cache/*
-	rm -rf $(TMPDIR)/android-data/dalvik-cache/*
-
-.PHONY: clean-oat-target
-clean-oat-target:
-	$(ADB) root
-	$(ADB) wait-for-device remount
-	$(ADB) shell rm -rf $(ART_TARGET_NATIVETEST_DIR)
-	$(ADB) shell rm -rf $(ART_TARGET_TEST_DIR)
-	$(ADB) shell rm -rf $(ART_TARGET_DALVIK_CACHE_DIR)/*/*
-	$(ADB) shell rm -rf $(ART_DEXPREOPT_BOOT_JAR_DIR)/$(DEX2OAT_TARGET_ARCH)
-	$(ADB) shell rm -rf system/app/$(DEX2OAT_TARGET_ARCH)
-ifdef TARGET_2ND_ARCH
-	$(ADB) shell rm -rf $(ART_DEXPREOPT_BOOT_JAR_DIR)/$($(TARGET_2ND_ARCH_VAR_PREFIX)DEX2OAT_TARGET_ARCH)
-	$(ADB) shell rm -rf system/app/$($(TARGET_2ND_ARCH_VAR_PREFIX)DEX2OAT_TARGET_ARCH)
-endif
-	$(ADB) shell rm -rf data/run-test/test-*/dalvik-cache/*
 
 ########################################################################
 # cpplint rules to style check art source files
@@ -77,7 +47,6 @@ LOCAL_REQUIRED_MODULES := \
 # APEX builds when HOST_PREFER_32_BIT is set (b/120617876).
 ifneq ($(HOST_PREFER_32_BIT),true)
 LOCAL_REQUIRED_MODULES += \
-    dexdiag \
     dexlist \
     oatdump \
 
@@ -90,7 +59,6 @@ endif # HOST_OS != darwin
 # product rules
 
 include $(art_path)/tools/ahat/Android.mk
-include $(art_path)/tools/dexfuzz/Android.mk
 
 ART_HOST_DEPENDENCIES := \
   $(ART_HOST_EXECUTABLES) \
@@ -115,17 +83,6 @@ include $(art_path)/build/Android.gtest.mk
 include $(art_path)/test/Android.run-test.mk
 
 TEST_ART_TARGET_SYNC_DEPS += $(ART_TEST_TARGET_GTEST_DEPENDENCIES) $(ART_TEST_TARGET_RUN_TEST_DEPENDENCIES)
-
-# Make sure /system is writable on the device.
-TEST_ART_ADB_ROOT_AND_REMOUNT := \
-    ($(ADB) root && \
-     $(ADB) wait-for-device remount && \
-     (($(ADB) shell touch /system/testfile && \
-       ($(ADB) shell rm /system/testfile || true)) || \
-      ($(ADB) disable-verity && \
-       $(ADB) reboot && \
-       $(ADB) wait-for-device root && \
-       $(ADB) wait-for-device remount)))
 
 # "mm test-art" to build and run all tests on host and device
 .PHONY: test-art
@@ -635,96 +592,6 @@ build-art-target-run-tests: build-art-target \
                             art-run-test-target-data
 
 build-art-target-tests: build-art-target-gtests build-art-target-run-tests
-
-########################################################################
-# targets to switch back and forth from libdvm to libart
-
-.PHONY: use-art
-use-art:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libart.so
-	$(ADB) shell start
-
-.PHONY: use-artd
-use-artd:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libartd.so
-	$(ADB) shell start
-
-.PHONY: use-dalvik
-use-dalvik:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libdvm.so
-	$(ADB) shell start
-
-.PHONY: use-art-full
-use-art-full:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell rm -rf $(ART_TARGET_DALVIK_CACHE_DIR)/*
-	$(ADB) shell setprop dalvik.vm.dex2oat-filter \"\"
-	$(ADB) shell setprop dalvik.vm.image-dex2oat-filter \"\"
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libart.so
-	$(ADB) shell setprop dalvik.vm.usejit false
-	$(ADB) shell start
-
-.PHONY: use-artd-full
-use-artd-full:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell rm -rf $(ART_TARGET_DALVIK_CACHE_DIR)/*
-	$(ADB) shell setprop dalvik.vm.dex2oat-filter \"\"
-	$(ADB) shell setprop dalvik.vm.image-dex2oat-filter \"\"
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libartd.so
-	$(ADB) shell setprop dalvik.vm.usejit false
-	$(ADB) shell start
-
-.PHONY: use-art-jit
-use-art-jit:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell rm -rf $(ART_TARGET_DALVIK_CACHE_DIR)/*
-	$(ADB) shell setprop dalvik.vm.dex2oat-filter "verify-at-runtime"
-	$(ADB) shell setprop dalvik.vm.image-dex2oat-filter "verify-at-runtime"
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libart.so
-	$(ADB) shell setprop dalvik.vm.usejit true
-	$(ADB) shell start
-
-.PHONY: use-art-interpret-only
-use-art-interpret-only:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell rm -rf $(ART_TARGET_DALVIK_CACHE_DIR)/*
-	$(ADB) shell setprop dalvik.vm.dex2oat-filter "interpret-only"
-	$(ADB) shell setprop dalvik.vm.image-dex2oat-filter "interpret-only"
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libart.so
-	$(ADB) shell setprop dalvik.vm.usejit false
-	$(ADB) shell start
-
-.PHONY: use-artd-interpret-only
-use-artd-interpret-only:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell rm -rf $(ART_TARGET_DALVIK_CACHE_DIR)/*
-	$(ADB) shell setprop dalvik.vm.dex2oat-filter "interpret-only"
-	$(ADB) shell setprop dalvik.vm.image-dex2oat-filter "interpret-only"
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libartd.so
-	$(ADB) shell setprop dalvik.vm.usejit false
-	$(ADB) shell start
-
-.PHONY: use-art-verify-none
-use-art-verify-none:
-	$(ADB) root
-	$(ADB) wait-for-device shell stop
-	$(ADB) shell rm -rf $(ART_TARGET_DALVIK_CACHE_DIR)/*
-	$(ADB) shell setprop dalvik.vm.dex2oat-filter "verify-none"
-	$(ADB) shell setprop dalvik.vm.image-dex2oat-filter "verify-none"
-	$(ADB) shell setprop persist.sys.dalvik.vm.lib.2 libart.so
-	$(ADB) shell setprop dalvik.vm.usejit false
-	$(ADB) shell start
 
 ########################################################################
 

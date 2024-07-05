@@ -192,6 +192,15 @@ interface IArtd {
             boolean keepPreRebootStagedFiles);
 
     /**
+     * Deletes all Pre-reboot staged files.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
+     * Throws fatal errors. Logs and ignores non-fatal errors.
+     */
+    void cleanUpPreRebootStagedFiles();
+
+    /**
      * Returns whether the artifacts of the primary dex files should be in the global dalvik-cache
      * directory.
      *
@@ -263,24 +272,47 @@ interface IArtd {
      * Not supported in Pre-reboot Dexopt mode.
      *
      * Throws fatal and non-fatal errors.
+     *
+     * @return true if any file has been committed.
      */
-    void commitPreRebootStagedFiles(
+    boolean commitPreRebootStagedFiles(
             in List<com.android.server.art.ArtifactsPath> artifacts,
             in List<com.android.server.art.ProfilePath.WritableProfilePath> profiles);
+
+    /**
+     * Returns whether the old system and the new system meet the requirements to run Pre-reboot
+     * Dexopt. This method can only be called with a chroot dir set up by
+     * {@link IDexoptChrootSetup#setUp}.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
+     *
+     * Throws fatal and non-fatal errors.
+     */
+    boolean checkPreRebootSystemRequirements(@utf8InCpp String chrootDir);
 
     // The methods below are only for Pre-reboot Dexopt and only supported in Pre-reboot Dexopt
     // mode.
 
     /**
      * Initializes the environment for Pre-reboot Dexopt. This operation includes initializing
-     * environment variables and boot images.
+     * environment variables and boot images. Returns true on success, or false on cancellation.
+     * Throws on failure.
      *
      * Note that this method results in a non-persistent state change, so it must be called every
      * time a new instance of artd is started for Pre-reboot Dexopt.
      *
+     * On the first call to this method, a cancellation signal must be passed through the {@code
+     * cancellationSignal} parameter. The cancellation signal can then be used for cancelling the
+     * first call. On subsequent calls to this method, the {@code cancellationSignal} parameter is
+     * ignored.
+     *
+     * After cancellation or failure, the environment will not be usable for Pre-reboot Dexopt, and
+     * this operation cannot be retried.
+     *
      * Throws fatal and non-fatal errors.
      */
-    void preRebootInit();
+    boolean preRebootInit(
+            in @nullable com.android.server.art.IArtdCancellationSignal cancellationSignal);
 
     /** For Pre-reboot Dexopt use. See {@link ArtJni#validateDexPath}. */
     @nullable @utf8InCpp String validateDexPath(@utf8InCpp String dexFile);
