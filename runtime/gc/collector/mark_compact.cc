@@ -575,15 +575,6 @@ MarkCompact::MarkCompact(Heap* heap)
   // In most of the cases, we don't expect more than one LinearAlloc space.
   linear_alloc_spaces_data_.reserve(1);
 
-  // Ensure that huge-pages are not used on the moving-space, which may happen
-  // if THP is 'always' enabled and breaks our assumption that a normal-page is
-  // mapped when any address is accessed.
-  int ret = madvise(moving_space_begin, moving_space_size, MADV_NOHUGEPAGE);
-  // Some devices may not have THP configured in the kernel. On such devices
-  // madvise will fail with EINVAL. Obviously, on such devices this madvise is
-  // not required in the first place.
-  CHECK(ret == 0 || errno == EINVAL);
-
   // Initialize GC metrics.
   metrics::ArtMetrics* metrics = GetMetrics();
   // The mark-compact collector supports only full-heap collections at the moment.
@@ -3405,8 +3396,19 @@ void MarkCompact::KernelPreparation() {
       // the used portion after compaction, the two split vmas merge. This is
       // necessary for the mremap of the next GC cycle to not fail due to having
       // more than one vma in the source range.
-      if (moving_space_register_sz < moving_space_size) {
-        *const_cast<volatile uint8_t*>(moving_space_begin + moving_space_register_sz) = 0;
+      //
+      // Fault in address aligned to PMD size so that in case THP is enabled,
+      // we don't mistakenly fault a page in beginning portion that will be
+      // registered with uffd. If the alignment takes us beyond the space, then
+      // fault the first page and madvise it.
+      size_t pmd_size = Heap::GetPMDSize();
+      uint8_t* fault_in_addr = AlignUp(moving_space_begin + moving_space_register_sz, pmd_size);
+      if (bump_pointer_space_->Contains(reinterpret_cast<mirror::Object*>(fault_in_addr))) {
+        *const_cast<volatile uint8_t*>(fault_in_addr) = 0;
+      } else {
+        DCHECK_ALIGNED_PARAM(moving_space_begin, gPageSize);
+        *const_cast<volatile uint8_t*>(moving_space_begin) = 0;
+        madvise(moving_space_begin, pmd_size, MADV_DONTNEED);
       }
       // Register the moving space with userfaultfd.
       RegisterUffd(moving_space_begin, moving_space_register_sz, mode);
