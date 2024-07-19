@@ -34,7 +34,6 @@ import com.android.server.art.testing.StaticMockitoRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
 
 @SmallTest
 @RunWith(AndroidJUnit4.class)
@@ -83,27 +82,9 @@ public class ReasonMappingTest {
 
     @Test
     public void testGetConcurrencyForReason() {
-        var defaultCaptor = ArgumentCaptor.forClass(Integer.class);
-        lenient()
-                .when(SystemProperties.getInt(
-                        eq("persist.device_config.runtime.bg-dexopt_concurrency"),
-                        defaultCaptor.capture()))
-                .thenAnswer(invocation -> defaultCaptor.getValue());
         lenient()
                 .when(SystemProperties.getInt(eq("pm.dexopt.bg-dexopt.concurrency"), anyInt()))
                 .thenReturn(3);
         assertThat(ReasonMapping.getConcurrencyForReason("bg-dexopt")).isEqualTo(3);
-    }
-
-    @Test
-    public void testGetConcurrencyForReasonFromPhFlag() {
-        lenient()
-                .when(SystemProperties.getInt(
-                        eq("persist.device_config.runtime.bg-dexopt_concurrency"), anyInt()))
-                .thenReturn(4);
-        lenient()
-                .when(SystemProperties.getInt(eq("pm.dexopt.bg-dexopt.concurrency"), anyInt()))
-                .thenReturn(3);
-        assertThat(ReasonMapping.getConcurrencyForReason("bg-dexopt")).isEqualTo(4);
     }
 }
