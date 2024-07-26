@@ -118,8 +118,10 @@ void CheckNterpAsmConstants() {
 inline void UpdateHotness(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_) {
   // The hotness we will add to a method when we perform a
   // field/method/class/string lookup.
-  bool increase_hotness_for_ui = Runtime::Current()->InJankPerceptibleProcessState() &&
-       Thread::Current()->IsJitSensitiveThread();
+  Runtime* runtime = Runtime::Current();
+  bool increase_hotness_for_ui = runtime->GetStartupCompleted() &&
+      runtime->InJankPerceptibleProcessState() &&
+      Thread::Current()->IsJitSensitiveThread();
   method->UpdateCounter(increase_hotness_for_ui ? 0x6ff : 0xf);
 }
 
