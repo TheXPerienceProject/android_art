@@ -84,6 +84,10 @@ public class ReasonMapping {
             Set.of(REASON_FIRST_BOOT, REASON_BOOT_AFTER_OTA, REASON_BOOT_AFTER_MAINLINE_UPDATE,
                     REASON_BG_DEXOPT, REASON_PRE_REBOOT_DEXOPT);
 
+    /** @hide */
+    public static final Set<String> BOOT_REASONS =
+            Set.of(REASON_FIRST_BOOT, REASON_BOOT_AFTER_OTA, REASON_BOOT_AFTER_MAINLINE_UPDATE);
+
     /**
      * Reasons for {@link ArtManagerLocal#dexoptPackages}.
      *
@@ -199,7 +203,8 @@ public class ReasonMapping {
      * @hide
      */
     public static int getConcurrencyForReason(@NonNull @BatchDexoptReason String reason) {
-        return SystemProperties.getInt("persist.device_config.runtime." + reason + "_concurrency",
-                SystemProperties.getInt("pm.dexopt." + reason + ".concurrency", 4 /* def */));
+        // TODO(jiakaiz): Revisit the concurrency for non-boot reasons.
+        return SystemProperties.getInt("pm.dexopt." + reason + ".concurrency",
+                BOOT_REASONS.contains(reason) ? 4 : 1 /* def */);
     }
 }
