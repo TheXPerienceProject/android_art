@@ -449,7 +449,11 @@ bool LocalReferenceTable::Remove(IndirectRef iref) {
                  << " reference as local JNI reference, dumping stack";
       self->Dump(LOG_STREAM(ERROR));
     }
-    LOG(IsCheckJniEnabled() ? ERROR : FATAL)
+    // Before Android U, runtime only logged an error and did not abort the process.
+    uint32_t targetSdkVersion = Runtime::Current()->GetTargetSdkVersion();
+    bool doNotCrash = IsSdkVersionSetAndAtMost(targetSdkVersion, SdkVersion::kT);
+
+    LOG(IsCheckJniEnabled() || doNotCrash ? ERROR : FATAL)
         << "Attempt to delete " << kind << " reference as local JNI reference";
     return false;
   }
