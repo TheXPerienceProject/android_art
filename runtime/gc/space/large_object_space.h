@@ -205,6 +205,11 @@ class FreeListSpace final : public LargeObjectSpace {
   mirror::Object* Alloc(Thread* self, size_t num_bytes, size_t* bytes_allocated,
                         size_t* usable_size, size_t* bytes_tl_bulk_allocated)
       override REQUIRES(!lock_);
+  // Deallocate all num_ptrs objects referenced by ptrs. Performance is much better if ptrs is
+  // address-ordered. Free() and FreeList() are only ever called during a GC, and thus can
+  // never be called concurrently.
+  size_t FreeList(Thread* self, size_t num_ptrs, mirror::Object** ptrs) override
+      REQUIRES(!lock_);
   size_t Free(Thread* self, mirror::Object* obj) override REQUIRES(!lock_);
   void Walk(DlMallocSpace::WalkCallback callback, void* arg) override REQUIRES(!lock_);
   void Dump(std::ostream& os) const override REQUIRES(!lock_);
