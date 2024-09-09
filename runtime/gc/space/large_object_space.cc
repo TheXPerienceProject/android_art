@@ -455,6 +455,104 @@ void FreeListSpace::RemoveFreePrev(AllocationInfo* info) {
   free_blocks_.erase(it);
 }
 
+size_t FreeListSpace::FreeList(Thread* self, size_t num_ptrs, mirror::Object** ptrs) {
+  size_t total = 0, idx = 0;
+  while (idx < num_ptrs) {
+    if (kDebugSpaces) {
+      CHECK(Contains(ptrs[idx]));
+    }
+    mirror::Object* obj = ptrs[idx];
+    DCHECK(Contains(obj)) << reinterpret_cast<void*>(Begin()) << " " << obj << " "
+                          << reinterpret_cast<void*>(End());
+    DCHECK_ALIGNED_PARAM(obj, ObjectAlignment());
+    AllocationInfo* info = GetAllocationInfoForAddress(reinterpret_cast<uintptr_t>(obj));
+    DCHECK(!info->IsFree());
+    size_t allocation_size = info->ByteSize();
+    DCHECK_GT(allocation_size, 0U);
+    DCHECK_ALIGNED_PARAM(allocation_size, ObjectAlignment());
+    AllocationInfo* new_free_info = nullptr;
+
+    if (kIsDebugBuild) {
+      // Can't disallow reads since we use them to find next chunks during coalescing.
+      CheckedCall(mprotect, __FUNCTION__, obj, allocation_size, PROT_READ);
+    }
+
+    {
+      MutexLock mu(self, lock_);
+      info->SetByteSize(allocation_size, true);  // Mark as free.
+      // Look at the next chunk.
+      AllocationInfo* next_info = info->GetNextInfo();
+      // Calculate the start of the end free block.
+      uintptr_t free_end_start = reinterpret_cast<uintptr_t>(end_) - free_end_;
+      size_t prev_free_bytes = info->GetPrevFreeBytes();
+      size_t new_free_size = allocation_size;
+      if (prev_free_bytes != 0) {
+        // Coalesce with previous free chunk.
+        new_free_size += prev_free_bytes;
+        RemoveFreePrev(info);
+        info = info->GetPrevFreeInfo();
+        // The previous allocation info must not be free since we are supposed to always coalesce.
+        DCHECK_EQ(info->GetPrevFreeBytes(), 0U) << "Previous allocation was free";
+      }
+
+      // Find next chunks that need to be freed.
+      uintptr_t next_addr = GetAddressForAllocationInfo(next_info);
+      while (idx + 1 < num_ptrs && next_addr < free_end_start &&
+             next_addr == reinterpret_cast<uintptr_t>(ptrs[idx + 1])) {
+        DCHECK(!next_info->IsFree());
+        size_t cur_allocation_size = next_info->ByteSize();
+        DCHECK_GT(cur_allocation_size, 0U);
+        DCHECK_ALIGNED_PARAM(cur_allocation_size, ObjectAlignment());
+        allocation_size += cur_allocation_size;
+        new_free_size += cur_allocation_size;
+        next_info->SetByteSize(cur_allocation_size, true);
+        next_info = next_info->GetNextInfo();
+        next_addr = GetAddressForAllocationInfo(next_info);
+        ++idx;
+        --num_objects_allocated_;
+      }
+
+      // NOTE: next_info could be pointing right after the allocation_info_map_
+      // when freeing object in the very end of the space. But that's safe
+      // as we don't dereference it in that case. We only use it to calculate
+      // next_addr using offset within the map.
+      if (next_addr >= free_end_start) {
+        // Easy case, the next chunk is the end free region.
+        CHECK_EQ(next_addr, free_end_start);
+        free_end_ += new_free_size;
+      } else {
+        if (next_info->IsFree()) {
+          AllocationInfo* next_next_info = next_info->GetNextInfo();
+          // Next next info can't be free since we always coalesce.
+          DCHECK(!next_next_info->IsFree());
+          DCHECK_ALIGNED_PARAM(next_next_info->ByteSize(), ObjectAlignment());
+          new_free_info = next_next_info;
+          new_free_size += next_next_info->GetPrevFreeBytes();
+          RemoveFreePrev(next_next_info);
+        } else {
+          new_free_info = next_info;
+        }
+        new_free_info->SetPrevFreeBytes(new_free_size);
+        info->SetByteSize(new_free_size, true);
+        DCHECK_EQ(info->GetNextInfo(), new_free_info);
+      }
+      --num_objects_allocated_;
+      DCHECK_LE(allocation_size, num_bytes_allocated_);
+      num_bytes_allocated_ -= allocation_size;
+      total += allocation_size;
+    }
+    // madvise the pages without lock
+    madvise(obj, allocation_size, MADV_DONTNEED);
+
+    if (new_free_info != nullptr) {
+      MutexLock mu(self, lock_);
+      free_blocks_.insert(new_free_info);
+    }
+    ++idx;
+  }
+  return total;
+}
+
 size_t FreeListSpace::Free(Thread* self, mirror::Object* obj) {
   DCHECK(Contains(obj)) << reinterpret_cast<void*>(Begin()) << " " << obj << " "
                         << reinterpret_cast<void*>(End());
@@ -654,6 +752,8 @@ void LargeObjectSpace::SweepCallback(size_t num_ptrs, mirror::Object** ptrs, voi
     }
   }
   context->freed.objects += num_ptrs;
+  // SweepWalk traversing from Begin() to End() ensures ptrs are address-ordered, which
+  // will have better performance in FreeListSpace.
   context->freed.bytes += space->FreeList(self, num_ptrs, ptrs);
 }
 
