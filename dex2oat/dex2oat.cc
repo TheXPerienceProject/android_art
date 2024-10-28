@@ -124,6 +124,7 @@ using gc::space::ImageSpace;
 
 static constexpr size_t kDefaultMinDexFilesForSwap = 2;
 static constexpr size_t kDefaultMinDexFileCumulativeSizeForSwap = 20 * MB;
+static constexpr size_t kMinDexFileCumulativeSizeForCompileIndividually = 20 * MB;
 
 // Compiler filter override for very large apps.
 static constexpr CompilerFilter::Filter kLargeAppFilter = CompilerFilter::kVerify;
@@ -1822,18 +1823,27 @@ class Dex2Oat final {
     }
   }
 
-  bool ShouldCompileDexFilesIndividually() const {
+  bool ShouldCompileDexFilesIndividually(const std::vector<const DexFile*>& dex_files) const {
     // Compile individually if we are allowed to, and
     // 1. not building an image, and
     // 2. not verifying a vdex file, and
     // 3. using multidex, and
     // 4. not doing any AOT compilation.
+    // 5. a large app
     // This means no-vdex verify will use the individual compilation
     // mode (to reduce RAM used by the compiler).
-    return compile_individually_ &&
+    if (compile_individually_ &&
            (!IsImage() && !use_existing_vdex_ &&
             compiler_options_->dex_files_for_oat_file_.size() > 1 &&
-            !CompilerFilter::IsAotCompilationEnabled(compiler_options_->GetCompilerFilter()));
+            !CompilerFilter::IsAotCompilationEnabled(compiler_options_->GetCompilerFilter()))) {
+      size_t dex_files_size = 0;
+      for (const auto* dex_file : dex_files) {
+        dex_files_size += dex_file->GetHeader().file_size_;
+      }
+      return dex_files_size >= kMinDexFileCumulativeSizeForCompileIndividually;
+    } else {
+      return false;
+    }
   }
 
   uint32_t GetCombinedChecksums() const {
@@ -1919,7 +1929,8 @@ class Dex2Oat final {
       driver_->SetClasspathDexFiles(class_loader_context_->FlattenOpenedDexFiles());
     }
 
-    const bool compile_individually = ShouldCompileDexFilesIndividually();
+    const std::vector<const DexFile*>& dex_files = compiler_options_->dex_files_for_oat_file_;
+    const bool compile_individually = ShouldCompileDexFilesIndividually(dex_files);
     if (compile_individually) {
       // Set the compiler driver in the callbacks so that we can avoid re-verification.
       // Only set the compiler filter if we are doing separate compilation since there is a bit
@@ -1928,7 +1939,6 @@ class Dex2Oat final {
     }
 
     // Setup vdex for compilation.
-    const std::vector<const DexFile*>& dex_files = compiler_options_->dex_files_for_oat_file_;
     // To allow initialization of classes that construct ThreadLocal objects in class initializer,
     // re-initialize the ThreadLocal.nextHashCode to a new object that's not in the boot image.
     ThreadLocalHashOverride thread_local_hash_override(
