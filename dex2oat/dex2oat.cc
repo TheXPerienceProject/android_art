@@ -1799,28 +1799,60 @@ class Dex2Oat final {
     return IsImage() && oat_fd_ != File::kInvalidFd;
   }
 
+  void CompileDexFilesInternal(std::vector<const DexFile*> dex_files, bool skip_gc) {
+    jobject class_loader = CompileDexFiles(dex_files);
+    // skip the last gc
+    if (skip_gc) {return;}
+    CHECK(class_loader != nullptr);
+    ScopedObjectAccess soa(Thread::Current());
+    // Unload class loader to free RAM.
+    jweak weak_class_loader = soa.Env()->GetVm()->AddWeakGlobalRef(
+        soa.Self(),
+        soa.Decode<mirror::ClassLoader>(class_loader));
+    soa.Env()->GetVm()->DeleteGlobalRef(soa.Self(), class_loader);
+    runtime_->GetHeap()->CollectGarbage(/* clear_soft_references */ true);
+    ObjPtr<mirror::ClassLoader> decoded_weak = soa.Decode<mirror::ClassLoader>(weak_class_loader);
+    if (decoded_weak != nullptr) {
+      LOG(FATAL) << "Failed to unload class loader, path from root set: "
+                 << runtime_->GetHeap()->GetVerification()->FirstPathFromRootSet(decoded_weak);
+    }
+    VLOG(compiler) << "Unloaded classloader";
+  }
+
   // Doesn't return the class loader since it's not meant to be used for image compilation.
   void CompileDexFilesIndividually() {
     CHECK(!IsImage()) << "Not supported with image";
+#if 0
+    // aosp method : one dex each time
     for (const DexFile* dex_file : compiler_options_->dex_files_for_oat_file_) {
       std::vector<const DexFile*> dex_files(1u, dex_file);
       VLOG(compiler) << "Compiling " << dex_file->GetLocation();
-      jobject class_loader = CompileDexFiles(dex_files);
-      CHECK(class_loader != nullptr);
-      ScopedObjectAccess soa(Thread::Current());
-      // Unload class loader to free RAM.
-      jweak weak_class_loader = soa.Env()->GetVm()->AddWeakGlobalRef(
-          soa.Self(),
-          soa.Decode<mirror::ClassLoader>(class_loader));
-      soa.Env()->GetVm()->DeleteGlobalRef(soa.Self(), class_loader);
-      runtime_->GetHeap()->CollectGarbage(/* clear_soft_references */ true);
-      ObjPtr<mirror::ClassLoader> decoded_weak = soa.Decode<mirror::ClassLoader>(weak_class_loader);
-      if (decoded_weak != nullptr) {
-        LOG(FATAL) << "Failed to unload class loader, path from root set: "
-                   << runtime_->GetHeap()->GetVerification()->FirstPathFromRootSet(decoded_weak);
-      }
-      VLOG(compiler) << "Unloaded classloader";
+      CompileDexFilesInternal(dex_files, false);
     }
+#else
+    // combined method: more dexes < threshold each time
+    // use this to reduct gc times and also give attention to Rss aosp method reduced.
+    std::vector<const DexFile*> dex_files;
+    size_t combined_dex_files_size = 0;
+    for (const DexFile* dex_file : compiler_options_->dex_files_for_oat_file_) {
+      size_t size = dex_file->GetHeader().file_size_;
+      if (combined_dex_files_size + size >= kMinDexFileCumulativeSizeForCompileIndividually) {
+         // compile last combined task;
+         if (combined_dex_files_size > 0) {
+           CompileDexFilesInternal(dex_files, false);
+           combined_dex_files_size = 0;
+           dex_files.clear();
+         }
+      }
+      dex_files.push_back(dex_file);
+      combined_dex_files_size += size;
+      VLOG(compiler) << "Combine-Compiling " << dex_file->GetLocation();
+    }
+    // compile the last combined dexes
+    if (combined_dex_files_size > 0) {
+      CompileDexFilesInternal(dex_files, true);
+    }
+#endif
   }
 
   bool ShouldCompileDexFilesIndividually(const std::vector<const DexFile*>& dex_files) const {
