@@ -1284,7 +1284,7 @@ inline void Class::FixupNativePointers(Class* dest,
 }
 
 inline bool Class::CanAccess(ObjPtr<Class> that) {
-  return that->IsPublic() || this->IsInSamePackage(that);
+  return this == that || that->IsPublic() || this->IsInSamePackage(that);
 }
 
 
