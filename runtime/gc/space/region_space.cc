@@ -402,14 +402,29 @@ static void ZeroAndProtectRegion(uint8_t* begin, uint8_t* end, bool release_eage
 
 void RegionSpace::ReleaseFreeRegions() {
   MutexLock mu(Thread::Current(), region_lock_);
+  uint8_t* release_block_begin = nullptr;
+  uint8_t* release_block_end = nullptr;
+
   for (size_t i = 0u; i < num_regions_; ++i) {
     if (regions_[i].IsFree()) {
-      uint8_t* begin = regions_[i].Begin();
-      DCHECK_ALIGNED_PARAM(begin, gPageSize);
+      if (release_block_begin == nullptr) {
+        release_block_begin = regions_[i].Begin();
+        DCHECK_ALIGNED_PARAM(release_block_begin, gPageSize);
+      }
       DCHECK_ALIGNED_PARAM(regions_[i].End(), gPageSize);
-      bool res = madvise(begin, regions_[i].End() - begin, MADV_DONTNEED);
+      release_block_end = regions_[i].End();
+    } else if (release_block_begin != nullptr && release_block_end != nullptr) {
+      bool res =
+          madvise(release_block_begin, release_block_end - release_block_begin, MADV_DONTNEED);
       CHECK_NE(res, -1) << "madvise failed";
+      release_block_begin = nullptr;
+      release_block_end = nullptr;
     }
+  }
+
+  if (release_block_begin != nullptr && release_block_end != nullptr) {
+    bool res = madvise(release_block_begin, release_block_end - release_block_begin, MADV_DONTNEED);
+    CHECK_NE(res, -1) << "madvise failed";
   }
 }
 
