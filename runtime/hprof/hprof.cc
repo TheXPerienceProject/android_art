@@ -1262,7 +1262,14 @@ void Hprof::DumpHeapClass(mirror::Class* klass) {
     // Strings are variable length with character data at the end like arrays.
     // This outputs the size of an empty string.
     __ AddU4(sizeof(mirror::String));
-  } else if (klass->IsArrayClass() || klass->IsPrimitive()) {
+  } else if (klass->IsArrayClass()) {
+    // Arrays are variable length with element data at the end of the header,
+    // padded to alignment. The offset to the data is the header memory size,
+    // after padding.
+    uint32_t component_size = klass->GetComponentSize();
+    uint32_t array_header_size = mirror::Array::DataOffset(component_size).Uint32Value();
+    __ AddU4(array_header_size);
+  } else if (klass->IsPrimitive()) {
     __ AddU4(0);
   } else {
     __ AddU4(klass->GetObjectSize());  // instance size

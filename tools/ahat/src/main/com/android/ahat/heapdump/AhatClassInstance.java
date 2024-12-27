@@ -307,6 +307,14 @@ public class AhatClassInstance extends AhatInstance {
       return null;
     }
 
+    Value next = getField("next");
+    if (next != null && next.isAhatInstance() && next.asAhatInstance().getId() == getId()) {
+      // sun.misc.Cleaner.next points to this sun.misc.Cleaner instance,
+      // indicating that sun.misc.Cleaner.clean() has already been called and
+      // associated native allocations have been freed.
+      return null;
+    }
+
     RegisteredNativeAllocation rna = new RegisteredNativeAllocation();
     rna.referent = referent.asAhatInstance();
     rna.size = size.asLong();

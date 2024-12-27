@@ -20,9 +20,12 @@ public class Main {
   private final boolean PRINT_TIMES = false;  // False for use as run test.
 
   // Number of increments done by each thread.  Must be multiple of largest hold time below,
-  // times any possible thread count. Finishes much faster when used as run test.
-  private final int TOTAL_ITERS = PRINT_TIMES? 16_000_000 : 1_600_000;
-  private final int MAX_HOLD_TIME = PRINT_TIMES? 2_000_000 : 200_000;
+  // times any possible thread count. We reduce this below if PRINT_TIMES is not set, and
+  // even more in debuggable mode.
+  private final int UNSCALED_TOTAL_ITERS  = 16_000_000;
+  private final int UNSCALED_MAX_HOLD_TIME = 2_000_000;
+  private int totalIters;
+  private int maxHoldTime;
 
   private int counter;
 
@@ -31,6 +34,8 @@ public class Main {
   private Object lock;
 
   private int currentThreadCount = 0;
+
+  private static boolean debuggable = false;  // Running in a debuggable ART environment.
 
   // A function such that if we repeatedly apply it to -1, the value oscillates
   // between -1 and 3. Thus the average value is 1.
@@ -78,7 +83,7 @@ public class Main {
     @Override
     public void run() {
       Object myLock = sharedLock ? lock : new Object();
-      int nIters = TOTAL_ITERS / currentThreadCount / holdTime;
+      int nIters = totalIters / currentThreadCount / holdTime;
       for (int i = 0; i < nIters; ++i) {
         holdFor(myLock, holdTime);
       }
@@ -95,7 +100,12 @@ public class Main {
     @Override
     public void run() {
       Object myLock = sharedLock ? lock : new Object();
-      int nIters = TOTAL_ITERS / 10 / currentThreadCount / holdTime;
+      int iter_divisor = 10 * currentThreadCount * holdTime;
+      int nIters = totalIters / iter_divisor;
+      if (totalIters % iter_divisor != 0 || holdTime % 2 == 1) {
+        System.err.println("Misconfigured: totalIters = " + totalIters
+            + " iter_divisor = "  + iter_divisor);
+      }
       for (int i = 0; i < nIters; ++i) {
         spinFor(9 * holdTime);
         holdFor(myLock, holdTime);
@@ -112,7 +122,7 @@ public class Main {
     @Override
     public void run() {
       Object myLock = sharedLock ? lock : new Object();
-      int nIters = TOTAL_ITERS / currentThreadCount / 10_000;
+      int nIters = totalIters / currentThreadCount / 10_000;
       for (int i = 0; i < nIters; ++i) {
         synchronized(myLock) {
           try {
@@ -132,7 +142,7 @@ public class Main {
     @Override
     public void run() {
       int y = -1;
-      int nIters = TOTAL_ITERS / currentThreadCount;
+      int nIters = totalIters / currentThreadCount;
       for (int i = 0; i < nIters; ++i) {
         atomicCounter.addAndGet(y);
         y = nextInt(y);
@@ -178,7 +188,7 @@ public class Main {
   private class CheckAtomicCounter implements Runnable {
     @Override
     public void run() {
-      if (atomicCounter.get() != TOTAL_ITERS) {
+      if (atomicCounter.get() != totalIters) {
         throw new AssertionError("Failed atomicCounter postcondition check for "
             + currentThreadCount + " threads");
       }
@@ -200,39 +210,57 @@ public class Main {
   }
 
   private void run() {
+    int scale = PRINT_TIMES ? 1 : (debuggable ? 20 : 10);
+    totalIters = UNSCALED_TOTAL_ITERS / scale;
+    maxHoldTime = UNSCALED_MAX_HOLD_TIME / scale;
     if (PRINT_TIMES) {
       System.out.println("All times in milliseconds for 1, 2, 4 and 8 threads");
     }
     System.out.println("Atomic increments");
     runAll(new RepeatedIncrementer(), () -> { atomicCounter.set(0); }, new CheckAtomicCounter());
-    for (int i = 2; i <= MAX_HOLD_TIME; i *= 10) {
-      // i * 8 (max thread count) divides TOTAL_ITERS
+    for (int i = 2; i <= UNSCALED_MAX_HOLD_TIME / 100; i *= 10) {
+      // i * 8 (max thread count) divides totalIters
       System.out.println("Hold time " + i + ", shared lock");
       runAll(new RepeatedLockHolder(true, i), () -> { counter = 0; },
-          new CheckCounter(TOTAL_ITERS));
+          new CheckCounter(totalIters));
     }
-    for (int i = 2; i <= MAX_HOLD_TIME / 10; i *= 10) {
-      // i * 8 (max thread count) divides TOTAL_ITERS
+    for (int i = 2; i <= UNSCALED_MAX_HOLD_TIME / 1000; i *= 10) {
+      // i * 8 (max thread count) divides totalIters
       System.out.println("Hold time " + i + ", pause time " + (9 * i) + ", shared lock");
       runAll(new RepeatedIntermittentLockHolder(true, i), () -> { counter = 0; },
-          new CheckCounter(TOTAL_ITERS / 10));
+          new CheckCounter(totalIters / 10));
     }
     if (PRINT_TIMES) {
-      for (int i = 2; i <= MAX_HOLD_TIME; i *= 1000) {
-        // i divides TOTAL_ITERS
+      for (int i = 2; i <= maxHoldTime; i *= 1000) {
+        // i divides totalIters
         System.out.println("Hold time " + i + ", private lock");
         // Since there is no mutual exclusion final counter value is unpredictable.
         runAll(new RepeatedLockHolder(false, i), () -> { counter = 0; }, () -> {});
       }
     }
     System.out.println("Hold for 2 msecs while sleeping, shared lock");
-    runAll(new SleepyLockHolder(true), () -> { counter = 0; }, new CheckCounter(TOTAL_ITERS));
+    runAll(new SleepyLockHolder(true), () -> { counter = 0; }, new CheckCounter(totalIters));
     System.out.println("Hold for 2 msecs while sleeping, private lock");
     runAll(new SleepyLockHolder(false), () -> { counter = 0; }, () -> {});
   }
 
   public static void main(String[] args) {
+    if (System.getProperty("java.vm.name").equalsIgnoreCase("Dalvik")) {
+      try {
+        System.loadLibrary(args[0]);
+        debuggable = isDebuggable();
+      } catch (Throwable t) {
+        // Conservatively assume we might be debuggable, and pretend we loaded the library.
+        // As of June 2024, we seem to get here with atest.
+        debuggable = true;
+        System.out.println("JNI_OnLoad called");
+      }
+    } else {
+      System.out.println("JNI_OnLoad called");  // Not really, but match expected output.
+    }
     System.out.println("Starting");
     new Main().run();
   }
+
+  private static native boolean isDebuggable();
 }

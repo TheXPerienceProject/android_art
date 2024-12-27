@@ -198,9 +198,11 @@
 
 .macro RETURN_OR_DEOPT_OR_DELIVER_PENDING_EXCEPTION is_ref = 0
     ldr x1, [xSELF, # THREAD_EXCEPTION_OFFSET]  // Get exception field.
+    CFI_REMEMBER_STATE
     cbnz x1, 1f
     DEOPT_OR_RETURN x1, \is_ref                // Check if deopt is required
 1:                                             // deliver exception on current thread
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, 0
     DELIVER_PENDING_EXCEPTION
 .endm
 
@@ -218,9 +220,19 @@
   mov x1, x0                        // pass the result
   mov x0, xSELF                     // Thread::Current
   bl artDeoptimizeIfNeeded
+
+  CFI_REMEMBER_STATE
+  cbnz x0, 3f
+
   RESTORE_SAVE_EVERYTHING_FRAME
   REFRESH_MARKING_REGISTER
   ret
+
+3:
+  // Deoptimize.
+  CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+  bl art_quick_do_long_jump         // (Context*)
+  brk 0  // Unreached
 .endm
 
 .macro DEOPT_OR_RESTORE_SAVE_EVERYTHING_FRAME_AND_RETURN_X0 temp, is_ref
@@ -237,18 +249,28 @@
   mov x1, x0                                     // pass the result
   mov x0, xSELF                                  // Thread::Current
   bl artDeoptimizeIfNeeded
+
   CFI_REMEMBER_STATE
+  cbnz x0, 3f
+
   RESTORE_SAVE_EVERYTHING_FRAME
   REFRESH_MARKING_REGISTER
   ret
+
+3:
+  // Deoptimize.
   CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+  bl art_quick_do_long_jump                      // (Context*)
+  brk 0  // Unreached
 .endm
 
 
 .macro RETURN_OR_DEOPT_IF_INT_RESULT_IS_ZERO_OR_DELIVER
+    CFI_REMEMBER_STATE
     cbnz w0, 1f                // result non-zero branch over
     DEOPT_OR_RETURN x1
 1:
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, 0
     DELIVER_PENDING_EXCEPTION
 .endm
 
@@ -258,7 +280,8 @@ ENTRY \c_name
     SETUP_SAVE_ALL_CALLEE_SAVES_FRAME // save all registers as basis for long jump context
     mov x0, xSELF                     // pass Thread::Current
     bl  \cxx_name                     // \cxx_name(Thread*)
-    brk 0
+    bl  art_quick_do_long_jump        // (Context*)
+    brk 0  // Unreached
 END \c_name
 .endm
 
@@ -268,7 +291,8 @@ ENTRY \c_name
     SETUP_SAVE_EVERYTHING_FRAME       // save all registers as basis for long jump context
     mov x0, xSELF                     // pass Thread::Current
     bl  \cxx_name                     // \cxx_name(Thread*)
-    brk 0
+    bl  art_quick_do_long_jump        // (Context*)
+    brk 0  // Unreached
 END \c_name
 .endm
 
@@ -278,7 +302,8 @@ ENTRY \c_name
     SETUP_SAVE_ALL_CALLEE_SAVES_FRAME // save all registers as basis for long jump context.
     mov x1, xSELF                     // pass Thread::Current.
     bl  \cxx_name                     // \cxx_name(arg, Thread*).
-    brk 0
+    bl  art_quick_do_long_jump        // (Context*)
+    brk 0  // Unreached
 END \c_name
 .endm
 
@@ -288,7 +313,8 @@ ENTRY \c_name
     SETUP_SAVE_EVERYTHING_FRAME       // save all registers as basis for long jump context
     mov x2, xSELF                     // pass Thread::Current
     bl  \cxx_name                     // \cxx_name(arg1, arg2, Thread*)
-    brk 0
+    bl  art_quick_do_long_jump        // (Context*)
+    brk 0  // Unreached
 END \c_name
 .endm
 
@@ -320,7 +346,8 @@ ENTRY art_quick_throw_null_pointer_exception_from_signal
     mov x0, lr                        // pass the fault address stored in LR by the fault handler.
     mov x1, xSELF                     // pass Thread::Current.
     bl  artThrowNullPointerExceptionFromSignal  // (arg, Thread*).
-    brk 0
+    bl  art_quick_do_long_jump                  // (Context*)
+    brk 0  // Unreached
 END art_quick_throw_null_pointer_exception_from_signal
 
     /*
@@ -776,56 +803,64 @@ ENTRY art_quick_osr_stub
 END art_quick_osr_stub
 
     /*
-     * On entry x0 is uintptr_t* gprs_ and x1 is uint64_t* fprs_.
-     * Both must reside on the stack, between current SP and target SP.
+     * On entry x0 is the long jump context. This is expected to be returned from a previous
+     * entrypoint call which threw an exception or deoptimized.
      * IP0 and IP1 shall be clobbered rather than retrieved from gprs_.
      */
 
 ENTRY art_quick_do_long_jump
-    // Load FPRs
-    ldp d0, d1, [x1, #0]
-    ldp d2, d3, [x1, #16]
-    ldp d4, d5, [x1, #32]
-    ldp d6, d7, [x1, #48]
-    ldp d8, d9, [x1, #64]
-    ldp d10, d11, [x1, #80]
-    ldp d12, d13, [x1, #96]
-    ldp d14, d15, [x1, #112]
-    ldp d16, d17, [x1, #128]
-    ldp d18, d19, [x1, #144]
-    ldp d20, d21, [x1, #160]
-    ldp d22, d23, [x1, #176]
-    ldp d24, d25, [x1, #192]
-    ldp d26, d27, [x1, #208]
-    ldp d28, d29, [x1, #224]
-    ldp d30, d31, [x1, #240]
+    // Reserve space for the gprs + fprs;
+    INCREASE_FRAME ARM64_LONG_JUMP_CONTEXT_SIZE
 
-    // Load GPRs. Delay loading x0, x1 because x0 is used as gprs_.
-    ldp x2, x3, [x0, #16]
-    ldp x4, x5, [x0, #32]
-    ldp x6, x7, [x0, #48]
-    ldp x8, x9, [x0, #64]
-    ldp x10, x11, [x0, #80]
-    ldp x12, x13, [x0, #96]
-    ldp x14, x15, [x0, #112]
+    mov x1, sp
+    add x2, sp, #ARM64_LONG_JUMP_GPRS_SIZE
+
+    bl artContextCopyForLongJump  // Context* context, uintptr_t* gprs, uintptr_t* fprs
+
+    add x0, sp, #ARM64_LONG_JUMP_GPRS_SIZE
+
+    // Load FPRs
+    ldp d0, d1, [x0, #0]
+    ldp d2, d3, [x0, #16]
+    ldp d4, d5, [x0, #32]
+    ldp d6, d7, [x0, #48]
+    ldp d8, d9, [x0, #64]
+    ldp d10, d11, [x0, #80]
+    ldp d12, d13, [x0, #96]
+    ldp d14, d15, [x0, #112]
+    ldp d16, d17, [x0, #128]
+    ldp d18, d19, [x0, #144]
+    ldp d20, d21, [x0, #160]
+    ldp d22, d23, [x0, #176]
+    ldp d24, d25, [x0, #192]
+    ldp d26, d27, [x0, #208]
+    ldp d28, d29, [x0, #224]
+    ldp d30, d31, [x0, #240]
+
+    ldp x0, x1, [sp, #0]
+    ldp x2, x3, [sp, #16]
+    ldp x4, x5, [sp, #32]
+    ldp x6, x7, [sp, #48]
+    ldp x8, x9, [sp, #64]
+    ldp x10, x11, [sp, #80]
+    ldp x12, x13, [sp, #96]
+    ldp x14, x15, [sp, #112]
     // Do not load IP0 (x16) and IP1 (x17), these shall be clobbered below.
     // Don't load the platform register (x18) either.
-    ldr      x19, [x0, #152]      // xSELF.
-    ldp x20, x21, [x0, #160]      // For Baker RB, wMR (w20) is reloaded below.
-    ldp x22, x23, [x0, #176]
-    ldp x24, x25, [x0, #192]
-    ldp x26, x27, [x0, #208]
-    ldp x28, x29, [x0, #224]
-    ldp x30, xIP0, [x0, #240]     // LR and SP, load SP to IP0.
+    ldr      x19, [sp, #152]      // xSELF.
+    ldp x20, x21, [sp, #160]      // For Baker RB, wMR (w20) is reloaded below.
+    ldp x22, x23, [sp, #176]
+    ldp x24, x25, [sp, #192]
+    ldp x26, x27, [sp, #208]
+    ldp x28, x29, [sp, #224]
+    ldp x30, xIP0, [sp, #240]     // LR and SP, load SP to IP0.
 
     // Load PC to IP1, it's at the end (after the space for the unused XZR).
-    ldr xIP1, [x0, #33*8]
-
-    // Load x0, x1.
-    ldp x0, x1, [x0, #0]
+    ldr xIP1, [sp, #33*8]
 
     // Set SP. Do not access fprs_ and gprs_ from now, they are below SP.
     mov sp, xIP0
+    .cfi_def_cfa_offset 0
 
     REFRESH_MARKING_REGISTER
     REFRESH_SUSPEND_CHECK_REGISTER
@@ -922,7 +957,8 @@ ENTRY art_quick_check_instance_of
     SETUP_SAVE_ALL_CALLEE_SAVES_FRAME // save all registers as basis for long jump context
     mov x2, xSELF                     // pass Thread::Current
     bl artThrowClassCastExceptionForObject     // (Object*, Class*, Thread*)
-    brk 0                             // We should not return here...
+    bl art_quick_do_long_jump                  // (Context*)
+    brk 0  // Unreached
 END art_quick_check_instance_of
 
 // Restore xReg's value from [sp, #offset] if xReg is not the same as xExclude.
@@ -1072,7 +1108,8 @@ ENTRY art_quick_aput_obj
     mov x1, x2                      // Pass value.
     mov x2, xSELF                   // Pass Thread::Current.
     bl artThrowArrayStoreException  // (Object*, Object*, Thread*).
-    brk 0                           // Unreachable.
+    bl art_quick_do_long_jump       // (Context*)
+    brk 0  // Unreached
 
 #if defined(USE_READ_BARRIER) && defined(USE_BAKER_READ_BARRIER)
     CFI_RESTORE_STATE_AND_DEF_CFA sp, 0
@@ -1181,9 +1218,11 @@ END \name
 .endm
 
 .macro RETURN_OR_DEOPT_IF_RESULT_IS_NON_NULL_OR_DELIVER
+    CFI_REMEMBER_STATE
     cbz w0, 1f                       // result zero branch over
     DEOPT_OR_RETURN x1, /*is_ref=*/1 // check for deopt or return
 1:
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, 0
     DELIVER_PENDING_EXCEPTION
 .endm
 
@@ -1565,10 +1604,21 @@ ENTRY art_quick_test_suspend
     SETUP_SAVE_EVERYTHING_FRAME RUNTIME_SAVE_EVERYTHING_FOR_SUSPEND_CHECK_METHOD_OFFSET
     mov    x0, xSELF
     bl     artTestSuspendFromCode       // (Thread*)
+
+    CFI_REMEMBER_STATE
+    cbnz   x0, .Ltest_suspend_deoptimize
+
+    // Normal return.
     RESTORE_SAVE_EVERYTHING_FRAME
     REFRESH_MARKING_REGISTER
     REFRESH_SUSPEND_CHECK_REGISTER
     ret
+
+.Ltest_suspend_deoptimize:
+    // Deoptimize.
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+    bl     art_quick_do_long_jump       // (Context*)
+    brk 0  // Unreached
 END art_quick_test_suspend
 
     /*
@@ -1580,10 +1630,20 @@ ENTRY art_quick_implicit_suspend
     SETUP_SAVE_EVERYTHING_FRAME RUNTIME_SAVE_EVERYTHING_FOR_SUSPEND_CHECK_METHOD_OFFSET
     mov    x0, xSELF
     bl     artImplicitSuspendFromCode   // (Thread*)
+
+    CFI_REMEMBER_STATE
+    cbnz   x0, .Limplicit_suspend_deopt
+
     RESTORE_SAVE_EVERYTHING_FRAME
     REFRESH_MARKING_REGISTER
     REFRESH_SUSPEND_CHECK_REGISTER
     br     lr  // Do not use RET as we do not enter the entrypoint with "BL".
+
+.Limplicit_suspend_deopt:
+    // Deoptimize.
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+    bl     art_quick_do_long_jump       // (Context*)
+    brk 0  // Unreached
 END art_quick_implicit_suspend
 
      /*
@@ -1873,7 +1933,8 @@ ENTRY art_quick_deoptimize_from_compiled_code
     SETUP_SAVE_EVERYTHING_FRAME
     mov    x1, xSELF                      // Pass thread.
     bl     artDeoptimizeFromCompiledCode  // (DeoptimizationKind, Thread*)
-    brk 0
+    bl     art_quick_do_long_jump         // (Context*)
+    brk 0  // Unreached
 END art_quick_deoptimize_from_compiled_code
 
 
@@ -2491,6 +2552,37 @@ ENTRY art_quick_compile_optimized
     ret
 END art_quick_compile_optimized
 
+ENTRY art_quick_record_entry_trace_event
+    ldr xIP1, [xSELF, #TRACE_BUFFER_CURRENT_OFFSET]
+    // xIP0 has the trace buffer pointer. This is loaded on the fast path before
+    // checking if we need to call this method. This will be still valid here.
+    cmp xIP1, xIP0
+    bhs .Lupdate_entry
+    mov xIP1, #TRACE_BUFFER_SIZE
+    add xIP1, xIP0, xIP1
+.Lupdate_entry:
+    sub xIP1, xIP1, 8
+    str x0, [xIP1]
+    str xIP1, [xSELF, #TRACE_BUFFER_CURRENT_OFFSET]
+    ret
+END art_quick_record_entry_trace_event
+
+ENTRY art_quick_record_exit_trace_event
+    ldr xIP1, [xSELF, #TRACE_BUFFER_CURRENT_OFFSET]
+    // xIP0 has the trace buffer pointer. This is loaded on the fast path before
+    // checking if we need to call this method. This will be still valid here.
+    cmp xIP1, xIP0
+    bhs .Lupdate_entry_exit
+    mov xIP1, #TRACE_BUFFER_SIZE
+    add xIP1, xIP0, xIP1
+.Lupdate_entry_exit:
+    sub xIP1, xIP1, 8
+    mov xIP0, #1
+    str xIP0, [xIP1]
+    str xIP1, [xSELF, #TRACE_BUFFER_CURRENT_OFFSET]
+    ret
+END art_quick_record_exit_trace_event
+
     .extern artMethodEntryHook
 ENTRY art_quick_method_entry_hook
     SETUP_SAVE_EVERYTHING_FRAME
@@ -2500,9 +2592,19 @@ ENTRY art_quick_method_entry_hook
     mov x2, sp                                // pass SP
     bl  artMethodEntryHook                    // (ArtMethod*, Thread*, SP)
 
+    CFI_REMEMBER_STATE
+    cbnz x0, .Lentryhook_deopt
+
+    // Normal return.
     RESTORE_SAVE_EVERYTHING_FRAME             // Note: will restore xSELF
     REFRESH_MARKING_REGISTER
     ret
+
+.Lentryhook_deopt:
+    // Deoptimize.
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+    bl  art_quick_do_long_jump                // (Context*)
+    brk 0  // Unreached
 END art_quick_method_entry_hook
 
     .extern artMethodExitHook
@@ -2517,8 +2619,17 @@ ENTRY art_quick_method_exit_hook
     bl  artMethodExitHook                     // (Thread*, ArtMethod**, gpr_res*, fpr_res*,
                                               // frame_size)
 
+    CFI_REMEMBER_STATE
+    cbnz x0, .Lexithook_deopt_or_exception
+
     // Normal return.
     RESTORE_SAVE_EVERYTHING_FRAME
     REFRESH_MARKING_REGISTER
     ret
+
+.Lexithook_deopt_or_exception:
+    // Deoptimize or exception thrown.
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+    bl  art_quick_do_long_jump                // (Context*)
+    brk 0  // Unreached
 END art_quick_method_exit_hook

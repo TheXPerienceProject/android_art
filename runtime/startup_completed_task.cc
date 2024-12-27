@@ -121,7 +121,7 @@ void StartupCompletedTask::DeleteStartupDexCaches(Thread* self, bool called_by_g
 
   // If this isn't the GC calling `DeleteStartupDexCaches` and a GC may be
   // running, wait for it to be complete. We don't want it to see these dex
-  // caches.
+  // caches. Since we are runnable, a GC started after this cannot get far.
   if (!called_by_gc) {
     runtime->GetHeap()->WaitForGcToComplete(gc::kGcCauseDeletingDexCacheArrays, self);
   }

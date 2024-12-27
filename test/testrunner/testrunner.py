@@ -35,7 +35,7 @@ dependencies:
 There are various options to invoke the script which are:
 -t: Either the test name as in art/test or the test name including the variant
     information. Eg, "-t 001-HelloWorld",
-    "-t test-art-host-run-test-debug-prebuild-optimizing-relocate-ntrace-cms-checkjni-picimage-ndebuggable-001-HelloWorld32"
+    "-t test-art-host-run-test-debug-prebuild-optimizing-relocate-ntrace-cms-checkjni-picimage-ndebuggable-no-jvmti-001-HelloWorld32"
 -j: Number of thread workers to be used. Eg - "-j64"
 --dry-run: Instead of running the test name, just print its name.
 --verbose
@@ -996,7 +996,7 @@ def extract_test_name(test_name):
     test_name_matcher = re.compile(regex)
   match = test_name_matcher.match(test_name)
   if match:
-    return list(match.group(i) for i in range(1,15))
+    return list(match.groups())
   raise ValueError(test_name + " is not a valid test")
 
 def parse_test_name(test_name):
@@ -1004,7 +1004,7 @@ def parse_test_name(test_name):
   It supports two types of test_name:
   1) Like 001-HelloWorld. In this case, it will just verify if the test actually
   exists and if it does, it returns the testname.
-  2) Like test-art-host-run-test-debug-prebuild-interpreter-no-relocate-ntrace-cms-checkjni-pointer-ids-picimage-ndebuggable-001-HelloWorld32
+  2) Like test-art-host-run-test-debug-prebuild-interpreter-no-relocate-ntrace-cms-checkjni-picimage-ndebuggable-no-jvmti-001-HelloWorld32
   In this case, it will parse all the variants and check if they are placed
   correctly. If yes, it will set the various VARIANT_TYPES to use the
   variants required to run the test. Again, it returns the test_name

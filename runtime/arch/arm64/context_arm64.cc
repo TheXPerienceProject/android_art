@@ -129,8 +129,6 @@ void Arm64Context::SmashCallerSaves() {
   fprs_[D31] = nullptr;
 }
 
-extern "C" NO_RETURN void art_quick_do_long_jump(uint64_t*, uint64_t*);
-
 #if defined(__aarch64__) && defined(__BIONIC__) && defined(M_MEMTAG_STACK_IS_ON)
 static inline __attribute__((no_sanitize("memtag"))) void untag_memory(void* from, void* to) {
   __asm__ __volatile__(
@@ -145,10 +143,7 @@ static inline __attribute__((no_sanitize("memtag"))) void untag_memory(void* fro
 }
 #endif
 
-__attribute__((no_sanitize("memtag"))) void Arm64Context::DoLongJump() {
-  uint64_t gprs[arraysize(gprs_)];
-  uint64_t fprs[kNumberOfDRegisters];
-
+void Arm64Context::CopyContextTo(uintptr_t* gprs, uintptr_t* fprs) {
   // The long jump routine called below expects to find the value for SP at index 31.
   DCHECK_EQ(SP, 31);
 
@@ -170,8 +165,7 @@ __attribute__((no_sanitize("memtag"))) void Arm64Context::DoLongJump() {
   // Tell HWASan about the new stack top.
   if (__hwasan_handle_longjmp != nullptr)
     __hwasan_handle_longjmp(reinterpret_cast<void*>(gprs[SP]));
-  // The Marking Register will be updated by art_quick_do_long_jump.
-  art_quick_do_long_jump(gprs, fprs);
+  // The Marking Register will be updated after return by art_quick_do_long_jump.
 }
 
 }  // namespace arm64

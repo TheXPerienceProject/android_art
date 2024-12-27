@@ -154,7 +154,7 @@ const char* const VixlJniHelpersResults = {
   "     210: f8d9 8020     ldr.w r8, [r9, #32]\n"
   "     214: 4770          bx lr\n"
   "     216: f8d9 0094     ldr.w r0, [r9, #148]\n"
-  "     21a: f8d9 e2c4     ldr.w lr, [r9, #708]\n"
+  "     21a: f8d9 e2c0     ldr.w lr, [r9, #704]\n"
   "     21e: 47f0          blx lr\n"
 };
 

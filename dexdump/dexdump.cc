@@ -47,13 +47,13 @@
 #include "android-base/file.h"
 #include "android-base/logging.h"
 #include "android-base/stringprintf.h"
-
 #include "base/bit_utils.h"
 #include "dex/class_accessor-inl.h"
 #include "dex/code_item_accessors-inl.h"
 #include "dex/dex_file-inl.h"
 #include "dex/dex_file_exception_helpers.h"
 #include "dex/dex_file_loader.h"
+#include "dex/dex_file_structs.h"
 #include "dex/dex_file_types.h"
 #include "dex/dex_instruction-inl.h"
 #include "dexdump_cfg.h"
@@ -94,10 +94,13 @@ struct FieldMethodInfo {
 /*
  * Flags for use with createAccessFlagStr().
  */
-enum AccessFor {
-  kAccessForClass = 0, kAccessForMethod = 1, kAccessForField = 2, kAccessForMAX
+enum class AccessFor {
+  kClass = 0,
+  kMethod = 1,
+  kField = 2,
+  kCount
 };
-const int kNumFlags = 18;
+static constexpr int kNumFlags = 18;
 
 /*
  * Gets 2 little-endian bytes.
@@ -240,7 +243,7 @@ static int countOnes(u4 val) {
  * they're u4.
  */
 static char* createAccessFlagStr(u4 flags, AccessFor forWhat) {
-  static const char* kAccessStrings[kAccessForMAX][kNumFlags] = {
+  static constexpr const char* kAccessStrings[static_cast<int>(AccessFor::kCount)][kNumFlags] = {
     {
       "PUBLIC",                /* 0x00001 */
       "PRIVATE",               /* 0x00002 */
@@ -304,7 +307,7 @@ static char* createAccessFlagStr(u4 flags, AccessFor forWhat) {
   // Allocate enough storage to hold the expected number of strings,
   // plus a space between each.  We over-allocate, using the longest
   // string above as the base metric.
-  const int kLongest = 21;  // The strlen of longest string above.
+  static constexpr int kLongest = 21;  // The strlen of longest string above.
   const int count = countOnes(flags);
   char* str;
   char* cp;
@@ -312,7 +315,7 @@ static char* createAccessFlagStr(u4 flags, AccessFor forWhat) {
 
   for (int i = 0; i < kNumFlags; i++) {
     if (flags & 0x01) {
-      const char* accessStr = kAccessStrings[forWhat][i];
+      const char* accessStr = kAccessStrings[static_cast<int>(forWhat)][i];
       const int len = strlen(accessStr);
       if (cp != str) {
         *cp++ = ' ';
@@ -573,6 +576,17 @@ static void dumpEncodedValue(const DexFile* pDexFile, const u1** data, u1 type, 
       } conv;
       conv.data = readVarWidth(data, arg, false) << (7 - arg) * 8;
       fprintf(gOutFile, "%g", conv.d);
+      break;
+    }
+    case DexFile::kDexAnnotationMethodType: {
+      const u4 proto_idx = static_cast<u4>(readVarWidth(data, arg, false));
+      const dex::ProtoId& pProtoId = pDexFile->GetProtoId(dex::ProtoIndex(proto_idx));
+      fputs(pDexFile->GetProtoSignature(pProtoId).ToString().c_str(), gOutFile);
+      break;
+    }
+    case DexFile::kDexAnnotationMethodHandle: {
+      const u4 method_handle_idx = static_cast<u4>(readVarWidth(data, arg, false));
+      fprintf(gOutFile, "method_handle@%u", method_handle_idx);
       break;
     }
     case DexFile::kDexAnnotationString: {
@@ -1357,7 +1371,7 @@ static void dumpMethod(const ClassAccessor::Method& method, int i) {
   const Signature signature = dex_file.GetMethodSignature(pMethodId);
   char* typeDescriptor = strdup(signature.ToString().c_str());
   const char* backDescriptor = dex_file.GetTypeDescriptor(pMethodId.class_idx_);
-  char* accessStr = createAccessFlagStr(flags, kAccessForMethod);
+  char* accessStr = createAccessFlagStr(flags, AccessFor::kMethod);
   const uint32_t hiddenapiFlags = method.GetHiddenapiFlags();
 
   if (gOptions.outputFormat == OUTPUT_PLAIN) {
@@ -1477,7 +1491,7 @@ static void dumpField(const ClassAccessor::Field& field, int i, const u1** data 
   const char* name = dex_file.GetStringData(field_id.name_idx_);
   const char* typeDescriptor = dex_file.GetTypeDescriptor(field_id.type_idx_);
   const char* backDescriptor = dex_file.GetTypeDescriptor(field_id.class_idx_);
-  char* accessStr = createAccessFlagStr(flags, kAccessForField);
+  char* accessStr = createAccessFlagStr(flags, AccessFor::kField);
   const uint32_t hiddenapiFlags = field.GetHiddenapiFlags();
 
   if (gOptions.outputFormat == OUTPUT_PLAIN) {
@@ -1602,7 +1616,7 @@ static void dumpClass(const DexFile* pDexFile, int idx, char** pLastPackage) {
   }
 
   // General class information.
-  char* accessStr = createAccessFlagStr(pClassDef.access_flags_, kAccessForClass);
+  char* accessStr = createAccessFlagStr(pClassDef.access_flags_, AccessFor::kClass);
   const char* superclassDescriptor;
   if (!pClassDef.superclass_idx_.IsValid()) {
     superclassDescriptor = nullptr;

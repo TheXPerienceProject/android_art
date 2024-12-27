@@ -67,7 +67,7 @@ enum LockLevel : uint8_t {
   kMarkSweepMarkStackLock,
   // Can be held while GC related work is done, and thus must be above kMarkSweepMarkStackLock
   kThreadWaitLock,
-  kCHALock,
+  kJitCodeCacheMutatorAndCHALock,
   kRosAllocGlobalLock,
   kRosAllocBracketLock,
   kRosAllocBulkFreeLock,
@@ -336,8 +336,11 @@ class EXPORT Locks {
   // GetThreadLocalStorage.
   static Mutex* custom_tls_lock_ ACQUIRED_AFTER(jni_function_table_lock_);
 
-  // Guard access to any JIT data structure.
+  // Guard access to JIT data structures mostly used by the JIT thread.
   static Mutex* jit_lock_ ACQUIRED_AFTER(custom_tls_lock_);
+
+  // Guard access to any JIT data structure that mutators can also access.
+  static ReaderWriterMutex* jit_mutator_lock_ ACQUIRED_AFTER(custom_tls_lock_);
 
   // Guards Class Hierarchy Analysis (CHA).
   static Mutex* cha_lock_ ACQUIRED_AFTER(jit_lock_);

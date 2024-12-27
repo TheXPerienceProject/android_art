@@ -113,9 +113,6 @@ ART_TEST_MODULES_COMMON := \
     art_hiddenapi_tests \
     art_imgdiag_tests \
     art_libartbase_tests \
-    art_libartpalette_tests \
-    art_libartservice_tests \
-    art_libarttools_tests \
     art_libdexfile_external_tests \
     art_libdexfile_support_static_tests \
     art_libdexfile_support_tests \
@@ -133,10 +130,12 @@ ifeq (,$(SANITIZE_HOST))
 endif
 
 ART_TEST_MODULES_TARGET := $(ART_TEST_MODULES_COMMON) \
-    art_artd_tests \
     art_odrefresh_tests \
 
-ART_TEST_MODULES_HOST := $(ART_TEST_MODULES_COMMON)
+ART_TEST_MODULES_HOST := $(ART_TEST_MODULES_COMMON) \
+    art_libartpalette_tests \
+    art_libartservice_tests \
+    art_libarttools_tests \
 
 ifneq (,$(wildcard frameworks/native/libs/binder))
   # Only include the artd host tests if we have the binder sources available and
@@ -249,9 +248,6 @@ $$(gtest_build_rule) : $$(gtest_exe) $$(gtest_deps)
 .PHONY: $$(gtest_rule)
 $$(gtest_rule): $$(gtest_output)
 
-# Re-run the tests, even if nothing changed. Until the build system has a dedicated "no cache"
-# option, claim to write a file that is never produced.
-$$(gtest_output): .KATI_IMPLICIT_OUTPUTS := $$(gtest_output)-nocache
 # Limit concurrent runs. Each test itself is already highly parallel (and thus memory hungry).
 $$(gtest_output): .KATI_NINJA_POOL := highmem_pool
 $$(gtest_output): NAME := $$(gtest_rule)

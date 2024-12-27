@@ -1829,7 +1829,7 @@ HConstant* HBinaryOperation::TryStaticEvaluation(HInstruction* left, HInstructio
   } else if (left->IsLongConstant()) {
     if (right->IsIntConstant()) {
       // The binop(long, int) case is only valid for shifts and rotations.
-      DCHECK(IsShl() || IsShr() || IsUShr() || IsRor()) << DebugName();
+      DCHECK(IsShl() || IsShr() || IsUShr() || IsRol() || IsRor()) << DebugName();
       return Evaluate(left->AsLongConstant(), right->AsIntConstant());
     } else if (right->IsLongConstant()) {
       return Evaluate(left->AsLongConstant(), right->AsLongConstant());
@@ -3340,45 +3340,25 @@ HInstruction* ReplaceInstrOrPhiByClone(HInstruction* instr) {
   return clone;
 }
 
-// Returns an instruction with the opposite Boolean value from 'cond'.
-HInstruction* HGraph::InsertOppositeCondition(HInstruction* cond, HInstruction* cursor) {
+HCondition* HGraph::CreateCondition(IfCondition cond,
+                                    HInstruction* lhs,
+                                    HInstruction* rhs,
+                                    uint32_t dex_pc) {
   ArenaAllocator* allocator = GetAllocator();
-
-  if (cond->IsCondition() &&
-      !DataType::IsFloatingPointType(cond->InputAt(0)->GetType())) {
-    // Can't reverse floating point conditions.  We have to use HBooleanNot in that case.
-    HInstruction* lhs = cond->InputAt(0);
-    HInstruction* rhs = cond->InputAt(1);
-    HInstruction* replacement = nullptr;
-    switch (cond->AsCondition()->GetOppositeCondition()) {  // get *opposite*
-      case kCondEQ: replacement = new (allocator) HEqual(lhs, rhs); break;
-      case kCondNE: replacement = new (allocator) HNotEqual(lhs, rhs); break;
-      case kCondLT: replacement = new (allocator) HLessThan(lhs, rhs); break;
-      case kCondLE: replacement = new (allocator) HLessThanOrEqual(lhs, rhs); break;
-      case kCondGT: replacement = new (allocator) HGreaterThan(lhs, rhs); break;
-      case kCondGE: replacement = new (allocator) HGreaterThanOrEqual(lhs, rhs); break;
-      case kCondB:  replacement = new (allocator) HBelow(lhs, rhs); break;
-      case kCondBE: replacement = new (allocator) HBelowOrEqual(lhs, rhs); break;
-      case kCondA:  replacement = new (allocator) HAbove(lhs, rhs); break;
-      case kCondAE: replacement = new (allocator) HAboveOrEqual(lhs, rhs); break;
-      default:
-        LOG(FATAL) << "Unexpected condition";
-        UNREACHABLE();
-    }
-    cursor->GetBlock()->InsertInstructionBefore(replacement, cursor);
-    return replacement;
-  } else if (cond->IsIntConstant()) {
-    HIntConstant* int_const = cond->AsIntConstant();
-    if (int_const->IsFalse()) {
-      return GetIntConstant(1);
-    } else {
-      DCHECK(int_const->IsTrue()) << int_const->GetValue();
-      return GetIntConstant(0);
-    }
-  } else {
-    HInstruction* replacement = new (allocator) HBooleanNot(cond);
-    cursor->GetBlock()->InsertInstructionBefore(replacement, cursor);
-    return replacement;
+  switch (cond) {
+    case kCondEQ: return new (allocator) HEqual(lhs, rhs, dex_pc);
+    case kCondNE: return new (allocator) HNotEqual(lhs, rhs, dex_pc);
+    case kCondLT: return new (allocator) HLessThan(lhs, rhs, dex_pc);
+    case kCondLE: return new (allocator) HLessThanOrEqual(lhs, rhs, dex_pc);
+    case kCondGT: return new (allocator) HGreaterThan(lhs, rhs, dex_pc);
+    case kCondGE: return new (allocator) HGreaterThanOrEqual(lhs, rhs, dex_pc);
+    case kCondB:  return new (allocator) HBelow(lhs, rhs, dex_pc);
+    case kCondBE: return new (allocator) HBelowOrEqual(lhs, rhs, dex_pc);
+    case kCondA:  return new (allocator) HAbove(lhs, rhs, dex_pc);
+    case kCondAE: return new (allocator) HAboveOrEqual(lhs, rhs, dex_pc);
+    default:
+      LOG(FATAL) << "Unexpected condition " << cond;
+      UNREACHABLE();
   }
 }
 
@@ -3422,7 +3402,7 @@ std::ostream& operator<<(std::ostream& os, TypeCheckKind rhs) {
 #define CHECK_INTRINSICS_ENUM_VALUES(Name, InvokeType, _, SideEffects, Exceptions, ...) \
   static_assert( \
     static_cast<uint32_t>(Intrinsics::k ## Name) <= (kAccIntrinsicBits >> CTZ(kAccIntrinsicBits)), \
-    "Instrinsics enumeration space overflow.");
+    "Intrinsics enumeration space overflow.");
   ART_INTRINSICS_LIST(CHECK_INTRINSICS_ENUM_VALUES)
 #undef CHECK_INTRINSICS_ENUM_VALUES
 
@@ -3470,7 +3450,7 @@ static inline IntrinsicExceptions GetExceptionsIntrinsic(Intrinsics i) {
 
 void HInvoke::SetResolvedMethod(ArtMethod* method, bool enable_intrinsic_opt) {
   if (method != nullptr && method->IsIntrinsic() && enable_intrinsic_opt) {
-    Intrinsics intrinsic = static_cast<Intrinsics>(method->GetIntrinsic());
+    Intrinsics intrinsic = method->GetIntrinsic();
     SetIntrinsic(intrinsic,
                  NeedsEnvironmentIntrinsic(intrinsic),
                  GetSideEffectsIntrinsic(intrinsic),

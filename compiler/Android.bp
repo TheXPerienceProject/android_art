@@ -458,6 +458,7 @@ art_cc_defaults {
         "jni/jni_compiler_test.cc",
         "linker/linker_patch_test.cc",
         "linker/output_stream_test.cc",
+        "oat/jni_stub_hash_map_test.cc",
         "optimizing/bounds_check_elimination_test.cc",
         "optimizing/constant_folding_test.cc",
         "optimizing/data_type_test.cc",
@@ -510,6 +511,7 @@ art_cc_defaults {
         },
         riscv64: {
             srcs: [
+                "optimizing/instruction_simplifier_riscv64_test.cc",
                 "utils/riscv64/managed_register_riscv64_test.cc",
             ],
         },

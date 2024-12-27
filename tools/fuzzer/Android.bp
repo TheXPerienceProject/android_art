@@ -24,8 +24,7 @@ package {
 }
 
 cc_defaults {
-    name: "libart_verify_dex_fuzzer-defaults",
-    srcs: ["libart_verify_dex_fuzzer.cc"],
+    name: "libart_fuzzer-defaults",
 
     // Build and run on x86 too.
     host_supported: true,
@@ -53,6 +52,43 @@ cc_defaults {
     },
 }
 
+cc_defaults {
+    name: "libart_verify_dex_fuzzer-defaults",
+    srcs: ["libart_verify_dex_fuzzer.cc"],
+
+    defaults: [
+        "libart_fuzzer-defaults",
+    ],
+}
+
+cc_defaults {
+    name: "libart_verify_classes_fuzzer-defaults",
+    srcs: ["libart_verify_classes_fuzzer.cc"],
+
+    defaults: [
+        "art_defaults",
+        "libart_fuzzer-defaults",
+    ],
+
+    target: {
+        android: {
+            shared_libs: [
+                "libdl_android",
+            ],
+        },
+    },
+
+    data: [
+        ":core-oj",
+        ":core-libart",
+        ":okhttp",
+        ":bouncycastle",
+        ":apache-xml",
+        ":core-icu4j",
+        ":conscrypt-fuzzer",
+    ],
+}
+
 cc_fuzz {
     name: "libart_verify_dex_fuzzer",
     defaults: [
@@ -62,7 +98,7 @@ cc_fuzz {
     // Can not be in defaults due to soong limitations.
     corpus: [
         ":art_runtest_corpus",
-        "corpus/*",
+        "dex-verifier-corpus/*",
     ],
 }
 
@@ -75,7 +111,21 @@ cc_fuzz {
     // Can not be in defaults due to soong limitations.
     corpus: [
         ":art_runtest_corpus",
-        "corpus/*",
+        "dex-verifier-corpus/*",
+    ],
+}
+
+cc_fuzz {
+    // TODO Add a debug version
+    name: "libart_verify_classes_fuzzer",
+    defaults: [
+        "libart_verify_classes_fuzzer-defaults",
+        "libart_static_defaults",
+    ],
+    // Can not be in defaults due to soong limitations.
+    corpus: [
+        ":art_runtest_corpus",
+        "class-verifier-corpus/*",
     ],
 }
 
@@ -576,7 +626,23 @@ genrule {
         "host_2237-checker-inline-multidex_classes.dex",
         "host_2237-checker-inline-multidex_classes2.dex",
         "host_2238-checker-polymorphic-recursive-inlining_classes.dex",
-        "host_2239-varhandle-perf_classes.dex",
+        "host_2239-varhandle-perf-vh-cae_classes.dex",
+        "host_2239-varhandle-perf-vh-cas_classes.dex",
+        "host_2239-varhandle-perf-vh-cas-weak_classes.dex",
+        "host_2239-varhandle-perf-vh-gaa_classes.dex",
+        "host_2239-varhandle-perf-vh-gab_classes.dex",
+        "host_2239-varhandle-perf-vh-gas_classes.dex",
+        "host_2239-varhandle-perf-vh-get_classes.dex",
+        "host_2239-varhandle-perf-vh-get-a_classes.dex",
+        "host_2239-varhandle-perf-vh-get-bav_classes.dex",
+        "host_2239-varhandle-perf-vh-reflect-get_classes.dex",
+        "host_2239-varhandle-perf-vh-reflect-set_classes.dex",
+        "host_2239-varhandle-perf-vh-set_classes.dex",
+        "host_2239-varhandle-perf-vh-set-a_classes.dex",
+        "host_2239-varhandle-perf-vh-set-bav_classes.dex",
+        "host_2239-varhandle-perf-vh-unsafe-cas_classes.dex",
+        "host_2239-varhandle-perf-vh-unsafe-get_classes.dex",
+        "host_2239-varhandle-perf-vh-unsafe-put_classes.dex",
         "host_2240-tracing-non-invokable-method_classes.dex",
         "host_2241-checker-inline-try-catch_classes.dex",
         "host_2242-checker-lse-acquire-release-operations_classes.dex",
@@ -1267,12 +1333,23 @@ genrule {
 }
 
 genrule {
-    name: "art-gtest-jars-DexFuzzerFolder",
-    // Zip the corpus folder. To get the folder, we grab the first file
+    name: "art-gtest-jars-DexVerificationFuzzerFolder",
+    // Zip the dex-verifier-corpus folder. To get the folder, we grab the first file
     // from `in` and use its directory.
     cmd: "FILES=($(in)) &&" +
         "$(location soong_zip) -j -L 0 -o $(out) -D $$(dirname $${FILES[0]})",
-    srcs: ["corpus/*"],
-    out: ["fuzzer_corpus.zip"],
+    srcs: ["dex-verifier-corpus/*"],
+    out: ["dex_verification_fuzzer_corpus.zip"],
+    tools: ["soong_zip"],
+}
+
+genrule {
+    name: "art-gtest-jars-ClassVerificationFuzzerFolder",
+    // Zip the class-verifier-corpus folder. To get the folder, we grab the first file
+    // from `in` and use its directory.
+    cmd: "FILES=($(in)) &&" +
+        "$(location soong_zip) -j -L 0 -o $(out) -D $$(dirname $${FILES[0]})",
+    srcs: ["class-verifier-corpus/*"],
+    out: ["class_verification_fuzzer_corpus.zip"],
     tools: ["soong_zip"],
 }

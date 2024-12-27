@@ -359,7 +359,6 @@ OatWriter::OatWriter(const CompilerOptions& compiler_options,
       primary_oat_file_(false),
       vdex_size_(0u),
       vdex_dex_files_offset_(0u),
-      vdex_dex_shared_data_offset_(0u),
       vdex_verifier_deps_offset_(0u),
       vdex_lookup_tables_offset_(0u),
       oat_checksum_(adler32(0L, Z_NULL, 0)),
@@ -431,10 +430,6 @@ bool OatWriter::AddDexFileSource(File&& dex_file_fd, const char* location) {
     return false;
   }
   for (auto& dex_file : dex_files) {
-    if (dex_file->IsCompactDexFile()) {
-      LOG(ERROR) << "Compact dex is only supported from vdex: " << location;
-      return false;
-    }
     oat_dex_files_.emplace_back(std::move(dex_file));
   }
   return true;
@@ -2172,7 +2167,7 @@ size_t OatWriter::InitIndexBssMappingsHelper(size_t offset,
     offset += CalculateIndexBssMappingSize(dex_file->NumMethodIds(),
                                            static_cast<size_t>(pointer_size),
                                            method_indexes,
-                                           [=](uint32_t index) {
+                                           [this, dex_file](uint32_t index) {
                                              return bss_method_entries_.Get({dex_file, index});
                                            });
   }
@@ -2210,7 +2205,7 @@ size_t OatWriter::InitIndexBssMappingsHelper(size_t offset,
         dex_file->NumStringIds(),
         sizeof(GcRoot<mirror::String>),
         string_indexes,
-        [=](uint32_t index) {
+        [this, dex_file](uint32_t index) {
           return bss_string_entries_.Get({dex_file, dex::StringIndex(index)});
         });
   }
@@ -2224,7 +2219,7 @@ size_t OatWriter::InitIndexBssMappingsHelper(size_t offset,
         dex_file->NumProtoIds(),
         sizeof(GcRoot<mirror::MethodType>),
         proto_indexes,
-        [=](uint32_t index) {
+        [this, dex_file](uint32_t index) {
           return bss_method_type_entries_.Get({dex_file, dex::ProtoIndex(index)});
         });
   }
@@ -2358,7 +2353,7 @@ size_t OatWriter::InitOatCodeDexFiles(size_t offset) {
 
   if (HasImage()) {
     ScopedObjectAccess soa(Thread::Current());
-    ScopedAssertNoThreadSuspension sants("Init image method visitor", Thread::Current());
+    ScopedAssertNoThreadSuspension sants("Init image method visitor");
     InitImageMethodVisitor image_visitor(this, offset, dex_files_);
     success = VisitDexMethods(&image_visitor);
     image_visitor.Postprocess();
@@ -2894,7 +2889,7 @@ size_t OatWriter::WriteIndexBssMappingsHelper(OutputStream* out,
                              dex_file->NumMethodIds(),
                              static_cast<size_t>(pointer_size),
                              method_indexes,
-                             [=](uint32_t index) {
+                             [this, dex_file](uint32_t index) {
                                return bss_method_entries_.Get({dex_file, index});
                              });
     if (method_mappings_size == 0u) {
@@ -2964,7 +2959,7 @@ size_t OatWriter::WriteIndexBssMappingsHelper(OutputStream* out,
                              dex_file->NumStringIds(),
                              sizeof(GcRoot<mirror::String>),
                              string_indexes,
-                             [=](uint32_t index) {
+                             [this, dex_file](uint32_t index) {
                                return bss_string_entries_.Get({dex_file, dex::StringIndex(index)});
                              });
     if (string_mappings_size == 0u) {
@@ -2986,7 +2981,7 @@ size_t OatWriter::WriteIndexBssMappingsHelper(OutputStream* out,
                              dex_file->NumProtoIds(),
                              sizeof(GcRoot<mirror::MethodType>),
                              method_type_indexes,
-                             [=](uint32_t index) {
+                             [this, dex_file](uint32_t index) {
                                return bss_method_type_entries_
                                    .Get({dex_file, dex::ProtoIndex(index)});
                              });
@@ -3275,9 +3270,6 @@ bool OatWriter::WriteDexFiles(File* file,
     TimingLogger::ScopedTiming split2("Verify input Dex files", timings_);
     for (OatDexFile& oat_dex_file : oat_dex_files_) {
       const DexFile* dex_file = oat_dex_file.GetDexFile();
-      if (dex_file->IsCompactDexFile()) {
-        continue;  // Compact dex files can not be verified.
-      }
       std::string error_msg;
       if (!dex::Verify(dex_file,
                        dex_file->GetLocation().c_str(),
@@ -3307,37 +3299,6 @@ bool OatWriter::WriteDexFiles(File* file,
       }
       vdex_size_with_dex_files += oat_dex_file.dex_file_size_;
     }
-    // Add the shared data section size.
-    const uint8_t* raw_dex_file_shared_data_begin = nullptr;
-    uint32_t shared_data_size = 0u;
-    // Dex files from input vdex are represented as raw dex files and they can be
-    // compact dex files. These need to specify the same shared data section if any.
-    for (const OatDexFile& oat_dex_file : oat_dex_files_) {
-      const DexFile* dex_file = oat_dex_file.GetDexFile();
-      auto& header = dex_file->GetHeader();
-      if (!dex_file->IsCompactDexFile() || header.data_size_ == 0u) {
-        // Non compact dex does not have shared data section.
-        continue;
-      }
-      const uint8_t* cur_data_begin = dex_file->Begin() + header.data_off_;
-      if (raw_dex_file_shared_data_begin == nullptr) {
-        raw_dex_file_shared_data_begin = cur_data_begin;
-      } else if (raw_dex_file_shared_data_begin != cur_data_begin) {
-        LOG(ERROR) << "Mismatched shared data sections in raw dex files: "
-                   << static_cast<const void*>(raw_dex_file_shared_data_begin)
-                   << " != " << static_cast<const void*>(cur_data_begin);
-        return false;
-      }
-      // The different dex files currently can have different data sizes since
-      // the dex writer writes them one at a time into the shared section.:w
-      shared_data_size = std::max(shared_data_size, header.data_size_);
-    }
-    if (shared_data_size != 0u) {
-      // Shared data section is required to be 4 byte aligned.
-      vdex_size_with_dex_files = RoundUp(vdex_size_with_dex_files, 4u);
-    }
-    vdex_dex_shared_data_offset_ = vdex_size_with_dex_files;
-    vdex_size_with_dex_files += shared_data_size;
 
     // Extend the file and include the full page at the end as we need to write
     // additional data there and do not want to mmap that page twice.
@@ -3393,40 +3354,7 @@ bool OatWriter::WriteDexFiles(File* file,
       size_dex_file_ += oat_dex_file.dex_file_size_;
     }
 
-    // Write shared dex file data section and fix up the dex file headers.
-    if (shared_data_size != 0u) {
-      DCHECK_EQ(RoundUp(vdex_size_, 4u), vdex_dex_shared_data_offset_);
-      if (!use_existing_vdex) {
-        memset(vdex_begin_ + vdex_size_, 0, vdex_dex_shared_data_offset_ - vdex_size_);
-      }
-      size_dex_file_alignment_ += vdex_dex_shared_data_offset_ - vdex_size_;
-      vdex_size_ = vdex_dex_shared_data_offset_;
-
-      if (!use_existing_vdex) {
-        memcpy(vdex_begin_ + vdex_size_, raw_dex_file_shared_data_begin, shared_data_size);
-      }
-      vdex_size_ += shared_data_size;
-      size_dex_file_ += shared_data_size;
-      if (!use_existing_vdex) {
-        // Fix up the dex headers to have correct offsets to the data section.
-        for (OatDexFile& oat_dex_file : oat_dex_files_) {
-          DexFile::Header* header =
-              reinterpret_cast<DexFile::Header*>(vdex_begin_ + oat_dex_file.dex_file_offset_);
-          if (!CompactDexFile::IsMagicValid(header->magic_)) {
-            // Non-compact dex file, probably failed to convert due to duplicate methods.
-            continue;
-          }
-          CHECK_GT(vdex_dex_shared_data_offset_, oat_dex_file.dex_file_offset_);
-          // Offset is from the dex file base.
-          header->data_off_ = vdex_dex_shared_data_offset_ - oat_dex_file.dex_file_offset_;
-          // The size should already be what part of the data buffer may be used by the dex.
-          CHECK_LE(header->data_size_, shared_data_size);
-        }
-      }
-    }
     opened_dex_files_map->push_back(std::move(dex_files_map));
-  } else {
-    vdex_dex_shared_data_offset_ = vdex_size_;
   }
 
   if (use_existing_vdex) {

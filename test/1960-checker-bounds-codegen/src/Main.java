@@ -24,7 +24,7 @@ public class Main {
   /// CHECK:                     cmp {{w\d+}}, #0x0
   /// CHECK:                     b.ls #+0x{{[0-9a-f]+}} (addr 0x<<SLOW:[0-9a-f]+>>)
   /// CHECK:                     BoundsCheckSlowPathARM64
-  /// CHECK-NEXT:                0x{{0*}}<<SLOW>>:
+  /// CHECK-NEXT:                0x<<SLOW>>:
   /// CHECK-START-ARM: int Main.constantIndex(int[]) disassembly (after)
   /// CHECK:                     BoundsCheck
   /// CHECK:                     cmp {{r\d+}}, #0
@@ -46,7 +46,7 @@ public class Main {
   /// CHECK:                     cmp {{w\d+}}, #0xa
   /// CHECK:                     b.hs #+0x{{[0-9a-f]+}} (addr 0x<<SLOW:[0-9a-f]+>>)
   /// CHECK:                     BoundsCheckSlowPathARM64
-  /// CHECK-NEXT:                0x{{0*}}<<SLOW>>:
+  /// CHECK-NEXT:                0x<<SLOW>>:
   /// CHECK-START-ARM: int Main.constantLength(int) disassembly (after)
   /// CHECK:                     BoundsCheck
   /// CHECK:                     cmp {{r\d+}}, #10
@@ -70,7 +70,7 @@ public class Main {
   /// CHECK-NOT:                 cmp
   /// CHECK:                     b #+0x{{[0-9a-f]+}} (addr 0x<<SLOW:[0-9a-f]+>>)
   /// CHECK:                     BoundsCheckSlowPathARM64
-  /// CHECK-NEXT:                0x{{0*}}<<SLOW>>:
+  /// CHECK-NEXT:                0x<<SLOW>>:
   /// CHECK-START-ARM: int Main.constantIndexAndLength() disassembly (after)
   /// CHECK:                     BoundsCheck
   /// CHECK-NOT:                 cmp

@@ -58,6 +58,7 @@ using ApiDomain = enum {
 
 ApiDomain GetApiDomainFromPath(const std::string_view path);
 Result<ApiDomain> GetApiDomainFromPathList(const std::string& path_list);
+bool IsPartitionNativeLibPath(const std::string& path);
 
 // LibraryNamespaces is a singleton object that manages NativeLoaderNamespace
 // objects for an app process. Its main job is to create (and configure) a new

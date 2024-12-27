@@ -29,6 +29,12 @@
 #include "globals.h"
 #include "macros.h"
 
+#ifndef __BIONIC__
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE 0x100000
+#endif
+#endif  // __BIONIC__
+
 namespace art {
 
 #if defined(__LP64__) && !defined(__Fuchsia__) && \

@@ -88,15 +88,13 @@ void X86Context::SetFPR(uint32_t reg, uintptr_t value) {
   *fprs_[reg] = value;
 }
 
-void X86Context::DoLongJump() {
+void X86Context::CopyContextTo(uintptr_t* gprs, uintptr_t* fprs) {
 #if defined(__i386__)
   // Array of GPR values, filled from the context backward for the long jump pop. We add a slot at
   // the top for the stack pointer that doesn't get popped in a pop-all.
-  volatile uintptr_t gprs[kNumberOfCpuRegisters + 1];
   for (size_t i = 0; i < kNumberOfCpuRegisters; ++i) {
-    gprs[kNumberOfCpuRegisters - i - 1] = gprs_[i] != nullptr ? *gprs_[i] : kBadGprBase + i;
+    gprs[kNumberOfCpuRegisters - i - 1] = (gprs_[i] != nullptr) ? *gprs_[i] : (kBadGprBase + i);
   }
-  uint32_t fprs[kNumberOfFloatRegisters];
   for (size_t i = 0; i < kNumberOfFloatRegisters; ++i) {
     fprs[i] = fprs_[i] != nullptr ? *fprs_[i] : kBadFprBase + i;
   }
@@ -104,28 +102,9 @@ void X86Context::DoLongJump() {
   uintptr_t esp = gprs[kNumberOfCpuRegisters - ESP - 1] - sizeof(intptr_t);
   gprs[kNumberOfCpuRegisters] = esp;
   *(reinterpret_cast<uintptr_t*>(esp)) = eip_;
-  MEMORY_TOOL_HANDLE_NO_RETURN;
-  __asm__ __volatile__(
-      "movl %1, %%ebx\n\t"          // Address base of FPRs.
-      "movsd 0(%%ebx), %%xmm0\n\t"  // Load up XMM0-XMM7.
-      "movsd 8(%%ebx), %%xmm1\n\t"
-      "movsd 16(%%ebx), %%xmm2\n\t"
-      "movsd 24(%%ebx), %%xmm3\n\t"
-      "movsd 32(%%ebx), %%xmm4\n\t"
-      "movsd 40(%%ebx), %%xmm5\n\t"
-      "movsd 48(%%ebx), %%xmm6\n\t"
-      "movsd 56(%%ebx), %%xmm7\n\t"
-      "movl %0, %%esp\n\t"  // ESP points to gprs.
-      "popal\n\t"           // Load all registers except ESP and EIP with values in gprs.
-      "popl %%esp\n\t"      // Load stack pointer.
-      "ret\n\t"             // From higher in the stack pop eip.
-      :  // output.
-      : "g"(&gprs[0]), "g"(&fprs[0]) // input.
-      :);  // clobber.
 #else
   UNIMPLEMENTED(FATAL);
 #endif
-  UNREACHABLE();
 }
 
 }  // namespace x86

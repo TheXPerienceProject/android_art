@@ -63,10 +63,10 @@ bool InitializeIntrinsic(Thread* self,
 
   CHECK_EQ(method->GetInvokeType(), invoke_type);
   if (method->IsIntrinsic()) {
-    CHECK_EQ(method->GetIntrinsic(), static_cast<uint32_t>(intrinsic));
+    CHECK_EQ(method->GetIntrinsic(), intrinsic);
     return true;
   } else {
-    method->SetIntrinsic(static_cast<uint32_t>(intrinsic));
+    method->SetIntrinsic(intrinsic);
     return false;
   }
 }
@@ -83,7 +83,7 @@ bool IsIntrinsicInitialized(Thread* self,
 
   CHECK_EQ(method->GetInvokeType(), invoke_type);
   if (method->IsIntrinsic()) {
-    CHECK_EQ(method->GetIntrinsic(), static_cast<uint32_t>(intrinsic));
+    CHECK_EQ(method->GetIntrinsic(), intrinsic);
     return true;
   } else {
     return false;

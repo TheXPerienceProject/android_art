@@ -19,6 +19,7 @@
 
 #include "arch/arm64/asm_support_arm64.h"
 #include "base/bit_utils.h"
+#include "com_android_art_flags.h"
 #include "entrypoints/entrypoint_utils.h"
 #include "entrypoints/jni/jni_entrypoints.h"
 #include "entrypoints/math_entrypoints.h"
@@ -28,6 +29,8 @@
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "interpreter/interpreter.h"
+
+namespace art_flags = com::android::art::flags;
 
 namespace art HIDDEN {
 
@@ -75,6 +78,9 @@ extern "C" mirror::Object* art_quick_read_barrier_mark_reg29(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_introspection(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_introspection_arrays(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_introspection_gc_roots(mirror::Object*);
+
+extern "C" void art_quick_record_entry_trace_event();
+extern "C" void art_quick_record_exit_trace_event();
 
 void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active) {
   // ARM64 is the architecture with the largest number of core
@@ -193,6 +199,13 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   UpdateReadBarrierEntrypoints(qpoints, /*is_active=*/ false);
   qpoints->SetReadBarrierSlow(artReadBarrierSlow);
   qpoints->SetReadBarrierForRootSlow(artReadBarrierForRootSlow);
+
+  if (art_flags::always_enable_profile_code()) {
+    // These are used for always-on-tracing, currently only supported on arm64
+    // devices.
+    qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
+    qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+  }
 }
 
 }  // namespace art

@@ -361,6 +361,10 @@ class OatFile {
     return DexEnd() - DexBegin();
   }
 
+  // Returns the base address of the ELF file, or nullptr if the oat file is not backed by an ELF
+  // file or an error occurred.
+  virtual const uint8_t* ComputeElfBegin(std::string* error_msg) const = 0;
+
   EXPORT const uint8_t* Begin() const;
   EXPORT const uint8_t* End() const;
 

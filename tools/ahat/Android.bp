@@ -56,6 +56,12 @@ java_test_helper_library {
     host_supported: true,
     device_supported: false,
     name: "ahat-ri-test-dump",
-    java_version: "17",
     srcs: ["src/ri-test-dump/**/*.java"],
+}
+
+cc_library_shared {
+    name: "libahat-test-jni",
+    srcs: ["src/test/jni/**/*.cpp"],
+    header_libs: ["jni_headers"],
+    host_supported: true,
 }

@@ -98,6 +98,23 @@ TEST(LibraryNamespacesTest, TestGetApiDomainFromPathList) {
   }
 }
 
+TEST(LibraryNamespacesTest, TestIsPartitionNativeLibPath) {
+  EXPECT_TRUE(IsPartitionNativeLibPath("/system/lib/libfoo.so"));
+  EXPECT_TRUE(IsPartitionNativeLibPath("/system/lib64/libfoo.so"));
+  EXPECT_TRUE(IsPartitionNativeLibPath("/system_ext/lib64/libfoo.so"));
+  EXPECT_TRUE(IsPartitionNativeLibPath("/product/lib64/libfoo.so"));
+  EXPECT_TRUE(IsPartitionNativeLibPath("/vendor/lib64/libfoo.so"));
+  EXPECT_TRUE(IsPartitionNativeLibPath("/vendor/lib64/hw/libhw.so"));
+  EXPECT_TRUE(IsPartitionNativeLibPath("/system/system_ext/lib64/libfoo.so"));
+  EXPECT_TRUE(IsPartitionNativeLibPath("/system/product/lib64/libfoo.so"));
+  EXPECT_TRUE(IsPartitionNativeLibPath("/system/vendor/lib64/libfoo.so"));
+
+  EXPECT_FALSE(IsPartitionNativeLibPath("/data/app/~~hash==/myapp-hash==/lib/arm64/libapp.so"));
+  EXPECT_FALSE(
+      IsPartitionNativeLibPath("/system/app/PrintSpooler/lib/arm64/libprintspooler_jni.so"));
+  EXPECT_FALSE(IsPartitionNativeLibPath("/product/app/Camera2/lib/arm64/libjni_jpegutil.so"));
+}
+
 }  // namespace
 }  // namespace nativeloader
 }  // namespace android

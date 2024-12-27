@@ -63,6 +63,7 @@
 #include "profile/profile_compilation_info.h"
 #include "profile_assistant.h"
 #include "profman/profman_result.h"
+#include "inline_cache_format_util.h"
 
 namespace art {
 
@@ -209,14 +210,9 @@ static constexpr uint16_t kDefaultTestProfileClassPercentage = 5;
 
 // Separators used when parsing human friendly representation of profiles.
 static const std::string kMethodSep = "->";  // NOLINT [runtime/string] [4]
-static const std::string kMissingTypesMarker = "missing_types";  // NOLINT [runtime/string] [4]
-static const std::string kMegamorphicTypesMarker = "megamorphic_types";  // NOLINT [runtime/string] [4]
 static const std::string kClassAllMethods = "*";  // NOLINT [runtime/string] [4]
 static constexpr char kAnnotationStart = '{';
 static constexpr char kAnnotationEnd = '}';
-static constexpr char kProfileParsingInlineChacheSep = '+';
-static constexpr char kProfileParsingInlineChacheTargetSep = ']';
-static constexpr char kProfileParsingTypeSep = ',';
 static constexpr char kProfileParsingFirstCharInSignature = '(';
 static constexpr char kMethodFlagStringHot = 'H';
 static constexpr char kMethodFlagStringStartup = 'S';
@@ -566,13 +562,20 @@ class ProfMan final {
   }
 
   bool GetProfileFilterKeyFromApks(std::set<ProfileFilterKey>* profile_filter_keys) {
-    auto process_fn = [profile_filter_keys](std::unique_ptr<const DexFile>&& dex_file) {
-      // Store the profile key of the location instead of the location itself.
-      // This will make the matching in the profile filter method much easier.
-      profile_filter_keys->emplace(ProfileCompilationInfo::GetProfileDexFileBaseKey(
-          dex_file->GetLocation()), dex_file->GetLocationChecksum());
-    };
-    return OpenApkFilesFromLocations(process_fn);
+    return ForEachApkFile([&](File file, const std::string& location) {
+      ArtDexFileLoader dex_file_loader(&file, location);
+      std::vector<std::pair<std::string, uint32_t>> checksums;
+      std::string error_msg;
+      if (!dex_file_loader.GetMultiDexChecksums(&checksums, &error_msg)) {
+        LOG(ERROR) << "Open failed for '" << location << "' " << error_msg;
+        return false;
+      }
+      for (const auto& [multi_dex_location, checksum] : checksums) {
+        profile_filter_keys->emplace(
+            ProfileCompilationInfo::GetProfileDexFileBaseKey(multi_dex_location), checksum);
+      }
+      return true;
+    });
   }
 
   bool OpenApkFilesFromLocations(std::vector<std::unique_ptr<const DexFile>>* dex_files) {
@@ -584,6 +587,32 @@ class ProfMan final {
 
   bool OpenApkFilesFromLocations(
       const std::function<void(std::unique_ptr<const DexFile>&&)>& process_fn) {
+    static constexpr bool kVerifyChecksum = true;
+    std::string error_msg;
+    std::vector<std::unique_ptr<const DexFile>> dex_files_for_location;
+    bool result = ForEachApkFile([&](File file, const std::string& location) {
+      ArtDexFileLoader dex_file_loader(&file, location);
+      if (!dex_file_loader.Open(/*verify=*/false,
+                                kVerifyChecksum,
+                                /*allow_no_dex_files=*/true,
+                                &error_msg,
+                                &dex_files_for_location)) {
+        LOG(ERROR) << "Open failed for '" << location << "' " << error_msg;
+        return false;
+      }
+      return true;
+    });
+    if (!result) {
+      return false;
+    }
+    for (std::unique_ptr<const DexFile>& dex_file : dex_files_for_location) {
+      process_fn(std::move(dex_file));
+    }
+    return true;
+  }
+
+  bool ForEachApkFile(
+      const std::function<bool(File file, const std::string& location)>& process_fn) {
     bool use_apk_fd_list = !apks_fd_.empty();
     if (use_apk_fd_list) {
       // Get the APKs from the collection of FDs.
@@ -596,7 +625,7 @@ class ProfMan final {
         }
       } else {
         if (dex_locations_.size() != apks_fd_.size()) {
-            Usage("The number of apk-fds must match the number of dex-locations.");
+          Usage("The number of apk-fds must match the number of dex-locations.");
         }
       }
     } else if (!apk_files_.empty()) {
@@ -604,49 +633,29 @@ class ProfMan final {
         // If no dex locations are specified use the apk names as locations.
         dex_locations_ = apk_files_;
       } else if (dex_locations_.size() != apk_files_.size()) {
-          Usage("The number of apk-fds must match the number of dex-locations.");
+        Usage("The number of apk-fds must match the number of dex-locations.");
       }
     } else {
       // No APKs were specified.
       CHECK(dex_locations_.empty());
       return true;
     }
-    static constexpr bool kVerifyChecksum = true;
     for (size_t i = 0; i < dex_locations_.size(); ++i) {
-      std::string error_msg;
-      std::vector<std::unique_ptr<const DexFile>> dex_files_for_location;
       // We do not need to verify the apk for processing profiles.
       if (use_apk_fd_list) {
-          File file(apks_fd_[i], /*check_usage=*/false);
-          ArtDexFileLoader dex_file_loader(&file, dex_locations_[i]);
-          if (dex_file_loader.Open(/*verify=*/false,
-                                   kVerifyChecksum,
-                                   /*allow_no_dex_files=*/true,
-                                   &error_msg,
-                                   &dex_files_for_location)) {
-          } else {
-            LOG(ERROR) << "OpenZip failed for '" << dex_locations_[i] << "' " << error_msg;
-            return false;
-          }
+        File file(apks_fd_[i], /*check_usage=*/false);
+        if (!process_fn(std::move(file), dex_locations_[i])) {
+          return false;
+        }
       } else {
         File file(apk_files_[i], O_RDONLY, /*check_usage=*/false);
         if (file.Fd() < 0) {
           PLOG(ERROR) << "Unable to open '" << apk_files_[i] << "'";
           return false;
         }
-        ArtDexFileLoader dex_file_loader(&file, dex_locations_[i]);
-        if (dex_file_loader.Open(/*verify=*/false,
-                                 kVerifyChecksum,
-                                 /*allow_no_dex_files=*/true,
-                                 &error_msg,
-                                 &dex_files_for_location)) {
-        } else {
-          LOG(ERROR) << "Open failed for '" << dex_locations_[i] << "' " << error_msg;
+        if (!process_fn(std::move(file), dex_locations_[i])) {
           return false;
         }
-      }
-      for (std::unique_ptr<const DexFile>& dex_file : dex_files_for_location) {
-        process_fn(std::move(dex_file));
       }
     }
     return true;
@@ -801,86 +810,6 @@ class ProfMan final {
     return dump_only_;
   }
 
-  // Creates the inline-cache portion of a text-profile line. If the class def can't be found, or if
-  // there is no inline-caches this will be and empty string. Otherwise it will be '@' followed by
-  // an IC description matching the format described by ProcessLine below. Note that this will
-  // collapse all ICs with the same receiver type.
-  std::string GetInlineCacheLine(const ProfileCompilationInfo& profile_info,
-                                 const dex::MethodId& id,
-                                 const DexFile* dex_file,
-                                 uint16_t dex_method_idx) {
-    ProfileCompilationInfo::MethodHotness hotness =
-        profile_info.GetMethodHotness(MethodReference(dex_file, dex_method_idx));
-    DCHECK(!hotness.IsHot() || hotness.GetInlineCacheMap() != nullptr);
-    if (!hotness.IsHot() || hotness.GetInlineCacheMap()->empty()) {
-      return "";
-    }
-    const ProfileCompilationInfo::InlineCacheMap* inline_caches = hotness.GetInlineCacheMap();
-    struct IcLineInfo {
-      bool is_megamorphic_ = false;
-      bool is_missing_types_ = false;
-      std::set<dex::TypeIndex> classes_;
-    };
-    std::unordered_map<dex::TypeIndex, IcLineInfo> ics;
-    const dex::ClassDef* class_def = dex_file->FindClassDef(id.class_idx_);
-    if (class_def == nullptr) {
-      // No class def found.
-      return "";
-    }
-
-    CodeItemInstructionAccessor accessor(
-        *dex_file, dex_file->GetCodeItem(dex_file->FindCodeItemOffset(*class_def, dex_method_idx)));
-    for (const auto& [pc, ic_data] : *inline_caches) {
-      if (pc >= accessor.InsnsSizeInCodeUnits()) {
-        // Inlined inline caches are not supported in AOT, so discard any pc beyond the
-        // code item size. See also `HInliner::GetInlineCacheAOT`.
-        continue;
-      }
-      const Instruction& inst = accessor.InstructionAt(pc);
-      const dex::MethodId& target = dex_file->GetMethodId(inst.VRegB());
-      if (ic_data.classes.empty() && !ic_data.is_megamorphic && !ic_data.is_missing_types) {
-        continue;
-      }
-      auto val = ics.find(target.class_idx_);
-      if (val == ics.end()) {
-        val = ics.insert({ target.class_idx_, {} }).first;
-      }
-      if (ic_data.is_megamorphic) {
-        val->second.is_megamorphic_ = true;
-      }
-      if (ic_data.is_missing_types) {
-        val->second.is_missing_types_ = true;
-      }
-      for (dex::TypeIndex type_index : ic_data.classes) {
-        val->second.classes_.insert(type_index);
-      }
-    }
-    if (ics.empty()) {
-      return "";
-    }
-    std::ostringstream dump_ic;
-    dump_ic << kProfileParsingInlineChacheSep;
-    for (const auto& [target, dex_data] : ics) {
-      dump_ic << kProfileParsingInlineChacheTargetSep;
-      dump_ic << dex_file->GetTypeDescriptor(dex_file->GetTypeId(target));
-      if (dex_data.is_missing_types_) {
-        dump_ic << kMissingTypesMarker;
-      } else if (dex_data.is_megamorphic_) {
-        dump_ic << kMegamorphicTypesMarker;
-      } else {
-        bool first = true;
-        for (dex::TypeIndex type_index : dex_data.classes_) {
-          if (!first) {
-            dump_ic << kProfileParsingTypeSep;
-          }
-          first = false;
-          dump_ic << profile_info.GetTypeDescriptor(dex_file, type_index);
-        }
-      }
-    }
-    return dump_ic.str();
-  }
-
   bool GetClassNamesAndMethods(const ProfileCompilationInfo& profile_info,
                                std::vector<std::unique_ptr<const DexFile>>* dex_files,
                                std::set<std::string>* out_lines) {
@@ -916,8 +845,9 @@ class ProfMan final {
           if (post_startup_methods.find(dex_method_idx) != post_startup_methods.end()) {
             flags_string += kMethodFlagStringPostStartup;
           }
-          std::string inline_cache_string =
-              GetInlineCacheLine(profile_info, id, dex_file.get(), dex_method_idx);
+          FlattenProfileData::ItemMetadata metadata;
+          metadata.ExtractInlineCacheInfo(profile_info, dex_file.get(), dex_method_idx);
+          std::string inline_cache_string = GetInlineCacheLine(metadata.GetInlineCache());
           out_lines->insert(ART_FORMAT("{}{}{}{}{}{}",
                                        flags_string,
                                        type_string,

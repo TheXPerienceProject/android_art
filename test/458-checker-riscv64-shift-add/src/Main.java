@@ -207,6 +207,20 @@ public class Main {
     return (a << 1) + (b << 4);
   }
 
+  /// CHECK-START-RISCV64: long Main.$noinline$longShiftTooLittleDistance(long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        Riscv64ShiftAdd
+
+  public static long $noinline$longShiftTooLittleDistance(long a, long b) {
+    return (a << 0) + b;
+  }
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longShiftTooGreatDistance(long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        Riscv64ShiftAdd
+
+  public static long $noinline$longShiftTooGreatDistance(long a, long b) {
+    return (a << 4) + b;
+  }
+
   /// CHECK-START-RISCV64: long Main.$noinline$longTwoSimplifications(long, long) instruction_simplifier_riscv64 (before)
   /// CHECK:          <<A:j\d+>>         ParameterValue
   /// CHECK:          <<B:j\d+>>         ParameterValue
@@ -232,6 +246,99 @@ public class Main {
     long x = b + (a << 1);
     long y = a + (b << 2);
     return x ^ y;
+  }
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longTwoAddsUseShl(long, long, long) instruction_simplifier_riscv64 (before)
+  /// CHECK:          <<A:j\d+>>         ParameterValue
+  /// CHECK:          <<B:j\d+>>         ParameterValue
+  /// CHECK:          <<C:j\d+>>         ParameterValue
+  /// CHECK:          <<One:i\d+>>       IntConstant 1
+  /// CHECK:          <<Shl:j\d+>>       Shl [<<A>>,<<One>>]
+  /// CHECK:          <<X:j\d+>>         Add [<<B>>,<<Shl>>]
+  /// CHECK:          <<Y:j\d+>>         Add [<<C>>,<<Shl>>]
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longTwoAddsUseShl(long, long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK:          <<A:j\d+>>         ParameterValue
+  /// CHECK:          <<B:j\d+>>         ParameterValue
+  /// CHECK:          <<C:j\d+>>         ParameterValue
+  /// CHECK-DAG:      <<ShAdd1:j\d+>>    Riscv64ShiftAdd [<<A>>,<<B>>] distance:1
+  /// CHECK-DAG:      <<ShAdd2:j\d+>>    Riscv64ShiftAdd [<<A>>,<<C>>] distance:1
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longTwoAddsUseShl(long, long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                         Shl
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longTwoAddsUseShl(long, long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                         Add
+
+  public static long $noinline$longTwoAddsUseShl(long a, long b, long c) {
+    long shl = a << 1;
+    long x = shl + b;
+    long y = shl + c;
+    return x ^ y;
+  }
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longTwoAddsMixedOrderUseShl(long, long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-DAG:                         Riscv64ShiftAdd
+  /// CHECK-DAG:                         Riscv64ShiftAdd
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longTwoAddsMixedOrderUseShl(long, long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                         Shl
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longTwoAddsMixedOrderUseShl(long, long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                         Add
+
+  public static long $noinline$longTwoAddsMixedOrderUseShl(long a, long b, long c) {
+    long x = (a << 1) + b;
+    long y = c + (a << 1);
+    return x ^ y;
+  }
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longOneAddSharesShlUse(long, long, long) instruction_simplifier_riscv64 (before)
+  /// CHECK:          <<A:j\d+>>         ParameterValue
+  /// CHECK:          <<B:j\d+>>         ParameterValue
+  /// CHECK:          <<C:j\d+>>         ParameterValue
+  /// CHECK:          <<One:i\d+>>       IntConstant 1
+  /// CHECK:          <<Shl:j\d+>>       Shl [<<A>>,<<One>>]
+  /// CHECK:          <<X:j\d+>>         Add [<<B>>,<<Shl>>]
+  /// CHECK:          <<Y:j\d+>>         Sub [<<Shl>>,<<C>>]
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longOneAddSharesShlUse(long, long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK:          <<A:j\d+>>         ParameterValue
+  /// CHECK:          <<B:j\d+>>         ParameterValue
+  /// CHECK:          <<C:j\d+>>         ParameterValue
+  /// CHECK:          <<One:i\d+>>       IntConstant 1
+  /// CHECK:          <<Shl:j\d+>>       Shl [<<A>>,<<One>>]
+  /// CHECK-DAG:      <<ShAdd:j\d+>>     Riscv64ShiftAdd [<<A>>,<<B>>] distance:1
+  /// CHECK:          <<Y:j\d+>>         Sub [<<Shl>>,<<C>>]
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longOneAddSharesShlUse(long, long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                         Add
+
+  public static long $noinline$longOneAddSharesShlUse(long a, long b, long c) {
+    long shl = a << 1;
+    long x = shl + b;
+    long y = shl - c;
+    return x ^ y;
+  }
+
+  public static void $noinline$returnVoid(long a) {}
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longOneAddSharesShlEnvironmentUse(long, long) instruction_simplifier_riscv64 (after)
+  /// CHECK:                             Shl
+  /// CHECK-DAG:                         Riscv64ShiftAdd
+
+  public static long $noinline$longOneAddSharesShlEnvironmentUse(long a, long b) {
+    long shl = a << 1;
+    long x = shl + b;
+    $noinline$returnVoid(shl);
+    return x;
+  }
+
+  /// CHECK-START-RISCV64: long Main.$noinline$longTwoTheSameShl(long) instruction_simplifier_riscv64 (after)
+  /// CHECK-NOT:                        Riscv64ShiftAdd
+
+  public static long $noinline$longTwoTheSameShl(long a) {
+    return (a << 1) + (a << 1);
   }
 
   public static void main(String[] args) {
@@ -270,6 +377,30 @@ public class Main {
     assertLongEquals(2L, $noinline$longLeftShift(1L, 0L));
     assertLongEquals(4L, $noinline$longLeftShift(2L, 0L));
 
+    assertLongEquals(1L, $noinline$longShiftTooLittleDistance(1L, 0L));
+    assertLongEquals(2L, $noinline$longShiftTooLittleDistance(2L, 0L));
+
+    assertLongEquals(17L, $noinline$longShiftTooGreatDistance(1L, 1L));
+    assertLongEquals(32L, $noinline$longShiftTooGreatDistance(2L, 0L));
+
     assertLongEquals(6L, $noinline$longTwoSimplifications(1L, 1L));
+
+    assertLongEquals(0L, $noinline$longTwoAddsUseShl(1L, 1L, 1L));
+    assertLongEquals(1L, $noinline$longTwoAddsUseShl(1L, 0L, 1L));
+    assertLongEquals(3L, $noinline$longTwoAddsUseShl(0L, 1L, 2L));
+    assertLongEquals(7L, $noinline$longTwoAddsUseShl(1L, 2L, 1L));
+
+    assertLongEquals(0L, $noinline$longTwoAddsMixedOrderUseShl(1L, 1L, 1L));
+    assertLongEquals(1L, $noinline$longTwoAddsMixedOrderUseShl(1L, 0L, 1L));
+    assertLongEquals(3L, $noinline$longTwoAddsMixedOrderUseShl(0L, 1L, 2L));
+
+    assertLongEquals(2L, $noinline$longOneAddSharesShlUse(1L, 1L, 1L));
+    assertLongEquals(3L, $noinline$longOneAddSharesShlUse(1L, 0L, 1L));
+    assertLongEquals(-1L, $noinline$longOneAddSharesShlUse(0L, 1L, 2L));
+    assertLongEquals(5L, $noinline$longOneAddSharesShlUse(1L, 2L, 1L));
+
+    assertLongEquals(3L, $noinline$longOneAddSharesShlEnvironmentUse(1L, 1L));
+
+    assertLongEquals(4L, $noinline$longTwoTheSameShl(1L));
   }
 }

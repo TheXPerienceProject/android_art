@@ -218,8 +218,12 @@ static std::vector<const void*> g_removed_jit_functions GUARDED_BY(g_jit_debug_l
 static uint32_t g_jit_num_unpacked_entries = 0;
 
 struct DexNativeInfo {
+  static Mutex* Lock() RETURN_CAPABILITY(g_dex_debug_lock) { return &g_dex_debug_lock; }
   static constexpr bool kCopySymfileData = false;  // Just reference DEX files.
-  static JITDescriptor& Descriptor() { return __dex_debug_descriptor; }
+  static JITDescriptor& Descriptor() REQUIRES(g_dex_debug_lock) {
+    g_dex_debug_lock.AssertHeld(Thread::Current());
+    return __dex_debug_descriptor;
+  }
   static void NotifyNativeDebugger() { __dex_debug_register_code_ptr(); }
   static const void* Alloc(size_t size) { return malloc(size); }
   static void Free(const void* ptr) { free(const_cast<void*>(ptr)); }
@@ -227,14 +231,19 @@ struct DexNativeInfo {
 };
 
 struct JitNativeInfo {
+  static Mutex* Lock() RETURN_CAPABILITY(g_jit_debug_lock) { return &g_jit_debug_lock; }
   static constexpr bool kCopySymfileData = true;  // Copy debug info to JIT memory.
-  static JITDescriptor& Descriptor() { return __jit_debug_descriptor; }
+  static JITDescriptor& Descriptor() REQUIRES(g_jit_debug_lock) {
+    g_jit_debug_lock.AssertHeld(Thread::Current());
+    return __jit_debug_descriptor;
+  }
   static void NotifyNativeDebugger() { __jit_debug_register_code_ptr(); }
   static const void* Alloc(size_t size) { return Memory()->AllocateData(size); }
   static void Free(const void* ptr) { Memory()->FreeData(reinterpret_cast<const uint8_t*>(ptr)); }
   static void Free(void* ptr) = delete;
 
-  template<class T> static T* Writable(const T* v) {
+  template <class T>
+  static T* Writable(const T* v) REQUIRES(g_jit_debug_lock) {
     // Special case: This entry is in static memory and not allocated in JIT memory.
     if (v == reinterpret_cast<const void*>(&Descriptor().application_tail_entry_)) {
       return const_cast<T*>(v);
@@ -280,8 +289,9 @@ static void Sequnlock(JITDescriptor& descriptor) {
 
 // Insert 'entry' in the linked list before 'next' and mark it as valid (append if 'next' is null).
 // This method must be called under global lock (g_jit_debug_lock or g_dex_debug_lock).
-template<class NativeInfo>
-static void InsertNewEntry(const JITCodeEntry* entry, const JITCodeEntry* next) {
+template <class NativeInfo>
+static void InsertNewEntry(const JITCodeEntry* entry, const JITCodeEntry* next)
+    REQUIRES(NativeInfo::Lock()) {
   CHECK_EQ(entry->seqlock_.load(kNonRacingRelaxed) & 1, 1u) << "Expected invalid entry";
   JITDescriptor& descriptor = NativeInfo::Descriptor();
   const JITCodeEntry* prev = (next != nullptr ? next->prev_ : descriptor.tail_);
@@ -304,12 +314,12 @@ static void InsertNewEntry(const JITCodeEntry* entry, const JITCodeEntry* next) 
 }
 
 // This must be called with the appropriate lock taken (g_{jit,dex}_debug_lock).
-template<class NativeInfo>
+template <class NativeInfo>
 static const JITCodeEntry* CreateJITCodeEntryInternal(
     ArrayRef<const uint8_t> symfile = ArrayRef<const uint8_t>(),
     const void* addr = nullptr,
     bool allow_packing = false,
-    bool is_compressed = false) {
+    bool is_compressed = false) REQUIRES(NativeInfo::Lock()) {
   JITDescriptor& descriptor = NativeInfo::Descriptor();
 
   // Allocate JITCodeEntry if needed.
@@ -368,8 +378,8 @@ static const JITCodeEntry* CreateJITCodeEntryInternal(
   return entry;
 }
 
-template<class NativeInfo>
-static void DeleteJITCodeEntryInternal(const JITCodeEntry* entry) {
+template <class NativeInfo>
+static void DeleteJITCodeEntryInternal(const JITCodeEntry* entry) REQUIRES(NativeInfo::Lock()) {
   CHECK(entry != nullptr);
   JITDescriptor& descriptor = NativeInfo::Descriptor();
 
@@ -466,6 +476,8 @@ void RemoveNativeDebugInfoForDex(Thread* self, const DexFile* dexfile) {
 //
 void NativeDebugInfoPreFork() {
   CHECK(Runtime::Current()->IsZygote());
+  MutexLock mu(Thread::Current(), *Locks::jit_lock_);  // Needed to alloc entry.
+  MutexLock mu2(Thread::Current(), g_jit_debug_lock);
   JITDescriptor& descriptor = JitNativeInfo::Descriptor();
   if (descriptor.zygote_head_entry_ != nullptr) {
     return;  // Already done - we need to do this only on the first fork.
@@ -473,7 +485,6 @@ void NativeDebugInfoPreFork() {
 
   // Create the zygote-owned head entry (with no ELF file).
   // The data will be allocated from the current JIT memory (owned by zygote).
-  MutexLock mu(Thread::Current(), *Locks::jit_lock_);  // Needed to alloc entry.
   const JITCodeEntry* zygote_head =
     reinterpret_cast<const JITCodeEntry*>(JitNativeInfo::Alloc(sizeof(JITCodeEntry)));
   CHECK(zygote_head != nullptr);
@@ -488,6 +499,7 @@ void NativeDebugInfoPreFork() {
 
 void NativeDebugInfoPostFork() {
   CHECK(!Runtime::Current()->IsZygote());
+  MutexLock mu(Thread::Current(), g_jit_debug_lock);
   JITDescriptor& descriptor = JitNativeInfo::Descriptor();
   descriptor.free_entries_ = nullptr;  // Don't reuse zygote's entries.
 }
@@ -575,7 +587,7 @@ static void RepackEntries(bool compress_entries, ArrayRef<const void*> removed)
   g_jit_num_unpacked_entries = 0;
 }
 
-void RepackNativeDebugInfoForJitLocked() REQUIRES(g_jit_debug_lock);
+static void RepackNativeDebugInfoForJitLocked() REQUIRES(g_jit_debug_lock);
 
 void AddNativeDebugInfoForJit(const void* code_ptr,
                               const std::vector<uint8_t>& symfile,
@@ -627,7 +639,7 @@ void RemoveNativeDebugInfoForJit(const void* code_ptr) {
   VLOG(jit) << "JIT mini-debug-info removed for " << code_ptr;
 }
 
-void RepackNativeDebugInfoForJitLocked() {
+static void RepackNativeDebugInfoForJitLocked() {
   // Remove entries which are inside packed and compressed ELF files.
   std::vector<const void*>& removed = g_removed_jit_functions;
   std::sort(removed.begin(), removed.end());

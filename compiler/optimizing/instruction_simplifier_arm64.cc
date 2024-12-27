@@ -77,6 +77,7 @@ class InstructionSimplifierArm64Visitor final : public HGraphVisitor {
   void VisitArraySet(HArraySet* instruction) override;
   void VisitMul(HMul* instruction) override;
   void VisitOr(HOr* instruction) override;
+  void VisitRol(HRol* instruction) override;
   void VisitShl(HShl* instruction) override;
   void VisitShr(HShr* instruction) override;
   void VisitSub(HSub* instruction) override;
@@ -232,6 +233,11 @@ void InstructionSimplifierArm64Visitor::VisitOr(HOr* instruction) {
   if (TryMergeNegatedInput(instruction)) {
     RecordSimplification();
   }
+}
+
+void InstructionSimplifierArm64Visitor::VisitRol(HRol* rol) {
+  UnfoldRotateLeft(rol);
+  RecordSimplification();
 }
 
 void InstructionSimplifierArm64Visitor::VisitShl(HShl* instruction) {

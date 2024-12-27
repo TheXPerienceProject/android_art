@@ -65,9 +65,13 @@ uint32_t GetTid();
 // Returns the given thread's name.
 std::string GetThreadName(pid_t tid);
 
-// Sets the name of the current thread. The name may be truncated to an
+// Sets the pthread name of the current thread. The name may be truncated to an
 // implementation-defined limit.
 void SetThreadName(const char* thread_name);
+
+// Sets the pthread name of the given thread. The name may be truncated to an
+// implementation-defined limit. Does nothing if not supported by the OS.
+void SetThreadName(pthread_t thr, const char* thread_name);
 
 // Reads data from "/proc/self/task/${tid}/stat".
 void GetTaskStats(pid_t tid, char* state, int* utime, int* stime, int* task_cpu);

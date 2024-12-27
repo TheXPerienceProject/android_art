@@ -35,22 +35,22 @@ namespace android {
 
 class NativeBridgeTest : public testing::Test {
  protected:
-  NativeBridgeTest() : tempDir() {
-    appDataDir_ = std::string(tempDir.path);
-    codeCache_ = appDataDir_ + "/code_cache";
-    codeCacheStatFail_ = codeCache_ + "/temp";
+  NativeBridgeTest() : temp_dir_() {
+    app_data_dir_ = std::string(temp_dir_.path);
+    code_cache_ = app_data_dir_ + "/code_cache";
+    code_cache_stat_fail_ = code_cache_ + "/temp";
   }
 
-  const char* appDataDir() { return appDataDir_.c_str(); }
+  const char* AppDataDir() { return app_data_dir_.c_str(); }
 
-  const char* codeCache() { return codeCache_.c_str(); }
+  const char* CodeCache() { return code_cache_.c_str(); }
 
-  const char* codeCacheStatFail() { return codeCacheStatFail_.c_str(); }
+  const char* CodeCacheStatFail() { return code_cache_stat_fail_.c_str(); }
 
-  TemporaryDir tempDir;
-  std::string appDataDir_;
-  std::string codeCache_;
-  std::string codeCacheStatFail_;
+  TemporaryDir temp_dir_;
+  std::string app_data_dir_;
+  std::string code_cache_;
+  std::string code_cache_stat_fail_;
 };
 
 };  // namespace android

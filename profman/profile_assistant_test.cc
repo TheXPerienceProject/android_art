@@ -172,7 +172,7 @@ class ProfileAssistantTest : public CommonRuntimeTest, public ProfileTestHelper 
   int ProcessProfiles(
       const std::vector<int>& profiles_fd,
       int reference_profile_fd,
-      const std::vector<const std::string>& extra_args = std::vector<const std::string>()) {
+      const std::vector<std::string>& extra_args = std::vector<std::string>()) {
     std::string profman_cmd = GetProfmanCmd();
     std::vector<std::string> argv_str;
     argv_str.push_back(profman_cmd);
@@ -416,8 +416,8 @@ class ProfileAssistantTest : public CommonRuntimeTest, public ProfileTestHelper 
 
   int CheckCompilationMethodPercentChange(uint16_t methods_in_cur_profile,
                                           uint16_t methods_in_ref_profile,
-                                          const std::vector<const std::string>& extra_args =
-                                              std::vector<const std::string>()) {
+                                          const std::vector<std::string>& extra_args =
+                                              std::vector<std::string>()) {
     ScratchFile profile;
     ScratchFile reference_profile;
     std::vector<int> profile_fds({ GetFd(profile)});
@@ -442,8 +442,8 @@ class ProfileAssistantTest : public CommonRuntimeTest, public ProfileTestHelper 
 
   int CheckCompilationClassPercentChange(uint16_t classes_in_cur_profile,
                                          uint16_t classes_in_ref_profile,
-                                         const std::vector<const std::string>& extra_args =
-                                             std::vector<const std::string>()) {
+                                         const std::vector<std::string>& extra_args =
+                                             std::vector<std::string>()) {
     uint16_t max_classes = std::max(classes_in_cur_profile, classes_in_ref_profile);
     const DexFile* dex1_x = BuildDex("location1_x",
                                      /*location_checksum=*/ 0x101,
@@ -666,7 +666,7 @@ TEST_F(ProfileAssistantTest, DoNotAdviseCompilation) {
 TEST_F(ProfileAssistantTest, DoNotAdviseCompilationMethodPercentage) {
   const uint16_t kNumberOfMethodsInRefProfile = 6000;
   const uint16_t kNumberOfMethodsInCurProfile = 6100;  // Threshold is 2%.
-  std::vector<const std::string> extra_args({"--min-new-methods-percent-change=2"});
+  std::vector<std::string> extra_args({"--min-new-methods-percent-change=2"});
 
   // We should not advise compilation.
   ASSERT_EQ(ProfmanResult::kSkipCompilationSmallDelta,
@@ -677,7 +677,7 @@ TEST_F(ProfileAssistantTest, DoNotAdviseCompilationMethodPercentage) {
 TEST_F(ProfileAssistantTest, ShouldAdviseCompilationMethodPercentage) {
   const uint16_t kNumberOfMethodsInRefProfile = 6000;
   const uint16_t kNumberOfMethodsInCurProfile = 6200;  // Threshold is 2%.
-  std::vector<const std::string> extra_args({"--min-new-methods-percent-change=2"});
+  std::vector<std::string> extra_args({"--min-new-methods-percent-change=2"});
 
   // We should advise compilation.
   ASSERT_EQ(ProfmanResult::kCompile,
@@ -688,7 +688,7 @@ TEST_F(ProfileAssistantTest, ShouldAdviseCompilationMethodPercentage) {
 TEST_F(ProfileAssistantTest, DoNotAdviseCompilationClassPercentage) {
   const uint16_t kNumberOfClassesInRefProfile = 6000;
   const uint16_t kNumberOfClassesInCurProfile = 6110;  // Threshold is 2%.
-  std::vector<const std::string> extra_args({"--min-new-classes-percent-change=2"});
+  std::vector<std::string> extra_args({"--min-new-classes-percent-change=2"});
 
   // We should not advise compilation.
   ASSERT_EQ(ProfmanResult::kSkipCompilationSmallDelta,
@@ -699,7 +699,7 @@ TEST_F(ProfileAssistantTest, DoNotAdviseCompilationClassPercentage) {
 TEST_F(ProfileAssistantTest, ShouldAdviseCompilationClassPercentage) {
   const uint16_t kNumberOfClassesInRefProfile = 6000;
   const uint16_t kNumberOfClassesInCurProfile = 6120;  // Threshold is 2%.
-  std::vector<const std::string> extra_args({"--min-new-classes-percent-change=2"});
+  std::vector<std::string> extra_args({"--min-new-classes-percent-change=2"});
 
   // We should advise compilation.
   ASSERT_EQ(ProfmanResult::kCompile,
@@ -2142,7 +2142,7 @@ TEST_F(ProfileAssistantTest, ForceMerge) {
   ProfileCompilationInfo info2;
   SetupProfile(dex1_7000, dex2_7000, 0, kNumberOfClassesInCurProfile, reference_profile, &info2);
 
-  std::vector<const std::string> extra_args({"--force-merge"});
+  std::vector<std::string> extra_args({"--force-merge"});
   int return_code = ProcessProfiles(profile_fds, reference_profile_fd, extra_args);
 
   ASSERT_EQ(return_code, ProfmanResult::kSuccess);
@@ -2168,7 +2168,7 @@ TEST_F(ProfileAssistantTest, ForceMergeAndAnalyze) {
   SetupProfile(
       dex1, dex2, kNumberOfMethodsInCurProfile, /*number_of_classes=*/0, cur_profile, &cur_info);
 
-  std::vector<const std::string> extra_args({"--force-merge-and-analyze"});
+  std::vector<std::string> extra_args({"--force-merge-and-analyze"});
   int return_code = ProcessProfiles({cur_profile.GetFd()}, ref_profile.GetFd(), extra_args);
 
   ASSERT_EQ(return_code, ProfmanResult::kCompile);
@@ -2194,7 +2194,7 @@ TEST_F(ProfileAssistantTest, ForceMergeAndAnalyzeNoDelta) {
   SetupProfile(
       dex1, dex2, kNumberOfMethodsInCurProfile, /*number_of_classes=*/0, cur_profile, &cur_info);
 
-  std::vector<const std::string> extra_args({"--force-merge-and-analyze"});
+  std::vector<std::string> extra_args({"--force-merge-and-analyze"});
   int return_code = ProcessProfiles({cur_profile.GetFd()}, ref_profile.GetFd(), extra_args);
 
   ASSERT_EQ(return_code, ProfmanResult::kSkipCompilationSmallDelta);
@@ -2219,7 +2219,7 @@ TEST_F(ProfileAssistantTest, ForceMergeAndAnalyzeEmptyProfiles) {
   SetupProfile(
       dex1, dex2, kNumberOfMethodsInCurProfile, /*number_of_classes=*/0, cur_profile, &cur_info);
 
-  std::vector<const std::string> extra_args({"--force-merge-and-analyze"});
+  std::vector<std::string> extra_args({"--force-merge-and-analyze"});
   int return_code = ProcessProfiles({cur_profile.GetFd()}, ref_profile.GetFd(), extra_args);
 
   ASSERT_EQ(return_code, ProfmanResult::kSkipCompilationEmptyProfiles);
@@ -2287,7 +2287,7 @@ TEST_F(ProfileAssistantTest, DifferentProfileVersions) {
 
   std::vector<int> profile_fds({ GetFd(profile1)});
   int reference_profile_fd = GetFd(profile2);
-  std::vector<const std::string> boot_image_args({"--boot-image-merge"});
+  std::vector<std::string> boot_image_args({"--boot-image-merge"});
   ASSERT_EQ(ProcessProfiles(profile_fds, reference_profile_fd, boot_image_args),
             ProfmanResult::kErrorDifferentVersions);
   ASSERT_EQ(ProcessProfiles(profile_fds, reference_profile_fd), ProfmanResult::kErrorBadProfiles);

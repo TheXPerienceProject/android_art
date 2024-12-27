@@ -35,6 +35,7 @@
 #include "lock_word.h"
 #include "mirror/array-inl.h"
 #include "mirror/class-inl.h"
+#include "mirror/method_type.h"
 #include "mirror/object_reference.h"
 #include "mirror/var_handle.h"
 #include "optimizing/nodes.h"
@@ -56,7 +57,6 @@ class GcRoot;
 namespace x86_64 {
 
 static constexpr int kCurrentMethodStackOffset = 0;
-static constexpr Register kMethodRegisterArgument = RDI;
 // The compare/jump sequence will generate about (1.5 * num_entries) instructions. A jump
 // table version generates 7 instructions and num_entries literals. Compare/jump sequence will
 // generates less code/data with a small num_entries.
@@ -1628,6 +1628,7 @@ CodeGeneratorX86_64::CodeGeneratorX86_64(HGraph* graph,
       boot_image_other_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       jit_string_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       jit_class_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
+      jit_method_type_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       fixups_to_jump_tables_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)) {
   AddAllocatedRegister(Location::RegisterLocation(kFakeReturnRegister));
 }
@@ -1693,28 +1694,29 @@ void InstructionCodeGeneratorX86_64::GenerateMethodEntryExitHook(HInstruction* i
   __ j(kGreater, slow_path->GetEntryLabel());
 
   // Check if there is place in the buffer for a new entry, if no, take slow path.
-  CpuRegister index = locations->GetTemp(0).AsRegister<CpuRegister>();
-  CpuRegister entry_addr = CpuRegister(TMP);
-  uint64_t trace_buffer_index_offset =
-      Thread::TraceBufferIndexOffset<kX86_64PointerSize>().SizeValue();
-  __ gs()->movq(CpuRegister(index),
-                Address::Absolute(trace_buffer_index_offset, /* no_rip= */ true));
-  __ subq(CpuRegister(index), Immediate(kNumEntriesForWallClock));
+  CpuRegister init_entry = locations->GetTemp(0).AsRegister<CpuRegister>();
+  // Use a register that is different from RAX and RDX. RDTSC returns result in RAX and RDX and we
+  // use curr entry to store the result into the buffer.
+  CpuRegister curr_entry = CpuRegister(TMP);
+  DCHECK(curr_entry.AsRegister() != RAX);
+  DCHECK(curr_entry.AsRegister() != RDX);
+  uint64_t trace_buffer_curr_entry_offset =
+      Thread::TraceBufferCurrPtrOffset<kX86_64PointerSize>().SizeValue();
+  __ gs()->movq(CpuRegister(curr_entry),
+                Address::Absolute(trace_buffer_curr_entry_offset, /* no_rip= */ true));
+  __ subq(CpuRegister(curr_entry), Immediate(kNumEntriesForWallClock * sizeof(void*)));
+  __ gs()->movq(init_entry,
+                Address::Absolute(Thread::TraceBufferPtrOffset<kX86_64PointerSize>().SizeValue(),
+                                  /* no_rip= */ true));
+  __ cmpq(curr_entry, init_entry);
   __ j(kLess, slow_path->GetEntryLabel());
 
   // Update the index in the `Thread`.
-  __ gs()->movq(Address::Absolute(trace_buffer_index_offset, /* no_rip= */ true),
-                CpuRegister(index));
-  // Calculate the entry address in the buffer.
-  // entry_addr = base_addr + sizeof(void*) * index
-  __ gs()->movq(entry_addr,
-                Address::Absolute(Thread::TraceBufferPtrOffset<kX86_64PointerSize>().SizeValue(),
-                                  /* no_rip= */ true));
-  __ leaq(CpuRegister(entry_addr),
-          Address(CpuRegister(entry_addr), CpuRegister(index), TIMES_8, 0));
+  __ gs()->movq(Address::Absolute(trace_buffer_curr_entry_offset, /* no_rip= */ true),
+                CpuRegister(curr_entry));
 
   // Record method pointer and action.
-  CpuRegister method = index;
+  CpuRegister method = init_entry;
   __ movq(CpuRegister(method), Address(CpuRegister(RSP), kCurrentMethodStackOffset));
   // Use last two bits to encode trace method action. For MethodEntry it is 0
   // so no need to set the bits since they are 0 already.
@@ -1724,12 +1726,12 @@ void InstructionCodeGeneratorX86_64::GenerateMethodEntryExitHook(HInstruction* i
     static_assert(enum_cast<int32_t>(TraceAction::kTraceMethodExit) == 1);
     __ orq(method, Immediate(enum_cast<int32_t>(TraceAction::kTraceMethodExit)));
   }
-  __ movq(Address(entry_addr, kMethodOffsetInBytes), CpuRegister(method));
+  __ movq(Address(curr_entry, kMethodOffsetInBytes), CpuRegister(method));
   // Get the timestamp. rdtsc returns timestamp in RAX + RDX even in 64-bit architectures.
   __ rdtsc();
   __ shlq(CpuRegister(RDX), Immediate(32));
   __ orq(CpuRegister(RAX), CpuRegister(RDX));
-  __ movq(Address(entry_addr, kTimestampOffsetInBytes), CpuRegister(RAX));
+  __ movq(Address(curr_entry, kTimestampOffsetInBytes), CpuRegister(RAX));
   __ Bind(slow_path->GetExitLabel());
 }
 
@@ -2724,14 +2726,16 @@ void InstructionCodeGeneratorX86_64::VisitAboveOrEqual(HAboveOrEqual* comp) {
 void LocationsBuilderX86_64::VisitCompare(HCompare* compare) {
   LocationSummary* locations =
       new (GetGraph()->GetAllocator()) LocationSummary(compare, LocationSummary::kNoCall);
-  switch (compare->InputAt(0)->GetType()) {
+  switch (compare->GetComparisonType()) {
     case DataType::Type::kBool:
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
     case DataType::Type::kUint16:
     case DataType::Type::kInt16:
     case DataType::Type::kInt32:
-    case DataType::Type::kInt64: {
+    case DataType::Type::kUint32:
+    case DataType::Type::kInt64:
+    case DataType::Type::kUint64: {
       locations->SetInAt(0, Location::RequiresRegister());
       locations->SetInAt(1, Location::Any());
       locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
@@ -2756,10 +2760,13 @@ void InstructionCodeGeneratorX86_64::VisitCompare(HCompare* compare) {
   Location right = locations->InAt(1);
 
   NearLabel less, greater, done;
-  DataType::Type type = compare->InputAt(0)->GetType();
+  DataType::Type type = compare->GetComparisonType();
   Condition less_cond = kLess;
 
   switch (type) {
+    case DataType::Type::kUint32:
+      less_cond = kBelow;
+      FALLTHROUGH_INTENDED;
     case DataType::Type::kBool:
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
@@ -2769,6 +2776,9 @@ void InstructionCodeGeneratorX86_64::VisitCompare(HCompare* compare) {
       codegen_->GenerateIntCompare(left, right);
       break;
     }
+    case DataType::Type::kUint64:
+      less_cond = kBelow;
+      FALLTHROUGH_INTENDED;
     case DataType::Type::kInt64: {
       codegen_->GenerateLongCompare(left, right);
       break;
@@ -5025,53 +5035,89 @@ void InstructionCodeGeneratorX86_64::HandleShift(HBinaryOperation* op) {
   }
 }
 
-void LocationsBuilderX86_64::VisitRor(HRor* ror) {
+void LocationsBuilderX86_64::HandleRotate(HBinaryOperation* rotate) {
   LocationSummary* locations =
-      new (GetGraph()->GetAllocator()) LocationSummary(ror, LocationSummary::kNoCall);
+      new (GetGraph()->GetAllocator()) LocationSummary(rotate, LocationSummary::kNoCall);
 
-  switch (ror->GetResultType()) {
+  switch (rotate->GetResultType()) {
     case DataType::Type::kInt32:
     case DataType::Type::kInt64: {
       locations->SetInAt(0, Location::RequiresRegister());
       // The shift count needs to be in CL (unless it is a constant).
-      locations->SetInAt(1, Location::ByteRegisterOrConstant(RCX, ror->InputAt(1)));
+      locations->SetInAt(1, Location::ByteRegisterOrConstant(RCX, rotate->InputAt(1)));
       locations->SetOut(Location::SameAsFirstInput());
       break;
     }
     default:
-      LOG(FATAL) << "Unexpected operation type " << ror->GetResultType();
+      LOG(FATAL) << "Unexpected operation type " << rotate->GetResultType();
       UNREACHABLE();
   }
 }
 
-void InstructionCodeGeneratorX86_64::VisitRor(HRor* ror) {
-  LocationSummary* locations = ror->GetLocations();
+void InstructionCodeGeneratorX86_64::HandleRotate(HBinaryOperation* rotate) {
+  LocationSummary* locations = rotate->GetLocations();
   CpuRegister first_reg = locations->InAt(0).AsRegister<CpuRegister>();
   Location second = locations->InAt(1);
 
-  switch (ror->GetResultType()) {
+  switch (rotate->GetResultType()) {
     case DataType::Type::kInt32:
       if (second.IsRegister()) {
         CpuRegister second_reg = second.AsRegister<CpuRegister>();
-        __ rorl(first_reg, second_reg);
+        if (rotate->IsRor()) {
+          __ rorl(first_reg, second_reg);
+        } else {
+          DCHECK(rotate->IsRol());
+          __ roll(first_reg, second_reg);
+        }
       } else {
         Immediate imm(second.GetConstant()->AsIntConstant()->GetValue() & kMaxIntShiftDistance);
-        __ rorl(first_reg, imm);
+        if (rotate->IsRor()) {
+          __ rorl(first_reg, imm);
+        } else {
+          DCHECK(rotate->IsRol());
+          __ roll(first_reg, imm);
+        }
       }
       break;
     case DataType::Type::kInt64:
       if (second.IsRegister()) {
         CpuRegister second_reg = second.AsRegister<CpuRegister>();
-        __ rorq(first_reg, second_reg);
+        if (rotate->IsRor()) {
+          __ rorq(first_reg, second_reg);
+        } else {
+          DCHECK(rotate->IsRol());
+          __ rolq(first_reg, second_reg);
+        }
       } else {
         Immediate imm(second.GetConstant()->AsIntConstant()->GetValue() & kMaxLongShiftDistance);
-        __ rorq(first_reg, imm);
+        if (rotate->IsRor()) {
+          __ rorq(first_reg, imm);
+        } else {
+          DCHECK(rotate->IsRol());
+          __ rolq(first_reg, imm);
+        }
       }
       break;
     default:
-      LOG(FATAL) << "Unexpected operation type " << ror->GetResultType();
+      LOG(FATAL) << "Unexpected operation type " << rotate->GetResultType();
       UNREACHABLE();
   }
+}
+
+void InstructionCodeGeneratorX86_64::VisitRor(HRor* ror) {
+  HandleRotate(ror);
+}
+
+void LocationsBuilderX86_64::VisitRol(HRol* rol) {
+  HandleRotate(rol);
+}
+
+void LocationsBuilderX86_64::VisitRor(HRor* ror) {
+  HandleRotate(ror);
+}
+
+void InstructionCodeGeneratorX86_64::VisitRol(HRol* rol) {
+  HandleRotate(rol);
 }
 
 void LocationsBuilderX86_64::VisitShl(HShl* shl) {
@@ -5367,9 +5413,8 @@ void LocationsBuilderX86_64::HandleFieldSet(HInstruction* instruction,
   if (needs_write_barrier ||
       check_gc_card ||
       (kPoisonHeapReferences && field_type == DataType::Type::kReference)) {
-    // Temporary registers for the write barrier.
-    locations->AddTemp(Location::RequiresRegister());
-    locations->AddTemp(Location::RequiresRegister());  // Possibly used for reference poisoning too.
+    // Temporary registers for the write barrier / reference poisoning.
+    locations->AddRegisterTemps(2);
   }
 }
 
@@ -6824,20 +6869,31 @@ void InstructionCodeGeneratorX86_64::VisitLoadMethodHandle(HLoadMethodHandle* lo
   codegen_->GenerateLoadMethodHandleRuntimeCall(load);
 }
 
+Label* CodeGeneratorX86_64::NewJitRootMethodTypePatch(const DexFile& dex_file,
+                                                      dex::ProtoIndex proto_index,
+                                                      Handle<mirror::MethodType> handle) {
+  ReserveJitMethodTypeRoot(ProtoReference(&dex_file, proto_index), handle);
+  // Add a patch entry and return the label.
+  jit_method_type_patches_.emplace_back(&dex_file, proto_index.index_);
+  PatchInfo<Label>* info = &jit_method_type_patches_.back();
+  return &info->label;
+}
+
 void LocationsBuilderX86_64::VisitLoadMethodType(HLoadMethodType* load) {
   LocationSummary* locations =
       new (GetGraph()->GetAllocator()) LocationSummary(load, LocationSummary::kCallOnSlowPath);
   if (load->GetLoadKind() == HLoadMethodType::LoadKind::kRuntimeCall) {
-      Location location = Location::RegisterLocation(RAX);
-      CodeGenerator::CreateLoadMethodTypeRuntimeCallLocationSummary(load, location, location);
+    Location location = Location::RegisterLocation(RAX);
+    CodeGenerator::CreateLoadMethodTypeRuntimeCallLocationSummary(load, location, location);
   } else {
-    DCHECK_EQ(load->GetLoadKind(), HLoadMethodType::LoadKind::kBssEntry);
     locations->SetOut(Location::RequiresRegister());
-    if (codegen_->EmitNonBakerReadBarrier()) {
-      // For non-Baker read barrier we have a temp-clobbering call.
-    } else {
-      // Rely on the pResolveMethodType to save everything.
-      locations->SetCustomSlowPathCallerSaves(OneRegInReferenceOutSaveEverythingCallerSaves());
+    if (load->GetLoadKind() == HLoadMethodType::LoadKind::kBssEntry) {
+      if (codegen_->EmitNonBakerReadBarrier()) {
+        // For non-Baker read barrier we have a temp-clobbering call.
+      } else {
+        // Rely on the pResolveMethodType to save everything.
+        locations->SetCustomSlowPathCallerSaves(OneRegInReferenceOutSaveEverythingCallerSaves());
+      }
     }
   }
 }
@@ -6862,6 +6918,17 @@ void InstructionCodeGeneratorX86_64::VisitLoadMethodType(HLoadMethodType* load) 
       __ testl(out, out);
       __ j(kEqual, slow_path->GetEntryLabel());
       __ Bind(slow_path->GetExitLabel());
+      return;
+    }
+    case HLoadMethodType::LoadKind::kJitTableAddress: {
+      Address address = Address::Absolute(CodeGeneratorX86_64::kPlaceholder32BitOffset,
+                                          /* no_rip= */ true);
+      Handle<mirror::MethodType> method_type = load->GetMethodType();
+      DCHECK(method_type != nullptr);
+      Label* fixup_label = codegen_->NewJitRootMethodTypePatch(
+          load->GetDexFile(), load->GetProtoIndex(), method_type);
+      GenerateGcRootFieldLoad(
+          load, out_loc, address, fixup_label, codegen_->GetCompilerReadBarrierOption());
       return;
     }
     default:
@@ -8156,8 +8223,7 @@ void LocationsBuilderX86_64::VisitPackedSwitch(HPackedSwitch* switch_instr) {
   LocationSummary* locations =
       new (GetGraph()->GetAllocator()) LocationSummary(switch_instr, LocationSummary::kNoCall);
   locations->SetInAt(0, Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(2);
 }
 
 void InstructionCodeGeneratorX86_64::VisitPackedSwitch(HPackedSwitch* switch_instr) {
@@ -8541,6 +8607,12 @@ void CodeGeneratorX86_64::EmitJitRootPatches(uint8_t* code, const uint8_t* roots
   for (const PatchInfo<Label>& info : jit_class_patches_) {
     TypeReference type_reference(info.target_dex_file, dex::TypeIndex(info.offset_or_index));
     uint64_t index_in_table = GetJitClassRootIndex(type_reference);
+    PatchJitRootUse(code, roots_data, info, index_in_table);
+  }
+
+  for (const PatchInfo<Label>& info : jit_method_type_patches_) {
+    ProtoReference proto_reference(info.target_dex_file, dex::ProtoIndex(info.offset_or_index));
+    uint64_t index_in_table = GetJitMethodTypeRootIndex(proto_reference);
     PatchJitRootUse(code, roots_data, info, index_in_table);
   }
 }

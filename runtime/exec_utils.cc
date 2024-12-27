@@ -212,9 +212,8 @@ ExecResult WaitChildWithTimeout(pid_t pid,
 }
 
 bool ParseProcStat(const std::string& stat_content,
-                   int64_t uptime_ms,
                    int64_t ticks_per_sec,
-                   /*out*/ ProcessStat* stat) {
+                   /*out*/ int64_t* cpu_time_ms) {
   size_t pos = stat_content.rfind(") ");
   if (pos == std::string::npos) {
     return false;
@@ -224,22 +223,15 @@ bool ParseProcStat(const std::string& stat_content,
   // contain anything, including spaces.
   Split(std::string_view(stat_content).substr(pos + 2), ' ', &stat_fields);
   constexpr int kSkippedFields = 2;
-  int64_t utime, stime, cutime, cstime, starttime;
+  int64_t utime, stime, cutime, cstime;
   if (stat_fields.size() < 22 - kSkippedFields ||
       !ParseInt(stat_fields[13 - kSkippedFields], &utime) ||
       !ParseInt(stat_fields[14 - kSkippedFields], &stime) ||
       !ParseInt(stat_fields[15 - kSkippedFields], &cutime) ||
-      !ParseInt(stat_fields[16 - kSkippedFields], &cstime) ||
-      !ParseInt(stat_fields[21 - kSkippedFields], &starttime)) {
+      !ParseInt(stat_fields[16 - kSkippedFields], &cstime)) {
     return false;
   }
-  if (starttime == 0) {
-    // The start time is the time the process started after system boot, so it's not supposed to be
-    // zero unless the process is `init`.
-    return false;
-  }
-  stat->cpu_time_ms = (utime + stime + cutime + cstime) * 1000 / ticks_per_sec;
-  stat->wall_time_ms = uptime_ms - starttime * 1000 / ticks_per_sec;
+  *cpu_time_ms = (utime + stime + cutime + cstime) * 1000 / ticks_per_sec;
   return true;
 }
 
@@ -278,6 +270,8 @@ ExecResult ExecUtils::ExecAndReturnResult(const std::vector<std::string>& arg_ve
     return {.status = ExecResult::kStartFailed};
   }
 
+  std::string stat_error_msg;
+  std::optional<int64_t> start_time = GetUptimeMs(&stat_error_msg);
   callbacks.on_start(pid);
 
   // Wait for subprocess to finish.
@@ -297,9 +291,8 @@ ExecResult ExecUtils::ExecAndReturnResult(const std::vector<std::string>& arg_ve
   }
 
   if (stat != nullptr) {
-    std::string local_error_msg;
-    if (!GetStat(pid, stat, &local_error_msg)) {
-      LOG(ERROR) << "Failed to get process stat: " << local_error_msg;
+    if (!start_time.has_value() || !GetStat(pid, start_time.value(), stat, &stat_error_msg)) {
+      LOG(ERROR) << "Failed to get process stat: " << stat_error_msg;
     }
   }
 
@@ -352,6 +345,7 @@ std::optional<int64_t> ExecUtils::GetUptimeMs(std::string* error_msg) const {
 int64_t ExecUtils::GetTicksPerSec() const { return sysconf(_SC_CLK_TCK); }
 
 bool ExecUtils::GetStat(pid_t pid,
+                        int64_t start_time,
                         /*out*/ ProcessStat* stat,
                         /*out*/ std::string* error_msg) const {
   std::optional<int64_t> uptime_ms = GetUptimeMs(error_msg);
@@ -364,10 +358,11 @@ bool ExecUtils::GetStat(pid_t pid,
     return false;
   }
   int64_t ticks_per_sec = GetTicksPerSec();
-  if (!ParseProcStat(stat_content, *uptime_ms, ticks_per_sec, stat)) {
+  if (!ParseProcStat(stat_content, ticks_per_sec, &stat->cpu_time_ms)) {
     *error_msg = StringPrintf("Failed to parse /proc/%d/stat '%s'", pid, stat_content.c_str());
     return false;
   }
+  stat->wall_time_ms = uptime_ms.value() - start_time;
   return true;
 }
 

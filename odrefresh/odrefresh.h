@@ -158,14 +158,19 @@ class PreconditionCheckResult {
 
 class OnDeviceRefresh final {
  public:
-  explicit OnDeviceRefresh(const OdrConfig& config);
+  explicit OnDeviceRefresh(
+      const OdrConfig& config,
+      android::base::function_ref<int(const char*, const char*)> setfilecon,
+      android::base::function_ref<int(const char*, unsigned int)> restorecon);
 
   // Constructor with injections. For testing and internal use only.
-  OnDeviceRefresh(const OdrConfig& config,
-                  const std::string& cache_info_filename,
-                  std::unique_ptr<ExecUtils> exec_utils,
-                  android::base::function_ref<bool()> check_compilation_space,
-                  android::base::function_ref<int(const char*, const char*)> setfilecon);
+  OnDeviceRefresh(
+      const OdrConfig& config,
+      android::base::function_ref<int(const char*, const char*)> setfilecon,
+      android::base::function_ref<int(const char*, unsigned int)> restorecon,
+      const std::string& cache_info_filename,
+      std::unique_ptr<ExecUtils> exec_utils,
+      android::base::function_ref<bool()> check_compilation_space);
 
   // Returns the exit code and specifies what should be compiled in `compilation_options`.
   WARN_UNUSED ExitCode
@@ -388,6 +393,7 @@ class OnDeviceRefresh final {
 
   android::base::function_ref<bool()> check_compilation_space_;
   android::base::function_ref<int(const char*, const char*)> setfilecon_;
+  android::base::function_ref<int(const char*, unsigned int)> restorecon_;
 
   DISALLOW_COPY_AND_ASSIGN(OnDeviceRefresh);
 };

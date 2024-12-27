@@ -129,7 +129,7 @@ enum HomogeneousSpaceCompactResult {
 static constexpr bool kUseRosAlloc = true;
 
 // If true, use thread-local allocation stack.
-static constexpr bool kUseThreadLocalAllocationStack = true;
+static constexpr bool kUseThreadLocalAllocationStack = false;
 
 class Heap {
  public:
@@ -484,7 +484,8 @@ class Heap {
 
   // Blocks the caller until the garbage collector becomes idle and returns the type of GC we
   // waited for. Only waits for running collections, ignoring a requested but unstarted GC. Only
-  // heuristic, since a new GC may have started by the time we return.
+  // heuristic, since a new GC may have started by the time we return. However, if we hold the
+  // mutator lock, even in shared mode, a new GC can't get very far, so long as we keep it.
   EXPORT collector::GcType WaitForGcToComplete(GcCause cause, Thread* self)
       REQUIRES(!*gc_complete_lock_);
 
@@ -1166,8 +1167,9 @@ class Heap {
                                                bool grow);
 
   // Blocks the caller until the garbage collector becomes idle and returns the type of GC we
-  // waited for.
-  collector::GcType WaitForGcToCompleteLocked(GcCause cause, Thread* self)
+  // waited for. If only_one is true, we only wait for the currently running GC, and may return
+  // while a new GC is again running.
+  collector::GcType WaitForGcToCompleteLocked(GcCause cause, Thread* self, bool only_one = false)
       REQUIRES(gc_complete_lock_);
 
   void RequestCollectorTransition(CollectorType desired_collector_type, uint64_t delta_time)
@@ -1253,7 +1255,7 @@ class Heap {
   void PushOnAllocationStack(Thread* self, ObjPtr<mirror::Object>* obj)
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!*gc_complete_lock_, !*pending_task_lock_, !process_state_update_lock_);
-  void PushOnAllocationStackWithInternalGC(Thread* self, ObjPtr<mirror::Object>* obj)
+  EXPORT void PushOnAllocationStackWithInternalGC(Thread* self, ObjPtr<mirror::Object>* obj)
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!*gc_complete_lock_, !*pending_task_lock_, !process_state_update_lock_);
   EXPORT void PushOnThreadLocalAllocationStackWithInternalGC(Thread* thread,

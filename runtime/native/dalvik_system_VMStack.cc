@@ -76,7 +76,7 @@ static jint VMStack_fillStackTraceElements(JNIEnv* env, jclass, jobject javaThre
   ScopedFastNativeObjectAccess soa(env);
   auto fn = [](Thread* thread, const ScopedFastNativeObjectAccess& soaa)
       REQUIRES_SHARED(Locks::mutator_lock_) -> jobject {
-    return thread->CreateInternalStackTrace(soaa);
+    return soaa.AddLocalReference<jobject>(thread->CreateInternalStackTrace(soaa));
   };
   jobject trace = GetThreadStack(soa, javaThread, fn);
   if (trace == nullptr) {
@@ -143,7 +143,7 @@ static jobjectArray VMStack_getThreadStackTrace(JNIEnv* env, jclass, jobject jav
   ScopedFastNativeObjectAccess soa(env);
   auto fn = [](Thread* thread, const ScopedFastNativeObjectAccess& soaa)
      REQUIRES_SHARED(Locks::mutator_lock_) -> jobject {
-    return thread->CreateInternalStackTrace(soaa);
+    return soaa.AddLocalReference<jobject>(thread->CreateInternalStackTrace(soaa));
   };
   jobject trace = GetThreadStack(soa, javaThread, fn);
   if (trace == nullptr) {

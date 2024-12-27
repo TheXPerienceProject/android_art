@@ -54,4 +54,11 @@
 // The offset of the reference load LDR from the return address in LR for GC root loads.
 #define BAKER_MARK_INTROSPECTION_GC_ROOT_LDR_OFFSET (-8)
 
+// Size of Context::gprs_.
+#define ARM64_LONG_JUMP_GPRS_SIZE 272
+// Size of Context::fprs_.
+#define ARM64_LONG_JUMP_FPRS_SIZE 256
+// Size of Context::gprs_ + Context::fprs_.
+#define ARM64_LONG_JUMP_CONTEXT_SIZE (ARM64_LONG_JUMP_GPRS_SIZE + ARM64_LONG_JUMP_FPRS_SIZE)
+
 #endif  // ART_RUNTIME_ARCH_ARM64_ASM_SUPPORT_ARM64_H_

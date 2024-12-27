@@ -124,6 +124,56 @@ static constexpr int32_t kHighTimestampOffsetInBytes =
 
 static constexpr uintptr_t kMaskTraceAction = ~0b11;
 
+// Packet type encoding for the new method tracing format.
+static constexpr int kThreadInfoHeaderV2 = 0;
+static constexpr int kMethodInfoHeaderV2 = 1;
+static constexpr int kEntryHeaderV2 = 2;
+static constexpr int kSummaryHeaderV2 = 3;
+
+// Packet sizes for the new method tracing format.
+static constexpr uint16_t kTraceHeaderLengthV2 = 32;
+static constexpr uint16_t kTraceRecordSizeSingleClockV2 = 6;
+static constexpr uint16_t kTraceRecordSizeDualClockV2 = kTraceRecordSizeSingleClockV2 + 2;
+static constexpr uint16_t kEntryHeaderSizeV2 = 12;
+
+static constexpr uint16_t kTraceVersionSingleClockV2 = 4;
+static constexpr uint16_t kTraceVersionDualClockV2 = 5;
+
+// TODO(mythria): Consider adding checks to guard agaist OOB access for Append*LE methods.
+// Currently the onus is on the callers to ensure there is sufficient space in the buffer.
+// TODO: put this somewhere with the big-endian equivalent used by JDWP.
+static inline void Append2LE(uint8_t* buf, uint16_t val) {
+  *buf++ = static_cast<uint8_t>(val);
+  *buf++ = static_cast<uint8_t>(val >> 8);
+}
+
+// TODO: put this somewhere with the big-endian equivalent used by JDWP.
+static inline void Append3LE(uint8_t* buf, uint16_t val) {
+  *buf++ = static_cast<uint8_t>(val);
+  *buf++ = static_cast<uint8_t>(val >> 8);
+  *buf++ = static_cast<uint8_t>(val >> 16);
+}
+
+// TODO: put this somewhere with the big-endian equivalent used by JDWP.
+static inline void Append4LE(uint8_t* buf, uint32_t val) {
+  *buf++ = static_cast<uint8_t>(val);
+  *buf++ = static_cast<uint8_t>(val >> 8);
+  *buf++ = static_cast<uint8_t>(val >> 16);
+  *buf++ = static_cast<uint8_t>(val >> 24);
+}
+
+// TODO: put this somewhere with the big-endian equivalent used by JDWP.
+static inline void Append8LE(uint8_t* buf, uint64_t val) {
+  *buf++ = static_cast<uint8_t>(val);
+  *buf++ = static_cast<uint8_t>(val >> 8);
+  *buf++ = static_cast<uint8_t>(val >> 16);
+  *buf++ = static_cast<uint8_t>(val >> 24);
+  *buf++ = static_cast<uint8_t>(val >> 32);
+  *buf++ = static_cast<uint8_t>(val >> 40);
+  *buf++ = static_cast<uint8_t>(val >> 48);
+  *buf++ = static_cast<uint8_t>(val >> 56);
+}
+
 class TraceWriterThreadPool : public ThreadPool {
  public:
   static TraceWriterThreadPool* Create(const char* name) {
@@ -172,6 +222,11 @@ class TraceWriter {
   uintptr_t* PrepareBufferForNewEntries(Thread* thread) REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!trace_writer_lock_);
 
+  // Creates a summary packet which includes some meta information like number of events, clock
+  // overhead, trace version in human readable form. This is used to dump the summary at the end
+  // of tracing..
+  std::string CreateSummary(int flags) REQUIRES(!trace_writer_lock_)
+      REQUIRES_SHARED(Locks::mutator_lock_);
   // Flushes all per-thread buffer and also write a summary entry.
   void FinishTracing(int flags, bool flush_entries) REQUIRES(!trace_writer_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -293,12 +348,8 @@ class TraceWriter {
 
   // Encodes the header for the events block. This assumes that there is enough space reserved to
   // encode the entry.
-  void EncodeEventBlockHeader(uint8_t* ptr,
-                              uint32_t thread_id,
-                              uint64_t method_index,
-                              uint32_t init_thread_clock_time,
-                              uint32_t init_wall_clock_time,
-                              uint16_t num_records) REQUIRES(trace_writer_lock_);
+  void EncodeEventBlockHeader(uint8_t* ptr, uint32_t thread_id, uint32_t num_records)
+      REQUIRES(trace_writer_lock_);
 
   // Ensures there is sufficient space in the buffer to record the requested_size. If there is not
   // enough sufficient space the current contents of the buffer are written to the file and
@@ -406,6 +457,9 @@ class Trace final : public instrumentation::InstrumentationListener, public Clas
     kMethodTracing,
     kSampling
   };
+
+  // Temporary code for debugging b/342768977
+  static std::string GetDebugInformation();
 
   static void SetDefaultClockSource(TraceClockSource clock_source);
 
@@ -525,6 +579,9 @@ class Trace final : public instrumentation::InstrumentationListener, public Clas
 
   // Used by class linker to prevent class unloading.
   static bool IsTracingEnabled() REQUIRES(!Locks::trace_lock_);
+
+  // Used by the profiler to see if there is any ongoing tracing.
+  static bool IsTracingEnabledLocked() REQUIRES(Locks::trace_lock_);
 
   // Callback for each class prepare event to record information about the newly created methods.
   static void ClassPrepare(Handle<mirror::Class> klass) REQUIRES_SHARED(Locks::mutator_lock_);

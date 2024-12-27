@@ -127,10 +127,6 @@ END \name
 //   - \ins: in count. If set to register "zero" (x0), load is skipped.
 //   - \code_item: holds instruction array on exit
 .macro FETCH_CODE_ITEM_INFO code_item, regs, outs, ins
-    // Check LSB of \code_item. If 1, it's a compact dex file.
-    BRANCH_IF_BIT_CLEAR \regs, \code_item, 0, 1f  // Regular dex.
-    unimp  // Compact dex: unimplemented.
-1:
     // Unpack values from regular dex format.
     lhu \regs, CODE_ITEM_REGISTERS_SIZE_OFFSET(\code_item)
     lhu \outs, CODE_ITEM_OUTS_SIZE_OFFSET(\code_item)

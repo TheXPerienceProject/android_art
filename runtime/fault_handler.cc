@@ -102,11 +102,6 @@ static std::ostream& PrintSignalInfo(std::ostream& os, siginfo_t* info) {
   return os;
 }
 
-static bool InstallSigbusHandler() {
-  return gUseUserfaultfd &&
-         Runtime::Current()->GetHeap()->MarkCompactCollector()->IsUsingSigbusFeature();
-}
-
 void FaultManager::Init(bool use_sig_chain) {
   CHECK(!initialized_);
   if (use_sig_chain) {
@@ -125,7 +120,7 @@ void FaultManager::Init(bool use_sig_chain) {
     };
 
     AddSpecialSignalHandlerFn(SIGSEGV, &sa);
-    if (InstallSigbusHandler()) {
+    if (gUseUserfaultfd) {
       sa.sc_sigaction = art_sigbus_handler;
       AddSpecialSignalHandlerFn(SIGBUS, &sa);
     }
@@ -151,7 +146,7 @@ void FaultManager::Init(bool use_sig_chain) {
     }
 
     initialized_ = true;
-  } else if (InstallSigbusHandler()) {
+  } else if (gUseUserfaultfd) {
     struct sigaction act;
     std::memset(&act, '\0', sizeof(act));
     act.sa_flags = SA_SIGINFO | SA_RESTART;
@@ -173,7 +168,7 @@ void FaultManager::Init(bool use_sig_chain) {
 void FaultManager::Release() {
   if (initialized_) {
     RemoveSpecialSignalHandlerFn(SIGSEGV, art_sigsegv_handler);
-    if (InstallSigbusHandler()) {
+    if (gUseUserfaultfd) {
       RemoveSpecialSignalHandlerFn(SIGBUS, art_sigbus_handler);
     }
     initialized_ = false;

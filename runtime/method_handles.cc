@@ -721,9 +721,8 @@ bool DoVarHandleInvokeTranslation(Thread* self,
 
   // Determine the accessor kind to dispatch
   ArtMethod* target_method = method_handle->GetTargetMethod();
-  int intrinsic_index = target_method->GetIntrinsic();
   mirror::VarHandle::AccessMode access_mode =
-      mirror::VarHandle::GetAccessModeByIntrinsic(static_cast<Intrinsics>(intrinsic_index));
+      mirror::VarHandle::GetAccessModeByIntrinsic(target_method->GetIntrinsic());
   Handle<mirror::MethodType> vh_type =
       hs.NewHandle(vh->GetMethodTypeForAccessMode(self, access_mode));
   Handle<mirror::MethodType> mh_invoke_type = hs.NewHandle(

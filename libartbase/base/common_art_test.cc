@@ -633,10 +633,14 @@ CommonArtTestImpl::ForkAndExecResult CommonArtTestImpl::ForkAndExec(
     return result;
   }
 
+  // Special return code for failures between fork and exec. Pick something that
+  // the command is unlikely to use.
+  constexpr int kPostForkFailure = 134;
+
   if (pid == 0) {
     if (!post_fork()) {
       LOG(ERROR) << "Failed post-fork function";
-      exit(1);
+      exit(kPostForkFailure);
       UNREACHABLE();
     }
 
@@ -648,7 +652,8 @@ CommonArtTestImpl::ForkAndExecResult CommonArtTestImpl::ForkAndExec(
     link[1].reset();
 
     execv(c_args[0], const_cast<char* const*>(c_args.data()));
-    exit(1);
+    PLOG(ERROR) << "Failed to execv " << c_args[0];
+    exit(kPostForkFailure);
     UNREACHABLE();
   }
 
@@ -669,6 +674,11 @@ CommonArtTestImpl::ForkAndExecResult CommonArtTestImpl::ForkAndExec(
   }
 
   result.stage = ForkAndExecResult::kFinished;
+
+  if (WIFEXITED(result.status_code) && WEXITSTATUS(result.status_code) == kPostForkFailure) {
+    LOG(WARNING) << "ForkAndExec likely failed between fork and exec";
+  }
+
   return result;
 }
 

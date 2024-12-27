@@ -218,9 +218,11 @@ TEST_P(ExecUtilsTest, ExecStat) {
   // The process filename is "a) b".
   EXPECT_CALL(*exec_utils_, GetProcStat(_))
       .WillOnce(Return(
-          "14963 (a) b) Z 6067 14963 1 0 -1 4228108 105 0 0 0 94 5 0 0 39 19 1 0 162034388 0 0 "
+          "14963 (a) b) Z 6067 14963 1 0 -1 4228108 105 0 0 0 94 5 0 0 39 19 1 0 0 0 0 "
           "18446744073709551615 0 0 0 0 0 0 20999 0 0 1 0 0 17 71 0 0 0 0 0 0 0 0 0 0 0 0 9"));
-  EXPECT_CALL(*exec_utils_, DoGetUptimeMs()).WillOnce(Return(1620344887ll));
+  EXPECT_CALL(*exec_utils_, DoGetUptimeMs())
+      .WillOnce(Return(1620343880ll))
+      .WillOnce(Return(1620344887ll));
   EXPECT_CALL(*exec_utils_, GetTicksPerSec()).WillOnce(Return(100));
 
   ASSERT_EQ(exec_utils_
@@ -245,13 +247,8 @@ TEST_P(ExecUtilsTest, ExecStatNoStartTime) {
   std::string error_msg;
   ProcessStat stat;
 
-  // The process filename is "a) b".
-  EXPECT_CALL(*exec_utils_, GetProcStat(_))
-      .WillOnce(Return(
-          "14963 (a) b) Z 6067 14963 1 0 -1 4228108 105 0 0 0 94 5 0 0 39 19 1 0 0 0 0 "
-          "18446744073709551615 0 0 0 0 0 0 20999 0 0 1 0 0 17 71 0 0 0 0 0 0 0 0 0 0 0 0 9"));
-  EXPECT_CALL(*exec_utils_, DoGetUptimeMs()).WillOnce(Return(1620344887ll));
-  EXPECT_CALL(*exec_utils_, GetTicksPerSec()).WillOnce(Return(100));
+  EXPECT_CALL(*exec_utils_, DoGetUptimeMs())
+      .WillOnce(Return(Result<int64_t>(Errorf("Failed to get uptime"))));
 
   ASSERT_EQ(exec_utils_
                 ->ExecAndReturnResult(command,
@@ -276,6 +273,7 @@ TEST_P(ExecUtilsTest, ExecStatNoUptime) {
   ProcessStat stat;
 
   EXPECT_CALL(*exec_utils_, DoGetUptimeMs())
+      .WillOnce(Return(162034388ll))
       .WillOnce(Return(Result<int64_t>(Errorf("Failed to get uptime"))));
 
   ASSERT_EQ(exec_utils_
@@ -301,9 +299,11 @@ TEST_P(ExecUtilsTest, ExecStatFailed) {
 
   EXPECT_CALL(*exec_utils_, GetProcStat(_))
       .WillOnce(Return(
-          "14963 (a) b) Z 6067 14963 1 0 -1 4228108 105 0 0 0 94 5 0 0 39 19 1 0 162034388 0 0 "
+          "14963 (a) b) Z 6067 14963 1 0 -1 4228108 105 0 0 0 94 5 0 0 39 19 1 0 0 0 0 "
           "18446744073709551615 0 0 0 0 0 0 20999 0 0 1 0 0 17 71 0 0 0 0 0 0 0 0 0 0 0 0 9"));
-  EXPECT_CALL(*exec_utils_, DoGetUptimeMs()).WillOnce(Return(1620344887ll));
+  EXPECT_CALL(*exec_utils_, DoGetUptimeMs())
+      .WillOnce(Return(1620343880ll))
+      .WillOnce(Return(1620344887ll));
   EXPECT_CALL(*exec_utils_, GetTicksPerSec()).WillOnce(Return(100));
 
   // This will always time out.

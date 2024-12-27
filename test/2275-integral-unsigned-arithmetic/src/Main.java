@@ -28,6 +28,14 @@ public class Main {
     test_Long_remainderUnsigned_no_fold();
     test_Integer_remainderUnsigned();
     test_Long_remainderUnsigned();
+
+    test_Integer_compareUnsigned_in_condition();
+    test_Long_compareUnsigned_in_condition();
+
+    assertEquals($noinline$compareSignedSameOperands(300), IF_TRUE_VALUE);
+
+    test_Integer_doubleUnsignedCompare();
+    test_Integer_doubleUnsignedCompare_Xored();
   }
 
   public static int $noinline$cmpUnsignedInt(int a, int b) {
@@ -347,5 +355,250 @@ public class Main {
       if (expected != actual) {
           throw new Error("Expected: " + expected + ", found: " + actual);
       }
+  }
+
+  public static void assertEquals(boolean expected, boolean actual) {
+      if (expected != actual) {
+          throw new Error("Expected: " + expected + ", found: " + actual);
+      }
+  }
+
+  static final int IF_TRUE_VALUE = -55555;
+  static final int IF_FALSE_VALUE = 99999;
+
+  public static int $noinline$compareUnsignedInt_LT(int a, int b) {
+    return Integer.compareUnsigned(a, b) < 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedInt_LE(int a, int b) {
+    return Integer.compareUnsigned(a, b) <= 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedInt_GT(int a, int b) {
+    return Integer.compareUnsigned(a, b) > 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedInt_GE(int a, int b) {
+    return Integer.compareUnsigned(a, b) >= 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedInt_EQ(int a, int b) {
+    return Integer.compareUnsigned(a, b) == 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedInt_NE(int a, int b) {
+    return Integer.compareUnsigned(a, b) != 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedLong_LT(long a, long b) {
+    return Long.compareUnsigned(a, b) < 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedLong_LE(long a, long b) {
+    return Long.compareUnsigned(a, b) <= 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedLong_GT(long a, long b) {
+    return Long.compareUnsigned(a, b) > 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedLong_GE(long a, long b) {
+    return Long.compareUnsigned(a, b) >= 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedLong_EQ(long a, long b) {
+    return Long.compareUnsigned(a, b) == 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareUnsignedLong_NE(long a, long b) {
+    return Long.compareUnsigned(a, b) != 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static int $noinline$compareSignedSameOperands(long a) {
+    return Long.compare(a, a) >= 0 ? IF_TRUE_VALUE : IF_FALSE_VALUE;
+  }
+
+  public static void test_Integer_compareUnsigned_in_condition() {
+    // <
+    assertEquals($noinline$compareUnsignedInt_LT(10, 20), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_LT(Integer.MIN_VALUE, 0), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_LT(0, 0), IF_FALSE_VALUE);
+
+    // <=
+    assertEquals($noinline$compareUnsignedInt_LE(10, 20), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_LE(Integer.MIN_VALUE, 0), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_LE(0, 0), IF_TRUE_VALUE);
+
+    // >
+    assertEquals($noinline$compareUnsignedInt_GT(10, 20), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_GT(Integer.MIN_VALUE, 0), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_GT(0, 0), IF_FALSE_VALUE);
+
+    // =>
+    assertEquals($noinline$compareUnsignedInt_GE(10, 20), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_GE(Integer.MIN_VALUE, 0), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_GE(0, 0), IF_TRUE_VALUE);
+
+    // ==
+    assertEquals($noinline$compareUnsignedInt_EQ(10, 20), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_EQ(Integer.MIN_VALUE, 0), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_EQ(0, 0), IF_TRUE_VALUE);
+
+    // !=
+    assertEquals($noinline$compareUnsignedInt_NE(10, 20), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_NE(Integer.MIN_VALUE, 0), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedInt_NE(0, 0), IF_FALSE_VALUE);
+  }
+
+  public static void test_Long_compareUnsigned_in_condition() {
+    // <
+    assertEquals($noinline$compareUnsignedLong_LT(10L, 20L), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_LT(Long.MIN_VALUE, 0L), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_LT(0L, 0L), IF_FALSE_VALUE);
+
+    // <=
+    assertEquals($noinline$compareUnsignedLong_LE(10L, 20L), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_LE(Long.MIN_VALUE, 0L), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_LE(0L, 0L), IF_TRUE_VALUE);
+
+    // >
+    assertEquals($noinline$compareUnsignedLong_GT(10L, 20L), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_GT(Long.MIN_VALUE, 0L), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_GT(0L, 0L), IF_FALSE_VALUE);
+
+    // =>
+    assertEquals($noinline$compareUnsignedLong_GE(10L, 20L), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_GE(Long.MIN_VALUE, 0L), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_GE(0L, 0L), IF_TRUE_VALUE);
+
+    // ==
+    assertEquals($noinline$compareUnsignedLong_EQ(10L, 20L), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_EQ(Long.MIN_VALUE, 0L), IF_FALSE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_EQ(0L, 0L), IF_TRUE_VALUE);
+
+    // !=
+    assertEquals($noinline$compareUnsignedLong_NE(10L, 20L), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_NE(Long.MIN_VALUE, 0L), IF_TRUE_VALUE);
+    assertEquals($noinline$compareUnsignedLong_NE(0L, 0L), IF_FALSE_VALUE);
+  }
+
+  private static int $inline$hidden_zero() {
+    return "1".indexOf('1');
+  }
+
+  public static boolean $inline$BelowInteger(int x, int y) {
+    return Integer.compare(x + Integer.MIN_VALUE, y + Integer.MIN_VALUE) < 0;
+  }
+
+  public static boolean $noinline$testDoubleUnsignedCompareInteger_B(int x, int y) {
+    int cmp = Integer.compare(x + Integer.MIN_VALUE, y + Integer.MIN_VALUE);
+    return $inline$BelowInteger(cmp, $inline$hidden_zero());
+  }
+
+  public static boolean $inline$BelowOrEqualInteger(int x, int y) {
+    return Integer.compare(x + Integer.MIN_VALUE, y + Integer.MIN_VALUE) <= 0;
+  }
+
+  public static boolean $noinline$testDoubleUnsignedCompareInteger_BE(int x, int y) {
+    int cmp = Integer.compare(x + Integer.MIN_VALUE, y + Integer.MIN_VALUE);
+    return $inline$BelowOrEqualInteger(cmp, $inline$hidden_zero());
+  }
+
+  public static boolean $inline$AboveInteger(int x, int y) {
+    return Integer.compare(x + Integer.MIN_VALUE, y + Integer.MIN_VALUE) > 0;
+  }
+
+  public static boolean $noinline$testDoubleUnsignedCompareInteger_A(int x, int y) {
+    int cmp = Integer.compare(x + Integer.MIN_VALUE, y + Integer.MIN_VALUE);
+    return $inline$AboveInteger(cmp, $inline$hidden_zero());
+  }
+
+  public static boolean $inline$AboveOrEqualInteger(int x, int y) {
+    return Integer.compare(x + Integer.MIN_VALUE, y + Integer.MIN_VALUE) >= 0;
+  }
+
+  public static boolean $noinline$testDoubleUnsignedCompareInteger_AE(int x, int y) {
+    int cmp = Integer.compare(x + Integer.MIN_VALUE, y + Integer.MIN_VALUE);
+    return $inline$AboveOrEqualInteger(cmp, $inline$hidden_zero());
+  }
+
+  public static void test_Integer_doubleUnsignedCompare() {
+    // <
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_B(0, 0), false);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_B(Integer.MIN_VALUE, 0), false);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_B(0, Integer.MIN_VALUE), false);
+
+    // <=
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BE(0, 0), true);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BE(Integer.MIN_VALUE, 0), false);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BE(0, Integer.MIN_VALUE), false);
+
+    // >
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_A(0, 0), false);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_A(Integer.MIN_VALUE, 0), true);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_A(0, Integer.MIN_VALUE), true);
+
+    // =>
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AE(0, 0), true);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AE(Integer.MIN_VALUE, 0), true);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AE(0, Integer.MIN_VALUE), true);
+  }
+
+  public static boolean $inline$BelowInteger_Xored(int x, int y) {
+    return Integer.compare(x ^ Integer.MIN_VALUE, y ^ Integer.MIN_VALUE) < 0;
+  }
+
+  public static boolean $noinline$testDoubleUnsignedCompareInteger_BT_Xored(int x, int y) {
+    int cmp = Integer.compare(x ^ Integer.MIN_VALUE, y ^ Integer.MIN_VALUE);
+    return $inline$BelowInteger_Xored(cmp, $inline$hidden_zero());
+  }
+
+  public static boolean $inline$BelowOrEqualInteger_Xored(int x, int y) {
+    return Integer.compare(x ^ Integer.MIN_VALUE, y ^ Integer.MIN_VALUE) <= 0;
+  }
+
+  public static boolean $noinline$testDoubleUnsignedCompareInteger_BE_Xored(int x, int y) {
+    int cmp = Integer.compare(x ^ Integer.MIN_VALUE, y ^ Integer.MIN_VALUE);
+    return $inline$BelowOrEqualInteger_Xored(cmp, $inline$hidden_zero());
+  }
+
+  public static boolean $inline$AboveInteger_Xored(int x, int y) {
+    return Integer.compare(x ^ Integer.MIN_VALUE, y ^ Integer.MIN_VALUE) > 0;
+  }
+
+  public static boolean $noinline$testDoubleUnsignedCompareInteger_AT_Xored(int x, int y) {
+    int cmp = Integer.compare(x ^ Integer.MIN_VALUE, y ^ Integer.MIN_VALUE);
+    return $inline$AboveInteger_Xored(cmp, $inline$hidden_zero());
+  }
+
+  public static boolean $inline$AboveOrEqualInteger_Xored(int x, int y) {
+    return Integer.compare(x ^ Integer.MIN_VALUE, y ^ Integer.MIN_VALUE) >= 0;
+  }
+
+  public static boolean $noinline$testDoubleUnsignedCompareInteger_AE_Xored(int x, int y) {
+    int cmp = Integer.compare(x ^ Integer.MIN_VALUE, y ^ Integer.MIN_VALUE);
+    return $inline$AboveOrEqualInteger_Xored(cmp, $inline$hidden_zero());
+  }
+
+  public static void test_Integer_doubleUnsignedCompare_Xored() {
+    // <
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BT_Xored(0, 0), false);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BT_Xored(Integer.MIN_VALUE, 0), false);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BT_Xored(0, Integer.MIN_VALUE), false);
+
+    // <=
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BE_Xored(0, 0), true);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BE_Xored(Integer.MIN_VALUE, 0), false);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_BE_Xored(0, Integer.MIN_VALUE), false);
+
+    // >
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AT_Xored(0, 0), false);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AT_Xored(Integer.MIN_VALUE, 0), true);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AT_Xored(0, Integer.MIN_VALUE), true);
+
+    // =>
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AE_Xored(0, 0), true);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AE_Xored(Integer.MIN_VALUE, 0), true);
+    assertEquals($noinline$testDoubleUnsignedCompareInteger_AE_Xored(0, Integer.MIN_VALUE), true);
   }
 }

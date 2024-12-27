@@ -38,6 +38,11 @@ class FakeOatFile : public OatFile {
     begin_ = begin;
     end_ = end;
   }
+
+  const uint8_t* ComputeElfBegin(std::string* error_msg) const override {
+    *error_msg = "Not applicable";
+    return nullptr;
+  }
 };
 
 class FakeImageSpace : public space::ImageSpace {

@@ -1688,6 +1688,8 @@ size_t ElfFile::GetElfSegmentAlignmentFromFile() const {
   DELEGATE_TO_IMPL(GetElfSegmentAlignmentFromFile);
 }
 
+const uint8_t* ElfFile::GetBaseAddress() const { DELEGATE_TO_IMPL(GetBaseAddress); }
+
 bool ElfFile::Strip(File* file, std::string* error_msg) {
   std::unique_ptr<ElfFile> elf_file(ElfFile::Open(file, true, false, /*low_4gb=*/false, error_msg));
   if (elf_file.get() == nullptr) {

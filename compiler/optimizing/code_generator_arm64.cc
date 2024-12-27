@@ -27,6 +27,7 @@
 #include "class_root-inl.h"
 #include "class_table.h"
 #include "code_generator_utils.h"
+#include "com_android_art_flags.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints_enum.h"
 #include "gc/accounting/card_table.h"
@@ -57,6 +58,8 @@ using namespace vixl::aarch64;  // NOLINT(build/namespaces)
 using vixl::ExactAssemblyScope;
 using vixl::CodeBufferCheckScope;
 using vixl::EmissionCheckScope;
+
+namespace art_flags = com::android::art::flags;
 
 #ifdef __
 #error "ARM64 Codegen VIXL macro-assembler macro already defined."
@@ -99,12 +102,6 @@ uint16_t SYS_CNTVCT_EL0 = SystemRegisterEncoder<1, 3, 14, 0, 2>::value;
 // table version generates 7 instructions and num_entries literals. Compare/jump sequence will
 // generates less code/data with a small num_entries.
 static constexpr uint32_t kPackedSwitchCompareJumpThreshold = 7;
-
-// Reference load (except object array loads) is using LDR Wt, [Xn, #offset] which can handle
-// offset < 16KiB. For offsets >= 16KiB, the load shall be emitted as two or more instructions.
-// For the Baker read barrier implementation using link-time generated thunks we need to split
-// the offset explicitly.
-constexpr uint32_t kReferenceLoadMinFarOffset = 16 * KB;
 
 inline Condition ARM64Condition(IfCondition cond) {
   switch (cond) {
@@ -818,6 +815,32 @@ class ReadBarrierForRootSlowPathARM64 : public SlowPathCodeARM64 {
   DISALLOW_COPY_AND_ASSIGN(ReadBarrierForRootSlowPathARM64);
 };
 
+class TracingMethodEntryExitHooksSlowPathARM64 : public SlowPathCodeARM64 {
+ public:
+  explicit TracingMethodEntryExitHooksSlowPathARM64(bool is_method_entry)
+      : SlowPathCodeARM64(/* instruction= */ nullptr), is_method_entry_(is_method_entry) {}
+
+  void EmitNativeCode(CodeGenerator* codegen) override {
+    QuickEntrypointEnum entry_point =
+        (is_method_entry_) ? kQuickRecordEntryTraceEvent : kQuickRecordExitTraceEvent;
+    vixl::aarch64::Label call;
+    __ Bind(GetEntryLabel());
+    uint32_t entrypoint_offset = GetThreadOffset<kArm64PointerSize>(entry_point).Int32Value();
+    __ Ldr(lr, MemOperand(tr, entrypoint_offset));
+    __ Blr(lr);
+    __ B(GetExitLabel());
+  }
+
+  const char* GetDescription() const override {
+    return "TracingMethodEntryExitHooksSlowPath";
+  }
+
+ private:
+  const bool is_method_entry_;
+
+  DISALLOW_COPY_AND_ASSIGN(TracingMethodEntryExitHooksSlowPathARM64);
+};
+
 class MethodEntryExitHooksSlowPathARM64 : public SlowPathCodeARM64 {
  public:
   explicit MethodEntryExitHooksSlowPathARM64(HInstruction* instruction)
@@ -1212,8 +1235,8 @@ void InstructionCodeGeneratorARM64::GenerateMethodEntryExitHook(HInstruction* in
   MacroAssembler* masm = GetVIXLAssembler();
   UseScratchRegisterScope temps(masm);
   Register addr = temps.AcquireX();
-  Register index = temps.AcquireX();
-  Register value = index.W();
+  Register curr_entry = temps.AcquireX();
+  Register value = curr_entry.W();
 
   SlowPathCodeARM64* slow_path =
       new (codegen_->GetScopedAllocator()) MethodEntryExitHooksSlowPathARM64(instruction);
@@ -1242,21 +1265,20 @@ void InstructionCodeGeneratorARM64::GenerateMethodEntryExitHook(HInstruction* in
   // If yes, just take the slow path.
   __ B(gt, slow_path->GetEntryLabel());
 
+  Register init_entry = addr;
   // Check if there is place in the buffer to store a new entry, if no, take slow path.
-  uint32_t trace_buffer_index_offset =
-      Thread::TraceBufferIndexOffset<kArm64PointerSize>().Int32Value();
-  __ Ldr(index, MemOperand(tr, trace_buffer_index_offset));
-  __ Subs(index, index, kNumEntriesForWallClock);
+  uint32_t trace_buffer_curr_entry_offset =
+      Thread::TraceBufferCurrPtrOffset<kArm64PointerSize>().Int32Value();
+  __ Ldr(curr_entry, MemOperand(tr, trace_buffer_curr_entry_offset));
+  __ Sub(curr_entry, curr_entry, kNumEntriesForWallClock * sizeof(void*));
+  __ Ldr(init_entry, MemOperand(tr, Thread::TraceBufferPtrOffset<kArm64PointerSize>().SizeValue()));
+  __ Cmp(curr_entry, init_entry);
   __ B(lt, slow_path->GetEntryLabel());
 
   // Update the index in the `Thread`.
-  __ Str(index, MemOperand(tr, trace_buffer_index_offset));
-  // Calculate the entry address in the buffer.
-  // addr = base_addr + sizeof(void*) * index;
-  __ Ldr(addr, MemOperand(tr, Thread::TraceBufferPtrOffset<kArm64PointerSize>().SizeValue()));
-  __ ComputeAddress(addr, MemOperand(addr, index, LSL, TIMES_8));
+  __ Str(curr_entry, MemOperand(tr, trace_buffer_curr_entry_offset));
 
-  Register tmp = index;
+  Register tmp = init_entry;
   // Record method pointer and trace action.
   __ Ldr(tmp, MemOperand(sp, 0));
   // Use last two bits to encode trace method action. For MethodEntry it is 0
@@ -1267,10 +1289,10 @@ void InstructionCodeGeneratorARM64::GenerateMethodEntryExitHook(HInstruction* in
     static_assert(enum_cast<int32_t>(TraceAction::kTraceMethodExit) == 1);
     __ Orr(tmp, tmp, Operand(enum_cast<int32_t>(TraceAction::kTraceMethodExit)));
   }
-  __ Str(tmp, MemOperand(addr, kMethodOffsetInBytes));
+  __ Str(tmp, MemOperand(curr_entry, kMethodOffsetInBytes));
   // Record the timestamp.
   __ Mrs(tmp, (SystemRegister)SYS_CNTVCT_EL0);
-  __ Str(tmp, MemOperand(addr, kTimestampOffsetInBytes));
+  __ Str(tmp, MemOperand(curr_entry, kTimestampOffsetInBytes));
   __ Bind(slow_path->GetExitLabel());
 }
 
@@ -1288,6 +1310,25 @@ void InstructionCodeGeneratorARM64::VisitMethodEntryHook(HMethodEntryHook* instr
   DCHECK(codegen_->GetCompilerOptions().IsJitCompiler() && GetGraph()->IsDebuggable());
   DCHECK(codegen_->RequiresCurrentMethod());
   GenerateMethodEntryExitHook(instruction);
+}
+
+void CodeGeneratorARM64::MaybeRecordTraceEvent(bool is_method_entry) {
+  if (!art_flags::always_enable_profile_code()) {
+    return;
+  }
+
+  MacroAssembler* masm = GetVIXLAssembler();
+  UseScratchRegisterScope temps(masm);
+  Register addr = temps.AcquireX();
+  CHECK(addr.Is(vixl::aarch64::x16));
+
+  SlowPathCodeARM64* slow_path =
+      new (GetScopedAllocator()) TracingMethodEntryExitHooksSlowPathARM64(is_method_entry);
+  AddSlowPath(slow_path);
+
+  __ Ldr(addr, MemOperand(tr, Thread::TraceBufferPtrOffset<kArm64PointerSize>().SizeValue()));
+  __ Cbnz(addr, slow_path->GetEntryLabel());
+  __ Bind(slow_path->GetExitLabel());
 }
 
 void CodeGeneratorARM64::MaybeIncrementHotness(HSuspendCheck* suspend_check, bool is_frame_entry) {
@@ -1444,6 +1485,8 @@ void CodeGeneratorARM64::GenerateFrameEntry() {
       Register wzr = Register(VIXLRegCodeFromART(WZR), kWRegSize);
       __ Str(wzr, MemOperand(sp, GetStackOffsetOfShouldDeoptimizeFlag()));
     }
+
+    MaybeRecordTraceEvent(/* is_method_entry= */ true);
   }
   MaybeIncrementHotness(/* suspend_check= */ nullptr, /* is_frame_entry= */ true);
   MaybeGenerateMarkingRegisterCheck(/* code= */ __LINE__);
@@ -1452,6 +1495,8 @@ void CodeGeneratorARM64::GenerateFrameEntry() {
 void CodeGeneratorARM64::GenerateFrameExit() {
   GetAssembler()->cfi().RememberState();
   if (!HasEmptyFrame()) {
+    MaybeRecordTraceEvent(/* is_method_entry= */ false);
+
     int32_t frame_size = dchecked_integral_cast<int32_t>(GetFrameSize());
     uint32_t core_spills_offset = frame_size - GetCoreSpillSize();
     CPURegList preserved_core_registers = GetFramePreservedCoreRegisters();
@@ -2240,12 +2285,12 @@ void LocationsBuilderARM64::HandleFieldGet(HInstruction* instruction,
   if (DataType::IsFloatingPointType(instruction->GetType())) {
     locations->SetOut(Location::RequiresFpuRegister());
   } else {
-    // The output overlaps for an object field get when read barriers
-    // are enabled: we do not want the load to overwrite the object's
-    // location, as we need it to emit the read barrier.
-    locations->SetOut(
-        Location::RequiresRegister(),
-        object_field_get_with_read_barrier ? Location::kOutputOverlap : Location::kNoOutputOverlap);
+    // The output overlaps for an object field get for non-Baker read barriers: we do not want
+    // the load to overwrite the object's location, as we need it to emit the read barrier.
+    // Baker read barrier implementation with introspection does not have this restriction.
+    bool overlap = object_field_get_with_read_barrier && !kUseBakerReadBarrier;
+    locations->SetOut(Location::RequiresRegister(),
+                      overlap ? Location::kOutputOverlap : Location::kNoOutputOverlap);
   }
 }
 
@@ -2385,6 +2430,22 @@ void InstructionCodeGeneratorARM64::HandleBinaryOp(HBinaryOperation* instr) {
         __ Orr(dst, lhs, rhs);
       } else if (instr->IsSub()) {
         __ Sub(dst, lhs, rhs);
+      } else if (instr->IsRol()) {
+        if (rhs.IsImmediate()) {
+          uint32_t shift = (-rhs.GetImmediate()) & (lhs.GetSizeInBits() - 1);
+          __ Ror(dst, lhs, shift);
+        } else {
+          UseScratchRegisterScope temps(GetVIXLAssembler());
+
+          // Ensure shift distance is in the same size register as the result. If
+          // we are rotating a long and the shift comes in a w register originally,
+          // we don't need to sxtw for use as an x since the shift distances are
+          // all & reg_bits - 1.
+          Register right = RegisterFrom(instr->GetLocations()->InAt(1), type);
+          Register negated = (type == DataType::Type::kInt32) ? temps.AcquireW() : temps.AcquireX();
+          __ Neg(negated, right);
+          __ Ror(dst, lhs, negated);
+        }
       } else if (instr->IsRor()) {
         if (rhs.IsImmediate()) {
           uint32_t shift = rhs.GetImmediate() & (lhs.GetSizeInBits() - 1);
@@ -2734,12 +2795,12 @@ void LocationsBuilderARM64::VisitArrayGet(HArrayGet* instruction) {
   if (DataType::IsFloatingPointType(instruction->GetType())) {
     locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
   } else {
-    // The output overlaps in the case of an object array get with
-    // read barriers enabled: we do not want the move to overwrite the
-    // array's location, as we need it to emit the read barrier.
-    locations->SetOut(
-        Location::RequiresRegister(),
-        object_array_get_with_read_barrier ? Location::kOutputOverlap : Location::kNoOutputOverlap);
+    // The output overlaps for an object array get for non-Baker read barriers: we do not want
+    // the load to overwrite the object's location, as we need it to emit the read barrier.
+    // Baker read barrier implementation with introspection does not have this restriction.
+    bool overlap = object_array_get_with_read_barrier && !kUseBakerReadBarrier;
+    locations->SetOut(Location::RequiresRegister(),
+                      overlap ? Location::kOutputOverlap : Location::kNoOutputOverlap);
   }
 }
 
@@ -3219,16 +3280,18 @@ void InstructionCodeGeneratorARM64::GenerateFcmp(HInstruction* instruction) {
 void LocationsBuilderARM64::VisitCompare(HCompare* compare) {
   LocationSummary* locations =
       new (GetGraph()->GetAllocator()) LocationSummary(compare, LocationSummary::kNoCall);
-  DataType::Type in_type = compare->InputAt(0)->GetType();
+  DataType::Type compare_type = compare->GetComparisonType();
   HInstruction* rhs = compare->InputAt(1);
-  switch (in_type) {
+  switch (compare_type) {
     case DataType::Type::kBool:
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
     case DataType::Type::kUint16:
     case DataType::Type::kInt16:
     case DataType::Type::kInt32:
-    case DataType::Type::kInt64: {
+    case DataType::Type::kUint32:
+    case DataType::Type::kInt64:
+    case DataType::Type::kUint64: {
       locations->SetInAt(0, Location::RequiresRegister());
       locations->SetInAt(1, ARM64EncodableConstantOrRegister(rhs, compare));
       locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
@@ -3245,17 +3308,22 @@ void LocationsBuilderARM64::VisitCompare(HCompare* compare) {
       break;
     }
     default:
-      LOG(FATAL) << "Unexpected type for compare operation " << in_type;
+      LOG(FATAL) << "Unexpected type for compare operation " << compare_type;
   }
 }
 
 void InstructionCodeGeneratorARM64::VisitCompare(HCompare* compare) {
-  DataType::Type in_type = compare->InputAt(0)->GetType();
+  DataType::Type compare_type = compare->GetComparisonType();
 
   //  0 if: left == right
   //  1 if: left  > right
   // -1 if: left  < right
-  switch (in_type) {
+  Condition less_cond = lt;
+  switch (compare_type) {
+    case DataType::Type::kUint32:
+    case DataType::Type::kUint64:
+      less_cond = lo;
+      FALLTHROUGH_INTENDED;
     case DataType::Type::kBool:
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
@@ -3267,8 +3335,8 @@ void InstructionCodeGeneratorARM64::VisitCompare(HCompare* compare) {
       Register left = InputRegisterAt(compare, 0);
       Operand right = InputOperandAt(compare, 1);
       __ Cmp(left, right);
-      __ Cset(result, ne);          // result == +1 if NE or 0 otherwise
-      __ Cneg(result, result, lt);  // result == -1 if LT or unchanged otherwise
+      __ Cset(result, ne);                 // result == +1 if NE or 0 otherwise
+      __ Cneg(result, result, less_cond);  // result == -1 if LT or unchanged otherwise
       break;
     }
     case DataType::Type::kFloat32:
@@ -3280,7 +3348,7 @@ void InstructionCodeGeneratorARM64::VisitCompare(HCompare* compare) {
       break;
     }
     default:
-      LOG(FATAL) << "Unimplemented compare type " << in_type;
+      LOG(FATAL) << "Unimplemented compare type " << compare_type;
   }
 }
 
@@ -6357,6 +6425,14 @@ void LocationsBuilderARM64::VisitReturnVoid(HReturnVoid* instruction) {
 
 void InstructionCodeGeneratorARM64::VisitReturnVoid([[maybe_unused]] HReturnVoid* instruction) {
   codegen_->GenerateFrameExit();
+}
+
+void LocationsBuilderARM64::VisitRol(HRol* rol) {
+  HandleBinaryOp(rol);
+}
+
+void InstructionCodeGeneratorARM64::VisitRol(HRol* rol) {
+  HandleBinaryOp(rol);
 }
 
 void LocationsBuilderARM64::VisitRor(HRor* ror) {

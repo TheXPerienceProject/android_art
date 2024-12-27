@@ -41,6 +41,7 @@ import android.util.SparseArray;
 
 import androidx.annotation.RequiresApi;
 
+import com.android.modules.utils.build.SdkLevel;
 import com.android.modules.utils.pm.PackageStateModulesUtils;
 import com.android.server.art.model.DexoptParams;
 import com.android.server.pm.PackageManagerLocal;
@@ -428,7 +429,7 @@ public final class Utils {
             profileInitializers.add(Pair.create(AidlUtils.toString(profile),
                     () -> artd.copyAndRewriteProfile(profile, output, dexPath)));
         }
-        if (enableEmbeddedProfile) {
+        if (enableEmbeddedProfile && SdkLevel.isAtLeastV()) {
             profileInitializers.add(Pair.create(
                     "embedded profile", () -> artd.copyAndRewriteEmbeddedProfile(output, dexPath)));
         }
@@ -480,6 +481,24 @@ public final class Utils {
         } catch (InterruptedException e) {
             AsLog.wtf("Sleep interrupted", e);
         }
+    }
+
+    public static boolean pathStartsWith(@NonNull String path, @NonNull String prefix) {
+        check(!prefix.isEmpty() && !path.isEmpty() && prefix.charAt(0) == '/'
+                && path.charAt(0) == '/');
+        int prefixLen = prefix.length();
+        if (prefix.charAt(prefixLen - 1) == '/') {
+            prefixLen--;
+        }
+        if (path.length() < prefixLen) {
+            return false;
+        }
+        for (int i = 0; i < prefixLen; i++) {
+            if (path.charAt(i) != prefix.charAt(i)) {
+                return false;
+            }
+        }
+        return path.length() == prefixLen || path.charAt(prefixLen) == '/';
     }
 
     @AutoValue

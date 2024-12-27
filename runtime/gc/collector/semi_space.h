@@ -39,13 +39,7 @@ class Object;
 }  // namespace mirror
 
 namespace gc {
-
 class Heap;
-
-namespace accounting {
-template <typename T> class AtomicStack;
-using ObjectStack = AtomicStack<mirror::Object>;
-}  // namespace accounting
 
 namespace space {
 class ContinuousMemMapAllocSpace;
@@ -53,7 +47,6 @@ class ContinuousSpace;
 }  // namespace space
 
 namespace collector {
-
 class SemiSpace : public GarbageCollector {
  public:
   // If true, use remembered sets in the generational mode.

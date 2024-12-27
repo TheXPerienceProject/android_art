@@ -14,8 +14,16 @@
  * limitations under the License.
  */
 
-#include "android-base/logging.h"
+#include <algorithm>
+#include <deque>
+#include <map>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
 
+#include "android-base/logging.h"
 #include "base/os.h"
 #include "base/unix_file/fd_file.h"
 #include "elf/elf_builder.h"
@@ -23,14 +31,6 @@
 #include "elf/xz_utils.h"
 #include "stream/file_output_stream.h"
 #include "stream/vector_output_stream.h"
-
-#include <algorithm>
-#include <deque>
-#include <map>
-#include <memory>
-#include <string>
-#include <string_view>
-#include <vector>
 
 namespace art {
 
@@ -64,19 +64,57 @@ static void WriteMinidebugInfo(const std::vector<uint8_t>& input, std::vector<ui
   auto* symtab = builder->GetSymTab();
   strtab->Start();
   {
+    std::unordered_map<uint64_t, uint64_t> dyn_funcs_by_offset;
+    reader.VisitDynamicSymbols([&](Elf_Sym sym, const char*) {
+      // Keep track of all of the dynamic function symbols.
+      if (ELF32_ST_TYPE(sym.st_info) == STT_FUNC && sym.st_size != 0) {
+        auto it = dyn_funcs_by_offset.find(sym.st_value);
+        if (it == dyn_funcs_by_offset.end() || it->second < sym.st_size) {
+          dyn_funcs_by_offset[sym.st_value] = sym.st_size;
+        }
+      }
+    });
+    std::unordered_map<uint64_t, std::string_view> funcs_by_offset;
     std::multimap<std::string_view, Elf_Sym> syms;
     reader.VisitFunctionSymbols([&](Elf_Sym sym, const char* name) {
       // Exclude non-function or empty symbols.
-      if (ELF32_ST_TYPE(sym.st_info) == STT_FUNC && sym.st_size != 0) {
-        syms.emplace(name, sym);
+      if (ELF32_ST_TYPE(sym.st_info) != STT_FUNC || sym.st_size == 0) {
+        return;
       }
-    });
-    reader.VisitDynamicSymbols([&](Elf_Sym sym, const char* name) {
-      // Exclude symbols which will be preserved in the dynamic table anyway.
-      auto it = syms.find(name);
-      if (it != syms.end() && it->second.st_value == sym.st_value) {
+
+      // Exclude symbols at the same offset as a symbol in the set of
+      // dynamic symbols.
+      auto dyn_it = dyn_funcs_by_offset.find(sym.st_value);
+      if (dyn_it != dyn_funcs_by_offset.end()) {
+        CHECK(dyn_it->second >= sym.st_size);
+        return;
+      }
+
+      // Exclude symbols with the same offset as a previous symbol.
+      if (funcs_by_offset.contains(sym.st_value)) {
+        const std::string_view& previous_name = funcs_by_offset[sym.st_value];
+
+        // Find the previous symbol entry.
+        auto it = syms.find(previous_name);
+        while (it != syms.end() && it->second.st_value != sym.st_value) {
+          ++it;
+        }
+        CHECK(it != syms.end());
+
+        // When there is a duplicate, always choose the symbol with the
+        // largest size.
+        // In order to produce the same symbol table every time, if the
+        // symbol has the same size choose the symbol with the shortest
+        // name, or the symbol first according to ascii comparison.
+        if (sym.st_size < it->second.st_size ||
+            (sym.st_size == it->second.st_size &&
+             (previous_name.size() < strlen(name) || previous_name.compare(name) <= 0))) {
+          return;
+        }
         syms.erase(it);
       }
+      funcs_by_offset[sym.st_value] = name;
+      syms.emplace(name, sym);
     });
     if (!syms.empty()) {
       symtab->Add(strtab->Write(kSortedSymbolName), nullptr, 0, 0, STB_GLOBAL, STT_NOTYPE);

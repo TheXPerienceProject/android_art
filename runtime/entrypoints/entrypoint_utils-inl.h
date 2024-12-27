@@ -509,6 +509,7 @@ static inline bool IsStringInit(const Instruction& instr, ArtMethod* caller)
   return false;
 }
 
+LIBART_PROTECTED
 extern "C" size_t NterpGetMethod(Thread* self, ArtMethod* caller, const uint16_t* dex_pc_ptr);
 
 template <InvokeType type>

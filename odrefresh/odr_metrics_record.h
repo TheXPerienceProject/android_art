@@ -34,7 +34,8 @@ constexpr const char* kOdrefreshMetricsFile = "/data/misc/odrefresh/odrefresh-me
 static constexpr int32_t kOdrefreshMetricsVersion = 4;
 
 // Constant value used in ExecResult when the process was not run at all.
-// Mirrors EXEC_RESULT_STATUS_NOT_RUN contained in frameworks/proto_logging/atoms.proto.
+// Mirrors EXEC_RESULT_STATUS_NOT_RUN contained in
+// frameworks/proto_logging/stats/enums/art/common_enums.proto.
 static constexpr int32_t kExecResultNotRun = 5;
 static_assert(kExecResultNotRun > ExecResult::Status::kLast,
               "`art::odrefresh::kExecResultNotRun` value should not overlap with"

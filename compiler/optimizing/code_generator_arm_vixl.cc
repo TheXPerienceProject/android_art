@@ -2220,19 +2220,18 @@ void InstructionCodeGeneratorARMVIXL::GenerateMethodEntryExitHook(HInstruction* 
   __ B(gt, slow_path->GetEntryLabel());
 
   // Check if there is place in the buffer to store a new entry, if no, take slow path.
-  uint32_t trace_buffer_index_offset =
-      Thread::TraceBufferIndexOffset<kArmPointerSize>().Int32Value();
-  vixl32::Register index = value;
-  __ Ldr(index, MemOperand(tr, trace_buffer_index_offset));
-  __ Subs(index, index, kNumEntriesForWallClock);
+  uint32_t trace_buffer_curr_entry_offset =
+      Thread::TraceBufferCurrPtrOffset<kArmPointerSize>().Int32Value();
+  vixl32::Register curr_entry = value;
+  vixl32::Register init_entry = addr;
+  __ Ldr(curr_entry, MemOperand(tr, trace_buffer_curr_entry_offset));
+  __ Subs(curr_entry, curr_entry, static_cast<uint32_t>(kNumEntriesForWallClock * sizeof(void*)));
+  __ Ldr(init_entry, MemOperand(tr, Thread::TraceBufferPtrOffset<kArmPointerSize>().SizeValue()));
+  __ Cmp(curr_entry, init_entry);
   __ B(lt, slow_path->GetEntryLabel());
 
   // Update the index in the `Thread`.
-  __ Str(index, MemOperand(tr, trace_buffer_index_offset));
-  // Calculate the entry address in the buffer.
-  // addr = base_addr + sizeof(void*) * index
-  __ Ldr(addr, MemOperand(tr, Thread::TraceBufferPtrOffset<kArmPointerSize>().SizeValue()));
-  __ Add(addr, addr, Operand(index, LSL, TIMES_4));
+  __ Str(curr_entry, MemOperand(tr, trace_buffer_curr_entry_offset));
 
   // Record method pointer and trace action.
   __ Ldr(tmp, MemOperand(sp, 0));
@@ -2244,9 +2243,9 @@ void InstructionCodeGeneratorARMVIXL::GenerateMethodEntryExitHook(HInstruction* 
     static_assert(enum_cast<int32_t>(TraceAction::kTraceMethodExit) == 1);
     __ Orr(tmp, tmp, Operand(enum_cast<int32_t>(TraceAction::kTraceMethodExit)));
   }
-  __ Str(tmp, MemOperand(addr, kMethodOffsetInBytes));
+  __ Str(tmp, MemOperand(curr_entry, kMethodOffsetInBytes));
 
-  vixl32::Register tmp1 = index;
+  vixl32::Register tmp1 = init_entry;
   // See Architecture Reference Manual ARMv7-A and ARMv7-R edition section B4.1.34.
   __ Mrrc(/* lower 32-bit */ tmp,
           /* higher 32-bit */ tmp1,
@@ -2255,7 +2254,7 @@ void InstructionCodeGeneratorARMVIXL::GenerateMethodEntryExitHook(HInstruction* 
           /* crm= */ 14);
   static_assert(kHighTimestampOffsetInBytes ==
                 kTimestampOffsetInBytes + static_cast<uint32_t>(kRuntimePointerSize));
-  __ Strd(tmp, tmp1, MemOperand(addr, kTimestampOffsetInBytes));
+  __ Strd(tmp, tmp1, MemOperand(curr_entry, kTimestampOffsetInBytes));
   __ Bind(slow_path->GetExitLabel());
 }
 
@@ -5281,17 +5280,22 @@ void InstructionCodeGeneratorARMVIXL::VisitDivZeroCheck(HDivZeroCheck* instructi
   }
 }
 
-void InstructionCodeGeneratorARMVIXL::HandleIntegerRotate(HRor* ror) {
-  LocationSummary* locations = ror->GetLocations();
-  vixl32::Register in = InputRegisterAt(ror, 0);
+void InstructionCodeGeneratorARMVIXL::HandleIntegerRotate(HBinaryOperation* rotate) {
+  LocationSummary* locations = rotate->GetLocations();
+  vixl32::Register in = InputRegisterAt(rotate, 0);
   Location rhs = locations->InAt(1);
-  vixl32::Register out = OutputRegister(ror);
+  vixl32::Register out = OutputRegister(rotate);
 
   if (rhs.IsConstant()) {
     // Arm32 and Thumb2 assemblers require a rotation on the interval [1,31],
     // so map all rotations to a +ve. equivalent in that range.
     // (e.g. left *or* right by -2 bits == 30 bits in the same direction.)
     uint32_t rot = CodeGenerator::GetInt32ValueOf(rhs.GetConstant()) & 0x1F;
+
+    if (rotate->IsRol()) {
+      rot = -rot;
+    }
+
     if (rot) {
       // Rotate, mapping left rotations to right equivalents if necessary.
       // (e.g. left by 2 bits == right by 30.)
@@ -5300,7 +5304,16 @@ void InstructionCodeGeneratorARMVIXL::HandleIntegerRotate(HRor* ror) {
       __ Mov(out, in);
     }
   } else {
-    __ Ror(out, in, RegisterFrom(rhs));
+    if (rotate->IsRol()) {
+      UseScratchRegisterScope temps(GetVIXLAssembler());
+
+      vixl32::Register negated = temps.Acquire();
+      __ Rsb(negated, RegisterFrom(rhs), 0);
+      __ Ror(out, in, negated);
+    } else {
+      DCHECK(rotate->IsRor());
+      __ Ror(out, in, RegisterFrom(rhs));
+    }
   }
 }
 
@@ -5308,8 +5321,8 @@ void InstructionCodeGeneratorARMVIXL::HandleIntegerRotate(HRor* ror) {
 // rotates by swapping input regs (effectively rotating by the first 32-bits of
 // a larger rotation) or flipping direction (thus treating larger right/left
 // rotations as sub-word sized rotations in the other direction) as appropriate.
-void InstructionCodeGeneratorARMVIXL::HandleLongRotate(HRor* ror) {
-  LocationSummary* locations = ror->GetLocations();
+void InstructionCodeGeneratorARMVIXL::HandleLongRotate(HBinaryOperation* rotate) {
+  LocationSummary* locations = rotate->GetLocations();
   vixl32::Register in_reg_lo = LowRegisterFrom(locations->InAt(0));
   vixl32::Register in_reg_hi = HighRegisterFrom(locations->InAt(0));
   Location rhs = locations->InAt(1);
@@ -5318,6 +5331,11 @@ void InstructionCodeGeneratorARMVIXL::HandleLongRotate(HRor* ror) {
 
   if (rhs.IsConstant()) {
     uint64_t rot = CodeGenerator::GetInt64ValueOf(rhs.GetConstant());
+
+    if (rotate->IsRol()) {
+      rot = -rot;
+    }
+
     // Map all rotations to +ve. equivalents on the interval [0,63].
     rot &= kMaxLongShiftDistance;
     // For rotates over a word in size, 'pre-rotate' by 32-bits to keep rotate
@@ -5342,7 +5360,17 @@ void InstructionCodeGeneratorARMVIXL::HandleLongRotate(HRor* ror) {
     vixl32::Register shift_left = RegisterFrom(locations->GetTemp(1));
     vixl32::Label end;
     vixl32::Label shift_by_32_plus_shift_right;
-    vixl32::Label* final_label = codegen_->GetFinalLabel(ror, &end);
+    vixl32::Label* final_label = codegen_->GetFinalLabel(rotate, &end);
+
+    // Negate rhs, taken from VisitNeg
+    if (rotate->IsRol()) {
+      Location negated = locations->GetTemp(2);
+      Location in = rhs;
+
+      __ Rsb(RegisterFrom(negated), RegisterFrom(in), 0);
+
+      rhs = negated;
+    }
 
     __ And(shift_right, RegisterFrom(rhs), 0x1F);
     __ Lsrs(shift_left, RegisterFrom(rhs), 6);
@@ -5375,11 +5403,11 @@ void InstructionCodeGeneratorARMVIXL::HandleLongRotate(HRor* ror) {
   }
 }
 
-void LocationsBuilderARMVIXL::VisitRor(HRor* ror) {
+void LocationsBuilderARMVIXL::HandleRotate(HBinaryOperation* rotate) {
   LocationSummary* locations =
-      new (GetGraph()->GetAllocator()) LocationSummary(ror, LocationSummary::kNoCall);
-  HInstruction* shift = ror->InputAt(1);
-  switch (ror->GetResultType()) {
+      new (GetGraph()->GetAllocator()) LocationSummary(rotate, LocationSummary::kNoCall);
+  HInstruction* shift = rotate->InputAt(1);
+  switch (rotate->GetResultType()) {
     case DataType::Type::kInt32: {
       locations->SetInAt(0, Location::RequiresRegister());
       locations->SetInAt(1, Location::RegisterOrConstant(shift));
@@ -5392,32 +5420,53 @@ void LocationsBuilderARMVIXL::VisitRor(HRor* ror) {
         locations->SetInAt(1, Location::ConstantLocation(shift));
       } else {
         locations->SetInAt(1, Location::RequiresRegister());
-        locations->AddTemp(Location::RequiresRegister());
-        locations->AddTemp(Location::RequiresRegister());
+
+        if (rotate->IsRor()) {
+          locations->AddRegisterTemps(2);
+        } else {
+          DCHECK(rotate->IsRol());
+          locations->AddRegisterTemps(3);
+        }
       }
       locations->SetOut(Location::RequiresRegister(), Location::kOutputOverlap);
       break;
     }
     default:
-      LOG(FATAL) << "Unexpected operation type " << ror->GetResultType();
+      LOG(FATAL) << "Unexpected operation type " << rotate->GetResultType();
   }
 }
 
-void InstructionCodeGeneratorARMVIXL::VisitRor(HRor* ror) {
-  DataType::Type type = ror->GetResultType();
+void LocationsBuilderARMVIXL::VisitRol(HRol* rol) {
+  HandleRotate(rol);
+}
+
+void LocationsBuilderARMVIXL::VisitRor(HRor* ror) {
+  HandleRotate(ror);
+}
+
+void InstructionCodeGeneratorARMVIXL::HandleRotate(HBinaryOperation* rotate) {
+  DataType::Type type = rotate->GetResultType();
   switch (type) {
     case DataType::Type::kInt32: {
-      HandleIntegerRotate(ror);
+      HandleIntegerRotate(rotate);
       break;
     }
     case DataType::Type::kInt64: {
-      HandleLongRotate(ror);
+      HandleLongRotate(rotate);
       break;
     }
     default:
       LOG(FATAL) << "Unexpected operation type " << type;
       UNREACHABLE();
   }
+}
+
+void InstructionCodeGeneratorARMVIXL::VisitRol(HRol* rol) {
+  HandleRotate(rol);
+}
+
+void InstructionCodeGeneratorARMVIXL::VisitRor(HRor* ror) {
+  HandleRotate(ror);
 }
 
 void LocationsBuilderARMVIXL::HandleShift(HBinaryOperation* op) {
@@ -5757,14 +5806,16 @@ void InstructionCodeGeneratorARMVIXL::VisitBooleanNot(HBooleanNot* bool_not) {
 void LocationsBuilderARMVIXL::VisitCompare(HCompare* compare) {
   LocationSummary* locations =
       new (GetGraph()->GetAllocator()) LocationSummary(compare, LocationSummary::kNoCall);
-  switch (compare->InputAt(0)->GetType()) {
+  switch (compare->GetComparisonType()) {
     case DataType::Type::kBool:
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
     case DataType::Type::kUint16:
     case DataType::Type::kInt16:
     case DataType::Type::kInt32:
-    case DataType::Type::kInt64: {
+    case DataType::Type::kUint32:
+    case DataType::Type::kInt64:
+    case DataType::Type::kUint64: {
       locations->SetInAt(0, Location::RequiresRegister());
       locations->SetInAt(1, Location::RequiresRegister());
       // Output overlaps because it is written before doing the low comparison.
@@ -5791,9 +5842,14 @@ void InstructionCodeGeneratorARMVIXL::VisitCompare(HCompare* compare) {
 
   vixl32::Label less, greater, done;
   vixl32::Label* final_label = codegen_->GetFinalLabel(compare, &done);
-  DataType::Type type = compare->InputAt(0)->GetType();
-  vixl32::Condition less_cond = vixl32::Condition::None();
+  DataType::Type type = compare->GetComparisonType();
+  vixl32::Condition less_cond = vixl32::ConditionType::lt;
+  vixl32::Condition greater_cond = vixl32::ConditionType::gt;
   switch (type) {
+    case DataType::Type::kUint32:
+      less_cond = vixl32::ConditionType::lo;
+      // greater_cond - is not needed below
+      FALLTHROUGH_INTENDED;
     case DataType::Type::kBool:
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
@@ -5802,18 +5858,22 @@ void InstructionCodeGeneratorARMVIXL::VisitCompare(HCompare* compare) {
     case DataType::Type::kInt32: {
       // Emit move to `out` before the `Cmp`, as `Mov` might affect the status flags.
       __ Mov(out, 0);
-      __ Cmp(RegisterFrom(left), RegisterFrom(right));  // Signed compare.
-      less_cond = lt;
+      __ Cmp(RegisterFrom(left), RegisterFrom(right));
       break;
     }
+    case DataType::Type::kUint64:
+      less_cond = vixl32::ConditionType::lo;
+      greater_cond = vixl32::ConditionType::hi;
+      FALLTHROUGH_INTENDED;
     case DataType::Type::kInt64: {
-      __ Cmp(HighRegisterFrom(left), HighRegisterFrom(right));  // Signed compare.
-      __ B(lt, &less, /* is_far_target= */ false);
-      __ B(gt, &greater, /* is_far_target= */ false);
+      __ Cmp(HighRegisterFrom(left), HighRegisterFrom(right));  // High part compare.
+      __ B(less_cond, &less, /* is_far_target= */ false);
+      __ B(greater_cond, &greater, /* is_far_target= */ false);
       // Emit move to `out` before the last `Cmp`, as `Mov` might affect the status flags.
       __ Mov(out, 0);
       __ Cmp(LowRegisterFrom(left), LowRegisterFrom(right));  // Unsigned compare.
-      less_cond = lo;
+      less_cond = vixl32::ConditionType::lo;
+      // greater_cond - is not needed below
       break;
     }
     case DataType::Type::kFloat32:
@@ -5948,8 +6008,7 @@ void LocationsBuilderARMVIXL::HandleFieldSet(HInstruction* instruction,
   // Temporary registers for the write barrier.
   // TODO: consider renaming StoreNeedsWriteBarrier to StoreNeedsGCMark.
   if (needs_write_barrier || check_gc_card) {
-    locations->AddTemp(Location::RequiresRegister());
-    locations->AddTemp(Location::RequiresRegister());
+    locations->AddRegisterTemps(2);
   } else if (generate_volatile) {
     // ARM encoding have some additional constraints for ldrexd/strexd:
     // - registers need to be consecutive
@@ -5957,9 +6016,7 @@ void LocationsBuilderARMVIXL::HandleFieldSet(HInstruction* instruction,
     // We don't test for ARM yet, and the assertion makes sure that we
     // revisit this if we ever enable ARM encoding.
     DCHECK_EQ(InstructionSet::kThumb2, codegen_->GetInstructionSet());
-
-    locations->AddTemp(Location::RequiresRegister());
-    locations->AddTemp(Location::RequiresRegister());
+    locations->AddRegisterTemps(2);
     if (field_type == DataType::Type::kFloat64) {
       // For doubles we need two more registers to copy the value.
       locations->AddTemp(LocationFrom(r2));
@@ -6118,14 +6175,14 @@ void LocationsBuilderARMVIXL::HandleFieldGet(HInstruction* instruction,
   bool volatile_for_double = field_info.IsVolatile()
       && (field_info.GetFieldType() == DataType::Type::kFloat64)
       && !codegen_->GetInstructionSetFeatures().HasAtomicLdrdAndStrd();
-  // The output overlaps in case of volatile long: we don't want the
-  // code generated by GenerateWideAtomicLoad to overwrite the
-  // object's location.  Likewise, in the case of an object field get
-  // with read barriers enabled, we do not want the load to overwrite
-  // the object's location, as we need it to emit the read barrier.
+  // The output overlaps in case of volatile long: we don't want the code generated by
+  // `GenerateWideAtomicLoad()` to overwrite the object's location.  Likewise, in the case
+  // of an object field get with non-Baker read barriers enabled, we do not want the load
+  // to overwrite the object's location, as we need it to emit the read barrier.
+  // Baker read barrier implementation with introspection does not have this restriction.
   bool overlap =
       (field_info.IsVolatile() && (field_info.GetFieldType() == DataType::Type::kInt64)) ||
-      object_field_get_with_read_barrier;
+      (object_field_get_with_read_barrier && !kUseBakerReadBarrier);
 
   if (DataType::IsFloatingPointType(instruction->GetType())) {
     locations->SetOut(Location::RequiresFpuRegister());
@@ -6140,8 +6197,7 @@ void LocationsBuilderARMVIXL::HandleFieldGet(HInstruction* instruction,
     // We don't test for ARM yet, and the assertion makes sure that we
     // revisit this if we ever enable ARM encoding.
     DCHECK_EQ(InstructionSet::kThumb2, codegen_->GetInstructionSet());
-    locations->AddTemp(Location::RequiresRegister());
-    locations->AddTemp(Location::RequiresRegister());
+    locations->AddRegisterTemps(2);
   } else if (object_field_get_with_read_barrier && kUseBakerReadBarrier) {
     // We need a temporary register for the read barrier load in
     // CodeGeneratorARMVIXL::GenerateFieldLoadWithBakerReadBarrier()
@@ -6571,12 +6627,12 @@ void LocationsBuilderARMVIXL::VisitArrayGet(HArrayGet* instruction) {
   if (DataType::IsFloatingPointType(instruction->GetType())) {
     locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
   } else {
-    // The output overlaps in the case of an object array get with
-    // read barriers enabled: we do not want the move to overwrite the
-    // array's location, as we need it to emit the read barrier.
-    locations->SetOut(
-        Location::RequiresRegister(),
-        object_array_get_with_read_barrier ? Location::kOutputOverlap : Location::kNoOutputOverlap);
+    // The output overlaps for an object array get for non-Baker read barriers: we do not want
+    // the load to overwrite the object's location, as we need it to emit the read barrier.
+    // Baker read barrier implementation with introspection does not have this restriction.
+    bool overlap = object_array_get_with_read_barrier && !kUseBakerReadBarrier;
+    locations->SetOut(Location::RequiresRegister(),
+                      overlap ? Location::kOutputOverlap : Location::kNoOutputOverlap);
   }
   if (object_array_get_with_read_barrier && kUseBakerReadBarrier) {
     if (instruction->GetIndex()->IsConstant()) {
@@ -6865,8 +6921,7 @@ void LocationsBuilderARMVIXL::VisitArraySet(HArraySet* instruction) {
   if (needs_write_barrier || check_gc_card || instruction->NeedsTypeCheck()) {
     // Temporary registers for type checking, write barrier, checking the dirty bit, or register
     // poisoning.
-    locations->AddTemp(Location::RequiresRegister());
-    locations->AddTemp(Location::RequiresRegister());
+    locations->AddRegisterTemps(2);
   } else if (kPoisonHeapReferences && value_type == DataType::Type::kReference) {
     locations->AddTemp(Location::RequiresRegister());
   }

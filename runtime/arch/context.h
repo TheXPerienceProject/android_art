@@ -92,14 +92,18 @@ class Context {
   // an nterp frame.
   virtual void SetNterpDexPC([[maybe_unused]] uintptr_t new_value) { abort(); }
 
-  // Switches execution of the executing context to this context
-  NO_RETURN virtual void DoLongJump() = 0;
+  // Copies the values of GPRs and FPRs registers from this context to external buffers;
+  // the use case is to do a long jump afterwards.
+  virtual void CopyContextTo(uintptr_t* gprs, uintptr_t* fprs) = 0;
 
   enum {
     kBadGprBase = 0xebad6070,
     kBadFprBase = 0xebad8070,
   };
 };
+
+// Copy the GPRs and FPRs from the context to the given buffers.
+extern "C" void artContextCopyForLongJump(Context* context, uintptr_t* gprs, uintptr_t* fprs);
 
 }  // namespace art
 

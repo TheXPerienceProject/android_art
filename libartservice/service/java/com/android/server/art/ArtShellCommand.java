@@ -731,7 +731,7 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
 
         switch (mode) {
             case "--version":
-                pw.println(2);
+                pw.println(3);
                 return 0;
             case "--test":
                 return handleTestPrDexoptJob(pw);
@@ -817,7 +817,7 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
 
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     private int handleSchedulePrDexoptJob(@NonNull PrintWriter pw, @Nullable String otaSlot) {
-        int code = mArtManagerLocal.getPreRebootDexoptJob().onUpdateReady(otaSlot);
+        int code = mArtManagerLocal.getPreRebootDexoptJob().onUpdateReadyImpl(otaSlot);
         switch (code) {
             case ArtFlags.SCHEDULE_SUCCESS:
                 pw.println("Pre-reboot Dexopt job scheduled");

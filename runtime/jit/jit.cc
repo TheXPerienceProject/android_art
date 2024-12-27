@@ -1401,6 +1401,15 @@ void Jit::EnqueueOptimizedCompilation(ArtMethod* method, Thread* self) {
     return;
   }
 
+  const void* entry_point = method->GetEntryPointFromQuickCompiledCode();
+  // Check if we already have optimized code. We might still be executing baseline code even
+  // when we have optimized code.
+  if (GetCodeCache()->ContainsPc(entry_point) &&
+      !CodeInfo::IsBaseline(
+          OatQuickMethodHeader::FromEntryPoint(entry_point)->GetOptimizedCodeInfoPtr())) {
+    return;
+  }
+
   // We arrive here after a baseline compiled code has reached its baseline
   // hotness threshold. If we're not only using the baseline compiler, enqueue a compilation
   // task that will compile optimize the method.

@@ -85,8 +85,6 @@
 #include "odr_fs_utils.h"
 #include "odr_metrics.h"
 #include "odrefresh/odrefresh.h"
-#include "selinux/android.h"
-#include "selinux/selinux.h"
 #include "tools/cmdline_builder.h"
 
 namespace art {
@@ -145,7 +143,8 @@ void EraseFiles(const std::vector<std::unique_ptr<File>>& files) {
 //
 // Returns true if all files are moved, false otherwise.
 bool MoveOrEraseFiles(const std::vector<std::unique_ptr<File>>& files,
-                      std::string_view output_directory_path) {
+                      std::string_view output_directory_path,
+                      android::base::function_ref<int(const char*, unsigned int)> restorecon) {
   std::vector<std::unique_ptr<File>> output_files;
   for (auto& file : files) {
     std::string file_basename(Basename(file->GetPath()));
@@ -168,7 +167,7 @@ bool MoveOrEraseFiles(const std::vector<std::unique_ptr<File>>& files,
         return false;
       }
 
-      if (selinux_android_restorecon(output_file_path.c_str(), 0) < 0) {
+      if (restorecon(output_file_path.c_str(), 0) < 0) {
         LOG(ERROR) << "Failed to set security context for file " << QuotePath(output_file_path);
         EraseFiles(files);
         return false;
@@ -396,7 +395,7 @@ bool ArtifactsExist(const OdrArtifacts& artifacts,
 
 void AddDex2OatCommonOptions(/*inout*/ CmdlineBuilder& args) {
   args.Add("--android-root=out/empty");
-  args.Add("--abort-on-hard-verifier-error");
+  args.Add("--no-abort-on-hard-verifier-error");
   args.Add("--no-abort-on-soft-verifier-error");
   args.Add("--compilation-reason=boot");
   args.Add("--image-format=lz4");
@@ -683,25 +682,31 @@ int CompilationOptions::CompilationUnitCount() const {
   return count;
 }
 
-OnDeviceRefresh::OnDeviceRefresh(const OdrConfig& config)
+OnDeviceRefresh::OnDeviceRefresh(
+    const OdrConfig& config,
+    android::base::function_ref<int(const char*, const char*)> setfilecon,
+    android::base::function_ref<int(const char*, unsigned int)> restorecon)
     : OnDeviceRefresh(config,
+                      setfilecon,
+                      restorecon,
                       config.GetArtifactDirectory() + "/" + kCacheInfoFile,
                       std::make_unique<ExecUtils>(),
-                      CheckCompilationSpace,
-                      setfilecon) {}
+                      CheckCompilationSpace) {}
 
 OnDeviceRefresh::OnDeviceRefresh(
     const OdrConfig& config,
+    android::base::function_ref<int(const char*, const char*)> setfilecon,
+    android::base::function_ref<int(const char*, unsigned int)> restorecon,
     const std::string& cache_info_filename,
     std::unique_ptr<ExecUtils> exec_utils,
-    android::base::function_ref<bool()> check_compilation_space,
-    android::base::function_ref<int(const char*, const char*)> setfilecon)
+    android::base::function_ref<bool()> check_compilation_space)
     : config_(config),
       cache_info_filename_(cache_info_filename),
       start_time_(time(nullptr)),
       exec_utils_(std::move(exec_utils)),
       check_compilation_space_(check_compilation_space),
-      setfilecon_(setfilecon) {
+      setfilecon_(setfilecon),
+      restorecon_(restorecon) {
   // Updatable APEXes should not have DEX files in the DEX2OATBOOTCLASSPATH. At the time of
   // writing i18n is a non-updatable APEX and so does appear in the DEX2OATBOOTCLASSPATH.
   dex2oat_boot_classpath_jars_ = Split(config_.GetDex2oatBootClasspath(), ":");
@@ -1097,12 +1102,15 @@ WARN_UNUSED bool OnDeviceRefresh::CheckSystemPropertiesAreDefault() const {
   const OdrSystemProperties& system_properties = config_.GetSystemProperties();
 
   for (const SystemPropertyConfig& system_property_config : *kSystemProperties.get()) {
-    std::string property = system_properties.GetOrEmpty(system_property_config.name);
-    DCHECK_NE(property, "");
+    // Note that the `kSystemPropertySystemServerCompilerFilterOverride` property has an empty
+    // default value, so we use the `GetOrNull` method and check against nullopt
+    std::optional<std::string> property = system_properties.GetOrNull(system_property_config.name);
+    DCHECK(property.has_value()) << "Property " << system_property_config.name
+                                 << " does not exist in system properties map!";
 
-    if (property != system_property_config.default_value) {
+    if (*property != system_property_config.default_value) {
       LOG(INFO) << "System property " << system_property_config.name << " has a non-default value ("
-                << property << ").";
+                << *property << ").";
       return false;
     }
   }
@@ -1825,7 +1833,7 @@ WARN_UNUSED CompilationResult OnDeviceRefresh::RunDex2oat(
                                         ART_FORMAT("Failed to flush file '{}'", file->GetPath()));
       }
     }
-    if (!MoveOrEraseFiles(output_files, install_location)) {
+    if (!MoveOrEraseFiles(output_files, install_location, restorecon_)) {
       return CompilationResult::Error(
           OdrMetrics::Status::kIoError,
           ART_FORMAT("Failed to commit artifacts to '{}'", install_location));
@@ -1872,22 +1880,24 @@ OnDeviceRefresh::RunDex2oatForBootClasspath(const std::string& staging_dir,
 
     args.Add(StringPrintf("--base=0x%08x", ART_BASE_ADDRESS));
 
-    std::string dirty_image_objects_file(GetAndroidRoot() + "/etc/dirty-image-objects");
-    std::unique_ptr<File> file(OS::OpenFileForReading(dirty_image_objects_file.c_str()));
-    if (file != nullptr) {
-      args.Add("--dirty-image-objects-fd=%d", file->Fd());
-      readonly_files_raii.push_back(std::move(file));
-    } else if (errno == ENOENT) {
-      LOG(WARNING) << ART_FORMAT("Missing dirty objects file '{}'", dirty_image_objects_file);
-    } else {
-      return CompilationResult::Error(OdrMetrics::Status::kIoError,
-                                      ART_FORMAT("Failed to open dirty objects file '{}': {}",
-                                                 dirty_image_objects_file,
-                                                 strerror(errno)));
+    for (const std::string& prefix : {GetAndroidRoot(), GetArtRoot()}) {
+      std::string dirty_image_objects_file = prefix + "/etc/dirty-image-objects";
+      std::unique_ptr<File> file(OS::OpenFileForReading(dirty_image_objects_file.c_str()));
+      if (file != nullptr) {
+        args.Add("--dirty-image-objects-fd=%d", file->Fd());
+        readonly_files_raii.push_back(std::move(file));
+      } else if (errno == ENOENT) {
+        LOG(WARNING) << ART_FORMAT("Missing dirty objects file '{}'", dirty_image_objects_file);
+      } else {
+        return CompilationResult::Error(OdrMetrics::Status::kIoError,
+                                        ART_FORMAT("Failed to open dirty objects file '{}': {}",
+                                                   dirty_image_objects_file,
+                                                   strerror(errno)));
+      }
     }
 
     std::string preloaded_classes_file(GetAndroidRoot() + "/etc/preloaded-classes");
-    file.reset(OS::OpenFileForReading(preloaded_classes_file.c_str()));
+    std::unique_ptr<File> file(OS::OpenFileForReading(preloaded_classes_file.c_str()));
     if (file != nullptr) {
       args.Add("--preloaded-classes-fds=%d", file->Fd());
       readonly_files_raii.push_back(std::move(file));

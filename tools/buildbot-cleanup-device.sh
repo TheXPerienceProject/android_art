@@ -16,6 +16,14 @@
 
 . "$(dirname $0)/buildbot-utils.sh"
 
+# Clean up local changes to avoid failing incremental `repo sync`.
+# TODO(b/286551985): Remove this after riscv64 support is added to mainline.
+if [[ $TARGET_ARCH = "riscv64" && ! ( -d frameworks/base ) ]]; then
+    msginfo "Reverting local changes to conscrypt and StatsD"
+    (cd $ANDROID_BUILD_TOP/prebuilts/module_sdk/conscrypt && git reset --hard )
+    (cd $ANDROID_BUILD_TOP/prebuilts/module_sdk/StatsD && git reset --hard )
+fi
+
 # Testing on a Linux VM requires special cleanup.
 if [[ -n "$ART_TEST_ON_VM" ]]; then
   [[ -d "$ART_TEST_VM_DIR" ]] || { msgfatal "no VM found in $ART_TEST_VM_DIR"; }

@@ -58,6 +58,7 @@ class ArenaStack;
 class CodeGenerator;
 class GraphChecker;
 class HBasicBlock;
+class HCondition;
 class HConstructorFence;
 class HCurrentMethod;
 class HDoubleConstant;
@@ -732,10 +733,10 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   void SetProfilingInfo(ProfilingInfo* info) { profiling_info_ = info; }
   ProfilingInfo* GetProfilingInfo() const { return profiling_info_; }
 
-  // Returns an instruction with the opposite Boolean value from 'cond'.
-  // The instruction has been inserted into the graph, either as a constant, or
-  // before cursor.
-  HInstruction* InsertOppositeCondition(HInstruction* cond, HInstruction* cursor);
+  HCondition* CreateCondition(IfCondition cond,
+                              HInstruction* lhs,
+                              HInstruction* rhs,
+                              uint32_t dex_pc = kNoDexPc);
 
   ReferenceTypeInfo GetInexactObjectRti() {
     return ReferenceTypeInfo::Create(handle_cache_.GetObjectClassHandle(), /* is_exact= */ false);
@@ -1592,6 +1593,7 @@ class HLoopInformationOutwardIterator : public ValueObject {
   M(Rem, BinaryOperation)                                               \
   M(Return, Instruction)                                                \
   M(ReturnVoid, Instruction)                                            \
+  M(Rol, BinaryOperation)                                               \
   M(Ror, BinaryOperation)                                               \
   M(Shl, BinaryOperation)                                               \
   M(Shr, BinaryOperation)                                               \
@@ -4522,6 +4524,7 @@ class HCompare final : public HBinaryOperation {
                          SideEffectsForArchRuntimeCalls(comparison_type),
                          dex_pc) {
     SetPackedField<ComparisonBiasField>(bias);
+    SetPackedField<ComparisonTypeField>(comparison_type);
   }
 
   template <typename T>
@@ -4541,10 +4544,16 @@ class HCompare final : public HBinaryOperation {
     // graph. However HCompare integer instructions can be synthesized
     // by the instruction simplifier to implement IntegerCompare and
     // IntegerSignum intrinsics, so we have to handle this case.
-    return MakeConstantComparison(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    const int32_t value = DataType::IsUnsignedType(GetComparisonType()) ?
+        Compute(x->GetValueAsUint64(), y->GetValueAsUint64()) :
+        Compute(x->GetValue(), y->GetValue());
+    return MakeConstantComparison(value, GetDexPc());
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantComparison(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    const int32_t value = DataType::IsUnsignedType(GetComparisonType()) ?
+        Compute(x->GetValueAsUint64(), y->GetValueAsUint64()) :
+        Compute(x->GetValue(), y->GetValue());
+    return MakeConstantComparison(value, GetDexPc());
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
     return MakeConstantComparison(ComputeFP(x->GetValue(), y->GetValue()), GetDexPc());
@@ -4558,6 +4567,10 @@ class HCompare final : public HBinaryOperation {
   }
 
   ComparisonBias GetBias() const { return GetPackedField<ComparisonBiasField>(); }
+
+  DataType::Type GetComparisonType() const { return GetPackedField<ComparisonTypeField>(); }
+
+  void SetComparisonType(DataType::Type newType) { SetPackedField<ComparisonTypeField>(newType); }
 
   // Does this compare instruction have a "gt bias" (vs an "lt bias")?
   // Only meaningful for floating-point comparisons.
@@ -4577,11 +4590,16 @@ class HCompare final : public HBinaryOperation {
   static constexpr size_t kFieldComparisonBias = kNumberOfGenericPackedBits;
   static constexpr size_t kFieldComparisonBiasSize =
       MinimumBitsToStore(static_cast<size_t>(ComparisonBias::kLast));
+  static constexpr size_t kFieldComparisonType = kFieldComparisonBias + kFieldComparisonBiasSize;
+  static constexpr size_t kFieldComparisonTypeSize =
+      MinimumBitsToStore(static_cast<size_t>(DataType::Type::kLast));
   static constexpr size_t kNumberOfComparePackedBits =
-      kFieldComparisonBias + kFieldComparisonBiasSize;
+      kFieldComparisonType + kFieldComparisonTypeSize;
   static_assert(kNumberOfComparePackedBits <= kMaxNumberOfPackedBits, "Too many packed fields.");
   using ComparisonBiasField =
       BitField<ComparisonBias, kFieldComparisonBias, kFieldComparisonBiasSize>;
+  using ComparisonTypeField =
+      BitField<DataType::Type, kFieldComparisonType, kFieldComparisonTypeSize>;
 
   // Return an integer constant containing the result of a comparison evaluated at compile time.
   HIntConstant* MakeConstantComparison(int32_t value, uint32_t dex_pc) const {
@@ -4895,6 +4913,7 @@ class HInvokePolymorphic final : public HInvoke {
  public:
   HInvokePolymorphic(ArenaAllocator* allocator,
                      uint32_t number_of_arguments,
+                     uint32_t number_of_other_inputs,
                      DataType::Type return_type,
                      uint32_t dex_pc,
                      MethodReference method_reference,
@@ -4907,7 +4926,7 @@ class HInvokePolymorphic final : public HInvoke {
       : HInvoke(kInvokePolymorphic,
                 allocator,
                 number_of_arguments,
-                /* number_of_other_inputs= */ 0u,
+                number_of_other_inputs,
                 return_type,
                 dex_pc,
                 method_reference,
@@ -4920,6 +4939,13 @@ class HInvokePolymorphic final : public HInvoke {
   bool IsClonable() const override { return true; }
 
   dex::ProtoIndex GetProtoIndex() { return proto_idx_; }
+
+  // Whether we can do direct invocation of the method handle.
+  bool CanHaveFastPath() const {
+    return GetIntrinsic() == Intrinsics::kMethodHandleInvokeExact &&
+        GetNumberOfArguments() >= 2 &&
+        InputAt(1)->GetType() == DataType::Type::kReference;
+  }
 
   DECLARE_INSTRUCTION(InvokePolymorphic);
 
@@ -5973,6 +5999,31 @@ class HRor final : public HBinaryOperation {
   DEFAULT_COPY_CONSTRUCTOR(Ror);
 };
 
+class HRol final : public HBinaryOperation {
+ public:
+  HRol(DataType::Type result_type, HInstruction* value, HInstruction* distance)
+      : HBinaryOperation(kRol, result_type, value, distance) {}
+
+  template <typename T>
+  static T Compute(T value, int32_t distance, int32_t max_shift_value) {
+    return HRor::Compute(value, -distance, max_shift_value);
+  }
+
+  HConstant* Evaluate(HIntConstant* value, HIntConstant* distance) const override {
+    return GetBlock()->GetGraph()->GetIntConstant(
+        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance), GetDexPc());
+  }
+  HConstant* Evaluate(HLongConstant* value, HIntConstant* distance) const override {
+    return GetBlock()->GetGraph()->GetLongConstant(
+        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
+  }
+
+  DECLARE_INSTRUCTION(Rol);
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(Rol);
+};
+
 // The value of a parameter in this method. Its location depends on
 // the calling convention.
 class HParameterValue final : public HExpression<0> {
@@ -6201,7 +6252,7 @@ inline std::ostream& operator<<(std::ostream& os, const FieldInfo& a) {
 
 class HInstanceFieldGet final : public HExpression<1> {
  public:
-  HInstanceFieldGet(HInstruction* value,
+  HInstanceFieldGet(HInstruction* object,
                     ArtField* field,
                     DataType::Type field_type,
                     MemberOffset field_offset,
@@ -6221,7 +6272,7 @@ class HInstanceFieldGet final : public HExpression<1> {
                     field_idx,
                     declaring_class_def_index,
                     dex_file) {
-    SetRawInputAt(0, value);
+    SetRawInputAt(0, object);
   }
 
   bool IsClonable() const override { return true; }
@@ -7218,6 +7269,8 @@ class HLoadMethodType final : public HInstruction {
   enum class LoadKind {
     // Load from an entry in the .bss section using a PC-relative load.
     kBssEntry,
+    // Load from the root table associated with the JIT compiled method.
+    kJitTableAddress,
     // Load using a single runtime call.
     kRuntimeCall,
 
@@ -7254,6 +7307,10 @@ class HLoadMethodType final : public HInstruction {
 
   dex::ProtoIndex GetProtoIndex() const { return proto_index_; }
 
+  Handle<mirror::MethodType> GetMethodType() const { return method_type_; }
+
+  void SetMethodType(Handle<mirror::MethodType> method_type) { method_type_ = method_type; }
+
   const DexFile& GetDexFile() const { return dex_file_; }
 
   static SideEffects SideEffectsForArchRuntimeCalls() {
@@ -7283,6 +7340,8 @@ class HLoadMethodType final : public HInstruction {
 
   const dex::ProtoIndex proto_index_;
   const DexFile& dex_file_;
+
+  Handle<mirror::MethodType> method_type_;
 };
 
 std::ostream& operator<<(std::ostream& os, HLoadMethodType::LoadKind rhs);
@@ -7293,6 +7352,7 @@ inline void HLoadMethodType::SetLoadKind(LoadKind load_kind) {
   DCHECK(GetBlock() == nullptr);
   DCHECK(GetEnvironment() == nullptr);
   DCHECK_EQ(GetLoadKind(), LoadKind::kRuntimeCall);
+  DCHECK_IMPLIES(GetLoadKind() == LoadKind::kJitTableAddress, GetMethodType() != nullptr);
   SetPackedField<LoadKindField>(load_kind);
 }
 

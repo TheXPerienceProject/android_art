@@ -64,4 +64,11 @@
 // The offset of the MOV from the return address in LR for intrinsic CAS.
 #define BAKER_MARK_INTROSPECTION_INTRINSIC_CAS_MOV_OFFSET (-8)
 
+// Size of Context::gprs_.
+#define ARM_LONG_JUMP_GPRS_SIZE 64
+// Size of Context::fprs_.
+#define ARM_LONG_JUMP_FPRS_SIZE 128
+// Size of Context::gprs_ + Context::fprs_.
+#define ARM_LONG_JUMP_CONTEXT_SIZE (ARM_LONG_JUMP_GPRS_SIZE + ARM_LONG_JUMP_FPRS_SIZE)
+
 #endif  // ART_RUNTIME_ARCH_ARM_ASM_SUPPORT_ARM_H_

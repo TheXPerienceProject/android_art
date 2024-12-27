@@ -708,6 +708,7 @@ void DisassemblerRiscv64::Printer::Print32BinOpImm(uint32_t insn32) {
   DCHECK_EQ(insn32 & 0x77u, 0x13u);  // Note: Bit 0x8 selects narrow binop.
   bool narrow = (insn32 & 0x8u) != 0u;
   uint32_t funct3 = (insn32 >> 12) & 7u;
+  uint32_t funct6 = (insn32 >> 26) & 0x3Fu;
   uint32_t rd = GetRd(insn32);
   uint32_t rs1 = GetRs1(insn32);
   int32_t imm = Decode32Imm12(insn32);
@@ -740,6 +741,12 @@ void DisassemblerRiscv64::Printer::Print32BinOpImm(uint32_t insn32) {
     os_ << "orc.b " << XRegName(rd) << ", " << XRegName(rs1);
   } else if (imm == 0x6b8u && !narrow && funct3 == 5u) {
     os_ << "rev8 " << XRegName(rd) << ", " << XRegName(rs1);
+  } else if (!narrow && funct6 == 0x12u && (funct3 == /*BCLRI*/ 1u || funct3 == /*BEXTI*/ 5u)) {
+    os_ << ((funct3 == /*BCLRI*/ 1u) ? "bclri" : "bexti");
+  } else if (!narrow && funct6 == 0x1Au && funct3 == 0x1u /*BINVI*/) {
+    os_ << "binvi";
+  } else if (!narrow && funct6 == 0xAu && funct3 == 0x1u /*BSETI*/) {
+    os_ << "bseti";
   } else {
     bool bad_high_bits = false;
     if (funct3 == /*SLLI*/ 1u || funct3 == /*SRLI/SRAI*/ 5u) {
@@ -788,6 +795,13 @@ void DisassemblerRiscv64::Printer::Print32BinOp(uint32_t insn32) {
     os_ << "snez " << XRegName(rd) << ", " << XRegName(rs2);
   } else if (narrow && high_bits == 0x08000000u && funct3 == /*ADD.UW*/ 0u && rs2 == Zero) {
     os_ << "zext.w " << XRegName(rd) << ", " << XRegName(rs1);
+  } else if (!narrow && high_bits == 0x48000000u &&
+             (funct3 == /*BCLR*/ 1u || funct3 == /*BEXT*/ 5u)) {
+    os_ << ((funct3 == /*BCLR*/ 1u) ? "bclr" : "bext");
+  } else if (!narrow && high_bits == 0x68000000u && funct3 == /*BINV*/ 1u) {
+    os_ << "binv";
+  } else if (!narrow && high_bits == 0x28000000u && funct3 == /*BSET*/ 1u) {
+    os_ << "bset";
   } else {
     bool bad_high_bits = false;
     if (high_bits == 0x40000000u && (funct3 == /*SUB*/ 0u || funct3 == /*SRA*/ 5u)) {

@@ -58,7 +58,6 @@
 #include "mirror/object_array-alloc-inl.h"
 #include "native/dalvik_system_DexFile.h"
 #include "noop_compiler_callbacks.h"
-#include "oat/aot_class_linker.h"
 #include "profile/profile_compilation_info.h"
 #include "runtime-inl.h"
 #include "runtime_intrinsics.h"
@@ -112,6 +111,7 @@ void CommonRuntimeTestImpl::SetUp() {
   static bool gSlowDebugTestFlag = false;
   RegisterRuntimeDebugFlag(&gSlowDebugTestFlag);
 
+  // Create default compiler callbacks. `SetUpRuntimeOptions()` can replace or remove this.
   callbacks_.reset(new NoopCompilerCallbacks());
 
   SetUpRuntimeOptions(&options);

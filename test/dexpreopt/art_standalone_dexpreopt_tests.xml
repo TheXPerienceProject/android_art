@@ -26,14 +26,13 @@
 
     <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer"/>
 
-    <target_preparer class="com.android.compatibility.common.tradefed.targetprep.FilePusher">
+    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
         <option name="cleanup" value="true" />
-        <option name="push" value="{MODULE}->/data/local/tmp/{MODULE}/{MODULE}" />
-        <option name="append-bitness" value="true" />
+        <option name="push" value="{MODULE}->/data/local/tmp/{MODULE}" />
     </target_preparer>
 
     <test class="com.android.tradefed.testtype.GTest" >
-        <option name="native-test-device-path" value="/data/local/tmp/{MODULE}" />
+        <option name="native-test-device-path" value="/data/local/tmp" />
         <option name="module-name" value="{MODULE}" />
     </test>
 

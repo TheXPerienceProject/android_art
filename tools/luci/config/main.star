@@ -102,6 +102,27 @@ luci.binding(
 luci.realm(name = "pools/ci")
 luci.bucket(name = "ci")
 
+# Shadow bucket is needed for LED.
+luci.bucket(
+    name = "ci.shadow",
+    shadows = "ci",
+    bindings = [
+        luci.binding(
+            roles = "role/buildbucket.creator",
+            users = ["art-ci-builder@chops-service-accounts.iam.gserviceaccount.com"],
+        ),
+        luci.binding(
+            roles = "role/buildbucket.triggerer",
+            users = ["art-ci-builder@chops-service-accounts.iam.gserviceaccount.com"],
+        ),
+    ],
+    constraints = luci.bucket_constraints(
+        pools = ["luci.art.ci"],
+        service_accounts = ["art-ci-builder@chops-service-accounts.iam.gserviceaccount.com"],
+    ),
+    dynamic = True,
+)
+
 luci.notifier_template(
     name = "default",
     body = io.read_file("luci-notify.template"),
@@ -154,7 +175,7 @@ luci.gitiles_poller(
     refs = ["refs/heads/master-art"],
 )
 
-def ci_builder(name, category, short_name, dimensions, properties={}, is_fyi=False):
+def ci_builder(name, category, short_name, dimensions, properties={}, hidden=False):
     luci.builder(
         name = name,
         bucket = "ci",
@@ -182,7 +203,7 @@ def ci_builder(name, category, short_name, dimensions, properties={}, is_fyi=Fal
             # We can checkout and build in this directory to get fast incremental builds.
             swarming.cache("art", name = "art"),
         ],
-        notifies = ["art-team+chromium-buildbot"],
+        notifies = ["art-team+chromium-buildbot"] if not hidden else [],
         triggered_by = [
             "art",
             "libcore",
@@ -190,7 +211,7 @@ def ci_builder(name, category, short_name, dimensions, properties={}, is_fyi=Fal
             "vogar",
         ],
     )
-    if not is_fyi:
+    if not hidden:
         luci.console_view_entry(
             console_view = "luci",
             builder = name,
@@ -214,9 +235,18 @@ def add_builder(name,
     check_arg(arch, ["arm", "x86", "riscv"])
     check_arg(bitness, [32, 64])
 
+    # Automatically create name based on the configuaration.
+    default_name = mode + '.' + arch
+    default_name += '.gsctress' if gcstress else ''
+    default_name += '.poison' if heap_poisoning else ''
+    default_name += '' if cc else '.ncc'
+    default_name += '' if gen_cc else '.ngen'
+    default_name += '.debug' if debug else '.ndebug'
+    default_name += '.' + str(bitness)
+
     # Create abbreviated named which is used to create the LUCI console header.
     # TODO: Rename the builders to remove old device names and make it more uniform.
-    short_name = name
+    short_name = name or default_name.replace(".", "-")
     short_name = short_name.replace("-x86-poison-debug", "-x86-psn")
     short_name = short_name.replace("-x86-gcstress-debug", "-x86-gcs")
     short_name = short_name.replace("-x86_64-poison-debug", "-x86_64-psn")
@@ -233,13 +263,37 @@ def add_builder(name,
       product = "riscv64"
 
     dimensions = {"os": "Android" if mode == "target" else "Linux"}
-    if mode == "target" and not cc:
-      # userfault-GC configurations must be run on Pixel 6.
-      dimensions |= {"device_type": "oriole"}
+    if mode == "target":
+      if not cc:
+        # Request devices running Android 24Q3 (`AP1A` builds) for
+        # (`userfaultfd`-based) Concurrent Mark-Compact GC configurations.
+        # Currently (as of 2024-08-22), the only devices within the device pool
+        # allocated to ART that are running `AP1A` builds are Pixel 6 devices
+        # (all other device types are running older Android versions), which are
+        # also the only device model supporting `userfaultfd` among that pool.
+        dimensions |= {"device_os": "A"}
+      else:
+        # Run all other configurations on Android S since it is the oldest we support.
+        # Other than the `AP1A` builds above, all other devices are flashed to `SP2A`.
+        # This avoids allocating `userfaultfd` devices for tests that don't need it.
+        dimensions |= {"device_os": "S"}
+    elif mode == "host":
+      if name:
+        dimensions |= {"os": "Ubuntu-20"}
+      else:
+        # Test the new host builders with new ubuntu.
+        dimensions |= {"os": "Ubuntu-22"}
+        dimensions |= {"cores": "8"}
+    elif mode == "qemu":
+      dimensions |= {"os": "Ubuntu-22"}
+      dimensions |= {"cores": "16"}
 
     testrunner_args = ['--verbose', '--host'] if mode == 'host' else ['--target', '--verbose']
     testrunner_args += ['--debug'] if debug else ['--ndebug']
     testrunner_args += ['--gcstress'] if gcstress else []
+
+    hidden = not name  # Hide the new builders for now.
+    name = name or default_name
 
     properties = {
         "builder_group": "client.art",
@@ -256,14 +310,12 @@ def add_builder(name,
         "testrunner_args": testrunner_args,
     }
 
-    is_fyi = (name == "qemu-riscv64-ndebug")
-
     ci_builder(name,
                category="|".join(short_name.split("-")[:-1]),
                short_name=short_name.split("-")[-1],
                dimensions=dimensions,
                properties={k:v for k, v in properties.items() if v},
-               is_fyi=is_fyi)
+               hidden=hidden)
 
 add_builder("angler-armv7-debug", 'target', 'arm', 32, debug=True)
 add_builder("angler-armv7-non-gen-cc", 'target', 'arm', 32, debug=True, cc=False, gen_cc=False)
@@ -289,4 +341,13 @@ add_builder("host-x86_64-ndebug", 'host', 'x86', 64)
 add_builder("host-x86_64-poison-debug", 'host', 'x86', 64, debug=True, heap_poisoning=True)
 add_builder("qemu-armv8-ndebug", 'qemu', 'arm', 64)
 add_builder("qemu-riscv64-ndebug", 'qemu', 'riscv', 64)
-add_builder("qemu-riscv64-ndebug-build_only", 'qemu', 'riscv', 64)
+
+def add_builders():
+  for bitness in [32, 64]:
+    add_builder('', 'target', 'arm', bitness, debug=True, heap_poisoning=True)
+    add_builder('', 'target', 'arm', bitness, heap_poisoning=True)
+    add_builder('', 'host', 'x86', bitness, debug=True)
+    add_builder('', 'host', 'x86', bitness)
+    add_builder('', 'host', 'x86', bitness, debug=True, heap_poisoning=True)
+
+add_builders()

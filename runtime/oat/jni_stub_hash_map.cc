@@ -21,6 +21,7 @@
 #include "arch/riscv64/jni_frame_riscv64.h"
 #include "arch/x86_64/jni_frame_x86_64.h"
 #include "base/macros.h"
+#include "dex/modifiers.h"
 
 namespace art HIDDEN {
 

@@ -35,6 +35,8 @@
 #include "odr_metrics.h"
 #include "odrefresh.h"
 #include "odrefresh/odrefresh.h"
+#include "selinux/android.h"
+#include "selinux/selinux.h"
 
 namespace {
 
@@ -278,7 +280,7 @@ int main(int argc, char** argv) {
   GetSystemProperties(config.MutableSystemProperties());
 
   OdrMetrics metrics(config.GetArtifactDirectory());
-  OnDeviceRefresh odr(config);
+  OnDeviceRefresh odr(config, setfilecon, selinux_android_restorecon);
 
   std::string_view action(argv[0]);
   CompilationOptions compilation_options;

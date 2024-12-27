@@ -23,6 +23,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "base/os.h"
@@ -71,6 +72,15 @@ class DexFileLoader {
   // Return the (possibly synthetic) dex location for a multidex entry. This is dex_location for
   // index == 0, and dex_location + multi-dex-separator + GetMultiDexClassesDexName(index) else.
   static std::string GetMultiDexLocation(size_t index, const char* dex_location);
+
+  // Returns the multidex location and the checksum for each dex file in a zip or a dex container.
+  //
+  // This uses the source path provided to DexFileLoader constructor.
+  //
+  // Returns false on error.
+  bool GetMultiDexChecksums(/*out*/ std::vector<std::pair<std::string, uint32_t>>* checksums,
+                            /*out*/ std::string* error_msg,
+                            /*out*/ bool* only_contains_uncompressed_dex = nullptr);
 
   // Returns combined checksum of one or more dex files (one checksum for the whole multidex set).
   //

@@ -49,4 +49,11 @@
 #define NTERP_SIZE_SAVE_CALLEE_SAVES     192
 // clang-format on
 
+// Size of Context::gprs_.
+#define RISCV64_LONG_JUMP_GPRS_SIZE 264
+// Size of Context::fprs_.
+#define RISCV64_LONG_JUMP_FPRS_SIZE 256
+// Size of Context::gprs_ + Context::fprs_.
+#define RISCV64_LONG_JUMP_CONTEXT_SIZE (RISCV64_LONG_JUMP_GPRS_SIZE + RISCV64_LONG_JUMP_FPRS_SIZE)
+
 #endif  // ART_RUNTIME_ARCH_RISCV64_ASM_SUPPORT_RISCV64_H_

@@ -32,6 +32,7 @@ cc_defaults {
         "boot_image_profile.cc",
         "profman.cc",
         "profile_assistant.cc",
+        "inline_cache_format_util.cc",
     ],
     header_libs: ["profman_headers"],
 

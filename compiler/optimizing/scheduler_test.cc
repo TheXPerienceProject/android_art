@@ -93,42 +93,23 @@ class SchedulerTest : public CommonCompilerTest, public OptimizingUnitTestHelper
     // array_get2    ArrayGet [array, add1]
     // array_set2    ArraySet [array, add1, add2]
 
-    HInstruction* array = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                           dex::TypeIndex(0),
-                                                           0,
-                                                           DataType::Type::kReference);
+    HInstruction* array = MakeParam(DataType::Type::kReference);
     HInstruction* c1 = graph_->GetIntConstant(1);
     HInstruction* c2 = graph_->GetIntConstant(10);
-    HInstruction* add1 = new (GetAllocator()) HAdd(DataType::Type::kInt32, c1, c2);
-    HInstruction* add2 = new (GetAllocator()) HAdd(DataType::Type::kInt32, add1, c2);
-    HInstruction* mul = new (GetAllocator()) HMul(DataType::Type::kInt32, add1, add2);
+
+    HInstruction* add1 = MakeBinOp<HAdd>(block1, DataType::Type::kInt32, c1, c2);
+    HInstruction* add2 = MakeBinOp<HAdd>(block1, DataType::Type::kInt32, add1, c2);
+    HInstruction* mul = MakeBinOp<HMul>(block1, DataType::Type::kInt32, add1, add2);
     HInstruction* div_check = new (GetAllocator()) HDivZeroCheck(add2, 0);
+    block1->AddInstruction(div_check);
     HInstruction* div = new (GetAllocator()) HDiv(DataType::Type::kInt32, add1, div_check, 0);
-    HInstruction* array_get1 =
-        new (GetAllocator()) HArrayGet(array, add1, DataType::Type::kInt32, 0);
-    HInstruction* array_set1 =
-        new (GetAllocator()) HArraySet(array, add1, add2, DataType::Type::kInt32, 0);
-    HInstruction* array_get2 =
-        new (GetAllocator()) HArrayGet(array, add1, DataType::Type::kInt32, 0);
-    HInstruction* array_set2 =
-        new (GetAllocator()) HArraySet(array, add1, add2, DataType::Type::kInt32, 0);
+    block1->AddInstruction(div);
+    HInstruction* array_get1 = MakeArrayGet(block1, array, add1, DataType::Type::kInt32);
+    HInstruction* array_set1 = MakeArraySet(block1, array, add1, add2, DataType::Type::kInt32);
+    HInstruction* array_get2 = MakeArrayGet(block1, array, add1, DataType::Type::kInt32);
+    HInstruction* array_set2 = MakeArraySet(block1, array, add1, add2, DataType::Type::kInt32);
 
     DCHECK(div_check->CanThrow());
-
-    entry->AddInstruction(array);
-
-    HInstruction* block_instructions[] = {add1,
-                                          add2,
-                                          mul,
-                                          div_check,
-                                          div,
-                                          array_get1,
-                                          array_set1,
-                                          array_get2,
-                                          array_set2};
-    for (HInstruction* instr : block_instructions) {
-      block1->AddInstruction(instr);
-    }
 
     HEnvironment* environment = new (GetAllocator()) HEnvironment(GetAllocator(),
                                                                   2,
@@ -143,8 +124,8 @@ class SchedulerTest : public CommonCompilerTest, public OptimizingUnitTestHelper
 
     TestSchedulingGraph scheduling_graph(GetScopedAllocator());
     // Instructions must be inserted in reverse order into the scheduling graph.
-    for (HInstruction* instr : ReverseRange(block_instructions)) {
-      scheduling_graph.AddNode(instr);
+    for (HBackwardInstructionIterator it(block1->GetInstructions()); !it.Done(); it.Advance()) {
+      scheduling_graph.AddNode(it.Current());
     }
 
     // Should not have dependencies cross basic blocks.
@@ -201,88 +182,41 @@ class SchedulerTest : public CommonCompilerTest, public OptimizingUnitTestHelper
 
   void TestDependencyGraphOnAliasingArrayAccesses(HScheduler* scheduler) {
     HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph_);
+    HBasicBlock* block1 = new (GetAllocator()) HBasicBlock(graph_);
     graph_->AddBlock(entry);
+    graph_->AddBlock(block1);
     graph_->SetEntryBlock(entry);
-    graph_->BuildDominatorTree();
 
-    HInstruction* arr = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                             dex::TypeIndex(0),
-                                                             0,
-                                                             DataType::Type::kReference);
-    HInstruction* i = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                           dex::TypeIndex(1),
-                                                           1,
-                                                           DataType::Type::kInt32);
-    HInstruction* j = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                           dex::TypeIndex(1),
-                                                           1,
-                                                           DataType::Type::kInt32);
-    HInstruction* object = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                                dex::TypeIndex(0),
-                                                                0,
-                                                                DataType::Type::kReference);
+    HInstruction* arr = MakeParam(DataType::Type::kReference);
+    HInstruction* i = MakeParam(DataType::Type::kInt32);
+    HInstruction* j = MakeParam(DataType::Type::kInt32);
+    HInstruction* object = MakeParam(DataType::Type::kReference);
     HInstruction* c0 = graph_->GetIntConstant(0);
     HInstruction* c1 = graph_->GetIntConstant(1);
-    HInstruction* add0 = new (GetAllocator()) HAdd(DataType::Type::kInt32, i, c0);
-    HInstruction* add1 = new (GetAllocator()) HAdd(DataType::Type::kInt32, i, c1);
-    HInstruction* sub0 = new (GetAllocator()) HSub(DataType::Type::kInt32, i, c0);
-    HInstruction* sub1 = new (GetAllocator()) HSub(DataType::Type::kInt32, i, c1);
-    HInstruction* arr_set_0 =
-        new (GetAllocator()) HArraySet(arr, c0, c0, DataType::Type::kInt32, 0);
-    HInstruction* arr_set_1 =
-        new (GetAllocator()) HArraySet(arr, c1, c0, DataType::Type::kInt32, 0);
-    HInstruction* arr_set_i = new (GetAllocator()) HArraySet(arr, i, c0, DataType::Type::kInt32, 0);
-    HInstruction* arr_set_add0 =
-        new (GetAllocator()) HArraySet(arr, add0, c0, DataType::Type::kInt32, 0);
-    HInstruction* arr_set_add1 =
-        new (GetAllocator()) HArraySet(arr, add1, c0, DataType::Type::kInt32, 0);
-    HInstruction* arr_set_sub0 =
-        new (GetAllocator()) HArraySet(arr, sub0, c0, DataType::Type::kInt32, 0);
-    HInstruction* arr_set_sub1 =
-        new (GetAllocator()) HArraySet(arr, sub1, c0, DataType::Type::kInt32, 0);
-    HInstruction* arr_set_j = new (GetAllocator()) HArraySet(arr, j, c0, DataType::Type::kInt32, 0);
-    HInstanceFieldSet* set_field10 = new (GetAllocator()) HInstanceFieldSet(object,
-                                                                            c1,
-                                                                            nullptr,
-                                                                            DataType::Type::kInt32,
-                                                                            MemberOffset(10),
-                                                                            false,
-                                                                            kUnknownFieldIndex,
-                                                                            kUnknownClassDefIndex,
-                                                                            graph_->GetDexFile(),
-                                                                            0);
 
-    HInstruction* block_instructions[] = {arr,
-                                          i,
-                                          j,
-                                          object,
-                                          add0,
-                                          add1,
-                                          sub0,
-                                          sub1,
-                                          arr_set_0,
-                                          arr_set_1,
-                                          arr_set_i,
-                                          arr_set_add0,
-                                          arr_set_add1,
-                                          arr_set_sub0,
-                                          arr_set_sub1,
-                                          arr_set_j,
-                                          set_field10};
-
-    for (HInstruction* instr : block_instructions) {
-      entry->AddInstruction(instr);
-    }
+    HInstruction* add0 = MakeBinOp<HAdd>(block1, DataType::Type::kInt32, i, c0);
+    HInstruction* add1 = MakeBinOp<HAdd>(block1, DataType::Type::kInt32, i, c1);
+    HInstruction* sub0 = MakeBinOp<HSub>(block1, DataType::Type::kInt32, i, c0);
+    HInstruction* sub1 = MakeBinOp<HSub>(block1, DataType::Type::kInt32, i, c1);
+    HInstruction* arr_set_0 = MakeArraySet(block1, arr, c0, c0, DataType::Type::kInt32);
+    HInstruction* arr_set_1 = MakeArraySet(block1, arr, c1, c0, DataType::Type::kInt32);
+    HInstruction* arr_set_i = MakeArraySet(block1, arr, i, c0, DataType::Type::kInt32);
+    HInstruction* arr_set_add0 = MakeArraySet(block1, arr, add0, c0, DataType::Type::kInt32);
+    HInstruction* arr_set_add1 = MakeArraySet(block1, arr, add1, c0, DataType::Type::kInt32);
+    HInstruction* arr_set_sub0 = MakeArraySet(block1, arr, sub0, c0, DataType::Type::kInt32);
+    HInstruction* arr_set_sub1 = MakeArraySet(block1, arr, sub1, c0, DataType::Type::kInt32);
+    HInstruction* arr_set_j = MakeArraySet(block1, arr, j, c0, DataType::Type::kInt32);
+    HInstanceFieldSet* set_field10 = MakeIFieldSet(block1, object, c1, MemberOffset(10));
 
     HeapLocationCollector heap_location_collector(graph_, GetScopedAllocator());
-    heap_location_collector.VisitBasicBlock(entry);
+    heap_location_collector.VisitBasicBlock(block1);
     heap_location_collector.BuildAliasingMatrix();
     TestSchedulingGraph scheduling_graph(GetScopedAllocator(), &heap_location_collector);
 
-    for (HInstruction* instr : ReverseRange(block_instructions)) {
+    for (HBackwardInstructionIterator it(block1->GetInstructions()); !it.Done(); it.Advance()) {
       // Build scheduling graph with memory access aliasing information
       // from LSA/heap_location_collector.
-      scheduling_graph.AddNode(instr);
+      scheduling_graph.AddNode(it.Current());
     }
 
     // LSA/HeapLocationCollector should see those ArraySet instructions.

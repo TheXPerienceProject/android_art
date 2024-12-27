@@ -49,25 +49,9 @@ TrackedArena::TrackedArena(uint8_t* start, size_t size, bool pre_zygote_fork, bo
   }
 }
 
-void TrackedArena::ReleasePages(uint8_t* begin, size_t size, bool pre_zygote_fork) {
-  DCHECK_ALIGNED_PARAM(begin, gPageSize);
-  // Userfaultfd GC uses MAP_SHARED mappings for linear-alloc and therefore
-  // MADV_DONTNEED will not free the pages from page cache. Therefore use
-  // MADV_REMOVE instead, which is meant for this purpose.
-  // Arenas allocated pre-zygote fork are private anonymous and hence must be
-  // released using MADV_DONTNEED.
-  if (!gUseUserfaultfd || pre_zygote_fork ||
-      (madvise(begin, size, MADV_REMOVE) == -1 && errno == EINVAL)) {
-    // MADV_REMOVE fails if invoked on anonymous mapping, which could happen
-    // if the arena is released before userfaultfd-GC starts using memfd. So
-    // use MADV_DONTNEED.
-    ZeroAndReleaseMemory(begin, size);
-  }
-}
-
 void TrackedArena::Release() {
   if (bytes_allocated_ > 0) {
-    ReleasePages(Begin(), Size(), pre_zygote_fork_);
+    ZeroAndReleaseMemory(Begin(), Size());
     if (first_obj_array_.get() != nullptr) {
       std::fill_n(first_obj_array_.get(), DivideByPageSize(Size()), nullptr);
     }
@@ -210,7 +194,7 @@ void GcVisitedArenaPool::FreeSingleObjArena(uint8_t* addr) {
   if (zygote_arena) {
     free(addr);
   } else {
-    TrackedArena::ReleasePages(addr, size, /*pre_zygote_fork=*/false);
+    ZeroAndReleaseMemory(addr, size);
     WriterMutexLock wmu(self, lock_);
     FreeRangeLocked(addr, size);
   }
@@ -383,7 +367,7 @@ void GcVisitedArenaPool::FreeArenaChain(Arena* first) {
   for (auto& iter : free_ranges) {
     // No need to madvise pre-zygote-fork arenas as they will munmapped below.
     if (!std::get<2>(iter)) {
-      TrackedArena::ReleasePages(std::get<0>(iter), std::get<1>(iter), /*pre_zygote_fork=*/false);
+      ZeroAndReleaseMemory(std::get<0>(iter), std::get<1>(iter));
     }
   }
 

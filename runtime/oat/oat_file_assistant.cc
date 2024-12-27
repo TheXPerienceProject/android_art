@@ -79,7 +79,7 @@ std::ostream& operator<<(std::ostream& stream, const OatFileAssistant::OatStatus
       stream << "kOatUpToDate";
       break;
     case OatFileAssistant::kOatContextOutOfDate:
-      stream << "kOaContextOutOfDate";
+      stream << "kOatContextOutOfDate";
       break;
   }
 

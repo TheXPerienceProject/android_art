@@ -41,16 +41,9 @@ class Thread;
 enum VisitRootFlags : uint8_t;
 
 namespace gc {
-
 class Heap;
 
-namespace accounting {
-template<typename T> class AtomicStack;
-using ObjectStack = AtomicStack<mirror::Object>;
-}  // namespace accounting
-
 namespace collector {
-
 class MarkSweep : public GarbageCollector {
  public:
   MarkSweep(Heap* heap, bool is_concurrent, const std::string& name_prefix = "");
@@ -153,10 +146,8 @@ class MarkSweep : public GarbageCollector {
   // Sweeps unmarked objects to complete the garbage collection.
   void SweepLargeObjects(bool swap_bitmaps) REQUIRES(Locks::heap_bitmap_lock_);
 
-  // Sweep only pointers within an array. WARNING: Trashes objects.
-  void SweepArray(accounting::ObjectStack* allocation_stack_, bool swap_bitmaps)
-      REQUIRES(Locks::heap_bitmap_lock_)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  void SweepArray(accounting::ObjectStack* obj_arr, bool swap_bitmaps)
+      REQUIRES(Locks::heap_bitmap_lock_) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Blackens an object.
   void ScanObject(mirror::Object* obj)
@@ -349,11 +340,6 @@ class MarkSweep : public GarbageCollector {
 
   // Verification.
   size_t live_stack_freeze_size_;
-
-  // Sweep array free buffer, used to sweep the spaces based on an array more
-  // efficiently, by recording dead objects to be freed in batches (see
-  // MarkSweep::SweepArray).
-  MemMap sweep_array_free_buffer_mem_map_;
 
  private:
   class CardScanTask;

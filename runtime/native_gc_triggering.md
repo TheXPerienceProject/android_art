@@ -45,10 +45,13 @@ difficult to approximate, even to within an order of magnitude.
 The triggering heuristic
 ------------------------
 
-We normally check for the need to trigger a GC due to native memory pressure only as a result of
-calls to the `NativeAllocationRegistry` or `VMRuntime.registerNativeAllocation` APIs. Thus an
-application not using these APIs, e.g. because it is running almost entirely native code, may
-never do so. This is generally a feature, rather than a bug.
+Though we use mallinfo() to track native allocation, this call itself can be expensive, and thus
+we perform this check fairly rarely. More precisely, we do so only after the application has
+called `NativeAllocationRegistry.registerNativeAllocation()` a certain number of times or
+with a sufficiently large argument, or after `VMRuntime.registerNativeAllocation` is called.
+Thus an application not using these APIs, e.g. because it is running almost entirely native
+code, may never do so. This can be useful, in that an application that runs basically only
+native code, and thus deallocates its own native memory, does not trigger the GC.
 
 The actual computation for triggering a native-allocation-GC is performed by
 `Heap::NativeMemoryOverTarget()`. This computes and compares two quantities:

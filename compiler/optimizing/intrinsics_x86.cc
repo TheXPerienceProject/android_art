@@ -1887,7 +1887,12 @@ static void CreateIntIntIntIntToVoidPlusTempsLocations(ArenaAllocator* allocator
   locations->SetInAt(0, Location::NoLocation());        // Unused receiver.
   locations->SetInAt(1, Location::RequiresRegister());
   locations->SetInAt(2, Location::RequiresRegister());
-  locations->SetInAt(3, Location::RequiresRegister());
+  if (type == DataType::Type::kInt8 || type == DataType::Type::kUint8) {
+    // Ensure the value is in a byte register
+    locations->SetInAt(3, Location::ByteRegisterOrConstant(EAX, invoke->InputAt(3)));
+  } else {
+    locations->SetInAt(3, Location::RequiresRegister());
+  }
   if (type == DataType::Type::kReference) {
     // Need temp registers for card-marking.
     locations->AddTemp(Location::RequiresRegister());  // Possibly used for reference poisoning too.
@@ -2013,8 +2018,16 @@ static void GenUnsafePut(LocationSummary* locations,
     __ movl(temp, value_loc.AsRegister<Register>());
     __ PoisonHeapReference(temp);
     __ movl(Address(base, offset, ScaleFactor::TIMES_1, 0), temp);
-  } else {
+  } else if (type == DataType::Type::kInt32 || type == DataType::Type::kReference) {
     __ movl(Address(base, offset, ScaleFactor::TIMES_1, 0), value_loc.AsRegister<Register>());
+  } else {
+    CHECK_EQ(type, DataType::Type::kInt8) << "Unimplemented GenUnsafePut data type";
+    if (value_loc.IsRegister()) {
+      __ movb(Address(base, offset, ScaleFactor::TIMES_1, 0), value_loc.AsRegister<ByteRegister>());
+    } else {
+      __ movb(Address(base, offset, ScaleFactor::TIMES_1, 0),
+              Immediate(CodeGenerator::GetInt8ValueOf(value_loc.GetConstant())));
+    }
   }
 
   if (is_volatile) {
@@ -4239,8 +4252,7 @@ static void CreateVarHandleGetAndSetLocations(HInvoke* invoke, CodeGeneratorX86*
   ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
   LocationSummary* locations = new (allocator) LocationSummary(
       invoke, LocationSummary::kCallOnSlowPath, kIntrinsified);
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(2);
   // We use this temporary for the card, so we need a byte register
   locations->AddTemp(Location::RegisterLocation(EBX));
   locations->SetInAt(0, Location::RequiresRegister());
@@ -4413,8 +4425,7 @@ static void CreateVarHandleCompareAndSetOrExchangeLocations(HInvoke* invoke,
   ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
   LocationSummary* locations = new (allocator) LocationSummary(
       invoke, LocationSummary::kCallOnSlowPath, kIntrinsified);
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(2);
   // We use this temporary for the card, so we need a byte register
   locations->AddTemp(Location::RegisterLocation(EBX));
   locations->SetInAt(0, Location::RequiresRegister());
@@ -4593,8 +4604,7 @@ static void CreateVarHandleGetAndAddLocations(HInvoke* invoke, CodeGeneratorX86*
   ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
   LocationSummary* locations = new (allocator) LocationSummary(
       invoke, LocationSummary::kCallOnSlowPath, kIntrinsified);
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(2);
   locations->SetInAt(0, Location::RequiresRegister());
   size_t expected_coordinates_count = GetExpectedVarHandleCoordinatesCount(invoke);
   if (expected_coordinates_count == 1u) {

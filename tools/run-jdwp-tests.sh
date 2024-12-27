@@ -20,7 +20,7 @@ if [ ! -d libcore ]; then
 fi
 
 source build/envsetup.sh >&/dev/null # for get_build_var, setpaths
-setpaths # include platform prebuilt java, javac, etc in $PATH.
+set_lunch_paths # include platform prebuilt java, javac, etc in $PATH.
 
 if [ -z "$ANDROID_HOST_OUT" ] ; then
   ANDROID_HOST_OUT=${OUT_DIR-$ANDROID_BUILD_TOP/out}/host/linux-x86

@@ -132,6 +132,7 @@ extern "C" void art_jni_unlock_object_no_inline(art::mirror::Object*);
 
 // Polymorphic invoke entrypoints.
 extern "C" void art_quick_invoke_polymorphic(uint32_t, void*);
+extern "C" void art_quick_invoke_polymorphic_with_hidden_receiver(uint32_t, void*);
 extern "C" void art_quick_invoke_custom(uint32_t, void*);
 
 // Thread entrypoints.

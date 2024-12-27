@@ -243,7 +243,8 @@
     },
     {
         "tests": ["087-gc-after-link",
-                  "141-class-unload"],
+                  "141-class-unload",
+                  "2276-const-method-type-gc-cleanup"],
         "variant": "trace | stream"
     },
     {
@@ -644,18 +645,6 @@
         "description": "ASAN runs out of memory due to huge allocations.",
         "variant": "target",
         "env_vars": {"SANITIZE_TARGET": "hwaddress"}
-    },
-    {
-        "tests": "202-thread-oome",
-        "description": "ASAN aborts when large thread stacks are requested.",
-        "variant": "host",
-        "env_vars": {"SANITIZE_HOST": "address"}
-    },
-    {
-        "tests": "202-thread-oome",
-        "description": "ASAN aborts when large thread stacks are requested.",
-        "variant": "target",
-        "env_vars": {"SANITIZE_TARGET": "address"}
     },
     {
         "tests": [
@@ -1085,11 +1074,18 @@
           "2245-checker-smali-instance-of-comparison",
           "2251-checker-irreducible-loop-do-not-inline",
           "2264-throwing-systemcleaner",
-          "2267-class-implements-itself"
+          "2267-class-implements-itself",
+          "2276-const-method-type-gc-cleanup",
+          "2281-method-handle-invoke-static-class-unload"
         ],
         "variant": "jvm",
         "bug": "b/73888836",
         "description": ["Failing on RI. Needs further investigating. Some of these use smali."]
+    },
+    {
+        "tests": ["2275-pthread-name"],
+        "variant": "jvm",
+        "description": ["ART specific. We try harder to set pthread thread name."]
     },
     {
         "tests": ["2042-reference-processing",
@@ -1239,7 +1235,8 @@
                   "2261-badcleaner-in-systemcleaner",
                   "2263-method-trace-jit",
                   "2270-mh-internal-hiddenapi-use",
-                  "2271-profile-inline-cache"],
+                  "2271-profile-inline-cache",
+                  "2279-aconfig-flags"],
         "variant": "jvm",
         "description": ["Doesn't run on RI."]
     },
@@ -1465,7 +1462,23 @@
     {
         "tests": ["2235-JdkUnsafeTest",
                   "2236-JdkUnsafeGetLong-regression",
-                  "2239-varhandle-perf"],
+                  "2239-varhandle-perf-vh-cae",
+                  "2239-varhandle-perf-vh-cas",
+                  "2239-varhandle-perf-vh-cas-weak",
+                  "2239-varhandle-perf-vh-gaa",
+                  "2239-varhandle-perf-vh-gab",
+                  "2239-varhandle-perf-vh-gas",
+                  "2239-varhandle-perf-vh-get",
+                  "2239-varhandle-perf-vh-get-a",
+                  "2239-varhandle-perf-vh-get-bav",
+                  "2239-varhandle-perf-vh-reflect-get",
+                  "2239-varhandle-perf-vh-reflect-set",
+                  "2239-varhandle-perf-vh-set",
+                  "2239-varhandle-perf-vh-set-a",
+                  "2239-varhandle-perf-vh-set-bav",
+                  "2239-varhandle-perf-vh-unsafe-cas",
+                  "2239-varhandle-perf-vh-unsafe-get",
+                  "2239-varhandle-perf-vh-unsafe-put"],
         "variant": "jvm",
         "bug": "b/195387473",
         "description": ["Depends on using language level 11."]
@@ -1587,7 +1600,23 @@
                 "989-method-trace-throw",
                 "2029-contended-monitors",
                 "2043-reference-pauses",
-                "2239-varhandle-perf"],
+                "2239-varhandle-perf-vh-cae",
+                "2239-varhandle-perf-vh-cas",
+                "2239-varhandle-perf-vh-cas-weak",
+                "2239-varhandle-perf-vh-gaa",
+                "2239-varhandle-perf-vh-gab",
+                "2239-varhandle-perf-vh-gas",
+                "2239-varhandle-perf-vh-get",
+                "2239-varhandle-perf-vh-get-a",
+                "2239-varhandle-perf-vh-get-bav",
+                "2239-varhandle-perf-vh-reflect-get",
+                "2239-varhandle-perf-vh-reflect-set",
+                "2239-varhandle-perf-vh-set",
+                "2239-varhandle-perf-vh-set-a",
+                "2239-varhandle-perf-vh-set-bav",
+                "2239-varhandle-perf-vh-unsafe-cas",
+                "2239-varhandle-perf-vh-unsafe-get",
+                "2239-varhandle-perf-vh-unsafe-put"],
       "bug": "b/328023607",
       "description": ["Fails on QEMU"],
       "env_vars": {"ART_TEST_ON_VM": "true"}

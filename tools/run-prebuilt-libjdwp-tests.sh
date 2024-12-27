@@ -20,7 +20,7 @@ if [[ ! -d libcore ]];  then
 fi
 
 source build/envsetup.sh >&/dev/null # for get_build_var, setpaths
-setpaths # include platform prebuilt java, javac, etc in $PATH.
+set_lunch_paths # include platform prebuilt java, javac, etc in $PATH.
 
 if [[ `uname` != 'Linux' ]];  then
   echo "Script cannot be run on $(uname). It is Linux only."

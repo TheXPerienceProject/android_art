@@ -1548,7 +1548,7 @@ VarHandle::AccessMode VarHandle::GetAccessModeByIntrinsic(Intrinsics intrinsic) 
     default:
       break;
   }
-  LOG(FATAL) << "Unknown VarHandle instrinsic: " << static_cast<int>(intrinsic);
+  LOG(FATAL) << "Unknown VarHandle intrinsic: " << static_cast<int>(intrinsic);
   UNREACHABLE();
 }
 

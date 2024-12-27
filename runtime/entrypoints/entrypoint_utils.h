@@ -181,7 +181,7 @@ JValue InvokeProxyInvocationHandler(ScopedObjectAccessAlreadyRunnable& soa,
     REQUIRES_SHARED(Locks::mutator_lock_)
     REQUIRES(!Roles::uninterruptible_);
 
-bool FillArrayData(ObjPtr<mirror::Object> obj, const Instruction::ArrayDataPayload* payload)
+EXPORT bool FillArrayData(ObjPtr<mirror::Object> obj, const Instruction::ArrayDataPayload* payload)
     REQUIRES_SHARED(Locks::mutator_lock_)
     REQUIRES(!Roles::uninterruptible_);
 

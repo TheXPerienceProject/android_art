@@ -287,6 +287,8 @@
 .macro DELIVER_PENDING_EXCEPTION_FRAME_READY
     mov    r0, rSELF                           @ pass Thread::Current
     bl     artDeliverPendingExceptionFromCode  @ artDeliverPendingExceptionFromCode(Thread*)
+    bl art_quick_do_long_jump                  @ (Context*)
+    bkpt  // Unreached
 .endm
 
     /*

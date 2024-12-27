@@ -110,30 +110,37 @@ public class Main {
         D2I2 d2i2 = new D2I2();
         I2.callI2Foo(d2i2);  // pkg1.D2.foo
 
+        CXI1 cxi1 = new CXI1();
         try {
-            CXI1 cxi1 = new CXI1();
             I1.callI1Foo(cxi1);
         } catch (IllegalAccessError expected) {
             System.out.println("Caught IllegalAccessError");
         }
 
+        CXI2 cxi2 = new CXI2();
         try {
-            CXI2 cxi2 = new CXI2();
             I2.callI2Foo(cxi2);
         } catch (IllegalAccessError expected) {
             System.out.println("Caught IllegalAccessError");
         }
 
+        DXI1 dxi1 = new DXI1();
         try {
-            DXI1 dxi1 = new DXI1();
             I1.callI1Foo(dxi1);
         } catch (IllegalAccessError expected) {
             System.out.println("Caught IllegalAccessError");
         }
 
+        DXI2 dxi2 = new DXI2();
         try {
-            DXI2 dxi2 = new DXI2();
             I2.callI2Foo(dxi2);
+        } catch (IllegalAccessError expected) {
+            System.out.println("Caught IllegalAccessError");
+        }
+
+        InheritingProtectedAbstract ipa = new InheritingProtectedAbstract();
+        try {
+            I1.callI1Foo(ipa);
         } catch (IllegalAccessError expected) {
             System.out.println("Caught IllegalAccessError");
         }

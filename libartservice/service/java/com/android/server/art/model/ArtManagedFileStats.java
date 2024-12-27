@@ -18,7 +18,6 @@ package com.android.server.art.model;
 
 import android.annotation.IntDef;
 import android.annotation.NonNull;
-import android.annotation.SuppressLint;
 import android.annotation.SystemApi;
 
 import com.android.internal.annotations.Immutable;
@@ -33,7 +32,6 @@ import java.util.Map;
  *
  * @hide
  */
-@SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
 @SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
 @Immutable
 public class ArtManagedFileStats {
@@ -47,21 +45,18 @@ public class ArtManagedFileStats {
      * For a preload app, this type includes dexopt artifacts on readonly partitions if they are
      * up-to-date.
      */
-    @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
     public static final int TYPE_DEXOPT_ARTIFACT = 0;
     /**
      * Reference profiles.
      *
      * They are the ones used during the last profile-guided dexopt.
      */
-    @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
     public static final int TYPE_REF_PROFILE = 1;
     /**
      * Current profiles.
      *
      * They may be used during the next profile-guided dexopt.
      */
-    @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
     public static final int TYPE_CUR_PROFILE = 2;
 
     /** @hide */
@@ -88,7 +83,6 @@ public class ArtManagedFileStats {
      * @throws IllegalArgumentException if {@code fileType} is not one of those defined in {@link
      *         FileTypes}.
      */
-    @SuppressLint("UnflaggedApi") // Flag support for mainline is not available.
     public long getTotalSizeBytesByType(@FileTypes int fileType) {
         Long value = mTotalSizesBytes.get(fileType);
         if (value == null) {

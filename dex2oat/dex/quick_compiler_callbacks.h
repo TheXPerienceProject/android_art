@@ -33,6 +33,8 @@ class QuickCompilerCallbacks final : public CompilerCallbacks {
 
   ~QuickCompilerCallbacks() { }
 
+  ClassLinker* CreateAotClassLinker(InternTable* intern_table) override;
+
   void AddUncompilableMethod(MethodReference ref) override;
   void AddUncompilableClass(ClassReference ref) override;
 

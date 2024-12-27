@@ -16,13 +16,16 @@
 
 package com.android.server.art;
 
+import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.SuppressLint;
 import android.annotation.SystemApi;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.SharedLibraryInfo;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Environment;
@@ -30,6 +33,7 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.os.UserHandle;
+import android.util.LruCache;
 
 import androidx.annotation.RequiresApi;
 
@@ -50,6 +54,7 @@ import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.AndroidPackageSplit;
 import com.android.server.pm.pkg.PackageState;
+import com.android.server.pm.pkg.SharedLibrary;
 
 import com.google.auto.value.AutoValue;
 
@@ -59,9 +64,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -72,6 +77,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.SequencedMap;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -116,6 +122,13 @@ public class DexUseManagerLocal {
 
     @NonNull private final Injector mInjector;
     @NonNull private final Debouncer mDebouncer;
+
+    // The cache is motivated by the fact that only a handful of packages are commonly used by other
+    // packages. The cache size is arbitrarily decided.
+    /** A map from recently used dex files to their package names. */
+    @NonNull
+    private final LruCache<String, String> mRecentDexFilesToPackageNames =
+            new LruCache<>(50 /* maxSize */);
 
     private final Object mLock = new Object();
     @GuardedBy("mLock") @NonNull private DexUse mDexUse; // Initialized by `load`.
@@ -406,49 +419,154 @@ public class DexUseManagerLocal {
         for (var entry : classLoaderContextByDexContainerFile.entrySet()) {
             String dexPath = Utils.assertNonEmpty(entry.getKey());
             String classLoaderContext = Utils.assertNonEmpty(entry.getValue());
-            String owningPackageName = findOwningPackage(snapshot, loadingPackageName,
-                    (pkgState) -> isOwningPackageForPrimaryDex(pkgState, dexPath));
-            if (owningPackageName != null) {
-                addPrimaryDexUse(owningPackageName, dexPath, loadingPackageName, isolatedProcess,
-                        lastUsedAtMs);
+            FindResult findResult = findOwningPackage(snapshot, loadingPackageName, dexPath);
+            if (findResult == null) {
                 continue;
             }
-            Path path = Paths.get(dexPath);
-            synchronized (mLock) {
-                owningPackageName = findOwningPackage(snapshot, loadingPackageName,
-                        (pkgState) -> isOwningPackageForSecondaryDexLocked(pkgState, path));
+
+            switch (findResult.type()) {
+                case TYPE_PRIMARY:
+                    addPrimaryDexUse(findResult.owningPackageName(), dexPath, loadingPackageName,
+                            isolatedProcess, lastUsedAtMs);
+                    break;
+                case TYPE_SECONDARY:
+                    PackageState loadingPkgState =
+                            Utils.getPackageStateOrThrow(snapshot, loadingPackageName);
+                    // An app is always launched with its primary ABI.
+                    Utils.Abi abi = Utils.getPrimaryAbi(loadingPkgState);
+                    addSecondaryDexUse(findResult.owningPackageName(), dexPath, loadingPackageName,
+                            isolatedProcess, classLoaderContext, abi.name(), lastUsedAtMs);
+                    break;
+                default:
+                    // Intentionally ignore.
             }
-            if (owningPackageName != null) {
-                PackageState loadingPkgState =
-                        Utils.getPackageStateOrThrow(snapshot, loadingPackageName);
-                // An app is always launched with its primary ABI.
-                Utils.Abi abi = Utils.getPrimaryAbi(loadingPkgState);
-                addSecondaryDexUse(owningPackageName, dexPath, loadingPackageName, isolatedProcess,
-                        classLoaderContext, abi.name(), lastUsedAtMs);
-                continue;
-            }
-            // It is expected that a dex file isn't owned by any package. For example, the dex
-            // file could be a shared library jar.
         }
     }
 
     @Nullable
-    private static String findOwningPackage(@NonNull PackageManagerLocal.FilteredSnapshot snapshot,
-            @NonNull String loadingPackageName,
-            @NonNull Function<PackageState, Boolean> predicate) {
+    private FindResult findOwningPackage(@NonNull PackageManagerLocal.FilteredSnapshot snapshot,
+            @NonNull String loadingPackageName, @NonNull String dexPath) {
         // Most likely, the package is loading its own dex file, so we check this first as an
         // optimization.
         PackageState loadingPkgState = Utils.getPackageStateOrThrow(snapshot, loadingPackageName);
-        if (predicate.apply(loadingPkgState)) {
-            return loadingPkgState.getPackageName();
+        FindResult result =
+                checkForPackage(loadingPkgState, dexPath, true /* checkForSharedLibraries */);
+        if (result != null) {
+            return result;
         }
 
-        for (PackageState pkgState : snapshot.getPackageStates().values()) {
-            if (predicate.apply(pkgState)) {
-                return pkgState.getPackageName();
+        // Check all packages.
+        result = checkForAllPackages(dexPath);
+        if (result != null && result.type() != TYPE_DONT_RECORD
+                && snapshot.getPackageState(result.owningPackageName()) != null) {
+            return result;
+        }
+
+        // It is expected that there is no result. For example, the app could be loading a dex file
+        // from a non-canonical location, or it could be sending a bogus dex filename.
+        return null;
+    }
+
+    /**
+     * Returns the owner of the given dex file, found among all packages. The return value is
+     * unfiltered and must be checked whether it's visible to the calling app.
+     */
+    @SuppressLint("NewApi") // Using new Libcore APIs from the same module.
+    @Nullable
+    private FindResult checkForAllPackages(@NonNull String dexPath) {
+        // Iterating over the filtered snapshot is slow because it involves a
+        // `shouldFilterApplication` call on every iteration, which is considerably more expensive
+        // than a `checkForPackage` call. Therefore, we iterate over the unfiltered snapshot
+        // instead.
+        // There may be some inconsistencies between the filtered snapshot and the unfiltered
+        // snapshot, as they are not created atomically, but this is fine. If a package is in the
+        // filtered snapshot but not in the unfiltered snapshot, it means the package got removed,
+        // so we don't need to record it.
+        try (PackageManagerLocal.UnfilteredSnapshot unfilteredSnapshot =
+                        mInjector.getPackageManagerLocal().withUnfilteredSnapshot()) {
+            Map<String, PackageState> packageStates = unfilteredSnapshot.getPackageStates();
+            Set<String> visitedPackages = new HashSet<>();
+
+            Function<String, FindResult> visitPackage = (packageName) -> {
+                if (visitedPackages.contains(packageName)) {
+                    return null;
+                }
+                visitedPackages.add(packageName);
+                PackageState pkgState = packageStates.get(packageName);
+                if (pkgState == null) {
+                    mRecentDexFilesToPackageNames.remove(dexPath);
+                    return null;
+                }
+                FindResult result =
+                        checkForPackage(pkgState, dexPath, true /* checkForSharedLibraries */);
+                if (result != null) {
+                    mRecentDexFilesToPackageNames.put(dexPath, packageName);
+                    return result;
+                }
+                return null;
+            };
+
+            String cachedPackageName = mRecentDexFilesToPackageNames.get(dexPath);
+            if (cachedPackageName != null) {
+                FindResult result = visitPackage.apply(cachedPackageName);
+                if (result != null) {
+                    return result;
+                }
+            }
+
+            var recentDexFilesToPackageNamesSnapshot =
+                    (SequencedMap<String, String>) mRecentDexFilesToPackageNames.snapshot();
+
+            // Check recent packages first.
+            for (String packageName :
+                    recentDexFilesToPackageNamesSnapshot.sequencedValues().reversed()) {
+                FindResult result = visitPackage.apply(packageName);
+                if (result != null) {
+                    return result;
+                }
+            }
+
+            // Check remaining packages. Don't check for shared libraries because it might be too
+            // expansive to do so and the time complexity is O(n) no matter we do it or not.
+            for (PackageState pkgState : packageStates.values()) {
+                if (visitedPackages.contains(pkgState.getPackageName())) {
+                    continue;
+                }
+                FindResult result =
+                        checkForPackage(pkgState, dexPath, false /* checkForSharedLibraries */);
+                if (result != null) {
+                    mRecentDexFilesToPackageNames.put(dexPath, pkgState.getPackageName());
+                    return result;
+                }
             }
         }
 
+        return null;
+    }
+
+    @Nullable
+    private FindResult checkForPackage(@NonNull PackageState pkgState, @NonNull String dexPath,
+            boolean checkForSharedLibraries) {
+        if (isOwningPackageForPrimaryDex(pkgState, dexPath)) {
+            return new FindResult(TYPE_PRIMARY, pkgState.getPackageName());
+        }
+        if (checkForSharedLibraries) {
+            FindResult result =
+                    checkForSharedLibraries(pkgState.getSharedLibraryDependencies(), dexPath);
+            if (result != null) {
+                return result;
+            }
+        }
+        synchronized (mLock) {
+            if (isOwningPackageForSecondaryDexLocked(pkgState, dexPath)) {
+                return new FindResult(TYPE_SECONDARY, pkgState.getPackageName());
+            }
+        }
+        String packageCodeDir = getPackageCodeDir(pkgState);
+        if (packageCodeDir != null && Utils.pathStartsWith(dexPath, packageCodeDir)) {
+            // TODO(b/351761207): Support secondary dex files in package dir.
+            return new FindResult(TYPE_DONT_RECORD, null);
+        }
         return null;
     }
 
@@ -469,15 +587,54 @@ public class DexUseManagerLocal {
 
     @GuardedBy("mLock")
     private boolean isOwningPackageForSecondaryDexLocked(
-            @NonNull PackageState pkgState, @NonNull Path dexPath) {
+            @NonNull PackageState pkgState, @NonNull String dexPath) {
         UserHandle userHandle = Binder.getCallingUserHandle();
-        List<Path> locations = mSecondaryDexLocationManager.getLocations(pkgState, userHandle);
+        List<String> locations = mSecondaryDexLocationManager.getLocations(pkgState, userHandle);
         for (int i = 0; i < locations.size(); i++) {
-            if (dexPath.startsWith(locations.get(i))) {
+            if (Utils.pathStartsWith(dexPath, locations.get(i))) {
                 return true;
             }
         }
         return false;
+    }
+
+    @Nullable
+    private static FindResult checkForSharedLibraries(
+            @NonNull List<SharedLibrary> libraries, @NonNull String dexPath) {
+        for (SharedLibrary library : libraries) {
+            if (library.isNative()) {
+                continue;
+            }
+            if (dexPath.equals(library.getPath())) {
+                if (library.getType() == SharedLibraryInfo.TYPE_BUILTIN) {
+                    // Shared libraries are considered used by other apps anyway. No need to record
+                    // them.
+                    return new FindResult(TYPE_DONT_RECORD, null);
+                }
+                return new FindResult(TYPE_PRIMARY, library.getPackageName());
+            }
+            FindResult result = checkForSharedLibraries(library.getDependencies(), dexPath);
+            if (result != null) {
+                return result;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private String getPackageCodeDir(@NonNull PackageState pkgState) {
+        AndroidPackage pkg = pkgState.getAndroidPackage();
+        if (pkg == null) {
+            return null;
+        }
+        List<AndroidPackageSplit> splits = pkg.getSplits();
+        if (splits.size() == 0) {
+            return null;
+        }
+        String path = splits.get(0).getPath();
+        int pos = path.lastIndexOf('/');
+        Utils.check(pos >= 0);
+        return path.substring(0, pos + 1);
     }
 
     private void addPrimaryDexUse(@NonNull String owningPackageName, @NonNull String dexPath,
@@ -1109,7 +1266,7 @@ public class DexUseManagerLocal {
     static class SecondaryDexLocationManager {
         private @NonNull Map<CacheKey, CacheValue> mCache = new HashMap<>();
 
-        public @NonNull List<Path> getLocations(
+        public @NonNull List<String> getLocations(
                 @NonNull PackageState pkgState, @NonNull UserHandle userHandle) {
             AndroidPackage pkg = pkgState.getAndroidPackage();
             if (pkg == null) {
@@ -1129,11 +1286,12 @@ public class DexUseManagerLocal {
                     storageUuid, userHandle, packageName);
             File deDir = Environment.getDataDePackageDirectoryForUser(
                     storageUuid, userHandle, packageName);
-            List<Path> locations = List.of(ceDir.toPath(), deDir.toPath());
-            mCache.put(cacheKey, CacheValue.create(locations, storageUuid));
+            List<String> locations = List.of(ceDir.getAbsolutePath(), deDir.getAbsolutePath());
+            mCache.put(cacheKey, new CacheValue(locations, storageUuid));
             return locations;
         }
 
+        // TODO(b/351994199): Don't replace this with record because the latter is too slow.
         @Immutable
         @AutoValue
         abstract static class CacheKey {
@@ -1147,19 +1305,28 @@ public class DexUseManagerLocal {
             abstract @NonNull UserHandle userHandle();
         }
 
-        @Immutable
-        @AutoValue
-        abstract static class CacheValue {
-            static CacheValue create(@NonNull List<Path> locations, @NonNull UUID storageUuid) {
-                return new AutoValue_DexUseManagerLocal_SecondaryDexLocationManager_CacheValue(
-                        locations, storageUuid);
-            }
-
-            abstract @NonNull List<Path> locations();
-
-            abstract @NonNull UUID storageUuid();
-        }
+        private record CacheValue(@NonNull List<String> locations, @NonNull UUID storageUuid) {}
     }
+
+    /** Result found but don't record it. */
+    private static final int TYPE_DONT_RECORD = 0;
+    /** Primary dex file. */
+    private static final int TYPE_PRIMARY = 1;
+    /** Secondary dex file. */
+    private static final int TYPE_SECONDARY = 2;
+
+    /** @hide */
+    // clang-format off
+    @IntDef(prefix = "TYPE_", value = {
+        TYPE_DONT_RECORD,
+        TYPE_PRIMARY,
+        TYPE_SECONDARY,
+    })
+    // clang-format on
+    @Retention(RetentionPolicy.SOURCE)
+    private @interface DexType {}
+
+    private record FindResult(@DexType int type, @Nullable String owningPackageName) {}
 
     /**
      * Injector pattern for testing purpose.
@@ -1215,7 +1382,7 @@ public class DexUseManagerLocal {
         }
 
         @NonNull
-        private PackageManagerLocal getPackageManagerLocal() {
+        public PackageManagerLocal getPackageManagerLocal() {
             return Objects.requireNonNull(
                     LocalManagerRegistry.getManager(PackageManagerLocal.class));
         }

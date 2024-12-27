@@ -64,13 +64,9 @@ class LoopOptimizationTest : public OptimizingUnitTest {
     graph_->AddBlock(exit_block_);
     graph_->SetEntryBlock(entry_block_);
     graph_->SetExitBlock(exit_block_);
-    parameter_ = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                      dex::TypeIndex(0),
-                                                      0,
-                                                      DataType::Type::kInt32);
-    entry_block_->AddInstruction(parameter_);
-    return_block_->AddInstruction(new (GetAllocator()) HReturnVoid());
-    exit_block_->AddInstruction(new (GetAllocator()) HExit());
+    parameter_ = MakeParam(DataType::Type::kInt32);
+    MakeReturnVoid(return_block_);
+    MakeExit(exit_block_);
     entry_block_->AddSuccessor(return_block_);
     return_block_->AddSuccessor(exit_block_);
   }
@@ -85,9 +81,9 @@ class LoopOptimizationTest : public OptimizingUnitTest {
     position->ReplaceSuccessor(successor, header);
     header->AddSuccessor(body);
     header->AddSuccessor(successor);
-    header->AddInstruction(new (GetAllocator()) HIf(parameter_));
+    MakeIf(header, parameter_);
     body->AddSuccessor(header);
-    body->AddInstruction(new (GetAllocator()) HGoto());
+    MakeGoto(body);
     return header;
   }
 
@@ -230,13 +226,12 @@ TEST_F(LoopOptimizationTest, SimplifyLoopReoderPredecessors) {
   DCHECK(header->GetSuccessors()[1] == return_block_);
 
   // Data flow.
-  header->AddInstruction(new (GetAllocator()) HIf(parameter_));
-  body->AddInstruction(new (GetAllocator()) HGoto());
+  MakeIf(header, parameter_);
+  MakeGoto(body);
 
   HPhi* phi = new (GetAllocator()) HPhi(GetAllocator(), 0, 0, DataType::Type::kInt32);
-  HInstruction* add = new (GetAllocator()) HAdd(DataType::Type::kInt32, phi, parameter_);
   header->AddPhi(phi);
-  body->AddInstruction(add);
+  HInstruction* add = MakeBinOp<HAdd>(body, DataType::Type::kInt32, phi, parameter_);
 
   phi->AddInput(add);
   phi->AddInput(parameter_);
@@ -281,9 +276,9 @@ TEST_F(LoopOptimizationTest, SimplifyLoopSinglePreheader) {
   preheader0->AddSuccessor(header);
   preheader1->AddSuccessor(header);
 
-  if_block->AddInstruction(new (GetAllocator()) HIf(parameter_));
-  preheader0->AddInstruction(new (GetAllocator()) HGoto());
-  preheader1->AddInstruction(new (GetAllocator()) HGoto());
+  MakeIf(if_block, parameter_);
+  MakeGoto(preheader0);
+  MakeGoto(preheader1);
 
   HBasicBlock* body = header->GetSuccessors()[0];
   DCHECK(body != return_block_);
@@ -293,16 +288,13 @@ TEST_F(LoopOptimizationTest, SimplifyLoopSinglePreheader) {
   HIntConstant* const_1 = graph_->GetIntConstant(1);
   HIntConstant* const_2 = graph_->GetIntConstant(2);
 
-  HAdd* preheader0_add = new (GetAllocator()) HAdd(DataType::Type::kInt32, parameter_, const_0);
-  preheader0->AddInstruction(preheader0_add);
-  HAdd* preheader1_add = new (GetAllocator()) HAdd(DataType::Type::kInt32, parameter_, const_1);
-  preheader1->AddInstruction(preheader1_add);
+  HAdd* preheader0_add = MakeBinOp<HAdd>(preheader0, DataType::Type::kInt32, parameter_, const_0);
+  HAdd* preheader1_add = MakeBinOp<HAdd>(preheader1, DataType::Type::kInt32, parameter_, const_1);
 
   HPhi* header_phi = new (GetAllocator()) HPhi(GetAllocator(), 0, 0, DataType::Type::kInt32);
   header->AddPhi(header_phi);
 
-  HAdd* body_add = new (GetAllocator()) HAdd(DataType::Type::kInt32, parameter_, const_2);
-  body->AddInstruction(body_add);
+  HAdd* body_add = MakeBinOp<HAdd>(body, DataType::Type::kInt32, parameter_, const_2);
 
   DCHECK(header->GetPredecessors()[0] == body);
   DCHECK(header->GetPredecessors()[1] == preheader0);

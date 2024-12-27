@@ -100,13 +100,8 @@ void X86_64Context::SetFPR(uint32_t reg, uintptr_t value) {
   *fprs_[reg] = value;
 }
 
-extern "C" NO_RETURN void art_quick_do_long_jump(uintptr_t*, uintptr_t*);
-
-void X86_64Context::DoLongJump() {
+void X86_64Context::CopyContextTo(uintptr_t* gprs, uintptr_t* fprs) {
 #if defined(__x86_64__)
-  uintptr_t gprs[kNumberOfCpuRegisters + 1];
-  uintptr_t fprs[kNumberOfFloatRegisters];
-
   for (size_t i = 0; i < kNumberOfCpuRegisters; ++i) {
     gprs[kNumberOfCpuRegisters - i - 1] = gprs_[i] != nullptr ? *gprs_[i] : kBadGprBase + i;
   }
@@ -118,8 +113,6 @@ void X86_64Context::DoLongJump() {
   uintptr_t rsp = gprs[kNumberOfCpuRegisters - RSP - 1] - sizeof(intptr_t);
   gprs[kNumberOfCpuRegisters] = rsp;
   *(reinterpret_cast<uintptr_t*>(rsp)) = rip_;
-
-  art_quick_do_long_jump(gprs, fprs);
 #else
   UNIMPLEMENTED(FATAL);
   UNREACHABLE();

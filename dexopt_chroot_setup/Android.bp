@@ -39,6 +39,11 @@ cc_defaults {
         "dexopt_chroot_setup-aidl-ndk",
         "libfstab",
     ],
+    target: {
+        android: {
+            compile_multilib: "first",
+        },
+    },
 }
 
 art_cc_binary {

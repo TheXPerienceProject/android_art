@@ -1569,8 +1569,9 @@ static void GenSystemArrayCopyAddresses(CodeGeneratorRISCV64* codegen,
                                         XRegister src_base,
                                         XRegister dst_base,
                                         XRegister src_end) {
-  // This routine is used by the SystemArrayCopy and the SystemArrayCopyChar intrinsics.
-  DCHECK(type == DataType::Type::kReference || type == DataType::Type::kUint16)
+  // This routine is used by the SystemArrayCopyX intrinsics.
+  DCHECK(type == DataType::Type::kReference || type == DataType::Type::kInt8 ||
+         type == DataType::Type::kUint16 || type == DataType::Type::kInt32)
       << "Unexpected element type: " << type;
   const int32_t element_size = DataType::Size(type);
   const uint32_t data_offset = mirror::Array::DataOffset(element_size).Uint32Value();
@@ -1919,6 +1920,284 @@ void IntrinsicCodeGeneratorRISCV64::VisitSystemArrayCopy(HInvoke* invoke) {
   }
 
   __ Bind(intrinsic_slow_path->GetExitLabel());
+}
+
+// This value is in bytes and greater than ARRAYCOPY_SHORT_XXX_ARRAY_THRESHOLD
+// in libcore, so if we choose to jump to the slow path we will end up
+// in the native implementation.
+static constexpr int32_t kSystemArrayCopyPrimThreshold = 384;
+
+static void CreateSystemArrayCopyLocations(HInvoke* invoke, DataType::Type type) {
+  int32_t copy_threshold = kSystemArrayCopyPrimThreshold / DataType::Size(type);
+
+  // Check to see if we have known failures that will cause us to have to bail out
+  // to the runtime, and just generate the runtime call directly.
+  HIntConstant* src_pos = invoke->InputAt(1)->AsIntConstantOrNull();
+  HIntConstant* dst_pos = invoke->InputAt(3)->AsIntConstantOrNull();
+
+  // The positions must be non-negative.
+  if ((src_pos != nullptr && src_pos->GetValue() < 0) ||
+      (dst_pos != nullptr && dst_pos->GetValue() < 0)) {
+    // We will have to fail anyways.
+    return;
+  }
+
+  // The length must be >= 0 and not so long that we would (currently) prefer libcore's
+  // native implementation.
+  HIntConstant* length = invoke->InputAt(4)->AsIntConstantOrNull();
+  if (length != nullptr) {
+    int32_t len = length->GetValue();
+    if (len < 0 || len > copy_threshold) {
+      // Just call as normal.
+      return;
+    }
+  }
+
+  ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
+  LocationSummary* locations =
+      new (allocator) LocationSummary(invoke, LocationSummary::kCallOnSlowPath, kIntrinsified);
+  // arraycopy(char[] src, int src_pos, char[] dst, int dst_pos, int length).
+  locations->SetInAt(0, Location::RequiresRegister());
+  locations->SetInAt(1, LocationForSystemArrayCopyInput(invoke->InputAt(1)));
+  locations->SetInAt(2, Location::RequiresRegister());
+  locations->SetInAt(3, LocationForSystemArrayCopyInput(invoke->InputAt(3)));
+  locations->SetInAt(4, LocationForSystemArrayCopyInput(invoke->InputAt(4)));
+
+  locations->AddRegisterTemps(3);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitSystemArrayCopyByte(HInvoke* invoke) {
+  CreateSystemArrayCopyLocations(invoke, DataType::Type::kInt8);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitSystemArrayCopyChar(HInvoke* invoke) {
+  CreateSystemArrayCopyLocations(invoke, DataType::Type::kUint16);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitSystemArrayCopyInt(HInvoke* invoke) {
+  CreateSystemArrayCopyLocations(invoke, DataType::Type::kInt32);
+}
+
+static void GenerateUnsignedLoad(
+    Riscv64Assembler* assembler, XRegister rd, XRegister rs1, int32_t offset, size_t type_size) {
+  switch (type_size) {
+    case 1:
+      __ Lbu(rd, rs1, offset);
+      break;
+    case 2:
+      __ Lhu(rd, rs1, offset);
+      break;
+    case 4:
+      __ Lwu(rd, rs1, offset);
+      break;
+    case 8:
+      __ Ld(rd, rs1, offset);
+      break;
+    default:
+      LOG(FATAL) << "Unexpected data type";
+  }
+}
+
+static void GenerateStore(
+    Riscv64Assembler* assembler, XRegister rs2, XRegister rs1, int32_t offset, size_t type_size) {
+  switch (type_size) {
+    case 1:
+      __ Sb(rs2, rs1, offset);
+      break;
+    case 2:
+      __ Sh(rs2, rs1, offset);
+      break;
+    case 4:
+      __ Sw(rs2, rs1, offset);
+      break;
+    case 8:
+      __ Sd(rs2, rs1, offset);
+      break;
+    default:
+      LOG(FATAL) << "Unexpected data type";
+  }
+}
+
+static void SystemArrayCopyPrimitive(HInvoke* invoke,
+                                     CodeGeneratorRISCV64* codegen,
+                                     DataType::Type type) {
+  Riscv64Assembler* assembler = codegen->GetAssembler();
+  LocationSummary* locations = invoke->GetLocations();
+  XRegister src = locations->InAt(0).AsRegister<XRegister>();
+  Location src_pos = locations->InAt(1);
+  XRegister dst = locations->InAt(2).AsRegister<XRegister>();
+  Location dst_pos = locations->InAt(3);
+  Location length = locations->InAt(4);
+
+  SlowPathCodeRISCV64* slow_path =
+      new (codegen->GetScopedAllocator()) IntrinsicSlowPathRISCV64(invoke);
+  codegen->AddSlowPath(slow_path);
+
+  SystemArrayCopyOptimizations optimizations(invoke);
+
+  // If source and destination are the same, take the slow path. Overlapping copy regions must be
+  // copied in reverse and we can't know in all cases if it's needed.
+  __ Beq(src, dst, slow_path->GetEntryLabel());
+
+  if (!optimizations.GetSourceIsNotNull()) {
+    // Bail out if the source is null.
+    __ Beqz(src, slow_path->GetEntryLabel());
+  }
+
+  if (!optimizations.GetDestinationIsNotNull() && !optimizations.GetDestinationIsSource()) {
+    // Bail out if the destination is null.
+    __ Beqz(dst, slow_path->GetEntryLabel());
+  }
+
+  int32_t copy_threshold = kSystemArrayCopyPrimThreshold / DataType::Size(type);
+  XRegister tmp = locations->GetTemp(0).AsRegister<XRegister>();
+  if (!length.IsConstant()) {
+    // Merge the following two comparisons into one:
+    //   If the length is negative, bail out (delegate to libcore's native implementation).
+    //   If the length >= kSystemArrayCopyPrimThreshold then (currently) prefer libcore's
+    //   native implementation.
+    __ Li(tmp, copy_threshold);
+    __ Bgeu(length.AsRegister<XRegister>(), tmp, slow_path->GetEntryLabel());
+  } else {
+    // We have already checked in the LocationsBuilder for the constant case.
+    DCHECK_GE(length.GetConstant()->AsIntConstant()->GetValue(), 0);
+    DCHECK_LE(length.GetConstant()->AsIntConstant()->GetValue(), copy_threshold);
+  }
+
+  XRegister src_curr_addr = locations->GetTemp(1).AsRegister<XRegister>();
+  XRegister dst_curr_addr = locations->GetTemp(2).AsRegister<XRegister>();
+
+  CheckSystemArrayCopyPosition(assembler,
+                               src,
+                               src_pos,
+                               length,
+                               slow_path,
+                               src_curr_addr,
+                               dst_curr_addr,
+                               /*length_is_array_length=*/ false,
+                               /*position_sign_checked=*/ false);
+
+  CheckSystemArrayCopyPosition(assembler,
+                               dst,
+                               dst_pos,
+                               length,
+                               slow_path,
+                               src_curr_addr,
+                               dst_curr_addr,
+                               /*length_is_array_length=*/ false,
+                               /*position_sign_checked=*/ false);
+
+  const int32_t element_size = DataType::Size(type);
+  const uint32_t data_offset = mirror::Array::DataOffset(element_size).Uint32Value();
+
+  GenArrayAddress(codegen, src_curr_addr, src, src_pos, type, data_offset);
+  GenArrayAddress(codegen, dst_curr_addr, dst, dst_pos, type, data_offset);
+
+  // We split processing of the array in two parts: head and tail.
+  // A first loop handles the head by copying a block of elements per
+  // iteration (see: elements_per_block).
+  // A second loop handles the tail by copying the remaining elements.
+  // If the copy length is not constant, we copy them one-by-one.
+  //
+  // Both loops are inverted for better performance, meaning they are
+  // implemented as conditional do-while loops.
+  // Here, the loop condition is first checked to determine if there are
+  // sufficient elements to run an iteration, then we enter the do-while: an
+  // iteration is performed followed by a conditional branch only if another
+  // iteration is necessary. As opposed to a standard while-loop, this inversion
+  // can save some branching (e.g. we don't branch back to the initial condition
+  // at the end of every iteration only to potentially immediately branch
+  // again).
+  //
+  // A full block of elements is subtracted and added before and after the head
+  // loop, respectively. This ensures that any remaining length after each
+  // head loop iteration means there is a full block remaining, reducing the
+  // number of conditional checks required on every iteration.
+  ScratchRegisterScope temps(assembler);
+  constexpr int32_t bytes_copied_per_iteration = 16;
+  DCHECK_EQ(bytes_copied_per_iteration % element_size, 0);
+  int32_t elements_per_block = bytes_copied_per_iteration / element_size;
+  Riscv64Label done;
+
+  XRegister length_tmp = temps.AllocateXRegister();
+
+  auto emit_head_loop = [&]() {
+    ScratchRegisterScope local_temps(assembler);
+    XRegister tmp2 = local_temps.AllocateXRegister();
+
+    Riscv64Label loop;
+    __ Bind(&loop);
+    __ Ld(tmp, src_curr_addr, 0);
+    __ Ld(tmp2, src_curr_addr, 8);
+    __ Sd(tmp, dst_curr_addr, 0);
+    __ Sd(tmp2, dst_curr_addr, 8);
+    __ Addi(length_tmp, length_tmp, -elements_per_block);
+    __ Addi(src_curr_addr, src_curr_addr, bytes_copied_per_iteration);
+    __ Addi(dst_curr_addr, dst_curr_addr, bytes_copied_per_iteration);
+    __ Bgez(length_tmp, &loop);
+  };
+
+  auto emit_tail_loop = [&]() {
+    Riscv64Label loop;
+    __ Bind(&loop);
+    GenerateUnsignedLoad(assembler, tmp, src_curr_addr, 0, element_size);
+    GenerateStore(assembler, tmp, dst_curr_addr, 0, element_size);
+    __ Addi(length_tmp, length_tmp, -1);
+    __ Addi(src_curr_addr, src_curr_addr, element_size);
+    __ Addi(dst_curr_addr, dst_curr_addr, element_size);
+    __ Bgtz(length_tmp, &loop);
+  };
+
+  auto emit_unrolled_tail_loop = [&](int32_t tail_length) {
+    DCHECK_LT(tail_length, elements_per_block);
+
+    int32_t length_in_bytes = tail_length * element_size;
+    size_t offset = 0;
+    for (size_t operation_size = 8; operation_size > 0; operation_size >>= 1) {
+      if ((length_in_bytes & operation_size) != 0) {
+        GenerateUnsignedLoad(assembler, tmp, src_curr_addr, offset, operation_size);
+        GenerateStore(assembler, tmp, dst_curr_addr, offset, operation_size);
+        offset += operation_size;
+      }
+    }
+  };
+
+  if (length.IsConstant()) {
+    const int32_t constant_length = length.GetConstant()->AsIntConstant()->GetValue();
+    if (constant_length >= elements_per_block) {
+      __ Li(length_tmp, constant_length - elements_per_block);
+      emit_head_loop();
+    }
+    emit_unrolled_tail_loop(constant_length % elements_per_block);
+  } else {
+    Riscv64Label tail_loop;
+    XRegister length_reg = length.AsRegister<XRegister>();
+    __ Addi(length_tmp, length_reg, -elements_per_block);
+    __ Bltz(length_tmp, &tail_loop);
+
+    emit_head_loop();
+
+    __ Bind(&tail_loop);
+    __ Addi(length_tmp, length_tmp, elements_per_block);
+    __ Beqz(length_tmp, &done);
+
+    emit_tail_loop();
+  }
+
+  __ Bind(&done);
+  __ Bind(slow_path->GetExitLabel());
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitSystemArrayCopyByte(HInvoke* invoke) {
+  SystemArrayCopyPrimitive(invoke, codegen_, DataType::Type::kInt8);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitSystemArrayCopyChar(HInvoke* invoke) {
+  SystemArrayCopyPrimitive(invoke, codegen_, DataType::Type::kUint16);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitSystemArrayCopyInt(HInvoke* invoke) {
+  SystemArrayCopyPrimitive(invoke, codegen_, DataType::Type::kInt32);
 }
 
 enum class GetAndUpdateOp {
@@ -2829,9 +3108,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitStringCompareTo(HInvoke* invoke) {
                                        kIntrinsified);
   locations->SetInAt(0, Location::RequiresRegister());
   locations->SetInAt(1, Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(3);
   // Need temporary registers for String compression's feature.
   if (mirror::kUseStringCompression) {
     locations->AddTemp(Location::RequiresRegister());
@@ -5076,9 +5353,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitStringGetCharsNoCheck(HInvoke* invok
   locations->SetInAt(3, Location::RequiresRegister());
   locations->SetInAt(4, Location::RequiresRegister());
 
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(3);
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitStringGetCharsNoCheck(HInvoke* invoke) {
@@ -5243,6 +5518,92 @@ void IntrinsicCodeGeneratorRISCV64::VisitStringGetCharsNoCheck(HInvoke* invoke) 
   }
 
   __ Bind(&done);
+}
+
+void GenMathSignum(CodeGeneratorRISCV64* codegen, HInvoke* invoke, DataType::Type type) {
+  LocationSummary* locations = invoke->GetLocations();
+  DCHECK(locations->InAt(0).Equals(locations->Out()));
+  FRegister in = locations->InAt(0).AsFpuRegister<FRegister>();
+  Riscv64Assembler* assembler = codegen->GetAssembler();
+  ScratchRegisterScope srs(assembler);
+  XRegister tmp = srs.AllocateXRegister();
+  FRegister ftmp = srs.AllocateFRegister();
+  Riscv64Label done;
+
+  if (type == DataType::Type::kFloat64) {
+    // 0x3FF0000000000000L = 1.0
+    __ Li(tmp, 0x3FF0000000000000L);
+    __ FMvDX(ftmp, tmp);
+    __ FClassD(tmp, in);
+  } else {
+    // 0x3f800000 = 1.0f
+    __ Li(tmp, 0x3F800000);
+    __ FMvWX(ftmp, tmp);
+    __ FClassS(tmp, in);
+  }
+
+  __ Andi(tmp, tmp, kPositiveZero | kNegativeZero | kSignalingNaN | kQuietNaN);
+  __ Bnez(tmp, &done);
+
+  if (type == DataType::Type::kFloat64) {
+    __ FSgnjD(in, ftmp, in);
+  } else {
+    __ FSgnjS(in, ftmp, in);
+  }
+
+  __ Bind(&done);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitMathSignumDouble(HInvoke* invoke) {
+  LocationSummary* locations =
+      new (allocator_) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
+  locations->SetInAt(0, Location::RequiresFpuRegister());
+  locations->SetOut(Location::SameAsFirstInput());
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitMathSignumDouble(HInvoke* invoke) {
+  GenMathSignum(codegen_, invoke, DataType::Type::kFloat64);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitMathSignumFloat(HInvoke* invoke) {
+  LocationSummary* locations =
+      new (allocator_) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
+  locations->SetInAt(0, Location::RequiresFpuRegister());
+  locations->SetOut(Location::SameAsFirstInput());
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitMathSignumFloat(HInvoke* invoke) {
+  GenMathSignum(codegen_, invoke, DataType::Type::kFloat32);
+}
+
+void GenMathCopySign(CodeGeneratorRISCV64* codegen, HInvoke* invoke, DataType::Type type) {
+  Riscv64Assembler* assembler = codegen->GetAssembler();
+  LocationSummary* locations = invoke->GetLocations();
+  FRegister in0 = locations->InAt(0).AsFpuRegister<FRegister>();
+  FRegister in1 = locations->InAt(1).AsFpuRegister<FRegister>();
+  FRegister out = locations->Out().AsFpuRegister<FRegister>();
+
+  if (type == DataType::Type::kFloat64) {
+    __ FSgnjD(out, in0, in1);
+  } else {
+    __ FSgnjS(out, in0, in1);
+  }
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitMathCopySignDouble(HInvoke* invoke) {
+  CreateFPFPToFPCallLocations(allocator_, invoke);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitMathCopySignDouble(HInvoke* invoke) {
+  GenMathCopySign(codegen_, invoke, DataType::Type::kFloat64);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitMathCopySignFloat(HInvoke* invoke) {
+  CreateFPFPToFPCallLocations(allocator_, invoke);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitMathCopySignFloat(HInvoke* invoke) {
+  GenMathCopySign(codegen_, invoke, DataType::Type::kFloat32);
 }
 
 #define MARK_UNIMPLEMENTED(Name) UNIMPLEMENTED_INTRINSIC(RISCV64, Name)

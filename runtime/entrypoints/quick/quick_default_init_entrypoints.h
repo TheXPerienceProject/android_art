@@ -109,6 +109,8 @@ static void DefaultInitEntryPoints(JniEntryPoints* jpoints,
   qpoints->SetInvokeVirtualTrampolineWithAccessCheck(
       art_quick_invoke_virtual_trampoline_with_access_check);
   qpoints->SetInvokePolymorphic(art_quick_invoke_polymorphic);
+  // Adding support for x86_64 first.
+  qpoints->SetInvokePolymorphicWithHiddenReceiver(nullptr);
   qpoints->SetInvokeCustom(art_quick_invoke_custom);
 
   // Thread
@@ -135,6 +137,10 @@ static void DefaultInitEntryPoints(JniEntryPoints* jpoints,
   // Tracing hooks
   qpoints->SetMethodEntryHook(art_quick_method_entry_hook);
   qpoints->SetMethodExitHook(art_quick_method_exit_hook);
+
+  // These are used for on-demand-tracing, currently only supported on arm64 devices.
+  qpoints->SetRecordEntryTraceEvent(nullptr);
+  qpoints->SetRecordExitTraceEvent(nullptr);
 
   if (monitor_jni_entry_exit) {
     qpoints->SetJniMethodStart(art_jni_monitored_method_start);

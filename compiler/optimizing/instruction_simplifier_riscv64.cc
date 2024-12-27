@@ -41,51 +41,60 @@ class InstructionSimplifierRiscv64Visitor final : public HGraphVisitor {
     }
   }
 
-  bool TryReplaceShiftAddWithOneInstruction(HShl* shl, HAdd* add) {
+  // Replace Add which has Shl with distance of 1 or 2 or 3 with Riscv64ShiftAdd
+  bool TryReplaceAddsWithShiftAdds(HShl* shl) {
     // There is no reason to replace Int32 Shl+Add with ShiftAdd because of
     // additional sign-extension required.
     if (shl->GetType() != DataType::Type::kInt64) {
       return false;
     }
 
-    if (!shl->GetRight()->IsIntConstant()) {
+    if (!shl->GetRight()->IsConstant()) {
       return false;
     }
+
+    // The bytecode does not permit the shift distance to come from a wide variable
+    DCHECK(shl->GetRight()->IsIntConstant());
 
     const int32_t distance = shl->GetRight()->AsIntConstant()->GetValue();
-    if (distance != 1 && distance != 2 && distance != 3) {
+    if (distance < 1 || distance > 3) {
       return false;
     }
 
-    if (!shl->HasOnlyOneNonEnvironmentUse()) {
-      return false;
+    bool replaced = false;
+
+    for (const HUseListNode<HInstruction*>& use : shl->GetUses()) {
+      HInstruction* user = use.GetUser();
+
+      if (!user->IsAdd()) {
+        continue;
+      }
+      HAdd* add = user->AsAdd();
+      HInstruction* left = add->GetLeft();
+      HInstruction* right = add->GetRight();
+      DCHECK_EQ(add->GetType(), DataType::Type::kInt64)
+          << "Replaceable Add must be the same 64 bit type as the input";
+
+      // If the HAdd to replace has both inputs the same HShl<1|2|3>, then
+      // don't perform the optimization. The processor will not be able to execute
+      // these shifts parallel which is the purpose of the replace below.
+      if (left == right) {
+        continue;
+      }
+
+      HInstruction* add_other_input = left == shl ? right : left;
+      HRiscv64ShiftAdd* shift_add = new (GetGraph()->GetAllocator())
+          HRiscv64ShiftAdd(shl->GetLeft(), add_other_input, distance);
+
+      add->GetBlock()->ReplaceAndRemoveInstructionWith(add, shift_add);
+      replaced = true;
     }
 
-    auto* const add_other_input = add->GetLeft() == shl ? add->GetRight() : add->GetLeft();
-    auto* const shift_add = new (GetGraph()->GetAllocator())
-        HRiscv64ShiftAdd(shl->GetLeft(), add_other_input, distance);
-
-    DCHECK_EQ(add->GetType(), DataType::Type::kInt64)
-        << "Riscv64ShiftAdd replacement should have the same 64 bit type";
-    add->GetBlock()->ReplaceAndRemoveInstructionWith(add, shift_add);
-    shl->GetBlock()->RemoveInstruction(shl);
-
-    return true;
-  }
-
-  // Replace code looking like
-  //    SHL tmp, a, 1 or 2 or 3
-  //    ADD dst, tmp, b
-  // with
-  //    Riscv64ShiftAdd dst, a, b
-  void VisitAdd(HAdd* add) override {
-    auto* const left = add->GetLeft();
-    auto* const right = add->GetRight();
-    if (left->IsShl() && TryReplaceShiftAddWithOneInstruction(left->AsShl(), add)) {
-      return;
-    } else if (right->IsShl() && TryReplaceShiftAddWithOneInstruction(right->AsShl(), add)) {
-      return;
+    if (!shl->HasUses()) {
+      shl->GetBlock()->RemoveInstruction(shl);
     }
+
+    return replaced;
   }
 
   void VisitAnd(HAnd* inst) override {
@@ -96,6 +105,17 @@ class InstructionSimplifierRiscv64Visitor final : public HGraphVisitor {
 
   void VisitOr(HOr* inst) override {
     if (TryMergeNegatedInput(inst)) {
+      RecordSimplification();
+    }
+  }
+
+  // Replace code looking like
+  //    SHL tmp, a, 1 or 2 or 3
+  //    ADD dst, tmp, b
+  // with
+  //    Riscv64ShiftAdd dst, a, b
+  void VisitShl(HShl* inst) override {
+    if (TryReplaceAddsWithShiftAdds(inst)) {
       RecordSimplification();
     }
   }

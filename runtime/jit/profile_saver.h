@@ -80,10 +80,7 @@ class ProfileSaver {
   // written to disk.
   // If force_save is true, the saver will ignore any constraints which limit IO (e.g. will write
   // the profile to disk even if it's just one new method).
-  bool ProcessProfilingInfo(
-        bool force_save,
-        bool skip_class_and_method_fetching,
-        /*out*/uint16_t* number_of_new_methods)
+  bool ProcessProfilingInfo(bool force_save, /*out*/uint16_t* number_of_new_methods)
       REQUIRES(!Locks::profiler_lock_)
       REQUIRES(!Locks::mutator_lock_);
 

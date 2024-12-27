@@ -17,6 +17,7 @@
 // Test is in compiler, as it uses compiler related code.
 #include "verifier/verifier_deps.h"
 
+#include "aot_class_linker.h"
 #include "art_method-inl.h"
 #include "base/indenter.h"
 #include "class_linker.h"
@@ -45,6 +46,10 @@ class VerifierDepsCompilerCallbacks : public CompilerCallbacks {
   VerifierDepsCompilerCallbacks()
       : CompilerCallbacks(CompilerCallbacks::CallbackMode::kCompileApp),
         deps_(nullptr) {}
+
+  ClassLinker* CreateAotClassLinker(InternTable* intern_table) override {
+    return new AotClassLinker(intern_table);
+  }
 
   void AddUncompilableMethod([[maybe_unused]] MethodReference ref) override {}
   void AddUncompilableClass([[maybe_unused]] ClassReference ref) override {}

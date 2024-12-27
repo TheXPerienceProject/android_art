@@ -78,6 +78,7 @@
 #include "nterp_helpers.h"
 #include "oat/elf_file.h"
 #include "oat/image-inl.h"
+#include "oat/jni_stub_hash_map-inl.h"
 #include "oat/oat.h"
 #include "oat/oat_file.h"
 #include "oat/oat_file_manager.h"

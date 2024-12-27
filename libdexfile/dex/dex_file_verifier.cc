@@ -3120,7 +3120,7 @@ bool DexFileVerifier::CheckInterAnnotationSetItem() {
   uint32_t last_idx = 0;
 
   for (uint32_t i = 0; i < count; i++) {
-    if (*offsets != 0 && !CheckOffsetToTypeMap(*offsets, DexFile::kDexTypeAnnotationItem)) {
+    if (!CheckOffsetToTypeMap(*offsets, DexFile::kDexTypeAnnotationItem)) {
       return false;
     }
 

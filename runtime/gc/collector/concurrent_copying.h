@@ -42,8 +42,6 @@ class Object;
 namespace gc {
 
 namespace accounting {
-template<typename T> class AtomicStack;
-using ObjectStack = AtomicStack<mirror::Object>;
 template <size_t kAlignment> class SpaceBitmap;
 using ContinuousSpaceBitmap = SpaceBitmap<kObjectAlignment>;
 class HeapBitmap;
@@ -261,8 +259,7 @@ class ConcurrentCopying : public GarbageCollector {
   // a subset of the heap.
   void Sweep(bool swap_bitmaps)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Locks::heap_bitmap_lock_, !mark_stack_lock_);
-  // Sweep only pointers within an array.
-  void SweepArray(accounting::ObjectStack* allocation_stack_, bool swap_bitmaps)
+  void SweepArray(accounting::ObjectStack* obj_arr, bool swap_bitmaps)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Locks::heap_bitmap_lock_, !mark_stack_lock_);
   void SweepLargeObjects(bool swap_bitmaps)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Locks::heap_bitmap_lock_);
@@ -483,11 +480,6 @@ class ConcurrentCopying : public GarbageCollector {
   // be filled in before flipping thread roots so that FillWithFakeObject can run. Not
   // ObjPtr since the GC may transition to suspended and runnable between phases.
   mirror::Class* java_lang_Object_;
-
-  // Sweep array free buffer, used to sweep the spaces based on an array more
-  // efficiently, by recording dead objects to be freed in batches (see
-  // ConcurrentCopying::SweepArray).
-  MemMap sweep_array_free_buffer_mem_map_;
 
   // Use signed because after_gc may be larger than before_gc.
   int64_t num_bytes_allocated_before_gc_;

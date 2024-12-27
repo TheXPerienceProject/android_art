@@ -109,4 +109,32 @@ TEST_F(RuntimeTest, ElfAlignmentMismatch) {
   EXPECT_EQ(kElfSegmentAlignment, elf_file->GetElfSegmentAlignmentFromFile());
 }
 
+class RuntimeInitMetricsDefaultTest : public CommonRuntimeTest {};
+
+TEST_F(RuntimeInitMetricsDefaultTest, MetricsAreNotInitialized) {
+  ASSERT_FALSE(runtime_->AreMetricsInitialized());
+}
+
+class RuntimeInitMetricsZygoteTest : public CommonRuntimeTest {
+  void SetUpRuntimeOptions(RuntimeOptions* options) override {
+    CommonRuntimeTest::SetUpRuntimeOptions(options);
+    options->emplace_back(std::make_pair("-Xzygote", nullptr));
+  }
+};
+
+TEST_F(RuntimeInitMetricsZygoteTest, MetricsAreInitialized) {
+  ASSERT_TRUE(runtime_->AreMetricsInitialized());
+}
+
+class RuntimeInitMetricsForceEnableTest : public CommonRuntimeTest {
+  void SetUpRuntimeOptions(RuntimeOptions* options) override {
+    CommonRuntimeTest::SetUpRuntimeOptions(options);
+    options->emplace_back(std::make_pair("-Xmetrics-force-enable:true", nullptr));
+  }
+};
+
+TEST_F(RuntimeInitMetricsForceEnableTest, MetricsAreInitialized) {
+  ASSERT_TRUE(runtime_->AreMetricsInitialized());
+}
+
 }  // namespace art

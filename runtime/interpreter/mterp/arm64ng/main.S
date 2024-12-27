@@ -324,46 +324,6 @@ END \name
 
 // Uses x12, x13, and x14 as temporaries.
 .macro FETCH_CODE_ITEM_INFO code_item, registers, outs, ins, load_ins
-    tbz \code_item, #0, 4f
-    and \code_item, \code_item, #-2 // Remove the extra bit that marks it's a compact dex file
-    ldrh w13, [\code_item, #COMPACT_CODE_ITEM_FIELDS_OFFSET]
-    ubfx \registers, w13, #COMPACT_CODE_ITEM_REGISTERS_SIZE_SHIFT, #4
-    ubfx \outs, w13, #COMPACT_CODE_ITEM_OUTS_SIZE_SHIFT, #4
-    .if \load_ins
-    ubfx \ins, w13, #COMPACT_CODE_ITEM_INS_SIZE_SHIFT, #4
-    .else
-    ubfx w14, w13, #COMPACT_CODE_ITEM_INS_SIZE_SHIFT, #4
-    add \registers, \registers, w14
-    .endif
-    ldrh w13, [\code_item, #COMPACT_CODE_ITEM_FLAGS_OFFSET]
-    tst w13, #COMPACT_CODE_ITEM_REGISTERS_INS_OUTS_FLAGS
-    b.eq 3f
-    sub x14, \code_item, #4
-    tst w13, #COMPACT_CODE_ITEM_INSNS_FLAG
-    csel x14, x14, \code_item, ne
-
-    tbz w13, #COMPACT_CODE_ITEM_REGISTERS_BIT, 1f
-    ldrh w12, [x14, #-2]!
-    add \registers, \registers, w12
-1:
-    tbz w13, #COMPACT_CODE_ITEM_INS_BIT, 2f
-    ldrh w12, [x14, #-2]!
-    .if \load_ins
-    add \ins, \ins, w12
-    .else
-    add \registers, \registers, w12
-    .endif
-2:
-    tbz w13, #COMPACT_CODE_ITEM_OUTS_BIT, 3f
-    ldrh w12, [x14, #-2]!
-    add \outs, \outs, w12
-3:
-    .if \load_ins
-    add \registers, \registers, \ins
-    .endif
-    add \code_item, \code_item, #COMPACT_CODE_ITEM_INSNS_OFFSET
-    b 5f
-4:
     // Fetch dex register size.
     ldrh \registers, [\code_item, #CODE_ITEM_REGISTERS_SIZE_OFFSET]
     // Fetch outs size.
@@ -372,7 +332,6 @@ END \name
     ldrh \ins, [\code_item, #CODE_ITEM_INS_SIZE_OFFSET]
     .endif
     add \code_item, \code_item, #CODE_ITEM_INSNS_OFFSET
-5:
 .endm
 
 .macro TEST_IF_MARKING label

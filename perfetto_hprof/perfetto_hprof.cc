@@ -257,7 +257,7 @@ class JavaHprofDataSource : public perfetto::DataSource<JavaHprofDataSource> {
       return;
     }
     is_stopped_ = true;
-    async_stop_ = std::move(a.HandleStopAsynchronously());
+    async_stop_ = a.HandleStopAsynchronously();
   }
 
   static art::Thread* art_thread() {

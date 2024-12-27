@@ -111,7 +111,7 @@ static constexpr uint32_t kAccCorePlatformApi =       0x20000000;  // field, met
 // Uses an intrinsic bit but that's OK as intrinsics are always in the boot image.
 static constexpr uint32_t kAccMemorySharedMethod =       0x40000000;
 
-// Set by the compiler driver when compiling boot classes with instrinsic methods.
+// Set by the compiler driver when compiling boot classes with intrinsic methods.
 static constexpr uint32_t kAccIntrinsic  =            0x80000000;  // method (runtime)
 
 // Special runtime-only flags.

@@ -57,7 +57,7 @@ enum class Riscv64Extension : uint32_t {
   kD,
   kZba,
   kZbb,
-  kZbs,  // TODO(riscv64): Implement "Zbs" instructions.
+  kZbs,
   kV,
   kZca,  // "C" extension instructions except floating point loads/stores.
   kZcd,  // "C" extension double loads/stores.
@@ -636,6 +636,16 @@ class Riscv64Assembler final : public Assembler {
   void ZbbSextB(XRegister rd, XRegister rs1);
   void ZbbSextH(XRegister rd, XRegister rs1);
   void ZbbZextH(XRegister rd, XRegister rs1);
+
+  // "Zbs" Standard Extension, opcode = 0x13, or 0x33, funct3 and funct7 varies.
+  void Bclr(XRegister rd, XRegister rs1, XRegister rs2);
+  void Bclri(XRegister rd, XRegister rs1, int32_t shamt);
+  void Bext(XRegister rd, XRegister rs1, XRegister rs2);
+  void Bexti(XRegister rd, XRegister rs1, int32_t shamt);
+  void Binv(XRegister rd, XRegister rs1, XRegister rs2);
+  void Binvi(XRegister rd, XRegister rs1, int32_t shamt);
+  void Bset(XRegister rd, XRegister rs1, XRegister rs2);
+  void Bseti(XRegister rd, XRegister rs1, int32_t shamt);
 
   ////////////////////////////// RISC-V Vector Instructions  START ///////////////////////////////
   enum class LengthMultiplier : uint32_t {
@@ -1965,6 +1975,7 @@ class Riscv64Assembler final : public Assembler {
       kCondBranch21,
 
       // Long branches.
+      kLongCondCBranch,
       kLongCondBranch,
       kLongUncondBranch,
       kLongCall,
@@ -2083,12 +2094,7 @@ class Riscv64Assembler final : public Assembler {
     // Completes branch construction by determining and recording its type.
     void InitializeType(Type initial_type);
     // Helper for the above.
-    void InitShortOrLong(OffsetBits ofs_size, Type short_type, Type long_type, Type longest_type);
-    void InitShortOrLong(OffsetBits ofs_size,
-                         Type compressed_type,
-                         Type short_type,
-                         Type long_type,
-                         Type longest_type);
+    void InitShortOrLong(OffsetBits ofs_size, std::initializer_list<Type> types);
 
     uint32_t old_location_;  // Offset into assembler buffer in bytes.
     uint32_t location_;      // Offset into assembler buffer in bytes.
@@ -2103,12 +2109,12 @@ class Riscv64Assembler final : public Assembler {
     Type type_;      // Current type of the branch.
     Type old_type_;  // Initial type of the branch.
 
+    bool compression_allowed_;
+
     // Id of the next branch bound to the same label in singly-linked zero-terminated list
     // NOTE: encoded the same way as a position in a linked Label (id + sizeof(void*))
     // Label itself is used to hold the 'head' of this list
     uint32_t next_branch_id_;
-
-    bool compression_allowed_;
   };
 
   // Branch and literal fixup.

@@ -30,7 +30,6 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.os.UserHandle;
-import android.text.TextUtils;
 
 import androidx.annotation.RequiresApi;
 
@@ -39,18 +38,12 @@ import com.android.modules.utils.pm.PackageStateModulesUtils;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.Config;
 import com.android.server.art.model.DexoptParams;
-import com.android.server.art.model.DexoptResult;
-import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.PackageState;
 
-import dalvik.system.DexFile;
-
-import com.google.auto.value.AutoValue;
-
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Executor;
 
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -58,9 +51,10 @@ public class PrimaryDexopter extends Dexopter<DetailedPrimaryDexInfo> {
     private final int mSharedGid;
 
     public PrimaryDexopter(@NonNull Context context, @NonNull Config config,
-            @NonNull PackageState pkgState, @NonNull AndroidPackage pkg,
+            Executor reporterExecutor, @NonNull PackageState pkgState, @NonNull AndroidPackage pkg,
             @NonNull DexoptParams params, @NonNull CancellationSignal cancellationSignal) {
-        this(new Injector(context, config), pkgState, pkg, params, cancellationSignal);
+        this(new Injector(context, config, reporterExecutor), pkgState, pkg, params,
+                cancellationSignal);
     }
 
     @VisibleForTesting

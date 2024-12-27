@@ -59,10 +59,11 @@
         <option name="push" value="art-gtest-jars-StaticLeafMethods.jar->/data/local/tmp/art_standalone_runtime_tests/art-gtest-jars-StaticLeafMethods.jar" />
         <option name="push" value="art-gtest-jars-Statics.jar->/data/local/tmp/art_standalone_runtime_tests/art-gtest-jars-Statics.jar" />
         <option name="push" value="art-gtest-jars-StaticsFromCode.jar->/data/local/tmp/art_standalone_runtime_tests/art-gtest-jars-StaticsFromCode.jar" />
-        <option name="push" value="art-gtest-jars-Transaction.jar->/data/local/tmp/art_standalone_runtime_tests/art-gtest-jars-Transaction.jar" />
         <option name="push" value="art-gtest-jars-VerifierDeps.dex->/data/local/tmp/art_standalone_runtime_tests/art-gtest-jars-VerifierDeps.dex" />
         <option name="push" value="art-gtest-jars-VerifierDepsMulti.dex->/data/local/tmp/art_standalone_runtime_tests/art-gtest-jars-VerifierDepsMulti.dex" />
         <option name="push" value="art-gtest-jars-XandY.jar->/data/local/tmp/art_standalone_runtime_tests/art-gtest-jars-XandY.jar" />
+        <option name="push" value="dex_verification_fuzzer_corpus.zip->/data/local/tmp/art_standalone_runtime_tests/dex_verification_fuzzer_corpus.zip" />
+        <option name="push" value="class_verification_fuzzer_corpus.zip->/data/local/tmp/art_standalone_runtime_tests/class_verification_fuzzer_corpus.zip" />
     </target_preparer>
 
     <target_preparer class="com.android.compatibility.common.tradefed.targetprep.FilePusher">

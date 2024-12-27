@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "arch/context.h"
 #include "art_method-inl.h"
 #include "callee_save_frame.h"
 #include "dex/code_item_accessors-inl.h"
@@ -27,23 +28,27 @@
 namespace art HIDDEN {
 
 // Deliver an exception that's pending on thread helping set up a callee save frame on the way.
-extern "C" NO_RETURN void artDeliverPendingExceptionFromCode(Thread* self)
+extern "C" Context* artDeliverPendingExceptionFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
-extern "C" NO_RETURN uint64_t artInvokeObsoleteMethod(ArtMethod* method, Thread* self)
+extern "C" Context* artInvokeObsoleteMethod(ArtMethod* method, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(method->IsObsolete());
   ScopedQuickEntrypointChecks sqec(self);
   ThrowInternalError("Attempting to invoke obsolete version of '%s'.",
                      method->PrettyMethod().c_str());
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
 // Called by generated code to throw an exception.
-extern "C" NO_RETURN void artDeliverExceptionFromCode(mirror::Throwable* exception, Thread* self)
+extern "C" Context* artDeliverExceptionFromCode(mirror::Throwable* exception, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   /*
    * exception may be null, in which case this routine should
@@ -58,61 +63,75 @@ extern "C" NO_RETURN void artDeliverExceptionFromCode(mirror::Throwable* excepti
   } else {
     self->SetException(exception);
   }
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
 // Called by generated code to throw a NPE exception.
-extern "C" NO_RETURN void artThrowNullPointerExceptionFromCode(Thread* self)
+extern "C" Context* artThrowNullPointerExceptionFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   // We come from an explicit check in the generated code. This path is triggered
   // only if the object is indeed null.
   ThrowNullPointerExceptionFromDexPC(/* check_address= */ false, 0U);
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
 // Installed by a signal handler to throw a NPE exception.
-extern "C" NO_RETURN void artThrowNullPointerExceptionFromSignal(uintptr_t addr, Thread* self)
+extern "C" Context* artThrowNullPointerExceptionFromSignal(uintptr_t addr, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowNullPointerExceptionFromDexPC(/* check_address= */ true, addr);
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
 // Called by generated code to throw an arithmetic divide by zero exception.
-extern "C" NO_RETURN void artThrowDivZeroFromCode(Thread* self)
+extern "C" Context* artThrowDivZeroFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowArithmeticExceptionDivideByZero();
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
 // Called by generated code to throw an array index out of bounds exception.
-extern "C" NO_RETURN void artThrowArrayBoundsFromCode(int index, int length, Thread* self)
+extern "C" Context* artThrowArrayBoundsFromCode(int index, int length, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowArrayIndexOutOfBoundsException(index, length);
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
 // Called by generated code to throw a string index out of bounds exception.
-extern "C" NO_RETURN void artThrowStringBoundsFromCode(int index, int length, Thread* self)
+extern "C" Context* artThrowStringBoundsFromCode(int index, int length, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowStringIndexOutOfBoundsException(index, length);
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
-extern "C" NO_RETURN void artThrowStackOverflowFromCode(Thread* self)
+extern "C" Context* artThrowStackOverflowFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowStackOverflowError(self);
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
-extern "C" NO_RETURN void artThrowClassCastException(mirror::Class* dest_type,
-                                                     mirror::Class* src_type,
-                                                     Thread* self)
+extern "C" Context* artThrowClassCastException(mirror::Class* dest_type,
+                                               mirror::Class* src_type,
+                                               Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   if (dest_type == nullptr) {
@@ -137,23 +156,28 @@ extern "C" NO_RETURN void artThrowClassCastException(mirror::Class* dest_type,
   }
   DCHECK(!dest_type->IsAssignableFrom(src_type));
   ThrowClassCastException(dest_type, src_type);
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
-extern "C" NO_RETURN void artThrowClassCastExceptionForObject(mirror::Object* obj,
-                                                              mirror::Class* dest_type,
-                                                              Thread* self)
+extern "C" Context* artThrowClassCastExceptionForObject(mirror::Object* obj,
+                                                        mirror::Class* dest_type,
+                                                        Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(obj != nullptr);
-  artThrowClassCastException(dest_type, obj->GetClass(), self);
+  return artThrowClassCastException(dest_type, obj->GetClass(), self);
 }
 
-extern "C" NO_RETURN void artThrowArrayStoreException(mirror::Object* array, mirror::Object* value,
-                                                      Thread* self)
+extern "C" Context* artThrowArrayStoreException(mirror::Object* array,
+                                                mirror::Object* value,
+                                                Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowArrayStoreException(value->GetClass(), array->GetClass());
-  self->QuickDeliverException();
+  std::unique_ptr<Context> context = self->QuickDeliverException();
+  DCHECK(context != nullptr);
+  return context.release();
 }
 
 }  // namespace art

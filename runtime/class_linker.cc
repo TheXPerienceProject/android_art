@@ -138,6 +138,7 @@
 #include "nterp_helpers-inl.h"
 #include "nterp_helpers.h"
 #include "oat/image-inl.h"
+#include "oat/jni_stub_hash_map-inl.h"
 #include "oat/oat.h"
 #include "oat/oat_file-inl.h"
 #include "oat/oat_file.h"
@@ -147,13 +148,13 @@
 #include "profile/profile_compilation_info.h"
 #include "runtime.h"
 #include "runtime_callbacks.h"
+#include "scoped_assert_no_transaction_checks.h"
 #include "scoped_thread_state_change-inl.h"
 #include "startup_completed_task.h"
 #include "thread-inl.h"
 #include "thread.h"
 #include "thread_list.h"
 #include "trace.h"
-#include "transaction.h"
 #include "vdex_file.h"
 #include "verifier/class_verifier.h"
 #include "verifier/verifier_deps.h"
@@ -409,6 +410,14 @@ void ClassLinker::ForceClassInitialized(Thread* self, Handle<mirror::Class> klas
   MakeInitializedClassesVisiblyInitialized(self, /*wait=*/true);
 }
 
+const void* ClassLinker::FindBootJniStub(ArtMethod* method) {
+  return FindBootJniStub(JniStubKey(method));
+}
+
+const void* ClassLinker::FindBootJniStub(uint32_t flags, std::string_view shorty) {
+  return FindBootJniStub(JniStubKey(flags, shorty));
+}
+
 const void* ClassLinker::FindBootJniStub(JniStubKey key) {
   auto it = boot_image_jni_stubs_.find(key);
   if (it == boot_image_jni_stubs_.end()) {
@@ -634,7 +643,9 @@ ClassLinker::ClassLinker(InternTable* intern_table, bool fast_class_not_found_ex
   CHECK(intern_table_ != nullptr);
   static_assert(kFindArrayCacheSize == arraysize(find_array_class_cache_),
                 "Array cache size wrong.");
-  std::fill_n(find_array_class_cache_, kFindArrayCacheSize, GcRoot<mirror::Class>(nullptr));
+  for (size_t i = 0; i < kFindArrayCacheSize; i++) {
+    find_array_class_cache_[i].store(GcRoot<mirror::Class>(nullptr), std::memory_order_relaxed);
+  }
 }
 
 void ClassLinker::CheckSystemClass(Thread* self, Handle<mirror::Class> c1, const char* descriptor) {
@@ -2814,9 +2825,13 @@ void ClassLinker::FinishArrayClassSetup(ObjPtr<mirror::Class> array_class) {
   array_class->SetVTable(java_lang_Object->GetVTable());
   array_class->SetPrimitiveType(Primitive::kPrimNot);
   ObjPtr<mirror::Class> component_type = array_class->GetComponentType();
-  array_class->SetClassFlags(component_type->IsPrimitive()
-                                 ? mirror::kClassFlagNoReferenceFields
-                                 : mirror::kClassFlagObjectArray);
+  DCHECK_LT(component_type->GetPrimitiveTypeSizeShift(), 4u);
+  uint32_t class_flags =
+      component_type->GetPrimitiveTypeSizeShift() << mirror::kArrayComponentSizeShiftShift;
+  class_flags |= component_type->IsPrimitive()
+                     ? (mirror::kClassFlagNoReferenceFields | mirror::kClassFlagPrimitiveArray)
+                     : mirror::kClassFlagObjectArray;
+  array_class->SetClassFlags(class_flags);
   array_class->SetClassLoader(component_type->GetClassLoader());
   array_class->SetStatusForPrimitiveOrArray(ClassStatus::kLoaded);
   array_class->PopulateEmbeddedVTable(image_pointer_size_);
@@ -3671,13 +3686,14 @@ uint32_t ClassLinker::SizeOfClassWithoutEmbeddedTables(const DexFile& dex_file,
         UNREACHABLE();
     }
   }
-  return mirror::Class::ComputeClassSize(false,
-                                         0,
+  return mirror::Class::ComputeClassSize(/*has_embedded_vtable=*/false,
+                                         /*num_vtable_entries=*/0,
                                          num_8,
                                          num_16,
                                          num_32,
                                          num_64,
                                          num_ref,
+                                         /*num_ref_bitmap_entries=*/0,
                                          image_pointer_size_);
 }
 
@@ -4650,7 +4666,7 @@ ObjPtr<mirror::Class> ClassLinker::CreateArrayClass(Thread* self,
   auto visitor = [this, array_class_size, component_type](ObjPtr<mirror::Object> obj,
                                                           size_t usable_size)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-    ScopedAssertNoNewTransactionRecords sanntr("CreateArrayClass");
+    ScopedAssertNoTransactionChecks santc("CreateArrayClass");
     mirror::Class::InitializeClassVisitor init_class(array_class_size);
     init_class(obj, usable_size);
     ObjPtr<mirror::Class> klass = ObjPtr<mirror::Class>::DownCast(obj);
@@ -6320,7 +6336,8 @@ bool ClassLinker::LinkClass(Thread* self,
   if (!LinkStaticFields(self, klass, &class_size)) {
     return false;
   }
-  CreateReferenceInstanceOffsets(klass);
+  class_size =
+      mirror::Class::AdjustClassSizeForReferenceOffsetBitmapDuringLinking(klass.Get(), class_size);
   CHECK_EQ(ClassStatus::kLoaded, klass->GetStatus());
 
   ImTable* imt = nullptr;
@@ -6362,6 +6379,7 @@ bool ClassLinker::LinkClass(Thread* self,
 
     if (klass->ShouldHaveEmbeddedVTable()) {
       klass->PopulateEmbeddedVTable(image_pointer_size_);
+      klass->PopulateReferenceOffsetBitmap();
     }
     if (klass->ShouldHaveImt()) {
       klass->SetImt(imt, image_pointer_size_);
@@ -8731,12 +8749,9 @@ bool ClassLinker::LinkMethodsHelper<kPointerSize>::FindCopiedMethodsForInterface
       size_t hash = ComputeMethodHash(interface_method);
       auto it1 = declared_virtual_signatures.FindWithHash(interface_method, hash);
       if (it1 != declared_virtual_signatures.end()) {
-        ArtMethod* virtual_method = klass->GetVirtualMethodDuringLinking(*it1, kPointerSize);
-        if (!virtual_method->IsAbstract() && !virtual_method->IsPublic()) {
-          sants.reset();
-          ThrowIllegalAccessErrorForImplementingMethod(klass, virtual_method, interface_method);
-          return false;
-        }
+        // Virtual methods in interfaces are always public.
+        // This is checked by the `DexFileVerifier`.
+        DCHECK(klass->GetVirtualMethodDuringLinking(*it1, kPointerSize)->IsPublic());
         continue;  // This default method is masked by a method declared in this interface.
       }
 
@@ -9587,7 +9602,7 @@ class RecordAnnotationVisitor final : public annotations::AnnotationVisitor {
   RecordAnnotationVisitor() {}
 
   bool ValidateCounts() {
-    if (is_error_) {
+    if (has_error_) {
       return false;
     }
 
@@ -9619,15 +9634,13 @@ class RecordAnnotationVisitor final : public annotations::AnnotationVisitor {
                                names_count_));
     }
 
-    return !is_error_;
+    return !has_error_;
   }
-
-  const std::string& GetErrorMsg() { return error_msg_; }
 
   bool IsRecordAnnotationFound() { return count_ != 0; }
 
   annotations::VisitorStatus VisitAnnotation(const char* descriptor, uint8_t visibility) override {
-    if (is_error_) {
+    if (has_error_) {
       return annotations::VisitorStatus::kVisitBreak;
     }
 
@@ -9649,7 +9662,7 @@ class RecordAnnotationVisitor final : public annotations::AnnotationVisitor {
   annotations::VisitorStatus VisitAnnotationElement(const char* element_name,
                                                     uint8_t type,
                                                     [[maybe_unused]] const JValue& value) override {
-    if (is_error_) {
+    if (has_error_) {
       return annotations::VisitorStatus::kVisitBreak;
     }
 
@@ -9695,7 +9708,7 @@ class RecordAnnotationVisitor final : public annotations::AnnotationVisitor {
                                                uint32_t index,
                                                uint8_t type,
                                                [[maybe_unused]] const JValue& value) override {
-    if (is_error_) {
+    if (has_error_) {
       return annotations::VisitorStatus::kVisitBreak;
     }
     switch (visiting_type_) {
@@ -9779,14 +9792,12 @@ class RecordAnnotationVisitor final : public annotations::AnnotationVisitor {
   }
 
  private:
-  bool is_error_ = false;
   uint32_t count_ = 0;
   uint32_t names_count_ = UINT32_MAX;
   uint32_t types_count_ = UINT32_MAX;
   uint32_t signatures_count_ = UINT32_MAX;
   uint32_t visibilities_count_ = UINT32_MAX;
   uint32_t annotations_count_ = UINT32_MAX;
-  std::string error_msg_;
   RecordElementType visiting_type_;
 
   inline bool ExpectedTypeOrError(uint8_t type,
@@ -9806,11 +9817,6 @@ class RecordAnnotationVisitor final : public annotations::AnnotationVisitor {
         depth,
         kRecordElementNames[static_cast<uint8_t>(visiting_type)]));
     return false;
-  }
-
-  void SetErrorMsg(const std::string& msg) {
-    is_error_ = true;
-    error_msg_ = msg;
   }
 
   DISALLOW_COPY_AND_ASSIGN(RecordAnnotationVisitor);
@@ -9856,6 +9862,11 @@ bool ClassLinker::VerifyRecordClass(Handle<mirror::Class> klass, ObjPtr<mirror::
   // optional, but should have the same size if it exists.
   RecordAnnotationVisitor visitor;
   annotations::VisitClassAnnotations(klass, &visitor);
+  if (UNLIKELY(visitor.HasError())) {
+    ThrowClassFormatError(klass.Get(), "%s", visitor.GetErrorMsg().c_str());
+    return false;
+  }
+
   if (!visitor.IsRecordAnnotationFound()) {
     return true;
   }
@@ -9868,35 +9879,6 @@ bool ClassLinker::VerifyRecordClass(Handle<mirror::Class> klass, ObjPtr<mirror::
   // Set kClassFlagRecord.
   klass->SetRecordClass();
   return true;
-}
-
-//  Set the bitmap of reference instance field offsets.
-void ClassLinker::CreateReferenceInstanceOffsets(Handle<mirror::Class> klass) {
-  uint32_t reference_offsets = 0;
-  ObjPtr<mirror::Class> super_class = klass->GetSuperClass();
-  // Leave the reference offsets as 0 for mirror::Object (the class field is handled specially).
-  if (super_class != nullptr) {
-    reference_offsets = super_class->GetReferenceInstanceOffsets();
-    // Compute reference offsets unless our superclass overflowed.
-    if (reference_offsets != mirror::Class::kClassWalkSuper) {
-      size_t num_reference_fields = klass->NumReferenceInstanceFieldsDuringLinking();
-      if (num_reference_fields != 0u) {
-        // All of the fields that contain object references are guaranteed be grouped in memory
-        // starting at an appropriately aligned address after super class object data.
-        uint32_t start_offset = RoundUp(super_class->GetObjectSize(),
-                                        sizeof(mirror::HeapReference<mirror::Object>));
-        uint32_t start_bit = (start_offset - mirror::kObjectHeaderSize) /
-            sizeof(mirror::HeapReference<mirror::Object>);
-        if (start_bit + num_reference_fields > 32) {
-          reference_offsets = mirror::Class::kClassWalkSuper;
-        } else {
-          reference_offsets |= (0xffffffffu << start_bit) &
-                               (0xffffffffu >> (32 - (start_bit + num_reference_fields)));
-        }
-      }
-    }
-  }
-  klass->SetReferenceInstanceOffsets(reference_offsets);
 }
 
 ObjPtr<mirror::String> ClassLinker::DoResolveString(dex::StringIndex string_idx,
@@ -10921,7 +10903,9 @@ jobject ClassLinker::CreatePathClassLoader(Thread* self,
 }
 
 void ClassLinker::DropFindArrayClassCache() {
-  std::fill_n(find_array_class_cache_, kFindArrayCacheSize, GcRoot<mirror::Class>(nullptr));
+  for (size_t i = 0; i < kFindArrayCacheSize; i++) {
+    find_array_class_cache_[i].store(GcRoot<mirror::Class>(nullptr), std::memory_order_relaxed);
+  }
   find_array_class_cache_next_victim_ = 0;
 }
 
@@ -11329,6 +11313,12 @@ bool ClassLinker::IsTransactionAborted() const {
 
 void ClassLinker::VisitTransactionRoots([[maybe_unused]] RootVisitor* visitor) {
   // Nothing to do for normal `ClassLinker`, only `AotClassLinker` handles transactions.
+}
+
+const void* ClassLinker::GetTransactionalInterpreter() {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
 }
 
 void ClassLinker::RemoveDexFromCaches(const DexFile& dex_file) {

@@ -395,9 +395,6 @@ class OatWriter {
   // Offset of section holding Dex files inside Vdex.
   size_t vdex_dex_files_offset_;
 
-  // Offset of section holding shared dex data section in the Vdex.
-  size_t vdex_dex_shared_data_offset_;
-
   // Offset of section holding VerifierDeps inside Vdex.
   size_t vdex_verifier_deps_offset_;
 

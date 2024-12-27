@@ -368,8 +368,8 @@ void InductionVarRange::Replace(HInstruction* instruction,
   for (HLoopInformation* lp = instruction->GetBlock()->GetLoopInformation();  // closest enveloping loop
        lp != nullptr;
        lp = lp->GetPreHeader()->GetLoopInformation()) {
-    // Update instruction's information.
-    ReplaceInduction(induction_analysis_->LookupInfo(lp, instruction), fetch, replacement);
+    // Update loop's InductionInfo about fetch.
+    ReplaceInduction(induction_analysis_->LookupInfo(lp, fetch), fetch, replacement);
     // Update loop's trip-count information.
     ReplaceInduction(induction_analysis_->LookupInfo(lp, GetLoopControl(lp)), fetch, replacement);
   }
@@ -384,6 +384,11 @@ bool InductionVarRange::HasKnownTripCount(const HLoopInformation* loop,
                                           /*out*/ int64_t* trip_count) const {
   bool is_constant = false;
   CheckForFiniteAndConstantProps(loop, &is_constant, trip_count);
+  // Set negative trip counts as 0, since it means that no trips would happen. Note that if the
+  // `is_constant` value is false, `trip_count` would be disregareded.
+  if (*trip_count < 0) {
+    *trip_count = 0;
+  }
   return is_constant;
 }
 
@@ -811,7 +816,7 @@ InductionVarRange::Value InductionVarRange::GetVal(const HBasicBlock* context,
           case HInductionVarAnalysis::kTripCountInLoopUnsafe:
             if (UseFullTripCount(context, loop, is_min)) {
               // Return the full trip count (do not subtract 1 as we do in loop body).
-              return GetVal(context, loop, info->op_a, trip, /*is_min=*/ false);
+              return GetVal(context, loop, info->op_a, trip, is_min);
             }
             FALLTHROUGH_INTENDED;
           case HInductionVarAnalysis::kTripCountInBody:
@@ -1556,7 +1561,7 @@ bool InductionVarRange::GenerateCode(const HBasicBlock* context,
                                   trip,
                                   graph,
                                   block,
-                                  /*is_min=*/false,
+                                  is_min,
                                   result,
                                   allow_potential_overflow);
             }

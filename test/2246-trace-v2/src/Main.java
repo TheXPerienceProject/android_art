@@ -40,16 +40,19 @@ public class Main {
         ensureJitCompiled(Main.class, "$noinline$doSomeWorkJIT");
 
         System.out.println("***** streaming test - dual clock *******");
-        testTracing(
-                /* streaming=*/true, /* flags= */ 0, STREAMING_DUAL_CLOCK_VERSION);
+        testTracing(/* streaming=*/true, /* flags= */ 0);
 
         System.out.println("***** streaming test - wall clock *******");
-        testTracing(
-                /* streaming=*/true, /* flags= */ WALL_CLOCK_FLAG, STREAMING_WALL_CLOCK_VERSION);
+        testTracing(/* streaming=*/true, /* flags= */ WALL_CLOCK_FLAG);
+
+        System.out.println("***** non-streaming test - dual clock *******");
+        testTracing(/* streaming=*/false, /* flags= */ 0);
+
+        System.out.println("***** non-streaming test - wall clock *******");
+        testTracing(/* streaming=*/false, /* flags= */ WALL_CLOCK_FLAG);
     }
 
-    public static void testTracing(boolean streaming, int flags, int expected_version)
-            throws Exception {
+    public static void testTracing(boolean streaming, int flags) throws Exception {
         Main m = new Main();
         Thread t = new Thread(() -> {
             try {

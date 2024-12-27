@@ -41,21 +41,9 @@ class NodesVectorTest : public OptimizingUnitTest {
     graph_->AddBlock(exit_block_);
     graph_->SetEntryBlock(entry_block_);
     graph_->SetExitBlock(exit_block_);
-    int8_parameter_ = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                           dex::TypeIndex(1),
-                                                           0,
-                                                           DataType::Type::kInt8);
-    entry_block_->AddInstruction(int8_parameter_);
-    int16_parameter_ = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                            dex::TypeIndex(2),
-                                                            0,
-                                                            DataType::Type::kInt16);
-    entry_block_->AddInstruction(int16_parameter_);
-    int32_parameter_ = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                                            dex::TypeIndex(0),
-                                                            0,
-                                                            DataType::Type::kInt32);
-    entry_block_->AddInstruction(int32_parameter_);
+    int8_parameter_ = MakeParam(DataType::Type::kInt8);
+    int16_parameter_ = MakeParam(DataType::Type::kInt16);
+    int32_parameter_ = MakeParam(DataType::Type::kInt32);
   }
 
   // General building fields.

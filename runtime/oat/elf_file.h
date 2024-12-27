@@ -84,6 +84,8 @@ class ElfFile {
 
   size_t GetElfSegmentAlignmentFromFile() const;
 
+  const uint8_t* GetBaseAddress() const;
+
   // Strip an ELF file of unneeded debugging information.
   // Returns true on success, false on failure.
   static bool Strip(File* file, std::string* error_msg);

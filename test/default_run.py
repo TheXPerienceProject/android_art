@@ -712,6 +712,10 @@ def default_run(ctx, args, **kwargs):
     # these binaries.
     ANDROID_ART_BIN_DIR = f"{ANDROID_ART_ROOT}/bin"
 
+  # Disable metrics reporting to StatsD for chroot tests.
+  if CHROOT:
+    FLAGS += " -Xmetrics-write-to-statsd:false"
+
   profman_cmdline = "true"
   dex2oat_cmdline = "true"
   vdex_cmdline = "true"
@@ -799,6 +803,10 @@ def default_run(ctx, args, **kwargs):
       dex2oat_cmdline += f"gdb {GDB_DEX2OAT_EXTRA_ARGS} \
                           -d '{ANDROID_BUILD_TOP}' --args "
 
+    dex2oat_logger = ""
+    if ON_VM:
+      dex2oat_logger = "--runtime-arg -Xuse-stderr-logger"
+
     dex2oat_cmdline += f"'{ANDROID_ART_BIN_DIR}/{dex2oat_binary}' \
                         {COMPILE_FLAGS} \
                         --boot-image={BOOT_IMAGE} \
@@ -807,6 +815,7 @@ def default_run(ctx, args, **kwargs):
                         {app_image} \
                         --generate-mini-debug-info \
                         --instruction-set={ISA} \
+                        {dex2oat_logger} \
                         {class_loader_context}"
 
     if INSTRUCTION_SET_FEATURES != "":
@@ -823,6 +832,9 @@ def default_run(ctx, args, **kwargs):
       # Use SIGRTMIN+2 to try to dump threads.
       # Use -k 1m to SIGKILL it a minute later if it hasn't ended.
       dex2oat_cmdline = f"timeout -k {DEX2OAT_TIMEOUT}s -s SIGRTMIN+2 {DEX2OAT_RT_TIMEOUT}s {dex2oat_cmdline} --watchdog-timeout={DEX2OAT_TIMEOUT}000"
+    elif ON_VM:
+      # Increase dex2oat timeout for VM testing environment, as some checker tests are slow.
+      dex2oat_cmdline = f"{dex2oat_cmdline} --watchdog-timeout={5 * DEX2OAT_TIMEOUT}000"
     if PROFILE or RANDOM_PROFILE:
       vdex_cmdline = f"{dex2oat_cmdline} {VDEX_ARGS} --input-vdex={DEX_LOCATION}/oat/{ISA}/{name}.vdex --output-vdex={DEX_LOCATION}/oat/{ISA}/{name}.vdex"
     elif TEST_VDEX:

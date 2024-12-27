@@ -76,13 +76,6 @@ art_clang_tidy_disabled = [
     "-modernize-use-using",
 ]
 
-soong_config_module_type_import {
-    from: "art/build/SoongConfig.bp",
-    module_types: [
-        "art_debug_defaults",
-    ],
-}
-
 art_global_defaults {
     // Additional flags are computed by art.go
 
@@ -286,7 +279,7 @@ cc_defaults {
     },
 }
 
-art_debug_defaults {
+cc_defaults {
     name: "art_debug_defaults",
     defaults: ["art_defaults"],
     visibility: ["//art:__subpackages__"],
@@ -294,7 +287,10 @@ art_debug_defaults {
         "-DDYNAMIC_ANNOTATIONS_ENABLED=1",
         "-DVIXL_DEBUG",
         "-UNDEBUG",
-    ],
+    ] + select(soong_config_variable("art_module", "art_debug_opt_flag"), {
+        any @ flag_val: [flag_val],
+        default: ["-Og"],
+    }),
     asflags: [
         "-UNDEBUG",
     ],
@@ -307,14 +303,6 @@ art_debug_defaults {
         },
         host: {
             cflags: ["-Wno-frame-larger-than="],
-        },
-    },
-    soong_config_variables: {
-        art_debug_opt_flag: {
-            cflags: ["%s"],
-            conditions_default: {
-                cflags: ["-Og"],
-            },
         },
     },
 }
@@ -341,6 +329,19 @@ java_library {
             enabled: false,
         },
     },
+}
+
+// A version of conscrypt only for the ART fuzzer.
+java_library {
+    name: "conscrypt-fuzzer",
+    visibility: [
+        "//art/tools/fuzzer",
+    ],
+    static_libs: ["conscrypt-for-host"],
+    stem: "conscrypt",
+    compile_dex: true,
+    sdk_version: "none",
+    system_modules: "none",
 }
 
 // A version of core-icu4j only for enabling the "-hostdex" version to test ART on host.

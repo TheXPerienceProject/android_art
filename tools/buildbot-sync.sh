@@ -126,7 +126,7 @@ activate_apex com.android.i18n
 activate_apex com.android.runtime
 activate_apex com.android.tzdata
 activate_apex com.android.conscrypt
-activate_apex com.android.os.statsd
+activate_apex art_fake_com.android.os.statsd com.android.os.statsd
 
 # Generate primary boot images on device for testing.
 for b in {32,64}; do

@@ -23,6 +23,7 @@
 #include "art_method-inl.h"
 #include "base/callee_save_type.h"
 #include "base/hex_dump.h"
+#include "base/indenter.h"
 #include "base/pointer_size.h"
 #include "base/utils.h"
 #include "dex/dex_file_types.h"
@@ -130,7 +131,19 @@ uint32_t StackVisitor::GetDexPc(bool abort_on_failure) const {
           GetCurrentQuickFrame(), cur_quick_frame_pc_, abort_on_failure);
     } else if (cur_oat_quick_method_header_->IsOptimized()) {
       StackMap* stack_map = GetCurrentStackMap();
-      CHECK(stack_map->IsValid()) << "StackMap not found for " << std::hex << cur_quick_frame_pc_;
+      if (!stack_map->IsValid()) {
+        // Debugging code for b/361916648.
+        CodeInfo code_info(cur_oat_quick_method_header_);
+        std::stringstream os;
+        VariableIndentationOutputStream vios(&os);
+        code_info.Dump(&vios, /* code_offset= */ 0u, /* verbose= */ true, kRuntimeISA);
+        LOG(FATAL) << os.str() << '\n'
+                   << "StackMap not found for "
+                   << std::hex << cur_quick_frame_pc_ << " in "
+                   << GetMethod()->PrettyMethod()
+                   << " @" << std::hex
+                   << reinterpret_cast<uintptr_t>(cur_oat_quick_method_header_->GetCode());
+      }
       return stack_map->GetDexPc();
     } else {
       DCHECK(cur_oat_quick_method_header_->IsNterpMethodHeader());

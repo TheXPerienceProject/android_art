@@ -23,9 +23,10 @@
 #include "nodes.h"
 #include "utils/arm/constants_arm.h"
 
-// TODO(VIXL): Make VIXL compile with -Wshadow.
+// TODO(VIXL): Make VIXL compile cleanly with -Wshadow, -Wdeprecated-declarations.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "aarch32/macro-assembler-aarch32.h"
 #pragma GCC diagnostic pop
 

@@ -458,11 +458,15 @@ DEFINE_FUNCTION art_jni_lock_object_no_inline
     ret
     .cfi_adjust_cfa_offset MANAGED_ARGS_SAVE_SIZE
 1:
-    // All args are irrelevant when throwing an exception. Remove the spill area.
-    DECREASE_FRAME MANAGED_ARGS_SAVE_SIZE
+    // All args are irrelevant when throwing an exception. Remove the spill area except for new
+    // padding to align stack.
+    DECREASE_FRAME MANAGED_ARGS_SAVE_SIZE - /*new padding*/ 8
     // Rely on the JNI transition frame constructed in the JNI stub.
     movq %gs:THREAD_SELF_OFFSET, %rdi     // Pass Thread::Current().
-    jmp  SYMBOL(artDeliverPendingExceptionFromCode)  // (Thread*); tail call.
+    call  SYMBOL(artDeliverPendingExceptionFromCode)  // (Thread*)
+    movq %rax, %rdi                       // pass Context*
+    call  SYMBOL(art_quick_do_long_jump)
+    UNREACHABLE
 END_FUNCTION art_jni_lock_object_no_inline
 
     /*

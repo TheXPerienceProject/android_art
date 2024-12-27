@@ -241,7 +241,9 @@ void ThrowIllegalAccessErrorForImplementingMethod(ObjPtr<mirror::Class> klass,
                                                   ArtMethod* implementation_method,
                                                   ArtMethod* interface_method)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  DCHECK(!implementation_method->IsAbstract());
+  // Note: For a non-public abstract implementing method, both `AbstractMethodError` and
+  // `IllegalAccessError` are reasonable. We now follow the RI behaviour and throw the latter,
+  // so we do not assert here that the implementation method is concrete as we did in the past.
   DCHECK(!implementation_method->IsPublic());
   ThrowIllegalAccessError(
       klass,
@@ -765,8 +767,7 @@ void ThrowStackOverflowError(Thread* self) {
 
     // stackState is set as result of fillInStackTrace. fillInStackTrace calls
     // nativeFillInStackTrace.
-    ObjPtr<mirror::Object> stack_state_val =
-        soa.Decode<mirror::Object>(self->CreateInternalStackTrace(soa));
+    ObjPtr<mirror::Object> stack_state_val = self->CreateInternalStackTrace(soa);
     if (stack_state_val != nullptr) {
       WellKnownClasses::java_lang_Throwable_stackState
           ->SetObject</*kTransactionActive=*/ false>(exc.Get(), stack_state_val);

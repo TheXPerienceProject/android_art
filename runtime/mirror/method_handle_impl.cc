@@ -16,8 +16,11 @@
 
 #include "method_handle_impl-inl.h"
 
+#include "art_method-alloc-inl.h"
 #include "class-alloc-inl.h"
 #include "class_root-inl.h"
+
+#include "well_known_classes.h"
 
 namespace art HIDDEN {
 namespace mirror {
@@ -49,8 +52,9 @@ ObjPtr<mirror::MethodHandleImpl> MethodHandleImpl::Create(Thread* const self,
     REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(!Roles::uninterruptible_) {
   StackHandleScope<1> hs(self);
   Handle<mirror::MethodHandleImpl> mh(hs.NewHandle(ObjPtr<MethodHandleImpl>::DownCast(
-      GetClassRoot<MethodHandleImpl>()->AllocObject(self))));
-  mh->Initialize(art_field_or_method, kind, method_type);
+      WellKnownClasses::java_lang_invoke_MethodHandleImpl_init->NewObject<'J', 'I', 'L'>(
+          self, art_field_or_method, static_cast<uint32_t>(kind), method_type))));
+
   return mh.Get();
 }
 

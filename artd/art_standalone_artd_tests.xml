@@ -15,23 +15,17 @@
 -->
 <!-- Note: This test config file for {MODULE} is generated from a template. -->
 <configuration description="Runs {MODULE}.">
+    <option name="config-descriptor:metadata" key="parameter" value="not_multi_abi" />
     <option name="config-descriptor:metadata" key="mainline-param" value="com.google.android.art.apex" />
     <option name="config-descriptor:metadata" key="mainline-param" value="com.android.art.apex" />
 
-    <target_preparer class="com.android.compatibility.common.tradefed.targetprep.FilePusher">
+    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
         <option name="cleanup" value="true" />
-        <option name="push" value="{MODULE}->/data/local/tmp/{MODULE}/{MODULE}" />
-        <option name="append-bitness" value="true" />
-    </target_preparer>
-
-    <target_preparer class="com.android.compatibility.common.tradefed.targetprep.FilePusher">
-        <option name="cleanup" value="true" />
-        <option name="push" value="art-gtest-jars-Main.jar->/data/local/tmp/{MODULE}/art-gtest-jars-Main.jar" />
-        <option name="push" value="art-gtest-jars-Nested.jar->/data/local/tmp/{MODULE}/art-gtest-jars-Nested.jar" />
+        <option name="push" value="{MODULE}->/data/local/tmp/{MODULE}" />
     </target_preparer>
 
     <test class="com.android.tradefed.testtype.GTest" >
-        <option name="native-test-device-path" value="/data/local/tmp/{MODULE}" />
+        <option name="native-test-device-path" value="/data/local/tmp" />
         <option name="module-name" value="{MODULE}" />
     </test>
 

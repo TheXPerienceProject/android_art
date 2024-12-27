@@ -112,11 +112,6 @@ class TrackedArena final : public Arena {
   }
   bool IsWaitingForDeletion() const { return waiting_for_deletion_; }
 
-  // Madvise the pages in the given range. 'begin' is expected to be page
-  // aligned.
-  // TODO: Remove this once we remove the shmem (minor-fault) code in
-  // userfaultfd GC and directly use ZeroAndReleaseMemory().
-  static void ReleasePages(uint8_t* begin, size_t size, bool pre_zygote_fork);
   void Release() override;
   bool IsPreZygoteForkArena() const { return pre_zygote_fork_; }
   bool IsSingleObjectArena() const { return first_obj_array_.get() == nullptr; }

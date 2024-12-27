@@ -369,6 +369,7 @@
 
     // Point of no return.
     bl artDeliverPendingExceptionFromCode  // artDeliverPendingExceptionFromCode(Thread*)
+    bl art_quick_do_long_jump              // (Context*)
     brk 0  // Unreached
 .endm
 

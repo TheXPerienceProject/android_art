@@ -3,4 +3,3 @@ libc++.so
 libdl.so
 libm.so
 libnativehelper.so
-libunwindstack.so

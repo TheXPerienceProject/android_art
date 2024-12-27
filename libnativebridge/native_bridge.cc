@@ -668,19 +668,6 @@ bool NativeBridgeIsPathSupported(const char* path) {
   return false;
 }
 
-bool NativeBridgeInitAnonymousNamespace(const char* public_ns_sonames,
-                                        const char* anon_ns_library_path) {
-  if (NativeBridgeInitialized()) {
-    if (isCompatibleWith(NAMESPACE_VERSION)) {
-      return callbacks->initAnonymousNamespace(public_ns_sonames, anon_ns_library_path);
-    } else {
-      ALOGE("not compatible with version %d, cannot init namespace", NAMESPACE_VERSION);
-    }
-  }
-
-  return false;
-}
-
 native_bridge_namespace_t* NativeBridgeCreateNamespace(const char* name,
                                                        const char* ld_library_path,
                                                        const char* default_library_path,

@@ -477,6 +477,7 @@ void UnstartedRuntime::UnstartedClassGetEnclosingClass(
   Handle<mirror::Class> klass(hs.NewHandle(shadow_frame->GetVRegReference(arg_offset)->AsClass()));
   if (klass->IsProxyClass() || klass->GetDexCache() == nullptr) {
     result->SetL(nullptr);
+    return;
   }
   result->SetL(annotations::GetEnclosingClass(klass));
 }
@@ -2099,8 +2100,7 @@ void UnstartedRuntime::UnstartedJNIThrowableNativeFillInStackTrace(
     [[maybe_unused]] uint32_t* args,
     JValue* result) {
   ScopedObjectAccessUnchecked soa(self);
-  ScopedLocalRef<jobject> stack_trace(self->GetJniEnv(), self->CreateInternalStackTrace(soa));
-  result->SetL(soa.Decode<mirror::Object>(stack_trace.get()));
+  result->SetL(self->CreateInternalStackTrace(soa));
 }
 
 void UnstartedRuntime::UnstartedJNIUnsafeCompareAndSwapInt(

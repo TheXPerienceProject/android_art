@@ -23,6 +23,7 @@
 #include <libelf.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,7 @@
 #include "android-base/scopeguard.h"
 #include "android-base/strings.h"
 #include "android-base/unique_fd.h"
+#include "base/stl_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -154,13 +156,28 @@ TEST(StandaloneTestAllowedLibDeps, test) {
   Result<std::vector<std::string>> dyn_lib_deps = GetDynamicLibDeps(path_to_self.value());
   ASSERT_RESULT_OK(dyn_lib_deps);
 
+  // Allow .so files in the same directory as the test binary, for shared libs
+  // pushed with the test using `data_libs`.
+  std::filesystem::path self_dir = std::filesystem::path(path_to_self.value()).parent_path();
+  std::vector<std::string> test_libs;
+  for (const std::filesystem::directory_entry& entry :
+       std::filesystem::directory_iterator(self_dir)) {
+    if (entry.is_regular_file() && entry.path().extension() == ".so") {
+      test_libs.push_back(entry.path().filename());
+    }
+  }
+
   std::vector<std::string> disallowed_libs;
   for (const std::string& dyn_lib_dep : dyn_lib_deps.value()) {
     if (std::find(std::begin(kAllowedDynamicLibDeps),
                   std::end(kAllowedDynamicLibDeps),
-                  dyn_lib_dep) == std::end(kAllowedDynamicLibDeps)) {
-      disallowed_libs.push_back(dyn_lib_dep);
+                  dyn_lib_dep) != std::end(kAllowedDynamicLibDeps)) {
+      continue;
     }
+    if (art::ContainsElement(test_libs, dyn_lib_dep)) {
+      continue;
+    }
+    disallowed_libs.push_back(dyn_lib_dep);
   }
 
   EXPECT_THAT(disallowed_libs, testing::IsEmpty())

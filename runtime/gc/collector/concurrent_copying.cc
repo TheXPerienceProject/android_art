@@ -62,8 +62,6 @@ static constexpr bool kDisallowReadBarrierDuringScan = kIsDebugBuild;
 // Slow path mark stack size, increase this if the stack is getting full and it is causing
 // performance problems.
 static constexpr size_t kReadBarrierMarkStackSize = 512 * KB;
-// Size (in the number of objects) of the sweep array free buffer.
-static constexpr size_t kSweepArrayChunkFreeSize = 1024;
 // Verify that there are no missing card marks.
 static constexpr bool kVerifyNoMissingCardMarks = kIsDebugBuild;
 
@@ -138,18 +136,6 @@ ConcurrentCopying::ConcurrentCopying(Heap* heap,
               "thread local mark stack", GetMarkStackSize(), GetMarkStackSize());
       pooled_mark_stacks_.push_back(mark_stack);
     }
-  }
-  if (use_generational_cc_) {
-    // Allocate sweep array free buffer.
-    std::string error_msg;
-    sweep_array_free_buffer_mem_map_ = MemMap::MapAnonymous(
-        "concurrent copying sweep array free buffer",
-        RoundUp(kSweepArrayChunkFreeSize * sizeof(mirror::Object*), gPageSize),
-        PROT_READ | PROT_WRITE,
-        /*low_4gb=*/ false,
-        &error_msg);
-    CHECK(sweep_array_free_buffer_mem_map_.IsValid())
-        << "Couldn't allocate sweep array free buffer: " << error_msg;
   }
   // Return type of these functions are different. And even though the base class
   // is same, using ternary operator complains.
@@ -2522,22 +2508,12 @@ void ConcurrentCopying::Sweep(bool swap_bitmaps) {
   }
 }
 
-// Copied and adapted from MarkSweep::SweepArray.
-void ConcurrentCopying::SweepArray(accounting::ObjectStack* allocations, bool swap_bitmaps) {
+void ConcurrentCopying::SweepArray(accounting::ObjectStack* obj_arr, bool swap_bitmaps) {
   // This method is only used when Generational CC collection is enabled.
   DCHECK(use_generational_cc_);
   CheckEmptyMarkStack();
   TimingLogger::ScopedTiming t("SweepArray", GetTimings());
-  Thread* self = Thread::Current();
-  mirror::Object** chunk_free_buffer = reinterpret_cast<mirror::Object**>(
-      sweep_array_free_buffer_mem_map_.BaseBegin());
-  size_t chunk_free_pos = 0;
-  ObjectBytePair freed;
-  ObjectBytePair freed_los;
-  // How many objects are left in the array, modified after each space is swept.
-  StackReference<mirror::Object>* objects = allocations->Begin();
-  size_t count = allocations->Size();
-  // Start by sweeping the continuous spaces.
+  std::vector<space::ContinuousSpace*> sweep_spaces;
   for (space::ContinuousSpace* space : heap_->GetContinuousSpaces()) {
     if (!space->IsAllocSpace() ||
         space == region_space_ ||
@@ -2545,72 +2521,9 @@ void ConcurrentCopying::SweepArray(accounting::ObjectStack* allocations, bool sw
         space->GetLiveBitmap() == nullptr) {
       continue;
     }
-    space::AllocSpace* alloc_space = space->AsAllocSpace();
-    accounting::ContinuousSpaceBitmap* live_bitmap = space->GetLiveBitmap();
-    accounting::ContinuousSpaceBitmap* mark_bitmap = space->GetMarkBitmap();
-    if (swap_bitmaps) {
-      std::swap(live_bitmap, mark_bitmap);
-    }
-    StackReference<mirror::Object>* out = objects;
-    for (size_t i = 0; i < count; ++i) {
-      mirror::Object* const obj = objects[i].AsMirrorPtr();
-      if (kUseThreadLocalAllocationStack && obj == nullptr) {
-        continue;
-      }
-      if (space->HasAddress(obj)) {
-        // This object is in the space, remove it from the array and add it to the sweep buffer
-        // if needed.
-        if (!mark_bitmap->Test(obj)) {
-          if (chunk_free_pos >= kSweepArrayChunkFreeSize) {
-            TimingLogger::ScopedTiming t2("FreeList", GetTimings());
-            freed.objects += chunk_free_pos;
-            freed.bytes += alloc_space->FreeList(self, chunk_free_pos, chunk_free_buffer);
-            chunk_free_pos = 0;
-          }
-          chunk_free_buffer[chunk_free_pos++] = obj;
-        }
-      } else {
-        (out++)->Assign(obj);
-      }
-    }
-    if (chunk_free_pos > 0) {
-      TimingLogger::ScopedTiming t2("FreeList", GetTimings());
-      freed.objects += chunk_free_pos;
-      freed.bytes += alloc_space->FreeList(self, chunk_free_pos, chunk_free_buffer);
-      chunk_free_pos = 0;
-    }
-    // All of the references which space contained are no longer in the allocation stack, update
-    // the count.
-    count = out - objects;
+    sweep_spaces.push_back(space);
   }
-  // Handle the large object space.
-  space::LargeObjectSpace* large_object_space = GetHeap()->GetLargeObjectsSpace();
-  if (large_object_space != nullptr) {
-    accounting::LargeObjectBitmap* large_live_objects = large_object_space->GetLiveBitmap();
-    accounting::LargeObjectBitmap* large_mark_objects = large_object_space->GetMarkBitmap();
-    if (swap_bitmaps) {
-      std::swap(large_live_objects, large_mark_objects);
-    }
-    for (size_t i = 0; i < count; ++i) {
-      mirror::Object* const obj = objects[i].AsMirrorPtr();
-      // Handle large objects.
-      if (kUseThreadLocalAllocationStack && obj == nullptr) {
-        continue;
-      }
-      if (!large_mark_objects->Test(obj)) {
-        ++freed_los.objects;
-        freed_los.bytes += large_object_space->Free(self, obj);
-      }
-    }
-  }
-  {
-    TimingLogger::ScopedTiming t2("RecordFree", GetTimings());
-    RecordFree(freed);
-    RecordFreeLOS(freed_los);
-    t2.NewTiming("ResetStack");
-    allocations->Reset();
-  }
-  sweep_array_free_buffer_mem_map_.MadviseDontNeedAndZero();
+  GarbageCollector::SweepArray(obj_arr, swap_bitmaps, &sweep_spaces);
 }
 
 void ConcurrentCopying::MarkZygoteLargeObjects() {
@@ -3662,7 +3575,8 @@ mirror::Object* ConcurrentCopying::IsMarked(mirror::Object* from_ref) {
 }
 
 bool ConcurrentCopying::IsOnAllocStack(mirror::Object* ref) {
-  // TODO: Explain why this is here. What release operation does it pair with?
+  // Pairs with release fence after allocation-stack push in
+  // Heap::AllocObjectWithAllocator().
   std::atomic_thread_fence(std::memory_order_acquire);
   accounting::ObjectStack* alloc_stack = GetAllocationStack();
   return alloc_stack->Contains(ref);

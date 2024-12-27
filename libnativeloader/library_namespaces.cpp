@@ -86,6 +86,8 @@ constexpr const char* kProductLibPath = "/product/" LIB ":/system/product/" LIB;
 const std::regex kVendorPathRegex("(/system)?/vendor/.*");
 const std::regex kProductPathRegex("(/system)?/product/.*");
 const std::regex kSystemPathRegex("/system(_ext)?/.*");  // MUST be tested last.
+const std::regex kPartitionNativeLibPathRegex(
+    "/(system|(system/)?(system_ext|vendor|product))/lib(64)?/.*");
 
 jobject GetParentClassLoader(JNIEnv* env, jobject class_loader) {
   jclass class_loader_class = env->FindClass("java/lang/ClassLoader");
@@ -136,6 +138,12 @@ Result<ApiDomain> GetApiDomainFromPathList(const std::string& path_list) {
     start_pos = end_pos + 1;
   }
   return result;
+}
+
+// Returns true if the given path is in a partition-wide native library location,
+// i.e. <partition root>/lib(64).
+bool IsPartitionNativeLibPath(const std::string& path) {
+  return std::regex_match(path, kPartitionNativeLibPathRegex);
 }
 
 void LibraryNamespaces::Initialize() {

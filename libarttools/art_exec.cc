@@ -35,6 +35,7 @@
 #include "android-base/result.h"
 #include "android-base/strings.h"
 #include "base/macros.h"
+#include "base/os.h"
 #include "base/scoped_cap.h"
 #include "palette/palette.h"
 #include "system/thread_defs.h"
@@ -46,6 +47,7 @@ using ::android::base::Join;
 using ::android::base::ParseInt;
 using ::android::base::Result;
 using ::android::base::Split;
+using ::art::OS;
 
 constexpr const char* kUsage =
     R"(A wrapper binary that configures the process and executes a command.
@@ -231,13 +233,21 @@ int main(int argc, char** argv) {
 
   // `argv[argc]` is `nullptr`, which `execv` needs.
   std::vector<char*> command_args(&argv[options.command_pos], &argv[argc + 1]);
+  std::string program_path = argv[options.command_pos];
+  // "/mnt/compat_env" is prepared by dexopt_chroot_setup on Android V.
+  constexpr const char* kCompatArtdPath = "/mnt/compat_env/apex/com.android.art/bin/artd";
+  if (program_path == "/apex/com.android.art/bin/artd" && OS::FileExists(kCompatArtdPath)) {
+    LOG(INFO) << "Overriding program path to " << kCompatArtdPath;
+    program_path = kCompatArtdPath;
+    command_args[0] = program_path.data();
+  }
   std::string override_program_name;
   if (!options.process_name_suffix.empty()) {
     override_program_name = ART_FORMAT("{} ({})", command_args[0], options.process_name_suffix);
     command_args[0] = override_program_name.data();
   }
 
-  execv(argv[options.command_pos], command_args.data());
+  execv(program_path.c_str(), command_args.data());
 
   // Remove the trialing `nullptr`.
   command_args.resize(command_args.size() - 1);

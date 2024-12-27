@@ -51,16 +51,17 @@ void ExecuteSwitchImplCpp(SwitchImplContext* ctx)
 
 // Hand-written assembly method which wraps the C++ implementation,
 // while defining the DEX PC in the CFI so that libunwind can resolve it.
-extern "C" void ExecuteSwitchImplAsm(SwitchImplContext* ctx, void* impl, const uint16_t* dexpc)
-  REQUIRES_SHARED(Locks::mutator_lock_);
+extern "C" void ExecuteSwitchImplAsm(
+    SwitchImplContext* ctx, const void* impl, const uint16_t* dexpc)
+    REQUIRES_SHARED(Locks::mutator_lock_);
 
 // Wrapper around the switch interpreter which ensures we can unwind through it.
-template<bool transaction_active>
-ALWAYS_INLINE JValue ExecuteSwitchImpl(Thread* self,
-                                       const CodeItemDataAccessor& accessor,
-                                       ShadowFrame& shadow_frame,
-                                       JValue result_register,
-                                       bool interpret_one_instruction)
+ALWAYS_INLINE inline JValue ExecuteSwitchImpl(Thread* self,
+                                              const CodeItemDataAccessor& accessor,
+                                              ShadowFrame& shadow_frame,
+                                              JValue result_register,
+                                              bool interpret_one_instruction,
+                                              const void* switch_impl_cpp)
   REQUIRES_SHARED(Locks::mutator_lock_) {
   SwitchImplContext ctx {
     .self = self,
@@ -70,9 +71,8 @@ ALWAYS_INLINE JValue ExecuteSwitchImpl(Thread* self,
     .interpret_one_instruction = interpret_one_instruction,
     .result = JValue(),
   };
-  void* impl = reinterpret_cast<void*>(&ExecuteSwitchImplCpp<transaction_active>);
   const uint16_t* dex_pc = ctx.accessor.Insns();
-  ExecuteSwitchImplAsm(&ctx, impl, dex_pc);
+  ExecuteSwitchImplAsm(&ctx, switch_impl_cpp, dex_pc);
   return ctx.result;
 }
 

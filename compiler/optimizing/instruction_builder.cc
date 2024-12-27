@@ -667,12 +667,16 @@ void HInstructionBuilder::InitializeParameters() {
 
 template<typename T, bool kCompareWithZero>
 void HInstructionBuilder::If_21_22t(const Instruction& instruction, uint32_t dex_pc) {
-  HInstruction* value = LoadLocal(instruction.VRegA(), DataType::Type::kInt32);
+  DCHECK_EQ(kCompareWithZero ? Instruction::Format::k21t : Instruction::Format::k22t,
+            Instruction::FormatOf(instruction.Opcode()));
+  HInstruction* value = LoadLocal(
+      kCompareWithZero ? instruction.VRegA_21t() : instruction.VRegA_22t(),
+      DataType::Type::kInt32);
   T* comparison = nullptr;
   if (kCompareWithZero) {
     comparison = new (allocator_) T(value, graph_->GetIntConstant(0, dex_pc), dex_pc);
   } else {
-    HInstruction* second = LoadLocal(instruction.VRegB(), DataType::Type::kInt32);
+    HInstruction* second = LoadLocal(instruction.VRegB_22t(), DataType::Type::kInt32);
     comparison = new (allocator_) T(value, second, dex_pc);
   }
   AppendInstruction(comparison);
@@ -697,90 +701,90 @@ template<typename T>
 void HInstructionBuilder::Unop_12x(const Instruction& instruction,
                                    DataType::Type type,
                                    uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegB(), type);
+  HInstruction* first = LoadLocal(instruction.VRegB_12x(), type);
   AppendInstruction(new (allocator_) T(type, first, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_12x(), current_block_->GetLastInstruction());
 }
 
 void HInstructionBuilder::Conversion_12x(const Instruction& instruction,
                                          DataType::Type input_type,
                                          DataType::Type result_type,
                                          uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegB(), input_type);
+  HInstruction* first = LoadLocal(instruction.VRegB_12x(), input_type);
   AppendInstruction(new (allocator_) HTypeConversion(result_type, first, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_12x(), current_block_->GetLastInstruction());
 }
 
 template<typename T>
 void HInstructionBuilder::Binop_23x(const Instruction& instruction,
                                     DataType::Type type,
                                     uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegB(), type);
-  HInstruction* second = LoadLocal(instruction.VRegC(), type);
+  HInstruction* first = LoadLocal(instruction.VRegB_23x(), type);
+  HInstruction* second = LoadLocal(instruction.VRegC_23x(), type);
   AppendInstruction(new (allocator_) T(type, first, second, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_23x(), current_block_->GetLastInstruction());
 }
 
 template<typename T>
 void HInstructionBuilder::Binop_23x_shift(const Instruction& instruction,
                                           DataType::Type type,
                                           uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegB(), type);
-  HInstruction* second = LoadLocal(instruction.VRegC(), DataType::Type::kInt32);
+  HInstruction* first = LoadLocal(instruction.VRegB_23x(), type);
+  HInstruction* second = LoadLocal(instruction.VRegC_23x(), DataType::Type::kInt32);
   AppendInstruction(new (allocator_) T(type, first, second, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_23x(), current_block_->GetLastInstruction());
 }
 
 void HInstructionBuilder::Binop_23x_cmp(const Instruction& instruction,
                                         DataType::Type type,
                                         ComparisonBias bias,
                                         uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegB(), type);
-  HInstruction* second = LoadLocal(instruction.VRegC(), type);
+  HInstruction* first = LoadLocal(instruction.VRegB_23x(), type);
+  HInstruction* second = LoadLocal(instruction.VRegC_23x(), type);
   AppendInstruction(new (allocator_) HCompare(type, first, second, bias, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_23x(), current_block_->GetLastInstruction());
 }
 
 template<typename T>
 void HInstructionBuilder::Binop_12x_shift(const Instruction& instruction,
                                           DataType::Type type,
                                           uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegA(), type);
-  HInstruction* second = LoadLocal(instruction.VRegB(), DataType::Type::kInt32);
+  HInstruction* first = LoadLocal(instruction.VRegA_12x(), type);
+  HInstruction* second = LoadLocal(instruction.VRegB_12x(), DataType::Type::kInt32);
   AppendInstruction(new (allocator_) T(type, first, second, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_12x(), current_block_->GetLastInstruction());
 }
 
 template<typename T>
 void HInstructionBuilder::Binop_12x(const Instruction& instruction,
                                     DataType::Type type,
                                     uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegA(), type);
-  HInstruction* second = LoadLocal(instruction.VRegB(), type);
+  HInstruction* first = LoadLocal(instruction.VRegA_12x(), type);
+  HInstruction* second = LoadLocal(instruction.VRegB_12x(), type);
   AppendInstruction(new (allocator_) T(type, first, second, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_12x(), current_block_->GetLastInstruction());
 }
 
 template<typename T>
 void HInstructionBuilder::Binop_22s(const Instruction& instruction, bool reverse, uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegB(), DataType::Type::kInt32);
+  HInstruction* first = LoadLocal(instruction.VRegB_22s(), DataType::Type::kInt32);
   HInstruction* second = graph_->GetIntConstant(instruction.VRegC_22s(), dex_pc);
   if (reverse) {
     std::swap(first, second);
   }
   AppendInstruction(new (allocator_) T(DataType::Type::kInt32, first, second, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_22s(), current_block_->GetLastInstruction());
 }
 
 template<typename T>
 void HInstructionBuilder::Binop_22b(const Instruction& instruction, bool reverse, uint32_t dex_pc) {
-  HInstruction* first = LoadLocal(instruction.VRegB(), DataType::Type::kInt32);
+  HInstruction* first = LoadLocal(instruction.VRegB_22b(), DataType::Type::kInt32);
   HInstruction* second = graph_->GetIntConstant(instruction.VRegC_22b(), dex_pc);
   if (reverse) {
     std::swap(first, second);
   }
   AppendInstruction(new (allocator_) T(DataType::Type::kInt32, first, second, dex_pc));
-  UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+  UpdateLocal(instruction.VRegA_22b(), current_block_->GetLastInstruction());
 }
 
 // Does the method being compiled need any constructor barriers being inserted?
@@ -809,7 +813,7 @@ static bool IsFallthroughInstruction(const Instruction& instruction,
 }
 
 void HInstructionBuilder::BuildSwitch(const Instruction& instruction, uint32_t dex_pc) {
-  HInstruction* value = LoadLocal(instruction.VRegA(), DataType::Type::kInt32);
+  HInstruction* value = LoadLocal(instruction.VRegA_31t(), DataType::Type::kInt32);
   DexSwitchTable table(instruction, dex_pc);
 
   if (table.GetNumEntries() == 0) {
@@ -833,6 +837,26 @@ void HInstructionBuilder::BuildSwitch(const Instruction& instruction, uint32_t d
   }
 
   current_block_ = nullptr;
+}
+
+template <DataType::Type type>
+ALWAYS_INLINE inline void HInstructionBuilder::BuildMove(uint32_t dest_reg, uint32_t src_reg) {
+  // The verifier has no notion of a null type, so a move-object of constant 0
+  // will lead to the same constant 0 in the destination register. To mimic
+  // this behavior, we just pretend we haven't seen a type change (int to reference)
+  // for the 0 constant and phis. We rely on our type propagation to eventually get the
+  // types correct.
+  constexpr bool is_reference = type == DataType::Type::kReference;
+  HInstruction* value = is_reference ? (*current_locals_)[src_reg] : /* not needed */ nullptr;
+  if (is_reference && value->IsIntConstant()) {
+    DCHECK_EQ(value->AsIntConstant()->GetValue(), 0);
+  } else if (is_reference && value->IsPhi()) {
+    DCHECK(value->GetType() == DataType::Type::kInt32 ||
+           value->GetType() == DataType::Type::kReference);
+  } else {
+    value = LoadLocal(src_reg, type);
+  }
+  UpdateLocal(dest_reg, value);
 }
 
 void HInstructionBuilder::BuildReturn(const Instruction& instruction,
@@ -862,7 +886,7 @@ void HInstructionBuilder::BuildReturn(const Instruction& instruction,
     AppendInstruction(new (allocator_) HReturnVoid(dex_pc));
   } else {
     DCHECK(!RequiresConstructorBarrier(dex_compilation_unit_));
-    HInstruction* value = LoadLocal(instruction.VRegA(), type);
+    HInstruction* value = LoadLocal(instruction.VRegA_11x(), type);
     if (graph_->IsDebuggable() && code_generator_->GetCompilerOptions().IsJitCompiler()) {
       AppendInstruction(new (allocator_) HMethodExitHook(value, dex_pc));
     }
@@ -1366,8 +1390,24 @@ bool HInstructionBuilder::BuildInvokePolymorphic(uint32_t dex_pc,
                                             &is_string_constructor);
 
   MethodReference method_reference(&graph_->GetDexFile(), method_idx);
+
+  // MethodHandle.invokeExact intrinsic needs to check whether call-site matches with MethodHandle's
+  // type. To do that, MethodType corresponding to the call-site is passed as an extra input.
+  // Other invoke-polymorphic calls do not need it.
+  bool is_invoke_exact =
+      static_cast<Intrinsics>(resolved_method->GetIntrinsic()) ==
+          Intrinsics::kMethodHandleInvokeExact;
+  // Currently intrinsic works for MethodHandle targeting invoke-virtual calls only.
+  bool can_be_virtual = number_of_arguments >= 2 &&
+      DataType::FromShorty(shorty[1]) == DataType::Type::kReference;
+
+  bool can_be_intrinsified = is_invoke_exact && can_be_virtual;
+
+  uint32_t number_of_other_inputs = can_be_intrinsified ? 1u : 0u;
+
   HInvoke* invoke = new (allocator_) HInvokePolymorphic(allocator_,
                                                         number_of_arguments,
+                                                        number_of_other_inputs,
                                                         return_type,
                                                         dex_pc,
                                                         method_reference,
@@ -1377,6 +1417,8 @@ bool HInstructionBuilder::BuildInvokePolymorphic(uint32_t dex_pc,
   if (!HandleInvoke(invoke, operands, shorty, /* is_unresolved= */ false)) {
     return false;
   }
+
+  DCHECK_EQ(invoke->AsInvokePolymorphic()->CanHaveFastPath(), can_be_intrinsified);
 
   if (invoke->GetIntrinsic() != Intrinsics::kNone &&
       invoke->GetIntrinsic() != Intrinsics::kMethodHandleInvoke &&
@@ -1855,6 +1897,26 @@ bool HInstructionBuilder::SetupInvokeArguments(HInstruction* invoke,
                           graph_->GetCurrentMethod());
   }
 
+  if (invoke->IsInvokePolymorphic()) {
+    HInvokePolymorphic* invoke_polymorphic = invoke->AsInvokePolymorphic();
+
+    // MethodHandle.invokeExact intrinsic expects MethodType corresponding to the call-site as an
+    // extra input to determine whether to throw WrongMethodTypeException or execute target method.
+    if (invoke_polymorphic->CanHaveFastPath()) {
+      HLoadMethodType* load_method_type =
+          new (allocator_) HLoadMethodType(graph_->GetCurrentMethod(),
+                                           invoke_polymorphic->GetProtoIndex(),
+                                           graph_->GetDexFile(),
+                                           invoke_polymorphic->GetDexPc());
+      HSharpening::ProcessLoadMethodType(load_method_type,
+                                         code_generator_,
+                                         *dex_compilation_unit_,
+                                         graph_->GetHandleCache()->GetHandles());
+      invoke->SetRawInputAt(invoke_polymorphic->GetNumberOfArguments(), load_method_type);
+      AppendInstruction(load_method_type);
+    }
+  }
+
   return true;
 }
 
@@ -1882,7 +1944,7 @@ bool HInstructionBuilder::BuildSimpleIntrinsic(ArtMethod* method,
                                                uint32_t dex_pc,
                                                const InstructionOperands& operands,
                                                const char* shorty) {
-  Intrinsics intrinsic = static_cast<Intrinsics>(method->GetIntrinsic());
+  Intrinsics intrinsic = method->GetIntrinsic();
   DCHECK_NE(intrinsic, Intrinsics::kNone);
   constexpr DataType::Type kInt32 = DataType::Type::kInt32;
   constexpr DataType::Type kInt64 = DataType::Type::kInt64;
@@ -1891,14 +1953,16 @@ bool HInstructionBuilder::BuildSimpleIntrinsic(ArtMethod* method,
   ReceiverArg receiver_arg = method->IsStatic() ? ReceiverArg::kNone : ReceiverArg::kNullCheckedArg;
   HInstruction* instruction = nullptr;
   switch (intrinsic) {
-    case Intrinsics::kIntegerRotateRight:
     case Intrinsics::kIntegerRotateLeft:
-      // For rotate left, we negate the distance below.
+      instruction = new (allocator_) HRol(kInt32, /*value=*/ nullptr, /*distance=*/ nullptr);
+      break;
+    case Intrinsics::kIntegerRotateRight:
       instruction = new (allocator_) HRor(kInt32, /*value=*/ nullptr, /*distance=*/ nullptr);
       break;
-    case Intrinsics::kLongRotateRight:
     case Intrinsics::kLongRotateLeft:
-      // For rotate left, we negate the distance below.
+      instruction = new (allocator_) HRol(kInt64, /*value=*/ nullptr, /*distance=*/ nullptr);
+      break;
+    case Intrinsics::kLongRotateRight:
       instruction = new (allocator_) HRor(kInt64, /*value=*/ nullptr, /*distance=*/ nullptr);
       break;
     case Intrinsics::kIntegerCompare:
@@ -2017,15 +2081,6 @@ bool HInstructionBuilder::BuildSimpleIntrinsic(ArtMethod* method,
   }
 
   switch (intrinsic) {
-    case Intrinsics::kIntegerRotateLeft:
-    case Intrinsics::kLongRotateLeft: {
-      // Negate the distance value for rotate left.
-      DCHECK(instruction->IsRor());
-      HNeg* neg = new (allocator_) HNeg(kInt32, instruction->InputAt(1u));
-      AppendInstruction(neg);
-      instruction->SetRawInputAt(1u, neg);
-      break;
-    }
     case Intrinsics::kFloatIsNaN:
     case Intrinsics::kDoubleIsNaN:
       // Set the second input to be the same as first.
@@ -2358,7 +2413,7 @@ void HInstructionBuilder::BuildCheckedDivRem(uint16_t out_vreg,
                                              uint32_t dex_pc,
                                              DataType::Type type,
                                              bool second_is_constant,
-                                             bool isDiv) {
+                                             bool is_div) {
   DCHECK(type == DataType::Type::kInt32 || type == DataType::Type::kInt64);
 
   HInstruction* first = LoadLocal(first_vreg, type);
@@ -2380,7 +2435,7 @@ void HInstructionBuilder::BuildCheckedDivRem(uint16_t out_vreg,
     AppendInstruction(second);
   }
 
-  if (isDiv) {
+  if (is_div) {
     AppendInstruction(new (allocator_) HDiv(type, first, second, dex_pc));
   } else {
     AppendInstruction(new (allocator_) HRem(type, first, second, dex_pc));
@@ -2696,9 +2751,10 @@ void HInstructionBuilder::BuildLoadMethodType(dex::ProtoIndex proto_index, uint3
   const DexFile& dex_file = *dex_compilation_unit_->GetDexFile();
   HLoadMethodType* load_method_type =
       new (allocator_) HLoadMethodType(graph_->GetCurrentMethod(), proto_index, dex_file, dex_pc);
-  if (!code_generator_->GetCompilerOptions().IsJitCompiler()) {
-    load_method_type->SetLoadKind(HLoadMethodType::LoadKind::kBssEntry);
-  }
+  HSharpening::ProcessLoadMethodType(load_method_type,
+                                     code_generator_,
+                                     *dex_compilation_unit_,
+                                     graph_->GetHandleCache()->GetHandles());
   AppendInstruction(load_method_type);
 }
 
@@ -2778,35 +2834,35 @@ void HInstructionBuilder::BuildTypeCheck(const Instruction& instruction,
 bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, uint32_t dex_pc) {
   switch (instruction.Opcode()) {
     case Instruction::CONST_4: {
-      int32_t register_index = instruction.VRegA();
+      int32_t register_index = instruction.VRegA_11n();
       HIntConstant* constant = graph_->GetIntConstant(instruction.VRegB_11n(), dex_pc);
       UpdateLocal(register_index, constant);
       break;
     }
 
     case Instruction::CONST_16: {
-      int32_t register_index = instruction.VRegA();
+      int32_t register_index = instruction.VRegA_21s();
       HIntConstant* constant = graph_->GetIntConstant(instruction.VRegB_21s(), dex_pc);
       UpdateLocal(register_index, constant);
       break;
     }
 
     case Instruction::CONST: {
-      int32_t register_index = instruction.VRegA();
+      int32_t register_index = instruction.VRegA_31i();
       HIntConstant* constant = graph_->GetIntConstant(instruction.VRegB_31i(), dex_pc);
       UpdateLocal(register_index, constant);
       break;
     }
 
     case Instruction::CONST_HIGH16: {
-      int32_t register_index = instruction.VRegA();
+      int32_t register_index = instruction.VRegA_21h();
       HIntConstant* constant = graph_->GetIntConstant(instruction.VRegB_21h() << 16, dex_pc);
       UpdateLocal(register_index, constant);
       break;
     }
 
     case Instruction::CONST_WIDE_16: {
-      int32_t register_index = instruction.VRegA();
+      int32_t register_index = instruction.VRegA_21s();
       // Get 16 bits of constant value, sign extended to 64 bits.
       int64_t value = instruction.VRegB_21s();
       value <<= 48;
@@ -2817,7 +2873,7 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
     }
 
     case Instruction::CONST_WIDE_32: {
-      int32_t register_index = instruction.VRegA();
+      int32_t register_index = instruction.VRegA_31i();
       // Get 32 bits of constant value, sign extended to 64 bits.
       int64_t value = instruction.VRegB_31i();
       value <<= 32;
@@ -2828,57 +2884,64 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
     }
 
     case Instruction::CONST_WIDE: {
-      int32_t register_index = instruction.VRegA();
+      int32_t register_index = instruction.VRegA_51l();
       HLongConstant* constant = graph_->GetLongConstant(instruction.VRegB_51l(), dex_pc);
       UpdateLocal(register_index, constant);
       break;
     }
 
     case Instruction::CONST_WIDE_HIGH16: {
-      int32_t register_index = instruction.VRegA();
+      int32_t register_index = instruction.VRegA_21h();
       int64_t value = static_cast<int64_t>(instruction.VRegB_21h()) << 48;
       HLongConstant* constant = graph_->GetLongConstant(value, dex_pc);
       UpdateLocal(register_index, constant);
       break;
     }
 
-    // Note that the SSA building will refine the types.
-    case Instruction::MOVE:
-    case Instruction::MOVE_FROM16:
+    // Note that the SSA building will refine the types for moves.
+
+    case Instruction::MOVE: {
+      BuildMove<DataType::Type::kInt32>(instruction.VRegA_12x(), instruction.VRegB_12x());
+      break;
+    }
+
+    case Instruction::MOVE_FROM16: {
+      BuildMove<DataType::Type::kInt32>(instruction.VRegA_22x(), instruction.VRegB_22x());
+      break;
+    }
+
     case Instruction::MOVE_16: {
-      HInstruction* value = LoadLocal(instruction.VRegB(), DataType::Type::kInt32);
-      UpdateLocal(instruction.VRegA(), value);
+      BuildMove<DataType::Type::kInt32>(instruction.VRegA_32x(), instruction.VRegB_32x());
       break;
     }
 
-    // Note that the SSA building will refine the types.
-    case Instruction::MOVE_WIDE:
-    case Instruction::MOVE_WIDE_FROM16:
+    case Instruction::MOVE_WIDE: {
+      BuildMove<DataType::Type::kInt64>(instruction.VRegA_12x(), instruction.VRegB_12x());
+      break;
+    }
+
+    case Instruction::MOVE_WIDE_FROM16: {
+      BuildMove<DataType::Type::kInt64>(instruction.VRegA_22x(), instruction.VRegB_22x());
+      break;
+    }
+
     case Instruction::MOVE_WIDE_16: {
-      HInstruction* value = LoadLocal(instruction.VRegB(), DataType::Type::kInt64);
-      UpdateLocal(instruction.VRegA(), value);
+      BuildMove<DataType::Type::kInt64>(instruction.VRegA_32x(), instruction.VRegB_32x());
       break;
     }
 
-    case Instruction::MOVE_OBJECT:
-    case Instruction::MOVE_OBJECT_16:
+    case Instruction::MOVE_OBJECT: {
+      BuildMove<DataType::Type::kReference>(instruction.VRegA_12x(), instruction.VRegB_12x());
+      break;
+    }
+
     case Instruction::MOVE_OBJECT_FROM16: {
-      // The verifier has no notion of a null type, so a move-object of constant 0
-      // will lead to the same constant 0 in the destination register. To mimic
-      // this behavior, we just pretend we haven't seen a type change (int to reference)
-      // for the 0 constant and phis. We rely on our type propagation to eventually get the
-      // types correct.
-      uint32_t reg_number = instruction.VRegB();
-      HInstruction* value = (*current_locals_)[reg_number];
-      if (value->IsIntConstant()) {
-        DCHECK_EQ(value->AsIntConstant()->GetValue(), 0);
-      } else if (value->IsPhi()) {
-        DCHECK(value->GetType() == DataType::Type::kInt32 ||
-               value->GetType() == DataType::Type::kReference);
-      } else {
-        value = LoadLocal(reg_number, DataType::Type::kReference);
-      }
-      UpdateLocal(instruction.VRegA(), value);
+      BuildMove<DataType::Type::kReference>(instruction.VRegA_22x(), instruction.VRegB_22x());
+      break;
+    }
+
+    case Instruction::MOVE_OBJECT_16: {
+      BuildMove<DataType::Type::kReference>(instruction.VRegA_32x(), instruction.VRegB_32x());
       break;
     }
 
@@ -2901,6 +2964,7 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
     IF_XX(HLessThanOrEqual, LE);
     IF_XX(HGreaterThan, GT);
     IF_XX(HGreaterThanOrEqual, GE);
+#undef IF_XX
 
     case Instruction::GOTO:
     case Instruction::GOTO_16:
@@ -2946,7 +3010,7 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
     case Instruction::INVOKE_SUPER_RANGE:
     case Instruction::INVOKE_VIRTUAL_RANGE: {
       uint16_t method_idx = instruction.VRegB_3rc();
-      RangeInstructionOperands operands(instruction.VRegC(), instruction.VRegA_3rc());
+      RangeInstructionOperands operands(instruction.VRegC_3rc(), instruction.VRegA_3rc());
       if (!BuildInvoke(instruction, dex_pc, method_idx, operands)) {
         return false;
       }
@@ -3154,14 +3218,24 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
     }
 
     case Instruction::DIV_INT: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegB(), instruction.VRegC(),
-                         dex_pc, DataType::Type::kInt32, false, true);
+      BuildCheckedDivRem(instruction.VRegA_23x(),
+                         instruction.VRegB_23x(),
+                         instruction.VRegC_23x(),
+                         dex_pc,
+                         DataType::Type::kInt32,
+                         /* second_is_constant= */ false,
+                         /* is_div=*/ true);
       break;
     }
 
     case Instruction::DIV_LONG: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegB(), instruction.VRegC(),
-                         dex_pc, DataType::Type::kInt64, false, true);
+      BuildCheckedDivRem(instruction.VRegA_23x(),
+                         instruction.VRegB_23x(),
+                         instruction.VRegC_23x(),
+                         dex_pc,
+                         DataType::Type::kInt64,
+                         /* second_is_constant= */ false,
+                         /* is_div=*/ true);
       break;
     }
 
@@ -3176,14 +3250,24 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
     }
 
     case Instruction::REM_INT: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegB(), instruction.VRegC(),
-                         dex_pc, DataType::Type::kInt32, false, false);
+      BuildCheckedDivRem(instruction.VRegA_23x(),
+                         instruction.VRegB_23x(),
+                         instruction.VRegC_23x(),
+                         dex_pc,
+                         DataType::Type::kInt32,
+                         /* second_is_constant= */ false,
+                         /* is_div=*/ false);
       break;
     }
 
     case Instruction::REM_LONG: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegB(), instruction.VRegC(),
-                         dex_pc, DataType::Type::kInt64, false, false);
+      BuildCheckedDivRem(instruction.VRegA_23x(),
+                         instruction.VRegB_23x(),
+                         instruction.VRegC_23x(),
+                         dex_pc,
+                         DataType::Type::kInt64,
+                         /* second_is_constant= */ false,
+                         /* is_div=*/ false);
       break;
     }
 
@@ -3313,26 +3397,46 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
     }
 
     case Instruction::DIV_INT_2ADDR: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegA(), instruction.VRegB(),
-                         dex_pc, DataType::Type::kInt32, false, true);
+      BuildCheckedDivRem(instruction.VRegA_12x(),
+                         instruction.VRegA_12x(),
+                         instruction.VRegB_12x(),
+                         dex_pc,
+                         DataType::Type::kInt32,
+                         /* second_is_constant= */ false,
+                         /* is_div=*/ true);
       break;
     }
 
     case Instruction::DIV_LONG_2ADDR: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegA(), instruction.VRegB(),
-                         dex_pc, DataType::Type::kInt64, false, true);
+      BuildCheckedDivRem(instruction.VRegA_12x(),
+                         instruction.VRegA_12x(),
+                         instruction.VRegB_12x(),
+                         dex_pc,
+                         DataType::Type::kInt64,
+                         /* second_is_constant= */ false,
+                         /* is_div=*/ true);
       break;
     }
 
     case Instruction::REM_INT_2ADDR: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegA(), instruction.VRegB(),
-                         dex_pc, DataType::Type::kInt32, false, false);
+      BuildCheckedDivRem(instruction.VRegA_12x(),
+                         instruction.VRegA_12x(),
+                         instruction.VRegB_12x(),
+                         dex_pc,
+                         DataType::Type::kInt32,
+                         /* second_is_constant= */ false,
+                         /* is_div=*/ false);
       break;
     }
 
     case Instruction::REM_LONG_2ADDR: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegA(), instruction.VRegB(),
-                         dex_pc, DataType::Type::kInt64, false, false);
+      BuildCheckedDivRem(instruction.VRegA_12x(),
+                         instruction.VRegA_12x(),
+                         instruction.VRegB_12x(),
+                         dex_pc,
+                         DataType::Type::kInt64,
+                         /* second_is_constant= */ false,
+                         /* is_div=*/ false);
       break;
     }
 
@@ -3476,17 +3580,47 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
       break;
     }
 
-    case Instruction::DIV_INT_LIT16:
-    case Instruction::DIV_INT_LIT8: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegB(), instruction.VRegC(),
-                         dex_pc, DataType::Type::kInt32, true, true);
+    case Instruction::DIV_INT_LIT16: {
+      BuildCheckedDivRem(instruction.VRegA_22s(),
+                         instruction.VRegB_22s(),
+                         instruction.VRegC_22s(),
+                         dex_pc,
+                         DataType::Type::kInt32,
+                         /* second_is_constant= */ true,
+                         /* is_div=*/ true);
       break;
     }
 
-    case Instruction::REM_INT_LIT16:
+    case Instruction::DIV_INT_LIT8: {
+      BuildCheckedDivRem(instruction.VRegA_22b(),
+                         instruction.VRegB_22b(),
+                         instruction.VRegC_22b(),
+                         dex_pc,
+                         DataType::Type::kInt32,
+                         /* second_is_constant= */ true,
+                         /* is_div=*/ true);
+      break;
+    }
+
+    case Instruction::REM_INT_LIT16: {
+      BuildCheckedDivRem(instruction.VRegA_22s(),
+                         instruction.VRegB_22s(),
+                         instruction.VRegC_22s(),
+                         dex_pc,
+                         DataType::Type::kInt32,
+                         /* second_is_constant= */ true,
+                         /* is_div=*/ false);
+      break;
+    }
+
     case Instruction::REM_INT_LIT8: {
-      BuildCheckedDivRem(instruction.VRegA(), instruction.VRegB(), instruction.VRegC(),
-                         dex_pc, DataType::Type::kInt32, true, false);
+      BuildCheckedDivRem(instruction.VRegA_22b(),
+                         instruction.VRegB_22b(),
+                         instruction.VRegC_22b(),
+                         dex_pc,
+                         DataType::Type::kInt32,
+                         /* second_is_constant= */ true,
+                         /* is_div=*/ false);
       break;
     }
 
@@ -3510,7 +3644,7 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
           BuildNewInstance(dex::TypeIndex(instruction.VRegB_21c()), dex_pc);
       DCHECK(new_instance != nullptr);
 
-      UpdateLocal(instruction.VRegA(), current_block_->GetLastInstruction());
+      UpdateLocal(instruction.VRegA_21c(), current_block_->GetLastInstruction());
       BuildConstructorFenceForAllocation(new_instance);
       break;
     }
@@ -3552,7 +3686,7 @@ bool HInstructionBuilder::ProcessDexInstruction(const Instruction& instruction, 
     case Instruction::MOVE_RESULT_WIDE:
     case Instruction::MOVE_RESULT_OBJECT: {
       DCHECK(latest_result_ != nullptr);
-      UpdateLocal(instruction.VRegA(), latest_result_);
+      UpdateLocal(instruction.VRegA_11x(), latest_result_);
       latest_result_ = nullptr;
       break;
     }

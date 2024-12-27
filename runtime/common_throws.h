@@ -48,7 +48,7 @@ void ThrowAbstractMethodError(uint32_t method_idx, const DexFile& dex_file)
 
 // ArithmeticException
 
-void ThrowArithmeticExceptionDivideByZero() REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
+EXPORT void ThrowArithmeticExceptionDivideByZero() REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 // ArrayIndexOutOfBoundsException
 
@@ -79,7 +79,7 @@ void ThrowClassCircularityError(ObjPtr<mirror::Class> c, const char* fmt, ...)
 
 // ClassCastException
 
-void ThrowClassCastException(ObjPtr<mirror::Class> dest_type, ObjPtr<mirror::Class> src_type)
+EXPORT void ThrowClassCastException(ObjPtr<mirror::Class> dest_type, ObjPtr<mirror::Class> src_type)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 void ThrowClassCastException(const char* msg)
@@ -111,7 +111,7 @@ EXPORT void ThrowIllegalAccessErrorField(ObjPtr<mirror::Class> referrer, ArtFiel
 EXPORT void ThrowIllegalAccessErrorFinalField(ArtMethod* referrer, ArtField* accessed)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
-void ThrowIllegalAccessError(ObjPtr<mirror::Class> referrer, const char* fmt, ...)
+EXPORT void ThrowIllegalAccessError(ObjPtr<mirror::Class> referrer, const char* fmt, ...)
     __attribute__((__format__(__printf__, 2, 3)))
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
@@ -143,14 +143,12 @@ void ThrowIncompatibleClassChangeError(InvokeType expected_type,
                                        ArtMethod* referrer)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
-void ThrowIncompatibleClassChangeErrorClassForInterfaceDispatch(ArtMethod* interface_method,
-                                                                ObjPtr<mirror::Object> this_object,
-                                                                ArtMethod* referrer)
+EXPORT void ThrowIncompatibleClassChangeErrorClassForInterfaceDispatch(
+    ArtMethod* interface_method, ObjPtr<mirror::Object> this_object, ArtMethod* referrer)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
-EXPORT void ThrowIncompatibleClassChangeErrorField(ArtField* resolved_field,
-                                                   bool is_static,
-                                                   ArtMethod* referrer)
+EXPORT void ThrowIncompatibleClassChangeErrorField(
+    ArtField* resolved_field, bool is_static, ArtMethod* referrer)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 void ThrowIncompatibleClassChangeError(ObjPtr<mirror::Class> referrer, const char* fmt, ...)
@@ -191,7 +189,7 @@ void ThrowWrappedLinkageError(ObjPtr<mirror::Class> referrer, const char* fmt, .
 
 // NegativeArraySizeException
 
-void ThrowNegativeArraySizeException(int size)
+EXPORT void ThrowNegativeArraySizeException(int size)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 void ThrowNegativeArraySizeException(const char* msg)
@@ -218,16 +216,14 @@ void ThrowNoSuchMethodError(InvokeType type,
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 // NullPointerException
-
+EXPORT
 void ThrowNullPointerExceptionForFieldAccess(ArtField* field, ArtMethod* method, bool is_read)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
-void ThrowNullPointerExceptionForMethodAccess(uint32_t method_idx,
-                                              InvokeType type)
+EXPORT void ThrowNullPointerExceptionForMethodAccess(uint32_t method_idx, InvokeType type)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
-void ThrowNullPointerExceptionForMethodAccess(ArtMethod* method,
-                                              InvokeType type)
+void ThrowNullPointerExceptionForMethodAccess(ArtMethod* method, InvokeType type)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 void ThrowNullPointerExceptionFromDexPC(bool check_address = false, uintptr_t addr = 0)
@@ -236,7 +232,7 @@ void ThrowNullPointerExceptionFromDexPC(bool check_address = false, uintptr_t ad
 EXPORT void ThrowNullPointerException(const char* msg)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
-void ThrowNullPointerException()
+EXPORT void ThrowNullPointerException()
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 // ReadOnlyBufferException

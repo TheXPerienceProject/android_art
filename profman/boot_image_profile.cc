@@ -20,13 +20,13 @@
 #include <set>
 
 #include "android-base/file.h"
-#include "base/unix_file/fd_file.h"
 #include "dex/class_accessor-inl.h"
 #include "dex/descriptors_names.h"
 #include "dex/dex_file-inl.h"
 #include "dex/method_reference.h"
 #include "dex/type_reference.h"
 #include "profile/profile_compilation_info.h"
+#include "inline_cache_format_util.h"
 
 namespace art {
 
@@ -100,7 +100,8 @@ static std::string MethodToProfileFormat(
     extra = kPackageUseDelim + GetPackageUseString(metadata);
   }
 
-  return flags_string + method + extra;
+  std::string inline_cache_string = GetInlineCacheLine(metadata.GetInlineCache());
+  return flags_string + method + extra + inline_cache_string;
 }
 
 // Converts a class representation to its final profile or preloaded classes format.

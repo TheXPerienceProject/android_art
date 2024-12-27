@@ -429,8 +429,17 @@ ENTRY art_quick_method_entry_hook
     mv   a2, sp                               // pass SP
     call artMethodEntryHook                   // (ArtMethod*, Thread*, SP)
 
+    CFI_REMEMBER_STATE
+    bnez a0, .Lentryhook_deopt
+
     RESTORE_SAVE_EVERYTHING_FRAME
     ret
+
+.Lentryhook_deopt:
+    // Deoptimize.
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+    call art_quick_do_long_jump               // (Context*)
+    unimp  // Unreached
 END art_quick_method_entry_hook
 
 
@@ -446,94 +455,110 @@ ENTRY art_quick_method_exit_hook
     call artMethodExitHook                         // (Thread*, ArtMethod**, gpr_res*, fpr_res*,
                                                    // frame_size)
 
+    CFI_REMEMBER_STATE
+    bnez a0, .Lexithook_deopt_or_exception
+
     // Normal return.
     RESTORE_SAVE_EVERYTHING_FRAME
     ret
+
+.Lexithook_deopt_or_exception:
+    // Deoptimize or exception thrown.
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+    call art_quick_do_long_jump                    // (Context*)
+    unimp  // Unreached
 END art_quick_method_exit_hook
 
-
-// On entry a0 is uintptr_t* gprs_ and a1 is uint64_t* fprs_.
-// Both must reside on the stack, between current sp and target sp.
+// On entry a0 is the long jump context. This is expected to be returned from a previous entrypoint
+// call which threw an exception or deoptimized.
 ENTRY art_quick_do_long_jump
+    // Reserve space for the gprs + fprs;
+    INCREASE_FRAME RISCV64_LONG_JUMP_CONTEXT_SIZE
+
+    mv a1, sp
+    add a2, sp, RISCV64_LONG_JUMP_GPRS_SIZE
+
+    call artContextCopyForLongJump  // Context* context, uintptr_t* gprs, uintptr_t* fprs
+
+    add a0, sp, RISCV64_LONG_JUMP_GPRS_SIZE
+
     // Load FPRs
-    fld  ft0,  8*0(a1)   // f0
-    fld  ft1,  8*1(a1)   // f1
-    fld  ft2,  8*2(a1)   // f2
-    fld  ft3,  8*3(a1)   // f3
-    fld  ft4,  8*4(a1)   // f4
-    fld  ft5,  8*5(a1)   // f5
-    fld  ft6,  8*6(a1)   // f6
-    fld  ft7,  8*7(a1)   // f7
-    fld  fs0,  8*8(a1)   // f8
-    fld  fs1,  8*9(a1)   // f9
-    fld  fa0,  8*10(a1)  // f10
-    fld  fa1,  8*11(a1)  // f11
-    fld  fa2,  8*12(a1)  // f12
-    fld  fa3,  8*13(a1)  // f13
-    fld  fa4,  8*14(a1)  // f14
-    fld  fa5,  8*15(a1)  // f15
-    fld  fa6,  8*16(a1)  // f16
-    fld  fa7,  8*17(a1)  // f17
-    fld  fs2,  8*18(a1)  // f18
-    fld  fs3,  8*19(a1)  // f19
-    fld  fs4,  8*20(a1)  // f20
-    fld  fs5,  8*21(a1)  // f21
-    fld  fs6,  8*22(a1)  // f22
-    fld  fs7,  8*23(a1)  // f23
-    fld  fs8,  8*24(a1)  // f24
-    fld  fs9,  8*25(a1)  // f25
-    fld  fs10, 8*26(a1)  // f26
-    fld  fs11, 8*27(a1)  // f27
-    fld  ft8,  8*28(a1)  // f28
-    fld  ft9,  8*29(a1)  // f29
-    fld  ft10, 8*30(a1)  // f30
-    fld  ft11, 8*31(a1)  // f31
+    fld  ft0,  8*0(a0)   // f0
+    fld  ft1,  8*1(a0)   // f1
+    fld  ft2,  8*2(a0)   // f2
+    fld  ft3,  8*3(a0)   // f3
+    fld  ft4,  8*4(a0)   // f4
+    fld  ft5,  8*5(a0)   // f5
+    fld  ft6,  8*6(a0)   // f6
+    fld  ft7,  8*7(a0)   // f7
+    fld  fs0,  8*8(a0)   // f8
+    fld  fs1,  8*9(a0)   // f9
+    fld  fa0,  8*10(a0)  // f10
+    fld  fa1,  8*11(a0)  // f11
+    fld  fa2,  8*12(a0)  // f12
+    fld  fa3,  8*13(a0)  // f13
+    fld  fa4,  8*14(a0)  // f14
+    fld  fa5,  8*15(a0)  // f15
+    fld  fa6,  8*16(a0)  // f16
+    fld  fa7,  8*17(a0)  // f17
+    fld  fs2,  8*18(a0)  // f18
+    fld  fs3,  8*19(a0)  // f19
+    fld  fs4,  8*20(a0)  // f20
+    fld  fs5,  8*21(a0)  // f21
+    fld  fs6,  8*22(a0)  // f22
+    fld  fs7,  8*23(a0)  // f23
+    fld  fs8,  8*24(a0)  // f24
+    fld  fs9,  8*25(a0)  // f25
+    fld  fs10, 8*26(a0)  // f26
+    fld  fs11, 8*27(a0)  // f27
+    fld  ft8,  8*28(a0)  // f28
+    fld  ft9,  8*29(a0)  // f29
+    fld  ft10, 8*30(a0)  // f30
+    fld  ft11, 8*31(a0)  // f31
 
     // Load GPRs.
-    // Skip slot 8*0(a0) for zero/x0 as it is hard-wired zero.
-    ld  ra,   8*1(a0)   // x1
-    // Skip slot 8*2(a0) for sp/x2 as it is set below.
-    // Skip slot 8*3(a0) for platform-specific thread pointer gp/x3.
-    // Skip slot 8*4(a0) for platform-specific global pointer tp/x4.
-    // Skip slot 8*5(a0) for t0/x5 as it is clobbered below.
-    // Skip slot 8*6(a0) for t1/x6 as it is clobbered below.
-    ld  t2,   8*7(a0)   // x7
-    ld  s0,   8*8(a0)   // x8
-    ld  s1,   8*9(a0)   // x9
-    // Delay loading a0 as the base is in a0.
-    ld  a1,   8*11(a0)  // x11
-    ld  a2,   8*12(a0)  // x12
-    ld  a3,   8*13(a0)  // x13
-    ld  a4,   8*14(a0)  // x14
-    ld  a5,   8*15(a0)  // x15
-    ld  a6,   8*16(a0)  // x16
-    ld  a7,   8*17(a0)  // x17
-    ld  s2,   8*18(a0)  // x18
-    ld  s3,   8*19(a0)  // x19
-    ld  s4,   8*20(a0)  // x20
-    ld  s5,   8*21(a0)  // x21
-    ld  s6,   8*22(a0)  // x22
-    ld  s7,   8*23(a0)  // x23
-    ld  s8,   8*24(a0)  // x24
-    ld  s9,   8*25(a0)  // x25
-    ld  s10,  8*26(a0)  // x26
-    ld  s11,  8*27(a0)  // x27
-    ld  t3,   8*28(a0)  // x28
-    ld  t4,   8*29(a0)  // x29
-    ld  t5,   8*30(a0)  // x30
-    ld  t6,   8*31(a0)  // x31
+    // Skip slot 8*0(sp) for zero/x0 as it is hard-wired zero.
+    ld  ra,   8*1(sp)   // x1
+    // Skip slot 8*2(sp) for sp/x2 as it is set below.
+    // Skip slot 8*3(sp) for platform-specific thread pointer gp/x3.
+    // Skip slot 8*4(sp) for platform-specific global pointer tp/x4.
+    // Skip slot 8*5(sp) for t0/x5 as it is clobbered below.
+    // Skip slot 8*6(sp) for t1/x6 as it is clobbered below.
+    ld  t2,   8*7(sp)   // x7
+    ld  s0,   8*8(sp)   // x8
+    ld  s1,   8*9(sp)   // x9
+    ld  a0,   8*10(sp)  // x10
+    ld  a1,   8*11(sp)  // x11
+    ld  a2,   8*12(sp)  // x12
+    ld  a3,   8*13(sp)  // x13
+    ld  a4,   8*14(sp)  // x14
+    ld  a5,   8*15(sp)  // x15
+    ld  a6,   8*16(sp)  // x16
+    ld  a7,   8*17(sp)  // x17
+    ld  s2,   8*18(sp)  // x18
+    ld  s3,   8*19(sp)  // x19
+    ld  s4,   8*20(sp)  // x20
+    ld  s5,   8*21(sp)  // x21
+    ld  s6,   8*22(sp)  // x22
+    ld  s7,   8*23(sp)  // x23
+    ld  s8,   8*24(sp)  // x24
+    ld  s9,   8*25(sp)  // x25
+    ld  s10,  8*26(sp)  // x26
+    ld  s11,  8*27(sp)  // x27
+    ld  t3,   8*28(sp)  // x28
+    ld  t4,   8*29(sp)  // x29
+    ld  t5,   8*30(sp)  // x30
+    ld  t6,   8*31(sp)  // x31
 
     // Load sp to t0.
-    ld  t0, 8*2(a0)
+    ld  t0, 8*2(sp)
 
     // Load PC to t1, it is in the last stack slot.
-    ld  t1, 8*32(a0)
-
-    // Now load a0.
-    ld  a0, 8*10(a0)  // x10
+    ld  t1, 8*32(sp)
 
     // Set sp. Do not access fprs_ and gprs_ from now, they are below sp.
     mv sp, t0
+    .cfi_def_cfa_offset 0
 
     jr  t1
 END art_quick_do_long_jump
@@ -549,32 +574,47 @@ END art_quick_do_long_jump
     mv    a1, a0                      // pass the result
     mv    a0, xSELF                   // pass Thread::Current
     call  artDeoptimizeIfNeeded       // (Thread*, uintptr_t, bool)
+
+    CFI_REMEMBER_STATE
+    bnez  a0, 3f
+
     RESTORE_SAVE_EVERYTHING_FRAME
     ret
+3:
+    // Deoptimize
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+    call  art_quick_do_long_jump      // (Context*)
+    unimp  // Unreached
 .endm
 
 
 .macro RETURN_OR_DEOPT_IF_RESULT_IS_NON_NULL_OR_DELIVER
+    CFI_REMEMBER_STATE
     beqz  a0, 1f
     DEOPT_OR_RETURN a1, /*is_ref=*/ 1
 1:
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, 0
     DELIVER_PENDING_EXCEPTION
 .endm
 
 
 .macro RETURN_OR_DEOPT_IF_INT_RESULT_IS_ZERO_OR_DELIVER
+    CFI_REMEMBER_STATE
     bnez  a0, 1f
     DEOPT_OR_RETURN a1
 1:
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, 0
     DELIVER_PENDING_EXCEPTION
 .endm
 
 
 .macro RETURN_OR_DEOPT_OR_DELIVER_PENDING_EXCEPTION is_ref = 0
     lwu   a1, THREAD_EXCEPTION_OFFSET(xSELF)   // Get exception field.
+    CFI_REMEMBER_STATE
     bnez  a1, 1f
     DEOPT_OR_RETURN a1, \is_ref                // Check if deopt is required.
 1:
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, 0
     DELIVER_PENDING_EXCEPTION                  // Deliver exception on current thread.
 .endm
 
@@ -597,10 +637,18 @@ END art_quick_do_long_jump
   mv      a1, a0                                     // pass the result
   mv      a0, xSELF                                  // Thread::Current
   call    artDeoptimizeIfNeeded
+
   CFI_REMEMBER_STATE
+  bnez    a0, 3f
+
   RESTORE_SAVE_EVERYTHING_FRAME
   ret
+
+3:
+  // Deoptimize
   CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+  call    art_quick_do_long_jump                     // (Context*)
+  unimp  // Unreached
 .endm
 
 
@@ -683,7 +731,8 @@ ENTRY art_quick_deoptimize_from_compiled_code
     SETUP_SAVE_EVERYTHING_FRAME
     mv    a1, xSELF                           // Pass Thread::Current().
     call  artDeoptimizeFromCompiledCode       // (DeoptimizationKind, Thread*)
-    unimp
+    call  art_quick_do_long_jump              // (Context*)
+    unimp  // Unreached
 END art_quick_deoptimize_from_compiled_code
 
 
@@ -738,7 +787,8 @@ ENTRY art_quick_check_instance_of
     SETUP_SAVE_ALL_CALLEE_SAVES_FRAME         // Save all registers as basis for long jump context.
     mv    a2, xSELF                           // Pass Thread::Current().
     call  artThrowClassCastExceptionForObject // (Object*, Class*, Thread*)
-    unimp                                     // We should not return here...
+    call  art_quick_do_long_jump              // (Context*)
+    unimp  // Unreached
 END art_quick_check_instance_of
 
 
@@ -748,7 +798,8 @@ ENTRY \c_name
     SETUP_SAVE_EVERYTHING_FRAME       // save all registers as basis for long jump context.
     mv    a\n, xSELF                  // pass Thread::Current.
     call  \cxx_name                   // \cxx_name(args..., Thread*).
-    unimp
+    call  art_quick_do_long_jump      // (Context*)
+    unimp  // Unreached
 END \c_name
 .endm
 
@@ -769,7 +820,8 @@ ENTRY \c_name
     SETUP_SAVE_ALL_CALLEE_SAVES_FRAME // save all registers as basis for long jump context.
     mv    a\n, xSELF                  // pass Thread::Current.
     call  \cxx_name                   // \cxx_name(args..., Thread*).
-    unimp
+    call  art_quick_do_long_jump      // (Context*)
+    unimp  // Unreached
 END \c_name
 .endm
 
@@ -801,7 +853,8 @@ ENTRY art_quick_throw_null_pointer_exception_from_signal
     mv    a0, ra                      // pass the fault address stored in RA by the fault handler.
     mv    a1, xSELF                   // pass Thread::Current.
     call  artThrowNullPointerExceptionFromSignal  // (arg, Thread*).
-    unimp
+    call  art_quick_do_long_jump                  // (Context*)
+    unimp  // Unreached
 END art_quick_throw_null_pointer_exception_from_signal
 
 
@@ -859,8 +912,18 @@ ENTRY art_quick_test_suspend
         RUNTIME_SAVE_EVERYTHING_FOR_SUSPEND_CHECK_METHOD_OFFSET
     mv   a0, xSELF
     call artTestSuspendFromCode
+
+    CFI_REMEMBER_STATE
+    bnez a0, .Ltest_suspend_deoptimize
+
     RESTORE_SAVE_EVERYTHING_FRAME
     ret
+
+.Ltest_suspend_deoptimize:
+    // Deoptimize
+    CFI_RESTORE_STATE_AND_DEF_CFA sp, FRAME_SIZE_SAVE_EVERYTHING
+    call art_quick_do_long_jump   // (Context*)
+    unimp  // Unreached
 END art_quick_test_suspend
 
 
@@ -1331,7 +1394,8 @@ ENTRY art_quick_aput_obj
     mv    a1, a2                        // Pass value.
     mv    a2, xSELF                     // Pass Thread::Current().
     call  artThrowArrayStoreException   // (Object*, Object*, Thread*).
-    unimp                               // Unreachable.
+    call  art_quick_do_long_jump        // (Context*)
+    unimp  // Unreached
 
 #if defined(USE_READ_BARRIER) && defined(USE_BAKER_READ_BARRIER)
     CFI_RESTORE_STATE_AND_DEF_CFA sp, 0

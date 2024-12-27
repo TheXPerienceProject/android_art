@@ -50,6 +50,7 @@
 #include "string_array_utils.h"
 #include "thread-inl.h"
 #include "trace.h"
+#include "trace_profile.h"
 
 namespace art HIDDEN {
 
@@ -151,6 +152,46 @@ static jint VMDebug_getMethodTracingMode(JNIEnv*, jclass) {
 
 static void VMDebug_stopMethodTracing(JNIEnv*, jclass) {
   Trace::Stop();
+}
+
+static void VMDebug_stopLowOverheadTraceImpl(JNIEnv*, jclass) {
+  TraceProfiler::Stop();
+}
+
+static void VMDebug_dumpLowOverheadTraceImpl(JNIEnv* env, jclass, jstring javaProfileFileName) {
+  ScopedUtfChars profileFileName(env, javaProfileFileName);
+  if (profileFileName.c_str() == nullptr) {
+    LOG(ERROR) << "Filename not provided, ignoring the request to dump profile";
+    return;
+  }
+  TraceProfiler::Dump(profileFileName.c_str());
+}
+
+static void VMDebug_dumpLowOverheadTraceFdImpl(JNIEnv* env, jclass, jint originalFd) {
+  if (originalFd < 0) {
+    ScopedObjectAccess soa(env);
+    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
+                                   "Trace fd is invalid: %d",
+                                   originalFd);
+    return;
+  }
+
+  // Set the O_CLOEXEC flag atomically here, so the file gets closed when a new process is forked.
+  int fd = DupCloexec(originalFd);
+  if (fd < 0) {
+    ScopedObjectAccess soa(env);
+    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
+                                   "dup(%d) failed: %s",
+                                   originalFd,
+                                   strerror(errno));
+    return;
+  }
+
+  TraceProfiler::Dump(fd);
+}
+
+static void VMDebug_startLowOverheadTraceImpl(JNIEnv*, jclass) {
+  TraceProfiler::Start();
 }
 
 static jboolean VMDebug_isDebuggerConnected(JNIEnv*, jclass) {
@@ -593,6 +634,10 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(VMDebug, addApplication, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(VMDebug, removeApplication, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(VMDebug, setUserId, "(I)V"),
+    NATIVE_METHOD(VMDebug, startLowOverheadTraceImpl, "()V"),
+    NATIVE_METHOD(VMDebug, stopLowOverheadTraceImpl, "()V"),
+    NATIVE_METHOD(VMDebug, dumpLowOverheadTraceImpl, "(Ljava/lang/String;)V"),
+    NATIVE_METHOD(VMDebug, dumpLowOverheadTraceFdImpl, "(I)V"),
 };
 
 void register_dalvik_system_VMDebug(JNIEnv* env) {

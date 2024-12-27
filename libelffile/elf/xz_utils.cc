@@ -16,13 +16,13 @@
 
 #include "xz_utils.h"
 
-#include <vector>
 #include <mutex>
+#include <vector>
 
 #include "base/array_ref.h"
 #include "base/bit_utils.h"
+#include "base/globals.h"
 #include "base/leb128.h"
-#include "base/mem_map.h"
 #include "dwarf/writer.h"
 
 // liblzma.
@@ -99,7 +99,8 @@ void XzCompress(ArrayRef<const uint8_t> src,
 }
 
 void XzDecompress(ArrayRef<const uint8_t> src, std::vector<uint8_t>* dst) {
-  const size_t page_size = MemMap::GetPageSize();
+  static const size_t page_size = GetPageSizeSlow();
+  CHECK_NE(page_size, 0U);
 
   XzInitCrc();
   std::unique_ptr<CXzUnpacker> state(new CXzUnpacker());

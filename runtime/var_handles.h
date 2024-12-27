@@ -18,6 +18,10 @@
 #define ART_RUNTIME_VAR_HANDLES_H_
 
 #include "base/macros.h"
+#include "dex/dex_file_types.h"
+#include "dex/dex_instruction.h"
+#include "interpreter/shadow_frame.h"
+#include "jvalue.h"
 #include "mirror/var_handle.h"
 
 namespace art HIDDEN {
@@ -39,6 +43,16 @@ bool VarHandleInvokeAccessor(Thread* self,
                              ShadowFrame& shadow_frame,
                              Handle<mirror::VarHandle> var_handle,
                              mirror::RawMethodType callsite_type,
+                             const mirror::VarHandle::AccessMode access_mode,
+                             const InstructionOperands* const operands,
+                             JValue* result)
+    REQUIRES_SHARED(Locks::mutator_lock_);
+
+bool VarHandleInvokeAccessor(Thread* self,
+                             ShadowFrame& shadow_frame,
+                             Handle<mirror::VarHandle> var_handle,
+                             ArtMethod* caller_method,
+                             const dex::ProtoIndex callsite_type,
                              const mirror::VarHandle::AccessMode access_mode,
                              const InstructionOperands* const operands,
                              JValue* result)

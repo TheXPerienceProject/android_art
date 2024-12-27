@@ -120,6 +120,10 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   qpoints->SetStringCompareTo(art_quick_string_compareto);
   qpoints->SetMemcpy(art_quick_memcpy);
 
+  // Invoke.
+  qpoints->SetInvokePolymorphicWithHiddenReceiver(
+      art_quick_invoke_polymorphic_with_hidden_receiver);
+
   // Read barrier.
   UpdateReadBarrierEntrypoints(qpoints, /*is_active=*/ false);
   qpoints->SetReadBarrierMarkReg04(nullptr);  // Cannot use register 4 (RSP) to pass arguments.

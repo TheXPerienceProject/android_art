@@ -14,8 +14,12 @@
  * limitations under the License.
  */
 
+#include "android-base/logging.h"
+#include "arch/context.h"
 #include "art_method-inl.h"
+#include "art_method.h"
 #include "base/callee_save_type.h"
+#include "base/globals.h"
 #include "base/pointer_size.h"
 #include "callee_save_frame.h"
 #include "common_throws.h"
@@ -60,8 +64,8 @@
 
 namespace art HIDDEN {
 
-extern "C" NO_RETURN void artDeoptimizeFromCompiledCode(DeoptimizationKind kind, Thread* self);
-extern "C" NO_RETURN void artDeoptimize(Thread* self, bool skip_method_exit_callbacks);
+extern "C" Context* artDeoptimizeFromCompiledCode(DeoptimizationKind kind, Thread* self);
+extern "C" Context* artDeoptimize(Thread* self, bool skip_method_exit_callbacks);
 
 // Visits the arguments as saved to the stack by a CalleeSaveType::kRefAndArgs callee save frame.
 class QuickArgumentVisitor {
@@ -238,6 +242,10 @@ class QuickArgumentVisitor {
   // | RBX/R3          |    callee save
   // | RDX/R2          |    arg2
   // | RCX/R1          |    arg3
+  // | XMM15           |    callee save
+  // | XMM14           |    callee save
+  // | XMM13           |    callee save
+  // | XMM12           |    callee save
   // | XMM7            |    float arg 8
   // | XMM6            |    float arg 7
   // | XMM5            |    float arg 6
@@ -576,6 +584,7 @@ class BuildQuickShadowFrameVisitor final : public QuickArgumentVisitor {
       : QuickArgumentVisitor(sp, is_static, shorty), sf_(sf), cur_reg_(first_arg_reg) {}
 
   void Visit() REQUIRES_SHARED(Locks::mutator_lock_) override;
+  void SetReceiver(ObjPtr<mirror::Object> receiver) REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
   ShadowFrame* const sf_;
@@ -583,6 +592,12 @@ class BuildQuickShadowFrameVisitor final : public QuickArgumentVisitor {
 
   DISALLOW_COPY_AND_ASSIGN(BuildQuickShadowFrameVisitor);
 };
+
+void BuildQuickShadowFrameVisitor::SetReceiver(ObjPtr<mirror::Object> receiver) {
+  DCHECK_EQ(cur_reg_, 0u);
+  sf_->SetVRegReference(cur_reg_, receiver);
+  ++cur_reg_;
+}
 
 void BuildQuickShadowFrameVisitor::Visit() {
   Primitive::Type type = GetParamPrimitiveType();
@@ -2365,14 +2380,6 @@ extern "C" uint64_t artInvokePolymorphic(mirror::Object* raw_receiver, Thread* s
   ArtMethod* resolved_method = linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
       self, inst.VRegB(), caller_method, kVirtual);
 
-  Handle<mirror::MethodType> method_type(
-      hs.NewHandle(linker->ResolveMethodType(self, proto_idx, caller_method)));
-  if (UNLIKELY(method_type.IsNull())) {
-    // This implies we couldn't resolve one or more types in this method handle.
-    CHECK(self->IsExceptionPending());
-    return 0UL;
-  }
-
   DCHECK_EQ(ArtMethod::NumArgRegisters(shorty) + 1u, (uint32_t)inst.VRegA());
   DCHECK_EQ(resolved_method->IsStatic(), kMethodIsStatic);
 
@@ -2401,10 +2408,18 @@ extern "C" uint64_t artInvokePolymorphic(mirror::Object* raw_receiver, Thread* s
   // Call DoInvokePolymorphic with |is_range| = true, as shadow frame has argument registers in
   // consecutive order.
   RangeInstructionOperands operands(first_arg + 1, num_vregs - 1);
-  Intrinsics intrinsic = static_cast<Intrinsics>(resolved_method->GetIntrinsic());
+  Intrinsics intrinsic = resolved_method->GetIntrinsic();
   JValue result;
   bool success = false;
   if (resolved_method->GetDeclaringClass() == GetClassRoot<mirror::MethodHandle>(linker)) {
+    Handle<mirror::MethodType> method_type(
+        hs.NewHandle(linker->ResolveMethodType(self, proto_idx, caller_method)));
+    if (UNLIKELY(method_type.IsNull())) {
+      // This implies we couldn't resolve one or more types in this method handle.
+      CHECK(self->IsExceptionPending());
+      return 0UL;
+    }
+
     Handle<mirror::MethodHandle> method_handle(hs.NewHandle(
         ObjPtr<mirror::MethodHandle>::DownCast(receiver_handle.Get())));
     if (intrinsic == Intrinsics::kMethodHandleInvokeExact) {
@@ -2430,10 +2445,12 @@ extern "C" uint64_t artInvokePolymorphic(mirror::Object* raw_receiver, Thread* s
         ObjPtr<mirror::VarHandle>::DownCast(receiver_handle.Get())));
     mirror::VarHandle::AccessMode access_mode =
         mirror::VarHandle::GetAccessModeByIntrinsic(intrinsic);
+
     success = VarHandleInvokeAccessor(self,
                                       *shadow_frame,
                                       var_handle,
-                                      method_type,
+                                      caller_method,
+                                      proto_idx,
                                       access_mode,
                                       &operands,
                                       &result);
@@ -2445,6 +2462,106 @@ extern "C" uint64_t artInvokePolymorphic(mirror::Object* raw_receiver, Thread* s
   self->PopManagedStackFragment(fragment);
 
   bool is_ref = (shorty[0] == 'L');
+  Runtime::Current()->GetInstrumentation()->PushDeoptContextIfNeeded(
+      self, DeoptimizationMethodType::kDefault, is_ref, result);
+
+  return NanBoxResultIfNeeded(result.GetJ(), shorty[0]);
+}
+
+extern "C" uint64_t artInvokePolymorphicWithHiddenReceiver(mirror::Object* raw_receiver,
+                                                           Thread* self,
+                                                           ArtMethod** sp)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  ScopedQuickEntrypointChecks sqec(self);
+  DCHECK(raw_receiver != nullptr);
+  DCHECK(raw_receiver->InstanceOf(WellKnownClasses::java_lang_invoke_MethodHandle.Get()));
+  DCHECK_EQ(*sp, Runtime::Current()->GetCalleeSaveMethod(CalleeSaveType::kSaveRefsAndArgs));
+
+  JNIEnvExt* env = self->GetJniEnv();
+  ScopedObjectAccessUnchecked soa(env);
+  ScopedJniEnvLocalRefState env_state(env);
+  const char* old_cause = self->StartAssertNoThreadSuspension("Making stack arguments safe.");
+
+  // From the instruction, get the |callsite_shorty| and expose arguments on the stack to the GC.
+  uint32_t dex_pc;
+  ArtMethod* caller_method = QuickArgumentVisitor::GetCallingMethodAndDexPc(sp, &dex_pc);
+  const Instruction& inst = caller_method->DexInstructions().InstructionAt(dex_pc);
+  DCHECK(inst.Opcode() == Instruction::INVOKE_POLYMORPHIC ||
+         inst.Opcode() == Instruction::INVOKE_POLYMORPHIC_RANGE);
+  const dex::ProtoIndex proto_idx(inst.VRegH());
+  std::string_view shorty = caller_method->GetDexFile()->GetShortyView(proto_idx);
+
+  // invokeExact is not a static method, but here we use custom calling convention and the receiver
+  // (MethodHandle) object is not passed as a first argument, but through different means and hence
+  // shorty and arguments allocation looks as-if invokeExact was static.
+  RememberForGcArgumentVisitor gc_visitor(sp, /* is_static= */ true, shorty, &soa);
+  gc_visitor.VisitArguments();
+
+  // Wrap raw_receiver in a Handle for safety.
+  StackHandleScope<2> hs(self);
+  Handle<mirror::MethodHandle> method_handle(
+      hs.NewHandle(down_cast<mirror::MethodHandle*>(raw_receiver)));
+
+  self->EndAssertNoThreadSuspension(old_cause);
+
+  ClassLinker* linker = Runtime::Current()->GetClassLinker();
+  ArtMethod* invoke_exact = WellKnownClasses::java_lang_invoke_MethodHandle_invokeExact;
+  if (kIsDebugBuild) {
+    ArtMethod* resolved_method = linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
+        self, inst.VRegB(), caller_method, kVirtual);
+    CHECK_EQ(resolved_method, invoke_exact);
+  }
+
+  Handle<mirror::MethodType> method_type(
+      hs.NewHandle(linker->ResolveMethodType(self, proto_idx, caller_method)));
+  if (UNLIKELY(method_type.IsNull())) {
+    // This implies we couldn't resolve one or more types in this method handle.
+    CHECK(self->IsExceptionPending());
+    return 0UL;
+  }
+
+  DCHECK_EQ(ArtMethod::NumArgRegisters(shorty) + 1u, (uint32_t)inst.VRegA());
+
+  // Fix references before constructing the shadow frame.
+  gc_visitor.FixupReferences();
+
+  // Construct shadow frame placing arguments consecutively from |first_arg|.
+  const bool is_range = inst.Opcode() == Instruction::INVOKE_POLYMORPHIC_RANGE;
+  const size_t num_vregs = is_range ? inst.VRegA_4rcc() : inst.VRegA_45cc();
+  const size_t first_arg = 0;
+  ShadowFrameAllocaUniquePtr shadow_frame_unique_ptr =
+      CREATE_SHADOW_FRAME(num_vregs, invoke_exact, dex_pc);
+  ShadowFrame* shadow_frame = shadow_frame_unique_ptr.get();
+  ScopedStackedShadowFramePusher frame_pusher(self, shadow_frame);
+  // Pretend the method is static, see the gc_visitor comment above.
+  BuildQuickShadowFrameVisitor shadow_frame_builder(sp,
+                                                    /* is_static= */ true,
+                                                    shorty,
+                                                    shadow_frame,
+                                                    first_arg);
+  // Receiver is not passed as a regular argument, adding it to ShadowFrame manually.
+  shadow_frame_builder.SetReceiver(method_handle.Get());
+  shadow_frame_builder.VisitArguments();
+
+  // Push a transition back into managed code onto the linked list in thread.
+  ManagedStack fragment;
+  self->PushManagedStackFragment(&fragment);
+
+  RangeInstructionOperands operands(first_arg + 1, num_vregs - 1);
+  JValue result;
+  bool success = MethodHandleInvokeExact(self,
+                                         *shadow_frame,
+                                         method_handle,
+                                         method_type,
+                                         &operands,
+                                         &result);
+
+  DCHECK(success || self->IsExceptionPending());
+
+  // Pop transition record.
+  self->PopManagedStackFragment(fragment);
+
+  bool is_ref = shorty[0] == 'L';
   Runtime::Current()->GetInstrumentation()->PushDeoptContextIfNeeded(
       self, DeoptimizationMethodType::kDefault, is_ref, result);
 
@@ -2517,12 +2634,14 @@ extern "C" void artJniMethodEntryHook(Thread* self)
   instr->MethodEnterEvent(self, method);
 }
 
-extern "C" void artMethodEntryHook(ArtMethod* method, Thread* self, ArtMethod** sp)
+extern "C" Context* artMethodEntryHook(ArtMethod* method, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
+  ScopedQuickEntrypointChecks sqec(self);
   instrumentation::Instrumentation* instr = Runtime::Current()->GetInstrumentation();
   if (instr->HasFastMethodEntryListenersOnly()) {
     instr->MethodEnterEvent(self, method);
-    return;
+    // No exception or deoptimization.
+    return nullptr;
   }
 
   if (instr->HasMethodEntryListeners()) {
@@ -2533,19 +2652,22 @@ extern "C" void artMethodEntryHook(ArtMethod* method, Thread* self, ArtMethod** 
       // Instrumentation can request deoptimizing only a particular method (for ex: when
       // there are break points on the method). In such cases deoptimize only this method.
       // FullFrame deoptimizations are handled on method exits.
-      artDeoptimizeFromCompiledCode(DeoptimizationKind::kDebugging, self);
+      return artDeoptimizeFromCompiledCode(DeoptimizationKind::kDebugging, self);
     }
   } else {
     DCHECK(!instr->IsDeoptimized(method));
   }
+  // No exception or deoptimization.
+  return nullptr;
 }
 
-extern "C" void artMethodExitHook(Thread* self,
-                                  ArtMethod** sp,
-                                  uint64_t* gpr_result,
-                                  uint64_t* fpr_result,
-                                  uint32_t frame_size)
+extern "C" Context* artMethodExitHook(Thread* self,
+                                      ArtMethod** sp,
+                                      uint64_t* gpr_result,
+                                      uint64_t* fpr_result,
+                                      uint32_t frame_size)
   REQUIRES_SHARED(Locks::mutator_lock_) {
+  ScopedQuickEntrypointChecks sqec(self);
   DCHECK_EQ(reinterpret_cast<uintptr_t>(self), reinterpret_cast<uintptr_t>(Thread::Current()));
   // Instrumentation exit stub must not be entered with a pending exception.
   CHECK(!self->IsExceptionPending())
@@ -2560,7 +2682,8 @@ extern "C" void artMethodExitHook(Thread* self,
     // or a return value.
     JValue return_value;
     instr->MethodExitEvent(self, method, /* frame= */ {}, return_value);
-    return;
+    // No exception or deoptimization.
+    return nullptr;
   }
 
   bool is_ref = false;
@@ -2593,8 +2716,10 @@ extern "C" void artMethodExitHook(Thread* self,
   if (self->IsExceptionPending() || self->ObserveAsyncException()) {
     // The exception was thrown from the method exit callback. We should not call method unwind
     // callbacks for this case.
-    self->QuickDeliverException(/* is_method_exit_exception= */ true);
-    UNREACHABLE();
+    std::unique_ptr<Context> context =
+        self->QuickDeliverException(/* is_method_exit_exception= */ true);
+    DCHECK(context != nullptr);
+    return context.release();
   }
 
   // We should deoptimize here if the caller requires a deoptimization or if the current method
@@ -2609,9 +2734,15 @@ extern "C" void artMethodExitHook(Thread* self,
         ret_val, is_ref, self->GetException(), false, deopt_method_type);
     // Method exit callback has already been run for this method. So tell the deoptimizer to skip
     // callbacks for this frame.
-    artDeoptimize(self, /*skip_method_exit_callbacks = */ true);
-    UNREACHABLE();
+    std::unique_ptr<Context> context = self->Deoptimize(DeoptimizationKind::kFullFrame,
+                                                        /* single_frame= */ false,
+                                                        /* skip_method_exit_callbacks= */ true);
+    DCHECK(context != nullptr);
+    return context.release();
   }
+
+  // No exception or deoptimization.
+  return nullptr;
 }
 
 }  // namespace art

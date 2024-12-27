@@ -23,6 +23,7 @@ import android.os.Build;
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.server.art.model.DexMetadata;
 import com.android.server.art.proto.DexMetadataConfig;
 
 import java.io.FileNotFoundException;
@@ -44,6 +45,9 @@ import java.util.zip.ZipFile;
 public class DexMetadataHelper {
     @NonNull private final Injector mInjector;
 
+    private static final String PROFILE_DEX_METADATA = "primary.prof";
+    private static final String VDEX_DEX_METADATA = "primary.vdex";
+
     public DexMetadataHelper() {
         this(new Injector());
     }
@@ -56,29 +60,31 @@ public class DexMetadataHelper {
     @NonNull
     public DexMetadataInfo getDexMetadataInfo(@Nullable DexMetadataPath dmPath) {
         if (dmPath == null) {
-            return getDefaultDexMetadataInfo();
+            return getDefaultDexMetadataInfo(DexMetadata.TYPE_NONE);
         }
 
         String realDmPath = getDmPath(dmPath);
         try (var zipFile = mInjector.openZipFile(realDmPath)) {
             ZipEntry entry = zipFile.getEntry("config.pb");
             if (entry == null) {
-                return new DexMetadataInfo(dmPath, DexMetadataConfig.getDefaultInstance());
+                return new DexMetadataInfo(
+                        dmPath, DexMetadataConfig.getDefaultInstance(), getType(zipFile));
             }
             try (InputStream stream = zipFile.getInputStream(entry)) {
-                return new DexMetadataInfo(dmPath, DexMetadataConfig.parseFrom(stream));
+                return new DexMetadataInfo(
+                        dmPath, DexMetadataConfig.parseFrom(stream), getType(zipFile));
             }
         } catch (IOException e) {
             if (!(e instanceof FileNotFoundException || e instanceof NoSuchFileException)) {
                 AsLog.e(String.format("Failed to read dm file '%s'", realDmPath), e);
             }
-            return getDefaultDexMetadataInfo();
+            return getDefaultDexMetadataInfo(DexMetadata.TYPE_ERROR);
         }
     }
 
     @NonNull
-    private DexMetadataInfo getDefaultDexMetadataInfo() {
-        return new DexMetadataInfo(null /* dmPath */, DexMetadataConfig.getDefaultInstance());
+    private DexMetadataInfo getDefaultDexMetadataInfo(@DexMetadata.Type int type) {
+        return new DexMetadataInfo(null /* dmPath */, DexMetadataConfig.getDefaultInstance(), type);
     }
 
     @NonNull
@@ -88,14 +94,31 @@ public class DexMetadataHelper {
         return (pos != -1 ? dexPath.substring(0, pos) : dexPath) + ".dm";
     }
 
+    private static @DexMetadata.Type int getType(@NonNull ZipFile zipFile) {
+        var profile = zipFile.getEntry(PROFILE_DEX_METADATA);
+        var vdex = zipFile.getEntry(VDEX_DEX_METADATA);
+
+        if (profile != null && vdex != null) {
+            return DexMetadata.TYPE_PROFILE_AND_VDEX;
+        } else if (profile != null) {
+            return DexMetadata.TYPE_PROFILE;
+        } else if (vdex != null) {
+            return DexMetadata.TYPE_VDEX;
+        } else {
+            return DexMetadata.TYPE_NONE;
+        }
+    }
+
     /**
      * @param dmPath Represents the path to the dm file, if it exists. Or null if the file doesn't
      *         exist or an error occurred.
      * @param config The config deserialized from `config.pb`, if it exists. Or the default instance
      *         if the file doesn't exist or an error occurred.
+     * @param type An enum value representing whether the dm file contains a profile, a VDEX file,
+     *         none, or both.
      */
-    public record DexMetadataInfo(
-            @Nullable DexMetadataPath dmPath, @NonNull DexMetadataConfig config) {}
+    public record DexMetadataInfo(@Nullable DexMetadataPath dmPath,
+            @NonNull DexMetadataConfig config, @DexMetadata.Type int type) {}
 
     /**
      * Injector pattern for testing purpose.

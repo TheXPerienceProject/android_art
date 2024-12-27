@@ -27,7 +27,7 @@ namespace art HIDDEN {
 
 static jobject Throwable_nativeFillInStackTrace(JNIEnv* env, jclass) {
   ScopedFastNativeObjectAccess soa(env);
-  return soa.Self()->CreateInternalStackTrace(soa);
+  return soa.AddLocalReference<jobject>(soa.Self()->CreateInternalStackTrace(soa));
 }
 
 static jobjectArray Throwable_nativeGetStackTrace(JNIEnv* env, jclass, jobject javaStackState) {

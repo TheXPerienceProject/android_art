@@ -29,9 +29,10 @@
 #include "parallel_move_resolver.h"
 #include "utils/arm/assembler_arm_vixl.h"
 
-// TODO(VIXL): make vixl clean wrt -Wshadow.
+// TODO(VIXL): Make VIXL compile cleanly with -Wshadow, -Wdeprecated-declarations.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "aarch32/constants-aarch32.h"
 #include "aarch32/instructions-aarch32.h"
 #include "aarch32/macro-assembler-aarch32.h"
@@ -120,6 +121,10 @@ using VIXLInt32Literal = vixl::aarch32::Literal<int32_t>;
 using VIXLUInt32Literal = vixl::aarch32::Literal<uint32_t>;
 
 #define UNIMPLEMENTED_INTRINSIC_LIST_ARM(V)                                \
+  V(MathSignumFloat)                                                       \
+  V(MathSignumDouble)                                                      \
+  V(MathCopySignFloat)                                                     \
+  V(MathCopySignDouble)                                                    \
   V(MathRoundDouble) /* Could be done by changing rounding mode, maybe? */ \
   V(UnsafeCASLong)   /* High register pressure */                          \
   V(SystemArrayCopyChar)                                                   \
@@ -161,12 +166,14 @@ using VIXLUInt32Literal = vixl::aarch32::Literal<uint32_t>;
   V(StringBuilderToString)                                                 \
   V(SystemArrayCopyByte)                                                   \
   V(SystemArrayCopyInt)                                                    \
+  V(UnsafeArrayBaseOffset)                                                 \
   /* 1.8 */                                                                \
   V(MathFmaDouble)                                                         \
   V(MathFmaFloat)                                                          \
   V(MethodHandleInvokeExact)                                               \
   V(MethodHandleInvoke)                                                    \
   /* OpenJDK 11 */                                                         \
+  V(JdkUnsafeArrayBaseOffset)                                              \
   V(JdkUnsafeCASLong) /* High register pressure */                         \
   V(JdkUnsafeCompareAndSetLong)
 
@@ -383,13 +390,12 @@ class LocationsBuilderARMVIXL : public HGraphVisitor {
   void HandleInvoke(HInvoke* invoke);
   void HandleBitwiseOperation(HBinaryOperation* operation, Opcode opcode);
   void HandleCondition(HCondition* condition);
-  void HandleIntegerRotate(LocationSummary* locations);
-  void HandleLongRotate(LocationSummary* locations);
   void HandleShift(HBinaryOperation* operation);
   void HandleFieldSet(HInstruction* instruction,
                       const FieldInfo& field_info,
                       WriteBarrierKind write_barrier_kind);
   void HandleFieldGet(HInstruction* instruction, const FieldInfo& field_info);
+  void HandleRotate(HBinaryOperation* rotate);
 
   Location ArithmeticZeroOrFpuRegister(HInstruction* input);
   Location ArmEncodableConstantOrRegister(HInstruction* constant, Opcode opcode);
@@ -439,8 +445,9 @@ class InstructionCodeGeneratorARMVIXL : public InstructionCodeGenerator {
   void GenerateAddLongConst(Location out, Location first, uint64_t value);
   void HandleBitwiseOperation(HBinaryOperation* operation);
   void HandleCondition(HCondition* condition);
-  void HandleIntegerRotate(HRor* ror);
-  void HandleLongRotate(HRor* ror);
+  void HandleIntegerRotate(HBinaryOperation* rotate);
+  void HandleLongRotate(HBinaryOperation* rotate);
+  void HandleRotate(HBinaryOperation* rotate);
   void HandleShift(HBinaryOperation* operation);
 
   void GenerateWideAtomicStore(vixl::aarch32::Register addr,

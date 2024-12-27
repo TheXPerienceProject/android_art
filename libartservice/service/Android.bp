@@ -35,6 +35,11 @@ cc_defaults {
         "liblog", // Used by "JNIHelp.h".
         "libnativehelper",
     ],
+    target: {
+        android: {
+            compile_multilib: "first",
+        },
+    },
 }
 
 cc_library {
@@ -82,6 +87,8 @@ java_defaults {
     ],
     libs: [
         "androidx.annotation_annotation",
+        "aconfig-annotations-lib",
+        "art-aconfig-flags-java-lib",
         "auto_value_annotations",
         "sdk_module-lib_current_framework-configinfrastructure",
         "sdk_module-lib_current_framework-permission-s",
@@ -128,7 +135,9 @@ java_sdk_library {
         "service-art-defaults",
         "framework-system-server-module-optimize-defaults",
     ],
-    permitted_packages: ["com.android.server.art"],
+    permitted_packages: [
+        "com.android.server.art",
+    ],
     dex_preopt: {
         profile: "art-profile",
     },
@@ -144,6 +153,9 @@ java_sdk_library {
     optimize: {
         proguard_flags_files: ["proguard.flags"],
     },
+    aconfig_declarations: [
+        "art-aconfig-flags",
+    ],
 }
 
 java_library {
@@ -196,10 +208,11 @@ art_cc_defaults {
     ],
 }
 
-// Version of ART gtest `art_libartservice_tests` bundled with the ART APEX on target.
+// Version of ART gtest `art_libartservice_tests` for host.
 // TODO(b/192274705): Remove this module when the migration to standalone ART gtests is complete.
 art_cc_test {
     name: "art_libartservice_tests",
+    device_supported: false,
     defaults: [
         "art_gtest_defaults",
         "art_libartservice_tests_defaults",
@@ -222,6 +235,7 @@ art_cc_test {
         "libarttools",
         "libbase",
     ],
+    test_config_template: ":art-gtests-target-standalone-non-multilib-template",
 }
 
 android_test {
@@ -258,7 +272,7 @@ android_test {
         "libdexmakerjvmtiagent",
         "libstaticjvmtiagent",
     ],
-    compile_multilib: "both",
+    compile_multilib: "first",
 
     // TODO: This module should move to sdk_version: "system_server_current" when possible,
     //   as this will restrict the APIs available to just that expected system API. For now,

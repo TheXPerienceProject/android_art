@@ -4311,6 +4311,10 @@ void MethodVerifier<kVerifierDebug>::VerifyNewArray(const Instruction* inst,
       for (size_t ui = 0; ui < arg_count; ui++) {
         uint32_t get_reg = is_range ? inst->VRegC_3rc() + ui : arg[ui];
         work_line_->VerifyRegisterType(this, get_reg, expected_type);
+        if (flags_.have_pending_hard_failure_) {
+          // Don't continue on hard failures.
+          return;
+        }
       }
       // filled-array result goes into "result" register
       const RegType& precise_type = reg_types_.FromUninitialized(res_type);

@@ -19,10 +19,13 @@
 #include <limits>
 
 #include "arch/x86_64/instruction_set_features_x86_64.h"
+#include "arch/x86_64/registers_x86_64.h"
 #include "art_method.h"
 #include "base/bit_utils.h"
 #include "code_generator_x86_64.h"
+#include "dex/modifiers.h"
 #include "entrypoints/quick/quick_entrypoints.h"
+#include "entrypoints/quick/quick_entrypoints_enum.h"
 #include "heap_poisoning.h"
 #include "intrinsics.h"
 #include "intrinsic_objects.h"
@@ -32,6 +35,7 @@
 #include "mirror/object_array-inl.h"
 #include "mirror/reference.h"
 #include "mirror/string.h"
+#include "optimizing/code_generator.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread-current-inl.h"
 #include "utils/x86_64/assembler_x86_64.h"
@@ -139,6 +143,39 @@ class ReadBarrierSystemArrayCopySlowPathX86_64 : public SlowPathCode {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ReadBarrierSystemArrayCopySlowPathX86_64);
+};
+
+// The MethodHandle.invokeExact intrinsic sets up arguments to match the target method call. If we
+// need to go to the slow path, we call art_quick_invoke_polymorphic_with_hidden_receiver, which
+// expects the MethodHandle object in RDI (in place of the actual ArtMethod).
+class InvokePolymorphicSlowPathX86_64 : public SlowPathCode {
+ public:
+  InvokePolymorphicSlowPathX86_64(HInstruction* instruction, CpuRegister method_handle)
+      : SlowPathCode(instruction), method_handle_(method_handle) {
+    DCHECK(instruction->IsInvokePolymorphic());
+  }
+
+  void EmitNativeCode(CodeGenerator* codegen) override {
+    CodeGeneratorX86_64* x86_64_codegen = down_cast<CodeGeneratorX86_64*>(codegen);
+    X86_64Assembler* assembler = x86_64_codegen->GetAssembler();
+    __ Bind(GetEntryLabel());
+    SaveLiveRegisters(codegen, instruction_->GetLocations());
+
+    // Passing `MethodHandle` object as hidden argument.
+    __ movq(CpuRegister(RDI), method_handle_);
+    x86_64_codegen->InvokeRuntime(QuickEntrypointEnum::kQuickInvokePolymorphicWithHiddenReceiver,
+                                  instruction_,
+                                  instruction_->GetDexPc());
+
+    RestoreLiveRegisters(codegen, instruction_->GetLocations());
+    __ jmp(GetExitLabel());
+  }
+
+  const char* GetDescription() const override { return "InvokePolymorphicSlowPathX86_64"; }
+
+ private:
+  const CpuRegister method_handle_;
+  DISALLOW_COPY_AND_ASSIGN(InvokePolymorphicSlowPathX86_64);
 };
 
 static void CreateFPToIntLocations(ArenaAllocator* allocator, HInvoke* invoke) {
@@ -2080,8 +2117,11 @@ static void GenUnsafePut(LocationSummary* locations, DataType::Type type, bool i
     __ movl(temp, value);
     __ PoisonHeapReference(temp);
     __ movl(Address(base, offset, ScaleFactor::TIMES_1, 0), temp);
-  } else {
+  } else if (type == DataType::Type::kInt32 || type == DataType::Type::kReference) {
     __ movl(Address(base, offset, ScaleFactor::TIMES_1, 0), value);
+  } else {
+    CHECK_EQ(type, DataType::Type::kInt8) << "Unimplemented GenUnsafePut data type";
+    __ movb(Address(base, offset, ScaleFactor::TIMES_1, 0), value);
   }
 
   if (is_volatile) {
@@ -2803,8 +2843,7 @@ void IntrinsicLocationsBuilderX86_64::VisitLongReverse(HInvoke* invoke) {
       new (allocator_) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
   locations->SetInAt(0, Location::RequiresRegister());
   locations->SetOut(Location::SameAsFirstInput());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(2);
 }
 
 static void SwapBits64(CpuRegister reg, CpuRegister temp, CpuRegister temp_mask,
@@ -3603,7 +3642,7 @@ void IntrinsicLocationsBuilderX86_64::VisitMathFmaFloat(HInvoke* invoke) {
 
 // Generate subtype check without read barriers.
 static void GenerateSubTypeObjectCheckNoReadBarrier(CodeGeneratorX86_64* codegen,
-                                                    VarHandleSlowPathX86_64* slow_path,
+                                                    SlowPathCode* slow_path,
                                                     CpuRegister object,
                                                     CpuRegister temp,
                                                     Address type_address,
@@ -4059,6 +4098,107 @@ static void GenerateVarHandleGet(HInvoke* invoke,
   }
 }
 
+void IntrinsicLocationsBuilderX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
+  // Don't emit intrinsic code for MethodHandle.invokeExact when it certainly does not target
+  // invoke-virtual: if invokeExact is called w/o arguments or if the first argument in that
+  // call is not a reference.
+  if (!invoke->AsInvokePolymorphic()->CanHaveFastPath()) {
+    return;
+  }
+  ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
+  LocationSummary* locations = new (allocator)
+      LocationSummary(invoke, LocationSummary::kCallOnMainAndSlowPath, kIntrinsified);
+
+  InvokeDexCallingConventionVisitorX86_64 calling_convention;
+  locations->SetOut(calling_convention.GetReturnLocation(invoke->GetType()));
+
+  locations->SetInAt(0, Location::RequiresRegister());
+
+  // Accomodating LocationSummary for underlying invoke-* call.
+  uint32_t number_of_args = invoke->GetNumberOfArguments();
+  for (uint32_t i = 1; i < number_of_args; ++i) {
+    locations->SetInAt(i, calling_convention.GetNextLocation(invoke->InputAt(i)->GetType()));
+  }
+
+  // The last input is MethodType object corresponding to the call-site.
+  locations->SetInAt(number_of_args, Location::RequiresRegister());
+
+  locations->AddTemp(Location::RequiresRegister());
+}
+
+void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
+  DCHECK(invoke->AsInvokePolymorphic()->CanHaveFastPath());
+  LocationSummary* locations = invoke->GetLocations();
+
+  CpuRegister method_handle = locations->InAt(0).AsRegister<CpuRegister>();
+
+  SlowPathCode* slow_path =
+      new (codegen_->GetScopedAllocator()) InvokePolymorphicSlowPathX86_64(invoke, method_handle);
+  codegen_->AddSlowPath(slow_path);
+  X86_64Assembler* assembler = codegen_->GetAssembler();
+
+  Address method_handle_kind = Address(method_handle, mirror::MethodHandle::HandleKindOffset());
+
+  // If it is not InvokeVirtual then go to slow path.
+  // Even if MethodHandle's kind is kInvokeVirtual, the underlying method can still be an interface
+  // or a direct method (that's what current `MethodHandles$Lookup.findVirtual` is doing). We don't
+  // check whether `method` is an interface method explicitly: in that case the subtype check below
+  // will fail.
+  // TODO(b/297147201): check whether it can be more precise and what d8/r8 can produce.
+  __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeVirtual));
+  __ j(kNotEqual, slow_path->GetEntryLabel());
+
+  CpuRegister call_site_type =
+      locations->InAt(invoke->GetNumberOfArguments()).AsRegister<CpuRegister>();
+
+  // Call site should match with MethodHandle's type.
+  __ cmpl(call_site_type, Address(method_handle, mirror::MethodHandle::MethodTypeOffset()));
+  __ j(kNotEqual, slow_path->GetEntryLabel());
+
+  CpuRegister method = CpuRegister(kMethodRegisterArgument);
+
+  // Get method to call.
+  __ movq(method, Address(method_handle, mirror::MethodHandle::ArtFieldOrMethodOffset()));
+
+  CpuRegister receiver = locations->InAt(1).AsRegister<CpuRegister>();
+
+  __ testl(receiver, receiver);
+  __ j(kEqual, slow_path->GetEntryLabel());
+
+  // Using vtable_index register as temporary in subtype check. It will be overridden later.
+  // If `method` is an interface method this check will fail.
+  CpuRegister vtable_index = locations->GetTemp(0).AsRegister<CpuRegister>();
+  // We deliberately avoid the read barrier, letting the slow path handle the false negatives.
+  GenerateSubTypeObjectCheckNoReadBarrier(codegen_,
+                                          slow_path,
+                                          receiver,
+                                          vtable_index,
+                                          Address(method, ArtMethod::DeclaringClassOffset()));
+
+  NearLabel execute_target_method;
+  // Skip virtual dispatch if `method` is private.
+  __ testl(Address(method, ArtMethod::AccessFlagsOffset()), Immediate(kAccPrivate));
+  __ j(kNotZero, &execute_target_method);
+
+  // MethodIndex is uint16_t.
+  __ movzxw(vtable_index, Address(method, ArtMethod::MethodIndexOffset()));
+
+  constexpr uint32_t class_offset = mirror::Object::ClassOffset().Int32Value();
+  // Re-using method register for receiver class.
+  __ movl(method, Address(receiver, class_offset));
+
+  constexpr uint32_t vtable_offset =
+      mirror::Class::EmbeddedVTableOffset(art::PointerSize::k64).Int32Value();
+  __ movq(method, Address(method, vtable_index, TIMES_8, vtable_offset));
+
+  __ Bind(&execute_target_method);
+  __ call(Address(
+      method,
+      ArtMethod::EntryPointFromQuickCompiledCodeOffset(art::PointerSize::k64).SizeValue()));
+  codegen_->RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  __ Bind(slow_path->GetExitLabel());
+}
+
 void IntrinsicLocationsBuilderX86_64::VisitVarHandleGet(HInvoke* invoke) {
   CreateVarHandleGetLocations(invoke, codegen_);
 }
@@ -4233,8 +4373,7 @@ static void CreateVarHandleCompareAndSetOrExchangeLocations(HInvoke* invoke,
     locations->SetInAt(new_value_index, Location::RequiresRegister());
     if (expected_type == DataType::Type::kReference) {
       // Need two temporaries for MarkGCCard.
-      locations->AddTemp(Location::RequiresRegister());
-      locations->AddTemp(Location::RequiresRegister());
+      locations->AddRegisterTemps(2);
       if (codegen->EmitReadBarrier()) {
         // Need three temporaries for GenerateReferenceLoadWithBakerReadBarrier.
         DCHECK(kUseBakerReadBarrier);
@@ -4381,8 +4520,7 @@ static void CreateVarHandleGetAndSetLocations(HInvoke* invoke, CodeGeneratorX86_
     locations->SetInAt(new_value_index, Location::RegisterLocation(RAX));
     if (type == DataType::Type::kReference) {
       // Need two temporaries for MarkGCCard.
-      locations->AddTemp(Location::RequiresRegister());
-      locations->AddTemp(Location::RequiresRegister());
+      locations->AddRegisterTemps(2);
       if (codegen->EmitReadBarrier()) {
         // Need a third temporary for GenerateReferenceLoadWithBakerReadBarrier.
         DCHECK(kUseBakerReadBarrier);
@@ -4675,8 +4813,7 @@ static void CreateVarHandleGetAndAddLocations(HInvoke* invoke, CodeGeneratorX86_
       // case we need two temporary registers: one to hold value instead of RAX (which may get
       // clobbered by repeated CMPXCHG) and one for performing the operation. At compile time we
       // cannot distinguish this case from arrays or native-endian byte array views.
-      locations->AddTemp(Location::RequiresRegister());
-      locations->AddTemp(Location::RequiresRegister());
+      locations->AddRegisterTemps(2);
     }
   }
 }

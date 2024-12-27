@@ -55,6 +55,11 @@ Known Issues:
  * Line number decoding for allocations in proguarded classes.
 
 Release History:
+ 1.7.3 June 27, 2024
+   Add support to display bitmaps included in heapdump. To use this
+   functionality, collect the heapdump with `adb shell am dumpheap -b <fmt>`,
+   <fmt> can be `png`, `jpg` or `webp`.
+
  1.7.2 March 2, 2022
    Fix ahat parsing to allow leading whitespaces for comments.
    Hide Value class constructor.

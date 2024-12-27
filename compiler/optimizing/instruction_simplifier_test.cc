@@ -52,16 +52,16 @@ class InstructionSimplifierTestBase : public SuperClass, public OptimizingUnitTe
     gLogVerbosity.compiler = false;
   }
 
-  void PerformSimplification(const AdjacencyListGraph& blks) {
+  void PerformSimplification() {
     if (kDebugSimplifierTests) {
-      LOG(INFO) << "Pre simplification " << blks;
+      graph_->Dump(LOG_STREAM(INFO) << "Pre simplification ", /* codegen_= */ nullptr);
     }
     graph_->ClearDominanceInformation();
     graph_->BuildDominatorTree();
     InstructionSimplifier simp(graph_, /*codegen=*/nullptr);
     simp.Run();
     if (kDebugSimplifierTests) {
-      LOG(INFO) << "Post simplify " << blks;
+      graph_->Dump(LOG_STREAM(INFO) << "Post simplify ", /* codegen_= */ nullptr);
     }
   }
 };
@@ -103,18 +103,21 @@ class InstanceOfInstructionSimplifierTestGroup
     }
   }
 
-  std::pair<HLoadClass*, HLoadClass*> GetLoadClasses(VariableSizedHandleScope* vshs) {
+  std::pair<HLoadClass*, HLoadClass*> GetLoadClasses(HBasicBlock* block,
+                                                     VariableSizedHandleScope* vshs)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
     InstanceOfKind kind = GetParam();
-    ScopedObjectAccess soa(Thread::Current());
     // New inst always needs to have a valid rti since we dcheck that.
-    HLoadClass* new_inst = MakeClassLoad(
-        /* ti= */ std::nullopt, vshs->NewHandle<mirror::Class>(GetClassRoot<mirror::ClassExt>()));
+    HLoadClass* new_inst = MakeLoadClass(
+        block,
+        /* ti= */ std::nullopt,
+        vshs->NewHandle<mirror::Class>(GetClassRoot<mirror::ClassExt>()));
     new_inst->SetValidLoadedClassRTI();
     if (kind == InstanceOfKind::kSelf) {
       return {new_inst, new_inst};
     }
     if (kind == InstanceOfKind::kUnrelatedUnloaded) {
-      HLoadClass* target_class = MakeClassLoad();
+      HLoadClass* target_class = MakeLoadClass(block);
       EXPECT_FALSE(target_class->GetLoadedClassRTI().IsValid());
       return {new_inst, target_class};
     }
@@ -122,7 +125,8 @@ class InstanceOfInstructionSimplifierTestGroup
     // For simplicity we use class-roots as the types. The new-inst will always
     // be a ClassExt, unrelated-loaded will always be Throwable and super will
     // always be Object
-    HLoadClass* target_class = MakeClassLoad(
+    HLoadClass* target_class = MakeLoadClass(
+        block,
         /* ti= */ std::nullopt,
         vshs->NewHandle<mirror::Class>(kind == InstanceOfKind::kSupertype ?
                                            GetClassRoot<mirror::Object>() :
@@ -146,27 +150,14 @@ class InstanceOfInstructionSimplifierTestGroup
 TEST_P(InstanceOfInstructionSimplifierTestGroup, ExactClassInstanceOfOther) {
   ScopedObjectAccess soa(Thread::Current());
   VariableSizedHandleScope vshs(soa.Self());
-  InitGraph(/*handles=*/&vshs);
-
-  AdjacencyListGraph blks(SetupFromAdjacencyList("entry",
-                                                 "exit",
-                                                 {{"entry", "left"},
-                                                  {"entry", "right"},
-                                                  {"left", "breturn"},
-                                                  {"right", "breturn"},
-                                                  {"breturn", "exit"}}));
-#define GET_BLOCK(name) HBasicBlock* name = blks.Get(#name)
-  GET_BLOCK(entry);
-  GET_BLOCK(exit);
-  GET_BLOCK(breturn);
-  GET_BLOCK(left);
-  GET_BLOCK(right);
-#undef GET_BLOCK
+  HBasicBlock* breturn = InitEntryMainExitGraph(/*handles=*/&vshs);
+  auto [if_block, left, right] = CreateDiamondPattern(breturn);
   EnsurePredecessorOrder(breturn, {left, right});
+
   HInstruction* test_res = graph_->GetIntConstant(GetConstantResult() ? 1 : 0);
 
-  auto [new_inst_klass, target_klass] = GetLoadClasses(&vshs);
-  HInstruction* new_inst = MakeNewInstance(new_inst_klass);
+  auto [new_inst_klass, target_klass] = GetLoadClasses(if_block, &vshs);
+  HInstruction* new_inst = MakeNewInstance(if_block, new_inst_klass);
   new_inst->SetReferenceTypeInfo(
       ReferenceTypeInfo::Create(new_inst_klass->GetClass(), /*is_exact=*/true));
   HInstanceOf* instance_of = new (GetAllocator()) HInstanceOf(new_inst,
@@ -180,34 +171,14 @@ TEST_P(InstanceOfInstructionSimplifierTestGroup, ExactClassInstanceOfOther) {
   if (target_klass->GetLoadedClassRTI().IsValid()) {
     instance_of->SetValidTargetClassRTI();
   }
-  HInstruction* if_inst = new (GetAllocator()) HIf(instance_of);
-  entry->AddInstruction(new_inst_klass);
-  if (new_inst_klass != target_klass) {
-    entry->AddInstruction(target_klass);
-  }
-  entry->AddInstruction(new_inst);
-  entry->AddInstruction(instance_of);
-  entry->AddInstruction(if_inst);
-  ManuallyBuildEnvFor(new_inst_klass, {});
-  if (new_inst_klass != target_klass) {
-    target_klass->CopyEnvironmentFrom(new_inst_klass->GetEnvironment());
-  }
-  new_inst->CopyEnvironmentFrom(new_inst_klass->GetEnvironment());
+  if_block->AddInstruction(instance_of);
+  HIf* if_inst = MakeIf(if_block, instance_of);
 
-  HInstruction* goto_left = new (GetAllocator()) HGoto();
-  left->AddInstruction(goto_left);
+  HInstruction* read_bottom =
+      MakeIFieldGet(breturn, new_inst, DataType::Type::kInt32, MemberOffset(32));
+  MakeReturn(breturn, read_bottom);
 
-  HInstruction* goto_right = new (GetAllocator()) HGoto();
-  right->AddInstruction(goto_right);
-
-  HInstruction* read_bottom = MakeIFieldGet(new_inst, DataType::Type::kInt32, MemberOffset(32));
-  HInstruction* return_exit = new (GetAllocator()) HReturn(read_bottom);
-  breturn->AddInstruction(read_bottom);
-  breturn->AddInstruction(return_exit);
-
-  SetupExit(exit);
-
-  PerformSimplification(blks);
+  PerformSimplification();
 
   if (!GetConstantResult() || GetParam() == InstanceOfKind::kSelf) {
     EXPECT_INS_RETAINED(target_klass);
@@ -227,16 +198,10 @@ TEST_P(InstanceOfInstructionSimplifierTestGroup, ExactClassInstanceOfOther) {
 TEST_P(InstanceOfInstructionSimplifierTestGroup, ExactClassCheckCastOther) {
   ScopedObjectAccess soa(Thread::Current());
   VariableSizedHandleScope vshs(soa.Self());
-  InitGraph(/*handles=*/&vshs);
+  HBasicBlock* main = InitEntryMainExitGraph(/*handles=*/&vshs);
 
-  AdjacencyListGraph blks(SetupFromAdjacencyList("entry", "exit", {{"entry", "exit"}}));
-#define GET_BLOCK(name) HBasicBlock* name = blks.Get(#name)
-  GET_BLOCK(entry);
-  GET_BLOCK(exit);
-#undef GET_BLOCK
-
-  auto [new_inst_klass, target_klass] = GetLoadClasses(&vshs);
-  HInstruction* new_inst = MakeNewInstance(new_inst_klass);
+  auto [new_inst_klass, target_klass] = GetLoadClasses(main, &vshs);
+  HInstruction* new_inst = MakeNewInstance(main, new_inst_klass);
   new_inst->SetReferenceTypeInfo(
       ReferenceTypeInfo::Create(new_inst_klass->GetClass(), /*is_exact=*/true));
   HCheckCast* check_cast = new (GetAllocator()) HCheckCast(new_inst,
@@ -250,23 +215,10 @@ TEST_P(InstanceOfInstructionSimplifierTestGroup, ExactClassCheckCastOther) {
   if (target_klass->GetLoadedClassRTI().IsValid()) {
     check_cast->SetValidTargetClassRTI();
   }
-  HInstruction* entry_return = new (GetAllocator()) HReturn(new_inst);
-  entry->AddInstruction(new_inst_klass);
-  if (new_inst_klass != target_klass) {
-    entry->AddInstruction(target_klass);
-  }
-  entry->AddInstruction(new_inst);
-  entry->AddInstruction(check_cast);
-  entry->AddInstruction(entry_return);
-  ManuallyBuildEnvFor(new_inst_klass, {});
-  if (new_inst_klass != target_klass) {
-    target_klass->CopyEnvironmentFrom(new_inst_klass->GetEnvironment());
-  }
-  new_inst->CopyEnvironmentFrom(new_inst_klass->GetEnvironment());
+  main->AddInstruction(check_cast);
+  MakeReturn(main, new_inst);
 
-  SetupExit(exit);
-
-  PerformSimplification(blks);
+  PerformSimplification();
 
   if (!GetConstantResult() || GetParam() == InstanceOfKind::kSelf) {
     EXPECT_INS_RETAINED(target_klass);

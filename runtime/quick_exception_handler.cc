@@ -52,7 +52,7 @@ static constexpr size_t kInvalidFrameDepth = 0xffffffff;
 
 QuickExceptionHandler::QuickExceptionHandler(Thread* self, bool is_deoptimization)
     : self_(self),
-      context_(self->GetLongJumpContext()),
+      context_(Context::Create()),
       is_deoptimization_(is_deoptimization),
       handler_quick_frame_(nullptr),
       handler_quick_frame_pc_(0),
@@ -200,7 +200,7 @@ void QuickExceptionHandler::FindCatch(ObjPtr<mirror::Throwable> exception,
 
     // Walk the stack to find catch handler.
     CatchBlockStackVisitor visitor(self_,
-                                   context_,
+                                   context_.get(),
                                    &exception_ref,
                                    this,
                                    /*skip_frames=*/already_popped,
@@ -709,7 +709,7 @@ void QuickExceptionHandler::DeoptimizeStack(bool skip_method_exit_callbacks) {
     self_->DumpStack(LOG_STREAM(INFO) << "Deoptimizing: ");
   }
 
-  DeoptimizeStackVisitor visitor(self_, context_, this, false, skip_method_exit_callbacks);
+  DeoptimizeStackVisitor visitor(self_, context_.get(), this, false, skip_method_exit_callbacks);
   visitor.WalkStack(true);
   PrepareForLongJumpToInvokeStubOrInterpreterBridge();
 }
@@ -720,7 +720,7 @@ void QuickExceptionHandler::DeoptimizeSingleFrame(DeoptimizationKind kind) {
   // This deopt is requested while still executing the method. We haven't run method exit callbacks
   // yet, so don't skip them.
   DeoptimizeStackVisitor visitor(
-      self_, context_, this, true, /* skip_method_exit_callbacks= */ false);
+      self_, context_.get(), this, true, /* skip_method_exit_callbacks= */ false);
   visitor.WalkStack(true);
 
   // Compiled code made an explicit deoptimization.
@@ -806,9 +806,8 @@ void QuickExceptionHandler::DeoptimizePartialFragmentFixup() {
   }
 }
 
-void QuickExceptionHandler::DoLongJump(bool smash_caller_saves) {
-  // Place context back on thread so it will be available when we continue.
-  self_->ReleaseLongJumpContext(context_);
+std::unique_ptr<Context> QuickExceptionHandler::PrepareLongJump(bool smash_caller_saves) {
+  // Prepare and return the context.
   context_->SetSP(reinterpret_cast<uintptr_t>(handler_quick_frame_));
   CHECK_NE(handler_quick_frame_pc_, 0u);
   context_->SetPC(handler_quick_frame_pc_);
@@ -827,8 +826,7 @@ void QuickExceptionHandler::DoLongJump(bool smash_caller_saves) {
   }
   // Clear the dex_pc list so as not to leak memory.
   handler_dex_pc_list_.reset();
-  context_->DoLongJump();
-  UNREACHABLE();
+  return std::move(context_);
 }
 
 void QuickExceptionHandler::DumpFramesWithType(Thread* self, bool details) {

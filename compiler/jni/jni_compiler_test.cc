@@ -1374,7 +1374,8 @@ jint Java_MyClassNatives_nativeUpCall(JNIEnv* env, jobject thisObj, jint i) {
     ScopedObjectAccess soa(env);
 
     // Build stack trace
-    jobject internal = Thread::Current()->CreateInternalStackTrace(soa);
+    jobject internal =
+        soa.AddLocalReference<jobject>(Thread::Current()->CreateInternalStackTrace(soa));
     jobjectArray ste_array = Thread::InternalStackTraceToStackTraceElementArray(soa, internal);
     ObjPtr<mirror::ObjectArray<mirror::StackTraceElement>> trace_array =
         soa.Decode<mirror::ObjectArray<mirror::StackTraceElement>>(ste_array);

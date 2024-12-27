@@ -461,25 +461,15 @@ HGraph* RegisterAllocatorTest::BuildIfElseWithPhi(HPhi** phi,
   HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(entry);
   graph->SetEntryBlock(entry);
-  HInstruction* parameter = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kReference);
-  entry->AddInstruction(parameter);
+  HInstruction* parameter = MakeParam(DataType::Type::kReference);
 
   HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(block);
   entry->AddSuccessor(block);
 
-  HInstruction* test = new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                              nullptr,
-                                                              DataType::Type::kBool,
-                                                              MemberOffset(22),
-                                                              false,
-                                                              kUnknownFieldIndex,
-                                                              kUnknownClassDefIndex,
-                                                              graph->GetDexFile(),
-                                                              0);
-  block->AddInstruction(test);
-  block->AddInstruction(new (GetAllocator()) HIf(test));
+  HInstruction* test = MakeIFieldGet(block, parameter, DataType::Type::kBool, MemberOffset(22));
+  MakeIf(block, test);
+
   HBasicBlock* then = new (GetAllocator()) HBasicBlock(graph);
   HBasicBlock* else_ = new (GetAllocator()) HBasicBlock(graph);
   HBasicBlock* join = new (GetAllocator()) HBasicBlock(graph);
@@ -491,34 +481,14 @@ HGraph* RegisterAllocatorTest::BuildIfElseWithPhi(HPhi** phi,
   block->AddSuccessor(else_);
   then->AddSuccessor(join);
   else_->AddSuccessor(join);
-  then->AddInstruction(new (GetAllocator()) HGoto());
-  else_->AddInstruction(new (GetAllocator()) HGoto());
+  MakeGoto(then);
+  MakeGoto(else_);
 
-  *phi = new (GetAllocator()) HPhi(GetAllocator(), 0, 0, DataType::Type::kInt32);
-  join->AddPhi(*phi);
-  *input1 = new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                   nullptr,
-                                                   DataType::Type::kInt32,
-                                                   MemberOffset(42),
-                                                   false,
-                                                   kUnknownFieldIndex,
-                                                   kUnknownClassDefIndex,
-                                                   graph->GetDexFile(),
-                                                   0);
-  *input2 = new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                   nullptr,
-                                                   DataType::Type::kInt32,
-                                                   MemberOffset(42),
-                                                   false,
-                                                   kUnknownFieldIndex,
-                                                   kUnknownClassDefIndex,
-                                                   graph->GetDexFile(),
-                                                   0);
-  then->AddInstruction(*input1);
-  else_->AddInstruction(*input2);
-  join->AddInstruction(new (GetAllocator()) HExit());
-  (*phi)->AddInput(*input1);
-  (*phi)->AddInput(*input2);
+  *input1 = MakeIFieldGet(then, parameter, DataType::Type::kInt32, MemberOffset(42));
+  *input2 = MakeIFieldGet(else_, parameter, DataType::Type::kInt32, MemberOffset(42));
+
+  *phi = MakePhi(join, {*input1, *input2});
+  MakeExit(join);
 
   graph->BuildDominatorTree();
   graph->AnalyzeLoops();
@@ -605,31 +575,19 @@ HGraph* RegisterAllocatorTest::BuildFieldReturn(HInstruction** field, HInstructi
   HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(entry);
   graph->SetEntryBlock(entry);
-  HInstruction* parameter = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kReference);
-  entry->AddInstruction(parameter);
+  HInstruction* parameter = MakeParam(DataType::Type::kReference);
 
   HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(block);
   entry->AddSuccessor(block);
 
-  *field = new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                  nullptr,
-                                                  DataType::Type::kInt32,
-                                                  MemberOffset(42),
-                                                  false,
-                                                  kUnknownFieldIndex,
-                                                  kUnknownClassDefIndex,
-                                                  graph->GetDexFile(),
-                                                  0);
-  block->AddInstruction(*field);
-  *ret = new (GetAllocator()) HReturn(*field);
-  block->AddInstruction(*ret);
+  *field = MakeIFieldGet(block, parameter, DataType::Type::kInt32, MemberOffset(42));
+  *ret = MakeReturn(block, *field);
 
   HBasicBlock* exit = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(exit);
   block->AddSuccessor(exit);
-  exit->AddInstruction(new (GetAllocator()) HExit());
+  MakeExit(exit);
 
   graph->BuildDominatorTree();
   return graph;
@@ -675,9 +633,7 @@ HGraph* RegisterAllocatorTest::BuildTwoSubs(HInstruction** first_sub, HInstructi
   HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(entry);
   graph->SetEntryBlock(entry);
-  HInstruction* parameter = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kInt32);
-  entry->AddInstruction(parameter);
+  HInstruction* parameter = MakeParam(DataType::Type::kInt32);
 
   HInstruction* constant1 = graph->GetIntConstant(1);
   HInstruction* constant2 = graph->GetIntConstant(2);
@@ -691,7 +647,7 @@ HGraph* RegisterAllocatorTest::BuildTwoSubs(HInstruction** first_sub, HInstructi
   *second_sub = new (GetAllocator()) HSub(DataType::Type::kInt32, *first_sub, constant2);
   block->AddInstruction(*second_sub);
 
-  block->AddInstruction(new (GetAllocator()) HExit());
+  MakeExit(block);
 
   graph->BuildDominatorTree();
   return graph;
@@ -741,12 +697,8 @@ HGraph* RegisterAllocatorTest::BuildDiv(HInstruction** div) {
   HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(entry);
   graph->SetEntryBlock(entry);
-  HInstruction* first = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kInt32);
-  HInstruction* second = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kInt32);
-  entry->AddInstruction(first);
-  entry->AddInstruction(second);
+  HInstruction* first = MakeParam(DataType::Type::kInt32);
+  HInstruction* second = MakeParam(DataType::Type::kInt32);
 
   HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(block);
@@ -756,7 +708,7 @@ HGraph* RegisterAllocatorTest::BuildDiv(HInstruction** div) {
       DataType::Type::kInt32, first, second, 0);  // don't care about dex_pc.
   block->AddInstruction(*div);
 
-  block->AddInstruction(new (GetAllocator()) HExit());
+  MakeExit(block);
 
   graph->BuildDominatorTree();
   return graph;
@@ -788,23 +740,15 @@ TEST_F(RegisterAllocatorTest, SpillInactive) {
   HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(entry);
   graph->SetEntryBlock(entry);
-  HInstruction* one = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kInt32);
-  HInstruction* two = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kInt32);
-  HInstruction* three = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kInt32);
-  HInstruction* four = new (GetAllocator()) HParameterValue(
-      graph->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kInt32);
-  entry->AddInstruction(one);
-  entry->AddInstruction(two);
-  entry->AddInstruction(three);
-  entry->AddInstruction(four);
+  HInstruction* one = MakeParam(DataType::Type::kInt32);
+  HInstruction* two = MakeParam(DataType::Type::kInt32);
+  HInstruction* three = MakeParam(DataType::Type::kInt32);
+  HInstruction* four = MakeParam(DataType::Type::kInt32);
 
   HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph);
   graph->AddBlock(block);
   entry->AddSuccessor(block);
-  block->AddInstruction(new (GetAllocator()) HExit());
+  MakeExit(block);
 
   // We create a synthesized user requesting a register, to avoid just spilling the
   // intervals.

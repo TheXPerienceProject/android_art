@@ -203,11 +203,8 @@ class DumpCheckpoint final : public Closure {
     Thread* self = Thread::Current();
     CHECK(self != nullptr);
     std::ostringstream local_os;
-    Thread::DumpOrder dump_order;
-    {
-      ScopedObjectAccess soa(self);
-      dump_order = thread->Dump(local_os, unwinder_, dump_native_stack_);
-    }
+    Locks::mutator_lock_->AssertSharedHeld(self);
+    Thread::DumpOrder dump_order = thread->Dump(local_os, unwinder_, dump_native_stack_);
     {
       MutexLock mu(self, lock_);
       // Sort, so that the most interesting threads for ANR are printed first (ANRs can be trimmed).
@@ -257,12 +254,12 @@ void ThreadList::Dump(std::ostream& os, bool dump_native_stack) {
   }
   if (self != nullptr) {
     DumpCheckpoint checkpoint(dump_native_stack);
-    size_t threads_running_checkpoint;
-    {
-      // Use SOA to prevent deadlocks if multiple threads are calling Dump() at the same time.
-      ScopedObjectAccess soa(self);
-      threads_running_checkpoint = RunCheckpoint(&checkpoint);
-    }
+    // Acquire mutator lock separately for each thread, to avoid long runnable code sequence
+    // without suspend checks.
+    size_t threads_running_checkpoint = RunCheckpoint(&checkpoint,
+                                                      nullptr,
+                                                      true,
+                                                      /* acquire_mutator_lock= */ true);
     if (threads_running_checkpoint != 0) {
       checkpoint.WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
     }
@@ -305,81 +302,99 @@ NO_RETURN static void UnsafeLogFatalForThreadSuspendAllTimeout() {
 
 size_t ThreadList::RunCheckpoint(Closure* checkpoint_function,
                                  Closure* callback,
-                                 bool allow_lock_checking) {
+                                 bool allow_lock_checking,
+                                 bool acquire_mutator_lock) {
   Thread* self = Thread::Current();
   Locks::mutator_lock_->AssertNotExclusiveHeld(self);
   Locks::thread_list_lock_->AssertNotHeld(self);
   Locks::thread_suspend_count_lock_->AssertNotHeld(self);
-
-  std::vector<Thread*> suspended_count_modified_threads;
-  size_t count = 0;
-  {
-    // Call a checkpoint function for each thread. We directly invoke the function on behalf of
-    // suspended threads.
-    MutexLock mu(self, *Locks::thread_list_lock_);
-    if (kIsDebugBuild && allow_lock_checking) {
-      self->DisallowPreMonitorMutexes();
-    }
-    MutexLock mu2(self, *Locks::thread_suspend_count_lock_);
-    count = list_.size();
-    for (const auto& thread : list_) {
-      if (thread != self) {
-        bool requested_suspend = false;
-        while (true) {
-          if (thread->RequestCheckpoint(checkpoint_function)) {
-            // This thread will run its checkpoint some time in the near future.
-            if (requested_suspend) {
-              // The suspend request is now unnecessary.
-              thread->DecrementSuspendCount(self);
-              Thread::resume_cond_->Broadcast(self);
-              requested_suspend = false;
-            }
-            break;
-          } else {
-            // The thread was, and probably still is, suspended.
-            if (!requested_suspend) {
-              // This does not risk suspension cycles: We may have a pending suspension request,
-              // but it cannot block us: Checkpoint Run() functions may not suspend, thus we cannot
-              // be blocked from decrementing the count again.
-              thread->IncrementSuspendCount(self);
-              requested_suspend = true;
-            }
-            if (thread->IsSuspended()) {
-              // We saw it suspended after incrementing suspend count, so it will stay that way.
-              break;
-            }
-          }
-          // We only get here if the thread entered kRunnable again. Retry immediately.
-        }
-        // At this point, either the thread was runnable, and will run the checkpoint itself,
-        // or requested_suspend is true, and the thread is safely suspended.
-        if (requested_suspend) {
-          DCHECK(thread->IsSuspended());
-          suspended_count_modified_threads.push_back(thread);
-        }
-      }
-      // Thread either has honored or will honor the checkpoint, or it has been added to
-      // suspended_count_modified_threads.
-    }
-    // Run the callback to be called inside this critical section.
-    if (callback != nullptr) {
-      callback->Run(self);
-    }
+  if (kIsDebugBuild && allow_lock_checking && !acquire_mutator_lock) {
+    // TODO: Consider better checking with acquire_mutator_lock.
+    self->DisallowPreMonitorMutexes();
   }
 
-  // Run the checkpoint on ourself while we wait for threads to suspend.
-  checkpoint_function->Run(self);
-
+  std::vector<Thread*> remaining_threads;
+  size_t count = 0;
   bool mutator_lock_held = Locks::mutator_lock_->IsSharedHeld(self);
-  bool repeat = true;
-  // Run the checkpoint on the suspended threads.
-  while (repeat) {
-    repeat = false;
-    for (auto& thread : suspended_count_modified_threads) {
-      if (thread != nullptr) {
-        // We know for sure that the thread is suspended at this point.
-        DCHECK(thread->IsSuspended());
-        if (mutator_lock_held) {
+  ThreadState old_thread_state = self->GetState();
+  DCHECK(!(mutator_lock_held && acquire_mutator_lock));
+
+  // Thread-safety analysis wants the lock state to always be the same at every program point.
+  // Allow us to pretend it is.
+  auto fake_mutator_lock = []() SHARED_LOCK_FUNCTION(Locks::mutator_lock_)
+                               NO_THREAD_SAFETY_ANALYSIS {};
+  auto fake_mutator_unlock = []() UNLOCK_FUNCTION(Locks::mutator_lock_)
+                                 NO_THREAD_SAFETY_ANALYSIS {};
+
+  if (acquire_mutator_lock) {
+    self->TransitionFromSuspendedToRunnable();
+  } else {
+    fake_mutator_lock();
+  }
+  Locks::thread_list_lock_->Lock(self);
+  Locks::thread_suspend_count_lock_->Lock(self);
+
+  // First try to install checkpoint function in each thread. This will succeed only for
+  // runnable threads. Track others in remaining_threads.
+  count = list_.size();
+  for (const auto& thread : list_) {
+    if (thread != self) {
+      if (thread->RequestCheckpoint(checkpoint_function)) {
+        // This thread will run its checkpoint some time in the near future.
+      } else {
+        remaining_threads.push_back(thread);
+      }
+    }
+    // Thread either has honored or will honor the checkpoint, or it has been added to
+    // remaining_threads.
+  }
+
+  // ith entry corresponds to remaining_threads[i]:
+  std::unique_ptr<ThreadExitFlag[]> tefs(new ThreadExitFlag[remaining_threads.size()]);
+
+  // Register a ThreadExitFlag for each remaining thread.
+  for (size_t i = 0; i < remaining_threads.size(); ++i) {
+    remaining_threads[i]->NotifyOnThreadExit(&tefs[i]);
+  }
+
+  // Run the callback to be called inside this critical section.
+  if (callback != nullptr) {
+    callback->Run(self);
+  }
+
+  size_t nthreads = remaining_threads.size();
+  size_t starting_thread = 0;
+  size_t next_starting_thread;  // First possible remaining non-null entry in remaining_threads.
+  // Run the checkpoint for the suspended threads.
+  do {
+    // We hold mutator_lock_ (if desired), thread_list_lock_, and suspend_count_lock_
+    next_starting_thread = nthreads;
+    for (size_t i = 0; i < nthreads; ++i) {
+      Thread* thread = remaining_threads[i];
+      if (thread == nullptr) {
+        continue;
+      }
+      if (tefs[i].HasExited()) {
+        remaining_threads[i] = nullptr;
+        --count;
+        continue;
+      }
+      bool was_runnable = thread->RequestCheckpoint(checkpoint_function);
+      if (was_runnable) {
+        // Thread became runnable, and will run the checkpoint; we're done.
+        thread->UnregisterThreadExitFlag(&tefs[i]);
+        remaining_threads[i] = nullptr;
+        continue;
+      }
+      // Thread was still suspended, as expected.
+      // We need to run the checkpoint ourselves. Suspend thread so it stays suspended.
+      thread->IncrementSuspendCount(self);
+      if (LIKELY(thread->IsSuspended())) {
+        // Run the checkpoint function ourselves.
+        // We need to run the checkpoint function without the thread_list and suspend_count locks.
+        Locks::thread_suspend_count_lock_->Unlock(self);
+        Locks::thread_list_lock_->Unlock(self);
+        if (mutator_lock_held || acquire_mutator_lock) {
           // Make sure there is no pending flip function before running Java-heap-accessing
           // checkpoint on behalf of thread.
           Thread::EnsureFlipFunctionStarted(self, thread);
@@ -387,34 +402,70 @@ size_t ThreadList::RunCheckpoint(Closure* checkpoint_function,
                   .IsAnyOfFlagsSet(Thread::FlipFunctionFlags())) {
             // There is another thread running the flip function for 'thread'.
             // Instead of waiting for it to complete, move to the next thread.
-            repeat = true;
+            // Retry this one later from scratch.
+            next_starting_thread = std::min(next_starting_thread, i);
+            Locks::thread_list_lock_->Lock(self);
+            Locks::thread_suspend_count_lock_->Lock(self);
+            thread->DecrementSuspendCount(self);
+            Thread::resume_cond_->Broadcast(self);
             continue;
           }
         }  // O.w. the checkpoint will not access Java data structures, and doesn't care whether
            // the flip function has been called.
         checkpoint_function->Run(thread);
-        {
-          MutexLock mu2(self, *Locks::thread_suspend_count_lock_);
+        if (acquire_mutator_lock) {
+          {
+            MutexLock mu3(self, *Locks::thread_suspend_count_lock_);
+            thread->DecrementSuspendCount(self);
+            // In the case of a thread waiting for IO or the like, there will be no waiters
+            // on resume_cond_, so Broadcast() will not enter the kernel, and thus be cheap.
+            Thread::resume_cond_->Broadcast(self);
+          }
+          {
+            // Allow us to run checkpoints, or be suspended between checkpoint invocations.
+            ScopedThreadSuspension sts(self, old_thread_state);
+          }
+          Locks::thread_list_lock_->Lock(self);
+          Locks::thread_suspend_count_lock_->Lock(self);
+        } else {
+          Locks::thread_list_lock_->Lock(self);
+          Locks::thread_suspend_count_lock_->Lock(self);
           thread->DecrementSuspendCount(self);
+          Thread::resume_cond_->Broadcast(self);
         }
-        // We are done with 'thread' so set it to nullptr so that next outer
-        // loop iteration, if any, skips 'thread'.
-        thread = nullptr;
+        thread->UnregisterThreadExitFlag(&tefs[i]);
+        remaining_threads[i] = nullptr;
+      } else {
+        // Thread may have become runnable between the time we last checked and
+        // the time we incremented the suspend count. We defer to the next attempt, rather than
+        // waiting for it to suspend. Note that this may still unnecessarily trigger a signal
+        // handler, but it should be exceedingly rare.
+        thread->DecrementSuspendCount(self);
+        Thread::resume_cond_->Broadcast(self);
+        next_starting_thread = std::min(next_starting_thread, i);
       }
     }
-  }
-  DCHECK(std::all_of(suspended_count_modified_threads.cbegin(),
-                     suspended_count_modified_threads.cend(),
-                     [](Thread* thread) { return thread == nullptr; }));
+    starting_thread = next_starting_thread;
+  } while (starting_thread != nthreads);
 
-  {
-    // Imitate ResumeAll, threads may be waiting on Thread::resume_cond_ since we raised their
-    // suspend count. Now the suspend_count_ is lowered so we must do the broadcast.
-    MutexLock mu2(self, *Locks::thread_suspend_count_lock_);
-    Thread::resume_cond_->Broadcast(self);
+  // Finally run the checkpoint on ourself. We will already have run the flip function, if we're
+  // runnable.
+  Locks::thread_list_lock_->Unlock(self);
+  Locks::thread_suspend_count_lock_->Unlock(self);
+  checkpoint_function->Run(self);
+
+  if (acquire_mutator_lock) {
+    self->TransitionFromRunnableToSuspended(old_thread_state);
+  } else {
+    fake_mutator_unlock();
   }
 
-  if (kIsDebugBuild && allow_lock_checking) {
+  DCHECK(std::all_of(remaining_threads.cbegin(), remaining_threads.cend(), [](Thread* thread) {
+    return thread == nullptr;
+  }));
+  Thread::DCheckUnregisteredEverywhere(&tefs[0], &tefs[nthreads - 1]);
+
+  if (kIsDebugBuild && allow_lock_checking & !acquire_mutator_lock) {
     self->AllowPreMonitorMutexes();
   }
   return count;
@@ -717,15 +768,22 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
 #endif
   uint64_t timeout_ns =
       attempt_of_4 == 0 ? thread_suspend_timeout_ns_ : thread_suspend_timeout_ns_ / 4;
-  if (attempt_of_4 != 1 && getpriority(PRIO_PROCESS, 0 /* this thread */) > 0) {
-    // We're a low priority thread, and thus have a longer ANR timeout. Double the suspend
-    // timeout. To avoid the getpriority system call in the common case, we fail to double the
-    // first of 4 waits, but then triple the third one to compensate.
-    if (attempt_of_4 == 3) {
-      timeout_ns *= 3;
-    } else {
-      timeout_ns *= 2;
+
+  uint64_t avg_wait_multiplier = 1;
+  uint64_t wait_multiplier = 1;
+  if (attempt_of_4 != 1) {
+    // TODO: RequestSynchronousCheckpoint routinely passes attempt_of_4 = 0. Can
+    // we avoid the getpriority() call?
+    if (getpriority(PRIO_PROCESS, 0 /* this thread */) > 0) {
+      // We're a low priority thread, and thus have a longer ANR timeout. Increase the suspend
+      // timeout.
+      avg_wait_multiplier = 3;
     }
+    // To avoid the system calls in the common case, we fail to increase the first of 4 waits, but
+    // then compensate during the last one. This also allows somewhat longer thread monitoring
+    // before we time out.
+    wait_multiplier = attempt_of_4 == 4 ? 2 * avg_wait_multiplier - 1 : avg_wait_multiplier;
+    timeout_ns *= wait_multiplier;
   }
   bool collect_state = (t != 0 && (attempt_of_4 == 0 || attempt_of_4 == 4));
   int32_t cur_val = barrier->load(std::memory_order_acquire);
@@ -760,9 +818,14 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
       return std::nullopt;
     }
   }
+  uint64_t final_wait_time = NanoTime() - start_time;
+  uint64_t total_wait_time = attempt_of_4 == 0 ?
+                                 final_wait_time :
+                                 4 * final_wait_time * avg_wait_multiplier / wait_multiplier;
   return collect_state ? "Target states: [" + sampled_state + ", " + GetOsThreadStatQuick(t) + "]" +
-                             std::to_string(cur_val) + "@" + std::to_string((uintptr_t)barrier) +
-                             " Final wait time: " + PrettyDuration(NanoTime() - start_time) :
+                             (cur_val == 0 ? "(barrier now passed)" : "") +
+                             " Final wait time: " + PrettyDuration(final_wait_time) +
+                             "; appr. total wait time: " + PrettyDuration(total_wait_time) :
                          "";
 }
 
@@ -921,7 +984,7 @@ void ThreadList::SuspendAllInternal(Thread* self, SuspendReason reason) {
       // Second to the last attempt; Try to gather more information in case we time out.
       MutexLock mu(self, *Locks::thread_list_lock_);
       MutexLock mu2(self, *Locks::thread_suspend_count_lock_);
-      oss << "Unsuspended threads: ";
+      oss << "remaining threads: ";
       for (const auto& thread : list_) {
         if (thread != self && !thread->IsSuspended()) {
           culprit = thread;
@@ -938,16 +1001,15 @@ void ThreadList::SuspendAllInternal(Thread* self, SuspendReason reason) {
       } else {
         std::string name;
         culprit->GetThreadName(name);
-        oss << "Info for " << *culprit << ":";
+        oss << "Info for " << name << ": ";
         std::string thr_descr =
-            StringPrintf("%s tid: %d, state&flags: 0x%x, priority: %d,  barrier value: %d, ",
-                         name.c_str(),
-                         tid,
+            StringPrintf("state&flags: 0x%x, Java/native priority: %d/%d, barrier value: %d, ",
                          culprit->GetStateAndFlags(std::memory_order_relaxed).GetValue(),
                          culprit->GetNativePriority(),
+                         getpriority(PRIO_PROCESS /* really thread */, culprit->GetTid()),
                          pending_threads.load());
         oss << thr_descr << result.value();
-        culprit->AbortInThis("SuspendAll timeout: " + oss.str());
+        culprit->AbortInThis("SuspendAll timeout; " + oss.str());
       }
     }
   }
@@ -1153,13 +1215,13 @@ bool ThreadList::SuspendThread(Thread* self,
     // 'thread' should still have a suspend request pending, and hence stick around. Try to abort
     // there, since its stack trace is much more interesting than ours.
     std::string message = StringPrintf(
-        "%s timed out: %d (%s), state&flags: 0x%x, priority: %d,"
+        "%s timed out: %s: state&flags: 0x%x, Java/native priority: %d/%d,"
         " barriers: %p, ours: %p, barrier value: %d, nsusps: %d, ncheckpts: %d, thread_info: %s",
         func_name,
-        thread->GetTid(),
         name.c_str(),
         thread->GetStateAndFlags(std::memory_order_relaxed).GetValue(),
         thread->GetNativePriority(),
+        getpriority(PRIO_PROCESS /* really thread */, thread->GetTid()),
         first_barrier,
         &wrapped_barrier,
         wrapped_barrier.barrier_.load(),
@@ -1503,6 +1565,7 @@ void ThreadList::Unregister(Thread* self, bool should_run_callbacks) {
   if (UNLIKELY(self->GetMethodTraceBuffer() != nullptr)) {
     Trace::ReleaseThreadBuffer(self);
   }
+  CHECK_EQ(self->GetMethodTraceBuffer(), nullptr) << Trace::GetDebugInformation();
   delete self;
 
   // Release the thread ID after the thread is finished and deleted to avoid cases where we can

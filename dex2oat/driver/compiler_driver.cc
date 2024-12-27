@@ -25,9 +25,10 @@
 #include <string_view>
 #include <vector>
 
-#include "android-base/logging.h"
-#include "android-base/strings.h"
+#include <android-base/logging.h>
+#include <android-base/strings.h>
 
+#include "aot_class_linker.h"
 #include "art_field-inl.h"
 #include "art_method-inl.h"
 #include "base/arena_allocator.h"
@@ -72,7 +73,6 @@
 #include "mirror/object-refvisitor-inl.h"
 #include "mirror/object_array-inl.h"
 #include "mirror/throwable.h"
-#include "oat/aot_class_linker.h"
 #include "object_lock.h"
 #include "profile/profile_compilation_info.h"
 #include "runtime.h"
@@ -437,7 +437,7 @@ static bool ShouldCompileBasedOnProfile(const CompilerOptions& compiler_options,
 
     // On non-low RAM devices, compile startup methods to potentially speed up
     // startup.
-    if (!result && Runtime::Current()->GetHeap()->IsLowMemoryMode()) {
+    if (!result && !Runtime::Current()->GetHeap()->IsLowMemoryMode()) {
       result = profile_compilation_info->IsStartupMethod(profile_index, method_ref.index);
     }
 

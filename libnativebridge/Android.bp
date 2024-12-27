@@ -76,7 +76,7 @@ art_cc_library {
 }
 
 // TODO(b/124250621): eliminate the need for this library
-cc_library {
+cc_library_shared {
     name: "libnativebridge_lazy",
     defaults: ["libnativebridge-defaults"],
     visibility: [
@@ -95,6 +95,11 @@ cc_library {
     srcs: ["native_bridge_lazy.cc"],
     runtime_libs: ["libnativebridge"],
     shared_libs: ["liblog"],
+
+    // Apply the libnativebridge stub symbol file to the exported symbols from
+    // this shim library, to ensure that any symbols exposed here are also
+    // available as an exported API.
+    version_script: "libnativebridge.map.txt",
 }
 
 subdirs = ["tests"]

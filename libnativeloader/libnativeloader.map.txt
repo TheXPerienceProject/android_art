@@ -15,9 +15,7 @@
 #
 
 # Platform dependencies go through libnativeloader_lazy, which accesses
-# libnativeloader symbols through dlopen/dlsym. That means this list doesn't
-# have much effect, rather it's the function wrappers in native_loader_lazy.cpp
-# that defines the exported interface. Please keep in sync with this list.
+# libnativeloader symbols through dlopen/dlsym and hence bypasses the stub.
 LIBNATIVELOADER_1 {
   global:
     OpenNativeLibrary; # apex

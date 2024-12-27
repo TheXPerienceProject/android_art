@@ -203,4 +203,21 @@ public class UtilsTest {
         Executor executor = ForkJoinPool.commonPool();
         Utils.executeAndWait(executor, () -> { throw new IllegalArgumentException(); });
     }
+
+    @Test
+    public void testPathStartsWith() {
+        assertThat(Utils.pathStartsWith("/a/b", "/a")).isTrue();
+        assertThat(Utils.pathStartsWith("/a/b", "/a/")).isTrue();
+
+        assertThat(Utils.pathStartsWith("/a/c", "/a/b")).isFalse();
+        assertThat(Utils.pathStartsWith("/ab", "/a")).isFalse();
+
+        assertThat(Utils.pathStartsWith("/a", "/a")).isTrue();
+        assertThat(Utils.pathStartsWith("/a/", "/a")).isTrue();
+        assertThat(Utils.pathStartsWith("/a", "/a/")).isTrue();
+
+        assertThat(Utils.pathStartsWith("/a", "/")).isTrue();
+        assertThat(Utils.pathStartsWith("/", "/")).isTrue();
+        assertThat(Utils.pathStartsWith("/", "/a")).isFalse();
+    }
 }

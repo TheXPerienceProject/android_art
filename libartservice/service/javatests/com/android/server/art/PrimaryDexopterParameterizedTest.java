@@ -51,8 +51,6 @@ import com.android.server.art.model.DexoptParams;
 import com.android.server.art.model.DexoptResult;
 import com.android.server.art.testing.TestingUtils;
 
-import dalvik.system.DexFile;
-
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -344,7 +342,7 @@ public class PrimaryDexopterParameterizedTest extends PrimaryDexopterTestBase {
                 .when(mArtd)
                 .getDexoptNeeded("/somewhere/app/foo/base.apk", "arm", "PCL[]",
                         mParams.mExpectedCompilerFilter, mParams.mExpectedDexoptTrigger);
-        doThrow(ServiceSpecificException.class)
+        doThrow(new ServiceSpecificException(31, "This is an error message."))
                 .when(mArtd)
                 .dexopt(deepEq(buildOutputArtifacts("/somewhere/app/foo/base.apk", "arm",
                                 mParams.mIsInDalvikCache, permissionSettings,

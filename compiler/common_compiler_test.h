@@ -67,6 +67,7 @@ class EXPORT CommonCompilerTestImpl {
   void TearDown();
 
   void CompileMethod(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_);
+  std::vector<uint8_t> JniCompileCode(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_);
 
   void ApplyInstructionSet();
   void OverrideInstructionSetFeatures(InstructionSet instruction_set, const std::string& variant);

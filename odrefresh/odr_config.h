@@ -104,6 +104,12 @@ class OdrSystemProperties : public tools::SystemProperties {
   auto begin() const { return system_properties_->begin(); }
   auto end() const { return system_properties_->end(); }
 
+  // Return a given property's value if it exists in the map.
+  std::optional<std::string> GetOrNull(const std::string& key) const {
+    auto it = system_properties_->find(key);
+    return it != system_properties_->end() ? std::make_optional(it->second) : std::nullopt;
+  }
+
  protected:
   std::string GetProperty(const std::string& key) const override {
     auto it = system_properties_->find(key);

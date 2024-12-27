@@ -18,7 +18,11 @@ def run(ctx, args):
     args,
     android_log_tags="*:d",
     diff_min_log_tag="d",
-    runtime_option=["-Xmetrics-reporting-mods:100",]
+    runtime_option=[
+      "-Xmetrics-force-enable:true",
+      "-Xmetrics-write-to-logcat:true",
+      "-Xmetrics-reporting-mods:100",
+    ]
   )
 
   # Check that log messages from the metrics reporting thread appear in stderr.

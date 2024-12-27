@@ -34,7 +34,7 @@ namespace art HIDDEN {
  */
 class ConstantFoldingTest : public CommonCompilerTest, public OptimizingUnitTestHelper {
  public:
-  ConstantFoldingTest() : graph_(nullptr) { }
+  ConstantFoldingTest() { }
 
   void TestCode(const std::vector<uint16_t>& data,
                 const std::string& expected_before,
@@ -82,8 +82,6 @@ class ConstantFoldingTest : public CommonCompilerTest, public OptimizingUnitTest
     std::string actual_after_dce = printer_after_dce.str();
     EXPECT_EQ(expected_after_dce, actual_after_dce);
   }
-
-  HGraph* graph_;
 };
 
 /**
@@ -735,109 +733,92 @@ TEST_F(ConstantFoldingTest, ConstantCondition) {
  * in the bytecode, we need to set up the graph explicitly.
  */
 TEST_F(ConstantFoldingTest, UnsignedComparisonsWithZero) {
-  graph_ = CreateGraph();
-  HBasicBlock* entry_block = new (GetAllocator()) HBasicBlock(graph_);
-  graph_->AddBlock(entry_block);
-  graph_->SetEntryBlock(entry_block);
-  HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph_);
-  graph_->AddBlock(block);
-  HBasicBlock* exit_block = new (GetAllocator()) HBasicBlock(graph_);
-  graph_->AddBlock(exit_block);
-  graph_->SetExitBlock(exit_block);
-  entry_block->AddSuccessor(block);
-  block->AddSuccessor(exit_block);
+  HBasicBlock* block = InitEntryMainExitGraph();
 
   // Make various unsigned comparisons with zero against a parameter.
-  HInstruction* parameter = new (GetAllocator()) HParameterValue(
-      graph_->GetDexFile(), dex::TypeIndex(0), 0, DataType::Type::kInt32, true);
-  entry_block->AddInstruction(parameter);
-  entry_block->AddInstruction(new (GetAllocator()) HGoto());
-
+  HInstruction* parameter = MakeParam(DataType::Type::kInt32);
   HInstruction* zero = graph_->GetIntConstant(0);
 
-  HInstruction* last;
-  block->AddInstruction(last = new (GetAllocator()) HAbove(zero, parameter));
-  block->AddInstruction(new (GetAllocator()) HSelect(last, parameter, parameter, 0));
-  block->AddInstruction(last = new (GetAllocator()) HAbove(parameter, zero));
-  block->AddInstruction(new (GetAllocator()) HSelect(last, parameter, parameter, 0));
-  block->AddInstruction(last = new (GetAllocator()) HAboveOrEqual(zero, parameter));
-  block->AddInstruction(new (GetAllocator()) HSelect(last, parameter, parameter, 0));
-  block->AddInstruction(last = new (GetAllocator()) HAboveOrEqual(parameter, zero));
-  block->AddInstruction(new (GetAllocator()) HSelect(last, parameter, parameter, 0));
-  block->AddInstruction(last = new (GetAllocator()) HBelow(zero, parameter));
-  block->AddInstruction(new (GetAllocator()) HSelect(last, parameter, parameter, 0));
-  block->AddInstruction(last = new (GetAllocator()) HBelow(parameter, zero));
-  block->AddInstruction(new (GetAllocator()) HSelect(last, parameter, parameter, 0));
-  block->AddInstruction(last = new (GetAllocator()) HBelowOrEqual(zero, parameter));
-  block->AddInstruction(new (GetAllocator()) HSelect(last, parameter, parameter, 0));
-  block->AddInstruction(last = new (GetAllocator()) HBelowOrEqual(parameter, zero));
-  block->AddInstruction(new (GetAllocator()) HSelect(last, parameter, parameter, 0));
-  block->AddInstruction(new (GetAllocator()) HReturn(zero));
-
-  exit_block->AddInstruction(new (GetAllocator()) HExit());
+  HInstruction* a1 = MakeCondition(block, kCondA, zero, parameter);
+  MakeSelect(block, a1, parameter, parameter);
+  HInstruction* a2 = MakeCondition(block, kCondA, parameter, zero);
+  MakeSelect(block, a2, parameter, parameter);
+  HInstruction* ae1 = MakeCondition(block, kCondAE, zero, parameter);
+  MakeSelect(block, ae1, parameter, parameter);
+  HInstruction* ae2 = MakeCondition(block, kCondAE, parameter, zero);
+  MakeSelect(block, ae2, parameter, parameter);
+  HInstruction* b1 = MakeCondition(block, kCondB, zero, parameter);
+  MakeSelect(block, b1, parameter, parameter);
+  HInstruction* b2 = MakeCondition(block, kCondB, parameter, zero);
+  MakeSelect(block, b2, parameter, parameter);
+  HInstruction* be1 = MakeCondition(block, kCondBE, zero, parameter);
+  MakeSelect(block, be1, parameter, parameter);
+  HInstruction* be2 = MakeCondition(block, kCondBE, parameter, zero);
+  MakeSelect(block, be2, parameter, parameter);
+  MakeReturn(block, zero);
 
   graph_->BuildDominatorTree();
 
   const std::string expected_before =
       "BasicBlock 0, succ: 1\n"
-      "  0: ParameterValue [18, 18, 17, 16, 16, 15, 14, 14, 13, 12, 12, 11, 10, 10, 9, "
-                            "8, 8, 7, 6, 6, 5, 4, 4, 3]\n"
-      "  2: IntConstant [19, 17, 15, 13, 11, 9, 7, 5, 3]\n"
-      "  1: Goto 1\n"
+      "  2: ParameterValue [19, 19, 18, 17, 17, 16, 15, 15, 14, 13, 13, 12, 11, 11, 10, "
+                            "9, 9, 8, 7, 7, 6, 5, 5, 4]\n"
+      "  3: IntConstant [20, 18, 16, 14, 12, 10, 8, 6, 4]\n"
+      "  0: Goto 1\n"
       "BasicBlock 1, pred: 0, succ: 2\n"
-      "  3: Above(2, 0) [4]\n"
-      "  4: Select(0, 0, 3)\n"
-      "  5: Above(0, 2) [6]\n"
-      "  6: Select(0, 0, 5)\n"
-      "  7: AboveOrEqual(2, 0) [8]\n"
-      "  8: Select(0, 0, 7)\n"
-      "  9: AboveOrEqual(0, 2) [10]\n"
-      "  10: Select(0, 0, 9)\n"
-      "  11: Below(2, 0) [12]\n"
-      "  12: Select(0, 0, 11)\n"
-      "  13: Below(0, 2) [14]\n"
-      "  14: Select(0, 0, 13)\n"
-      "  15: BelowOrEqual(2, 0) [16]\n"
-      "  16: Select(0, 0, 15)\n"
-      "  17: BelowOrEqual(0, 2) [18]\n"
-      "  18: Select(0, 0, 17)\n"
-      "  19: Return(2)\n"
+      "  4: Above(3, 2) [5]\n"
+      "  5: Select(2, 2, 4)\n"
+      "  6: Above(2, 3) [7]\n"
+      "  7: Select(2, 2, 6)\n"
+      "  8: AboveOrEqual(3, 2) [9]\n"
+      "  9: Select(2, 2, 8)\n"
+      "  10: AboveOrEqual(2, 3) [11]\n"
+      "  11: Select(2, 2, 10)\n"
+      "  12: Below(3, 2) [13]\n"
+      "  13: Select(2, 2, 12)\n"
+      "  14: Below(2, 3) [15]\n"
+      "  15: Select(2, 2, 14)\n"
+      "  16: BelowOrEqual(3, 2) [17]\n"
+      "  17: Select(2, 2, 16)\n"
+      "  18: BelowOrEqual(2, 3) [19]\n"
+      "  19: Select(2, 2, 18)\n"
+      "  20: Return(3)\n"
       "BasicBlock 2, pred: 1\n"
-      "  20: Exit\n";
+      "  1: Exit\n";
 
   const std::string expected_after_cf =
       "BasicBlock 0, succ: 1\n"
-      "  0: ParameterValue [18, 18, 17, 16, 16, 14, 14, 12, 12, 11, 10, 10, "
-                            "8, 8, 7, 6, 6, 5, 4, 4]\n"
-      "  2: IntConstant [14, 4, 19, 17, 11, 7, 5]\n"
-      "  21: IntConstant [16, 10]\n"
-      "  1: Goto 1\n"
+      "  2: ParameterValue [19, 19, 18, 17, 17, 15, 15, 13, 13, 12, 11, 11, "
+                            "9, 9, 8, 7, 7, 6, 5, 5]\n"
+      "  3: IntConstant [15, 5, 20, 18, 12, 8, 6]\n"
+      "  21: IntConstant [17, 11]\n"
+      "  0: Goto 1\n"
       "BasicBlock 1, pred: 0, succ: 2\n"
-      "  4: Select(0, 0, 2)\n"
-      "  5: Above(0, 2) [6]\n"
-      "  6: Select(0, 0, 5)\n"
-      "  7: AboveOrEqual(2, 0) [8]\n"
-      "  8: Select(0, 0, 7)\n"
-      "  10: Select(0, 0, 21)\n"
-      "  11: Below(2, 0) [12]\n"
-      "  12: Select(0, 0, 11)\n"
-      "  14: Select(0, 0, 2)\n"
-      "  16: Select(0, 0, 21)\n"
-      "  17: BelowOrEqual(0, 2) [18]\n"
-      "  18: Select(0, 0, 17)\n"
-      "  19: Return(2)\n"
+      "  5: Select(2, 2, 3)\n"
+      "  6: Above(2, 3) [7]\n"
+      "  7: Select(2, 2, 6)\n"
+      "  8: AboveOrEqual(3, 2) [9]\n"
+      "  9: Select(2, 2, 8)\n"
+      "  11: Select(2, 2, 21)\n"
+      "  12: Below(3, 2) [13]\n"
+      "  13: Select(2, 2, 12)\n"
+      "  15: Select(2, 2, 3)\n"
+      "  17: Select(2, 2, 21)\n"
+      "  18: BelowOrEqual(2, 3) [19]\n"
+      "  19: Select(2, 2, 18)\n"
+      "  20: Return(3)\n"
       "BasicBlock 2, pred: 1\n"
-      "  20: Exit\n";
+      "  1: Exit\n";
 
   const std::string expected_after_dce =
       "BasicBlock 0, succ: 1\n"
-      "  0: ParameterValue\n"
-      "  2: IntConstant [19]\n"
-      "  1: Goto 1\n"
+      "  2: ParameterValue\n"
+      "  3: IntConstant [20]\n"
+      "  0: Goto 1\n"
       "BasicBlock 1, pred: 0, succ: 2\n"
-      "  19: Return(2)\n"
+      "  20: Return(3)\n"
       "BasicBlock 2, pred: 1\n"
-      "  20: Exit\n";
+      "  1: Exit\n";
 
   auto check_after_cf = [](HGraph* graph) {
     CHECK(graph != nullptr);

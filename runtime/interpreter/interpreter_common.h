@@ -66,7 +66,7 @@
 namespace art HIDDEN {
 namespace interpreter {
 
-void ThrowNullPointerExceptionFromInterpreter()
+EXPORT void ThrowNullPointerExceptionFromInterpreter()
     REQUIRES_SHARED(Locks::mutator_lock_);
 
 static inline void DoMonitorEnter(Thread* self, ShadowFrame* frame, ObjPtr<mirror::Object> ref)
@@ -114,13 +114,13 @@ static inline bool DoMonitorCheckOnExit(Thread* self, ShadowFrame* frame)
 // DoFastInvoke and DoInvokeVirtualQuick functions.
 // Returns true on success, otherwise throws an exception and returns false.
 template<bool is_range>
-bool DoCall(ArtMethod* called_method,
-            Thread* self,
-            ShadowFrame& shadow_frame,
-            const Instruction* inst,
-            uint16_t inst_data,
-            bool string_init,
-            JValue* result);
+EXPORT bool DoCall(ArtMethod* called_method,
+                   Thread* self,
+                   ShadowFrame& shadow_frame,
+                   const Instruction* inst,
+                   uint16_t inst_data,
+                   bool string_init,
+                   JValue* result);
 
 // Called by the switch interpreter to know if we can stay in it.
 bool ShouldStayInSwitchInterpreter(ArtMethod* method)
@@ -133,7 +133,8 @@ NO_INLINE bool CheckStackOverflow(Thread* self, size_t frame_size)
 
 // Sends the normal method exit event.
 // Returns true if the events succeeded and false if there is a pending exception.
-template <typename T> bool SendMethodExitEvents(
+template <typename T>
+bool SendMethodExitEvents(
     Thread* self,
     const instrumentation::Instrumentation* instrumentation,
     ShadowFrame& frame,
@@ -149,6 +150,7 @@ NeedsMethodExitEvent(const instrumentation::Instrumentation* ins)
 COLD_ATTR void UnlockHeldMonitors(Thread* self, ShadowFrame* shadow_frame)
     REQUIRES_SHARED(Locks::mutator_lock_);
 
+EXPORT
 void PerformNonStandardReturn(Thread* self,
                               ShadowFrame& frame,
                               JValue& result,
@@ -211,18 +213,18 @@ ART_INTRINSICS_LIST(DECLARE_SIGNATURE_POLYMORPHIC_HANDLER)
 
 // Performs a invoke-polymorphic or invoke-polymorphic-range.
 template<bool is_range>
-bool DoInvokePolymorphic(Thread* self,
-                         ShadowFrame& shadow_frame,
-                         const Instruction* inst,
-                         uint16_t inst_data,
-                         JValue* result)
+EXPORT bool DoInvokePolymorphic(Thread* self,
+                                ShadowFrame& shadow_frame,
+                                const Instruction* inst,
+                                uint16_t inst_data,
+                                JValue* result)
     REQUIRES_SHARED(Locks::mutator_lock_);
 
-bool DoInvokeCustom(Thread* self,
-                    ShadowFrame& shadow_frame,
-                    uint32_t call_site_idx,
-                    const InstructionOperands* operands,
-                    JValue* result)
+EXPORT bool DoInvokeCustom(Thread* self,
+                           ShadowFrame& shadow_frame,
+                           uint32_t call_site_idx,
+                           const InstructionOperands* operands,
+                           JValue* result)
     REQUIRES_SHARED(Locks::mutator_lock_);
 
 // Performs a custom invoke (invoke-custom/invoke-custom-range).
@@ -278,11 +280,13 @@ ALWAYS_INLINE static JValue GetFieldValue(const ShadowFrame& shadow_frame, uint3
   return field_value;
 }
 
+LIBART_PROTECTED
 extern "C" size_t NterpGetStaticField(Thread* self,
                                       ArtMethod* caller,
                                       const uint16_t* dex_pc_ptr,
                                       size_t resolve_field_type);
 
+LIBART_PROTECTED
 extern "C" uint32_t NterpGetInstanceFieldOffset(Thread* self,
                                                 ArtMethod* caller,
                                                 const uint16_t* dex_pc_ptr,
@@ -422,10 +426,10 @@ static inline bool DoLongRemainder(ShadowFrame& shadow_frame,
 // Handles filled-new-array and filled-new-array-range instructions.
 // Returns true on success, otherwise throws an exception and returns false.
 template <bool is_range>
-bool DoFilledNewArray(const Instruction* inst,
-                      const ShadowFrame& shadow_frame,
-                      Thread* self,
-                      JValue* result);
+EXPORT bool DoFilledNewArray(const Instruction* inst,
+                             const ShadowFrame& shadow_frame,
+                             Thread* self,
+                             JValue* result);
 
 // Handles packed-switch instruction.
 // Returns the branch offset to the next instruction to execute.
@@ -498,14 +502,14 @@ static inline int32_t DoSparseSwitch(const Instruction* inst, const ShadowFrame&
 // This function accepts a null Instrumentation* as a way to cause instrumentation events not to be
 // reported.
 // TODO We might wish to reconsider how we cause some events to be ignored.
-bool MoveToExceptionHandler(Thread* self,
-                            ShadowFrame& shadow_frame,
-                            bool skip_listeners,
-                            bool skip_throw_listener) REQUIRES_SHARED(Locks::mutator_lock_);
+EXPORT bool MoveToExceptionHandler(Thread* self,
+                                   ShadowFrame& shadow_frame,
+                                   bool skip_listeners,
+                                   bool skip_throw_listener) REQUIRES_SHARED(Locks::mutator_lock_);
 
-NO_RETURN void UnexpectedOpcode(const Instruction* inst, const ShadowFrame& shadow_frame)
-  __attribute__((cold))
-  REQUIRES_SHARED(Locks::mutator_lock_);
+NO_RETURN EXPORT void UnexpectedOpcode(const Instruction* inst, const ShadowFrame& shadow_frame)
+    COLD_ATTR
+    REQUIRES_SHARED(Locks::mutator_lock_);
 
 // Set true if you want TraceExecution invocation before each bytecode execution.
 constexpr bool kTraceExecutionEnabled = false;

@@ -28,7 +28,8 @@ namespace art {
 namespace {
 
 static const int kMagicValue = 0x574f4c53;
-static const int kVersionDualClock = 0xf5;
+static const int kVersionDualClockStreaming = 0xf5;
+static const int kVersionDualClock = 0x05;
 static const int kThreadInfo = 0;
 static const int kMethodInfo = 1;
 static const int kTraceEntries = 2;
@@ -147,35 +148,22 @@ bool ProcessTraceEntries(std::unique_ptr<File>& file,
                          const char* thread_name_filter,
                          std::map<uint64_t, std::string>& ignored_method_map,
                          std::map<int64_t, int>& ignored_method_depth_map) {
-  uint8_t header[24];
-  int header_size = is_dual_clock ? 24 : 20;
-  if (!file->ReadFully(header, header_size)) {
+  uint8_t header[11];
+  if (!file->ReadFully(header, sizeof(header))) {
     return false;
   }
 
   uint32_t thread_id = ReadNumber(4, header);
-  uint64_t method_value = ReadNumber(8, header + 4);
-  int offset = 12;
-  if (is_dual_clock) {
-    // Read timestamp.
-    ReadNumber(4, header + offset);
-    offset += 4;
-  }
-  // Read timestamp.
-  ReadNumber(4, header + offset);
-  offset += 4;
-  int num_records = ReadNumber(2, header + offset);
-  offset += 2;
-  int total_size = ReadNumber(2, header + offset);
+  int offset = 4;
+  int num_records = ReadNumber(3, header + offset);
+  offset += 3;
+  int total_size = ReadNumber(4, header + offset);
   uint8_t* buffer = new uint8_t[total_size];
   if (!file->ReadFully(buffer, total_size)) {
     delete[] buffer;
     return false;
   }
 
-  const uint8_t* current_buffer_ptr = buffer;
-  uint8_t event_type = method_value & 0x3;
-  uint64_t method_id = (method_value >> kTraceActionBits) << kTraceActionBits;
   int current_depth = 0;
   if (current_depth_map.find(thread_id) != current_depth_map.end()) {
     // Get the current call stack depth. If it is the first method we are seeing on this thread
@@ -192,28 +180,18 @@ bool ProcessTraceEntries(std::unique_ptr<File>& file,
 
   std::string thread_name = thread_map[thread_id];
   bool print_thread_events = (thread_name.compare(thread_name_filter) == 0);
-  if (method_map.find(method_id) == method_map.end()) {
-    LOG(FATAL) << "No entry for init method " << std::hex << method_id << " " << method_value;
-  }
-  if (print_thread_events) {
-    PrintTraceEntry(thread_name,
-                    method_map[method_id],
-                    event_type,
-                    &current_depth,
-                    ignored_method,
-                    &ignored_method_depth);
-  }
-  int64_t prev_method_value = method_value;
+
+  const uint8_t* current_buffer_ptr = buffer;
+  int64_t prev_method_value = 0;
   for (int i = 0; i < num_records; i++) {
     int64_t diff = 0;
-    auto buffer_ptr = current_buffer_ptr;
     if (!DecodeSignedLeb128Checked(&current_buffer_ptr, buffer + total_size - 1, &diff)) {
       LOG(FATAL) << "Reading past the buffer???";
     }
     int64_t curr_method_value = prev_method_value + diff;
     prev_method_value = curr_method_value;
-    event_type = curr_method_value & 0x3;
-    method_id = (curr_method_value >> kTraceActionBits) << kTraceActionBits;
+    uint8_t event_type = curr_method_value & 0x3;
+    uint64_t method_id = (curr_method_value >> kTraceActionBits) << kTraceActionBits;
     if (method_map.find(method_id) == method_map.end()) {
       LOG(FATAL) << "No entry for method " << std::hex << method_id;
     }
@@ -264,13 +242,13 @@ extern "C" JNIEXPORT void JNICALL Java_Main_dumpTrace(JNIEnv* env,
   }
   int magic_value = ReadNumber(4, header);
   if (magic_value != kMagicValue) {
-    printf("Incorrect magic value\n");
+    printf("Incorrect magic value got:%0x expected:%0x\n", magic_value, kMagicValue);
     return;
   }
   int version = ReadNumber(2, header + 4);
   printf("version=%0x\n", version);
 
-  bool is_dual_clock = (version == kVersionDualClock);
+  bool is_dual_clock = (version == kVersionDualClock) || (version == kVersionDualClockStreaming);
   bool has_entries = true;
   while (has_entries) {
     uint8_t entry_header;

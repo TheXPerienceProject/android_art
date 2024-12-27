@@ -141,6 +141,7 @@ struct EXPORT WellKnownClasses {
   static ArtMethod* java_lang_ThreadGroup_threadTerminated;
   static ArtMethod* java_lang_invoke_MethodHandle_asType;
   static ArtMethod* java_lang_invoke_MethodHandle_invokeExact;
+  static ArtMethod* java_lang_invoke_MethodHandleImpl_init;
   static ArtMethod* java_lang_invoke_MethodHandles_lookup;
   static ArtMethod* java_lang_invoke_MethodHandles_makeIdentity;
   static ArtMethod* java_lang_invoke_MethodHandles_Lookup_findConstructor;
@@ -251,6 +252,10 @@ struct EXPORT WellKnownClasses {
       java_lang_StackOverflowError;
   static constexpr ClassFromField<&java_lang_Thread_daemon> java_lang_Thread;
   static constexpr ClassFromField<&java_lang_ThreadGroup_groups> java_lang_ThreadGroup;
+  static constexpr ClassFromMethod<&java_lang_invoke_MethodHandle_invokeExact>
+      java_lang_invoke_MethodHandle;
+  static constexpr ClassFromMethod<&java_lang_invoke_MethodType_makeImpl>
+      java_lang_invoke_MethodType;
   static constexpr ClassFromMethod<&java_lang_reflect_InvocationTargetException_init>
       java_lang_reflect_InvocationTargetException;
   static constexpr ClassFromMethod<&java_lang_reflect_Parameter_init>

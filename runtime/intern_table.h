@@ -294,11 +294,11 @@ class InternTable {
   // Note: Transaction rollback calls these helper functions directly.
   EXPORT ObjPtr<mirror::String> InsertStrong(ObjPtr<mirror::String> s, uint32_t hash)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Locks::intern_table_lock_);
-  ObjPtr<mirror::String> InsertWeak(ObjPtr<mirror::String> s, uint32_t hash)
+  EXPORT ObjPtr<mirror::String> InsertWeak(ObjPtr<mirror::String> s, uint32_t hash)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Locks::intern_table_lock_);
-  void RemoveStrong(ObjPtr<mirror::String> s, uint32_t hash)
+  EXPORT void RemoveStrong(ObjPtr<mirror::String> s, uint32_t hash)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Locks::intern_table_lock_);
-  void RemoveWeak(ObjPtr<mirror::String> s, uint32_t hash)
+  void EXPORT RemoveWeak(ObjPtr<mirror::String> s, uint32_t hash)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Locks::intern_table_lock_);
 
   // Change the weak root state. May broadcast to waiters.

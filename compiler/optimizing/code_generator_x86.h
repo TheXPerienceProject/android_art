@@ -49,6 +49,10 @@ static constexpr size_t kRuntimeParameterFpuRegistersLength =
     arraysize(kRuntimeParameterFpuRegisters);
 
 #define UNIMPLEMENTED_INTRINSIC_LIST_X86(V) \
+  V(MathSignumFloat)                        \
+  V(MathSignumDouble)                       \
+  V(MathCopySignFloat)                      \
+  V(MathCopySignDouble)                     \
   V(MathRoundDouble)                        \
   V(FloatIsInfinite)                        \
   V(DoubleIsInfinite)                       \
@@ -90,9 +94,12 @@ static constexpr size_t kRuntimeParameterFpuRegistersLength =
   V(StringBuilderAppendDouble)              \
   V(StringBuilderLength)                    \
   V(StringBuilderToString)                  \
+  V(UnsafeArrayBaseOffset)                  \
   /* 1.8 */                                 \
   V(MethodHandleInvokeExact)                \
-  V(MethodHandleInvoke)
+  V(MethodHandleInvoke)                     \
+  /* OpenJDK 11 */                          \
+  V(JdkUnsafeArrayBaseOffset)
 
 class InvokeRuntimeCallingConvention : public CallingConvention<Register, XmmRegister> {
  public:
@@ -242,6 +249,7 @@ class LocationsBuilderX86 : public HGraphVisitor {
   void HandleBitwiseOperation(HBinaryOperation* instruction);
   void HandleInvoke(HInvoke* invoke);
   void HandleCondition(HCondition* condition);
+  void HandleRotate(HBinaryOperation* rotate);
   void HandleShift(HBinaryOperation* instruction);
   void HandleFieldSet(HInstruction* instruction,
                       const FieldInfo& field_info,
@@ -332,6 +340,7 @@ class InstructionCodeGeneratorX86 : public InstructionCodeGenerator {
                       bool value_can_be_null,
                       WriteBarrierKind write_barrier_kind);
   void HandleFieldGet(HInstruction* instruction, const FieldInfo& field_info);
+  void HandleRotate(HBinaryOperation* rotate);
 
   // Generate a heap reference load using one register `out`:
   //

@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <forward_list>
+#include <type_traits>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -167,7 +168,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::ConstructRange() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 1, 2, 7 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
 }
@@ -182,12 +183,12 @@ template <typename ListType>
 void IntrusiveForwardListTest::Assign() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref1({ 2, 8, 5 });
-  std::vector<ValueType> storage1(ref1.begin(), ref1.end());
+  std::vector<std::remove_const_t<ValueType>> storage1(ref1.begin(), ref1.end());
   ListType ifl;
   ifl.assign(storage1.begin(), storage1.end());
   ASSERT_LISTS_EQUAL(ref1, ifl);
   std::forward_list<int> ref2({ 7, 1, 3 });
-  std::vector<ValueType> storage2(ref2.begin(), ref2.end());
+  std::vector<std::remove_const_t<ValueType>> storage2(ref2.begin(), ref2.end());
   ifl.assign(storage2.begin(), storage2.end());
   ASSERT_LISTS_EQUAL(ref2, ifl);
 }
@@ -279,18 +280,18 @@ void IntrusiveForwardListTest::InsertAfter2() {
   ListType ifl;
 
   auto ref_it = ref.insert_after(ref.before_begin(), { 2, 8, 5 });
-  std::vector<ValueType> storage1({ { 2 }, { 8 }, { 5 } });
+  std::vector<std::remove_const_t<ValueType>> storage1({ { 2 }, { 8 }, { 5 } });
   auto ifl_it = ifl.insert_after(ifl.before_begin(), storage1.begin(), storage1.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   ASSERT_EQ(*ref_it, *ifl_it);
 
-  std::vector<ValueType> storage2({ { 7 }, { 2 } });
+  std::vector<std::remove_const_t<ValueType>> storage2({ { 7 }, { 2 } });
   ref_it = ref.insert_after(ref.begin(), { 7, 2 });
   ifl_it = ifl.insert_after(ifl.begin(), storage2.begin(), storage2.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   ASSERT_EQ(*ref_it, *ifl_it);
 
-  std::vector<ValueType> storage3({ { 1 }, { 3 }, { 4 }, { 9 } });
+  std::vector<std::remove_const_t<ValueType>> storage3({ { 1 }, { 3 }, { 4 }, { 9 } });
   ref_it = ref.begin();
   ifl_it = ifl.begin();
   std::advance(ref_it, std::distance(ref.begin(), ref.end()) - 1);
@@ -310,7 +311,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::EraseAfter1() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 1, 2, 7, 4, 5 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   CHECK_EQ(std::distance(ref.begin(), ref.end()), 5);
@@ -373,7 +374,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::EraseAfter2() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 1, 2, 7, 4, 5, 3, 2, 8, 9 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   CHECK_EQ(std::distance(ref.begin(), ref.end()), 9);
@@ -413,10 +414,10 @@ template <typename ListType>
 void IntrusiveForwardListTest::SwapClear() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref1({ 1, 2, 7 });
-  std::vector<ValueType> storage1(ref1.begin(), ref1.end());
+  std::vector<std::remove_const_t<ValueType>> storage1(ref1.begin(), ref1.end());
   ListType ifl1(storage1.begin(), storage1.end());
   std::forward_list<int> ref2({ 3, 8, 6 });
-  std::vector<ValueType> storage2(ref2.begin(), ref2.end());
+  std::vector<std::remove_const_t<ValueType>> storage2(ref2.begin(), ref2.end());
   ListType ifl2(storage2.begin(), storage2.end());
   ASSERT_LISTS_EQUAL(ref1, ifl1);
   ASSERT_LISTS_EQUAL(ref2, ifl2);
@@ -449,7 +450,7 @@ void IntrusiveForwardListTest::SpliceAfter() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref1({ 3, 1, 2, 7, 4, 5, 4, 8, 7 });
   std::forward_list<int> ref2;
-  std::vector<ValueType> storage(ref1.begin(), ref1.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref1.begin(), ref1.end());
   ListType ifl1(storage.begin(), storage.end());
   ListType ifl2;
   ASSERT_LISTS_EQUAL(ref1, ifl1);
@@ -565,7 +566,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::Remove() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 3, 1, 2, 7, 4, 5, 4, 8, 7 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   ref.remove(1);
@@ -594,7 +595,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::Unique() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 3, 1, 1, 2, 3, 3, 7, 7, 4, 4, 5, 7 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   ref.unique();
@@ -623,10 +624,10 @@ template <typename ListType>
 void IntrusiveForwardListTest::Merge() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref1({ 1, 4, 8, 8, 12 });
-  std::vector<ValueType> storage1(ref1.begin(), ref1.end());
+  std::vector<std::remove_const_t<ValueType>> storage1(ref1.begin(), ref1.end());
   ListType ifl1(storage1.begin(), storage1.end());
   std::forward_list<int> ref2({ 3, 5, 6, 7, 9 });
-  std::vector<ValueType> storage2(ref2.begin(), ref2.end());
+  std::vector<std::remove_const_t<ValueType>> storage2(ref2.begin(), ref2.end());
   ListType ifl2(storage2.begin(), storage2.end());
   ASSERT_LISTS_EQUAL(ref1, ifl1);
   ASSERT_LISTS_EQUAL(ref2, ifl2);
@@ -651,7 +652,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::Sort1() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 2, 9, 8, 3, 7, 4, 1, 5, 3, 0 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   CHECK(!std::is_sorted(ref.begin(), ref.end()));
@@ -672,7 +673,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::Sort2() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 2, 9, 8, 3, 7, 4, 1, 5, 3, 0 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   auto cmp = [](const ValueType& lhs, const ValueType& rhs) {
@@ -696,7 +697,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::Reverse() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 8, 3, 5, 4, 1, 3 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
   CHECK(!std::is_sorted(ref.begin(), ref.end()));
@@ -717,7 +718,7 @@ template <typename ListType>
 void IntrusiveForwardListTest::ModifyValue() {
   using ValueType = typename ListType::value_type;
   std::forward_list<int> ref({ 3, 7, 42 });
-  std::vector<ValueType> storage(ref.begin(), ref.end());
+  std::vector<std::remove_const_t<ValueType>> storage(ref.begin(), ref.end());
   ListType ifl(storage.begin(), storage.end());
   ASSERT_LISTS_EQUAL(ref, ifl);
 

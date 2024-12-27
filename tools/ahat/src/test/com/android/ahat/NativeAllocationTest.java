@@ -33,5 +33,12 @@ public class NativeAllocationTest {
     AhatInstance referent = dump.getDumpedAhatInstance("anObject");
     assertEquals(50000, referent.getSize().getRegisteredNativeSize());
   }
-}
 
+  @Test
+  public void nativeAllocationCleaned() throws IOException {
+    TestDump dump = TestDump.getTestDump();
+
+    AhatInstance referent = dump.getDumpedAhatInstance("aCleanedObject");
+    assertEquals(0, referent.getSize().getRegisteredNativeSize());
+  }
+}

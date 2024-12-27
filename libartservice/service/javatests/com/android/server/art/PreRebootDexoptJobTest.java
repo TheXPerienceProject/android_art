@@ -134,7 +134,7 @@ public class PreRebootDexoptJobTest {
 
     @Test
     public void testSchedule() throws Exception {
-        assertThat(mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */))
+        assertThat(mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */))
                 .isEqualTo(ArtFlags.SCHEDULE_SUCCESS);
 
         assertThat(mJobInfo.isPeriodic()).isFalse();
@@ -148,7 +148,7 @@ public class PreRebootDexoptJobTest {
         when(SystemProperties.getBoolean(eq("pm.dexopt.disable_bg_dexopt"), anyBoolean()))
                 .thenReturn(true);
 
-        assertThat(mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */))
+        assertThat(mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */))
                 .isEqualTo(ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP);
 
         verify(mJobScheduler, never()).schedule(any());
@@ -171,7 +171,7 @@ public class PreRebootDexoptJobTest {
         when(SystemProperties.getBoolean(eq("dalvik.vm.enable_pr_dexopt"), anyBoolean()))
                 .thenReturn(false);
 
-        assertThat(mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */))
+        assertThat(mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */))
                 .isEqualTo(ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP);
 
         verify(mJobScheduler, never()).schedule(any());
@@ -199,7 +199,7 @@ public class PreRebootDexoptJobTest {
                         eq(DeviceConfig.NAMESPACE_RUNTIME), eq("enable_pr_dexopt"), anyBoolean()))
                 .thenReturn(true);
 
-        assertThat(mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */))
+        assertThat(mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */))
                 .isEqualTo(ArtFlags.SCHEDULE_SUCCESS);
 
         verify(mJobScheduler).schedule(any());
@@ -218,7 +218,7 @@ public class PreRebootDexoptJobTest {
                      eq("force_disable_pr_dexopt"), anyBoolean()))
                 .thenReturn(true);
 
-        assertThat(mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */))
+        assertThat(mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */))
                 .isEqualTo(ArtFlags.SCHEDULE_DISABLED_BY_SYSPROP);
 
         verify(mJobScheduler, never()).schedule(any());
@@ -226,7 +226,7 @@ public class PreRebootDexoptJobTest {
 
     @Test
     public void testUnschedule() {
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
         verify(mJobScheduler).cancel(JOB_ID);
     }
 
@@ -248,8 +248,8 @@ public class PreRebootDexoptJobTest {
                 });
 
         assertThat(mPreRebootDexoptJob.hasStarted()).isFalse();
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
-        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         assertThat(jobStarted.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
         assertThat(mPreRebootDexoptJob.hasStarted()).isTrue();
 
@@ -279,9 +279,9 @@ public class PreRebootDexoptJobTest {
             return true;
         });
 
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
-        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
-        mPreRebootDexoptJob.onStopJob(mJobParameters);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
+        mPreRebootDexoptJob.onStopJobImpl(mJobParameters);
 
         // Check that `onStopJob` is really blocking. If it wasn't, the check below might still pass
         // due to a race, but we would have a flaky test.
@@ -311,57 +311,57 @@ public class PreRebootDexoptJobTest {
 
     @Test
     public void testUpdateOtaSlotOtaThenMainline() {
-        mPreRebootDexoptJob.onUpdateReady("_b" /* otaSlot */);
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
         when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any())).thenReturn(true);
 
-        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
     }
 
     @Test
     public void testUpdateOtaSlotMainlineThenOta() {
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
-        mPreRebootDexoptJob.onUpdateReady("_a" /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl("_a" /* otaSlot */);
 
         when(mPreRebootDriver.run(eq("_a"), anyBoolean(), any())).thenReturn(true);
 
-        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
     }
 
     @Test
     public void testUpdateOtaSlotMainlineThenMainline() {
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
         when(mPreRebootDriver.run(isNull(), anyBoolean(), any())).thenReturn(true);
 
-        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
     }
 
     @Test
     public void testUpdateOtaSlotOtaThenOta() {
-        mPreRebootDexoptJob.onUpdateReady("_b" /* otaSlot */);
-        mPreRebootDexoptJob.onUpdateReady("_b" /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
 
         when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any())).thenReturn(true);
 
-        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
     }
 
     @Test(expected = IllegalStateException.class)
     public void testUpdateOtaSlotOtaThenOtaDifferentSlots() {
-        mPreRebootDexoptJob.onUpdateReady("_b" /* otaSlot */);
-        mPreRebootDexoptJob.onUpdateReady("_a" /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl("_a" /* otaSlot */);
     }
 
     @Test(expected = IllegalStateException.class)
     public void testUpdateOtaSlotOtaBogusSlot() {
-        mPreRebootDexoptJob.onUpdateReady("_bogus" /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl("_bogus" /* otaSlot */);
     }
 
     /**
@@ -379,10 +379,10 @@ public class PreRebootDexoptJobTest {
         });
 
         // An update arrives. A job is scheduled.
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
         // The job scheduler starts the job.
-        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
 
         var jobFinishedCalledAfterNewJobStarted = new Semaphore(0);
 
@@ -390,15 +390,15 @@ public class PreRebootDexoptJobTest {
             // Another update arrives. A new job is scheduled, replacing the old job. The old job
             // doesn't exit immediately, so this call is blocked.
             JobParameters oldParameters = mJobParameters;
-            mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
+            mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
             // The job scheduler tries to cancel the old job because of the new update. This call
             // doesn't matter because the job has already been cancelled by ourselves during the
-            // `onUpdateReady` call above.
-            mPreRebootDexoptJob.onStopJob(oldParameters);
+            // `onUpdateReadyImpl` call above.
+            mPreRebootDexoptJob.onStopJobImpl(oldParameters);
 
             // The job scheduler starts the new job.
-            mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+            mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
 
             doAnswer(invocation -> {
                 jobFinishedCalledAfterNewJobStarted.release();
@@ -432,19 +432,21 @@ public class PreRebootDexoptJobTest {
     @Test
     public void testRace2() throws Exception {
         // An update arrives. A job is scheduled.
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
         JobParameters oldParameters = mJobParameters;
 
         // The job scheduler starts the job. In the meantime, another update arrives. It's not
-        // possible that `onStartJob` is called for the old job after `onUpdateReady` is called
-        // because `onUpdateReady` unschedules the old job. However, since both calls acquire a
+        // possible that `onStartJob` is called for the old job after `onUpdateReadyImpl` is called
+        // because `onUpdateReadyImpl` unschedules the old job. However, since both calls acquire a
         // lock, the order of execution may be reversed. When this happens, the `onStartJob` request
         // should not succeed.
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
-        assertThat(mPreRebootDexoptJob.onStartJob(mJobService, oldParameters)).isFalse();
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, oldParameters);
+        assertThat(mPreRebootDexoptJob.hasRunningJob()).isFalse();
 
         // The job scheduler starts the new job. This request should succeed.
-        assertThat(mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters)).isTrue();
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
+        assertThat(mPreRebootDexoptJob.hasRunningJob()).isTrue();
     }
 
     /**
@@ -463,10 +465,10 @@ public class PreRebootDexoptJobTest {
         });
 
         // An update arrives. A job is scheduled.
-        mPreRebootDexoptJob.onUpdateReady(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
         // The job scheduler starts the job.
-        mPreRebootDexoptJob.onStartJob(mJobService, mJobParameters);
+        mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
 
         // Another update arrives, requesting a synchronous job run, replacing the old job. The new
         // job, which is synchronous, is started right after the old job is cancelled by
@@ -482,7 +484,7 @@ public class PreRebootDexoptJobTest {
         // The `onStopJob` call finally arrives. This call should be a no-op because the job has
         // already been cancelled by ourselves during the `onUpdateReadyStartNow` call above. It
         // should not cancel the new job.
-        mPreRebootDexoptJob.onStopJob(oldParameters);
+        mPreRebootDexoptJob.onStopJobImpl(oldParameters);
 
         // The new job should not be cancelled.
         assertThat(jobExited.tryAcquire()).isFalse();

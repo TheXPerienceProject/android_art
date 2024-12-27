@@ -35,7 +35,6 @@ import static org.mockito.ArgumentMatchers.matches;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
-import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.isNull;
@@ -689,6 +688,27 @@ public class ArtManagerLocalTest {
         verify(mDexoptHelper, never())
                 .dexopt(any(), any(), argThat(params -> params.getReason().equals("inactive")),
                         any(), any(), any(), any());
+    }
+
+    @Test
+    public void testDexoptPackagesFirstBoot() throws Exception {
+        // On first-boot all packages haven't been used and first install time is
+        // 0 which simulates case of system time being advanced by
+        // AlarmManagerService after package installation
+        lenient().when(mDexUseManager.getPackageLastUsedAtMs(any())).thenReturn(0l);
+
+        var result = DexoptResult.create();
+        var cancellationSignal = new CancellationSignal();
+
+        // PKG_NAME_1 and PKG_NAME_2 should be dexopted.
+        doReturn(result)
+                .when(mDexoptHelper)
+                .dexopt(any(), inAnyOrder(PKG_NAME_1, PKG_NAME_2),
+                        argThat(params -> params.getReason().equals("first-boot")), any(), any(),
+                        any(), any());
+
+        mArtManagerLocal.dexoptPackages(mSnapshot, "first-boot", cancellationSignal,
+                null /* processCallbackExecutor */, null /* processCallback */);
     }
 
     @Test

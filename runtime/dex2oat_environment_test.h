@@ -17,11 +17,15 @@
 #ifndef ART_RUNTIME_DEX2OAT_ENVIRONMENT_TEST_H_
 #define ART_RUNTIME_DEX2OAT_ENVIRONMENT_TEST_H_
 
+#include <sys/wait.h>
+
 #include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "android-base/result.h"
+#include "android-base/strings.h"
 #include "base/file_utils.h"
 #include "base/macros.h"
 #include "base/os.h"
@@ -40,6 +44,8 @@
 #include "ziparchive/zip_writer.h"
 
 namespace art HIDDEN {
+
+using ::android::base::Result;
 
 static constexpr bool kDebugArgs = false;
 
@@ -193,12 +199,11 @@ class Dex2oatEnvironmentTest : public Dex2oatScratchDirs, public CommonRuntimeTe
     return GetTestDexFileName("Nested");
   }
 
-  int Dex2Oat(const std::vector<std::string>& dex2oat_args,
-              std::string* output,
-              std::string* error_msg) {
+  Result<int> Dex2Oat(const std::vector<std::string>& dex2oat_args, std::string* output) {
     std::vector<std::string> argv;
-    if (!CommonRuntimeTest::StartDex2OatCommandLine(&argv, error_msg)) {
-      ::testing::AssertionFailure() << "Could not start dex2oat cmd line " << *error_msg;
+    std::string error_msg;
+    if (!CommonRuntimeTest::StartDex2OatCommandLine(&argv, &error_msg)) {
+      return Errorf("Could not start dex2oat cmd line: {}", error_msg);
     }
 
     Runtime* runtime = Runtime::Current();
@@ -235,18 +240,20 @@ class Dex2oatEnvironmentTest : public Dex2oatScratchDirs, public CommonRuntimeTe
 
     // We need dex2oat to actually log things.
     auto post_fork_fn = []() { return setenv("ANDROID_LOG_TAGS", "*:d", 1) == 0; };
+
     ForkAndExecResult res = ForkAndExec(argv, post_fork_fn, output);
     if (res.stage != ForkAndExecResult::kFinished) {
-      *error_msg = strerror(errno);
-      ::testing::AssertionFailure() << "Failed to finish dex2oat invocation: " << *error_msg;
+      return ErrnoErrorf("Failed to finish dex2oat invocation '{}'",
+                         android::base::Join(argv, ' '));
     }
 
-    if (!res.StandardSuccess()) {
-      // We cannot use ASSERT_TRUE since the method returns an int and not void.
-      ::testing::AssertionFailure() << "dex2oat fork/exec failed: " << *error_msg;
+    if (!WIFEXITED(res.status_code)) {
+      return Errorf("dex2oat didn't terminate normally (status_code={:#x}): {}",
+                    res.status_code,
+                    android::base::Join(argv, ' '));
     }
 
-    return res.status_code;
+    return WEXITSTATUS(res.status_code);
   }
 
   void CreateDexMetadata(const std::string& vdex, const std::string& out_dm) {

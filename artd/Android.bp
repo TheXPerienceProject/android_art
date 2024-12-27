@@ -45,6 +45,11 @@ cc_defaults {
         "artd-aidl-ndk",
         "libfstab",
     ],
+    target: {
+        android: {
+            compile_multilib: "first",
+        },
+    },
 }
 
 art_cc_binary {
@@ -84,7 +89,7 @@ art_cc_defaults {
     ],
 }
 
-// Version of ART gtest `art_artd_tests` bundled with the ART APEX on target.
+// Version of ART gtest `art_artd_tests` for host.
 //
 // This test requires the full libbinder_ndk implementation on host, which is
 // not available as a prebuilt on the thin master-art branch. Hence it won't
@@ -92,6 +97,7 @@ art_cc_defaults {
 // test-art-host-gtest.
 art_cc_test {
     name: "art_artd_tests",
+    device_supported: false,
     defaults: [
         "art_gtest_defaults",
         "art_artd_tests_defaults",

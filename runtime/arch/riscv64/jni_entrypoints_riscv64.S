@@ -522,10 +522,12 @@ ENTRY art_jni_lock_object_no_inline
 1:
     // All args are irrelevant when throwing an exception. Remove the spill area.
     DECREASE_FRAME (ALL_ARGS_SIZE + /*padding*/ 8 + /*RA*/ 8)
-    // Make a tail call to `artDeliverPendingExceptionFromCode()`.
+    // Make a call to `artDeliverPendingExceptionFromCode()`.
     // Rely on the JNI transition frame constructed in the JNI stub.
     mv     a0, xSELF                           // Pass Thread::Current().
-    tail   artDeliverPendingExceptionFromCode  // (Thread*)
+    call   artDeliverPendingExceptionFromCode  // (Thread*)
+    call   art_quick_do_long_jump              // (Context*)
+    unimp  // Unreached
 END art_jni_lock_object_no_inline
 
     /*

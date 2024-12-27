@@ -37,11 +37,11 @@ class GraphCheckerTest : public CommonCompilerTest, public OptimizingUnitTestHel
 HGraph* GraphCheckerTest::CreateSimpleCFG() {
   HGraph* graph = CreateGraph();
   HBasicBlock* entry_block = new (GetAllocator()) HBasicBlock(graph);
-  entry_block->AddInstruction(new (GetAllocator()) HReturnVoid());
+  MakeReturnVoid(entry_block);
   graph->AddBlock(entry_block);
   graph->SetEntryBlock(entry_block);
   HBasicBlock* exit_block = new (GetAllocator()) HBasicBlock(graph);
-  exit_block->AddInstruction(new (GetAllocator()) HExit());
+  MakeExit(exit_block);
   graph->AddBlock(exit_block);
   graph->SetExitBlock(exit_block);
   entry_block->AddSuccessor(exit_block);

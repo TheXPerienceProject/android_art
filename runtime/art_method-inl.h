@@ -31,6 +31,8 @@
 #include "dex/signature.h"
 #include "gc_root-inl.h"
 #include "imtable-inl.h"
+#include "jit/jit.h"
+#include "jit/jit_code_cache-inl.h"
 #include "jit/jit_options.h"
 #include "mirror/class-inl.h"
 #include "mirror/dex_cache-inl.h"
@@ -619,6 +621,13 @@ void ArtMethod::VisitRoots(RootVisitorType& visitor, PointerSize pointer_size) {
       }
     }
   }
+
+  // JIT-ted code can hold references to heap objects like MethodType-s. Visiting them here to
+  // treat them as strongly reachable.
+  Runtime* runtime = Runtime::Current();
+  if (runtime->GetJit() != nullptr) {
+    runtime->GetJit()->GetCodeCache()->VisitRootTables(this, visitor);
+  }
 }
 
 template<typename RootVisitorType>
@@ -661,22 +670,6 @@ void ArtMethod::VisitArrayRoots(RootVisitorType& visitor,
     visitor.VisitRootIfNonNull(
         reinterpret_cast<mirror::CompressedReference<mirror::Object>*>(declaring_class));
     declaring_class += kMethodSize;
-  }
-}
-
-template <typename Visitor>
-inline void ArtMethod::UpdateEntrypoints(const Visitor& visitor, PointerSize pointer_size) {
-  if (IsNative()) {
-    const void* old_native_code = GetEntryPointFromJniPtrSize(pointer_size);
-    const void* new_native_code = visitor(old_native_code);
-    if (old_native_code != new_native_code) {
-      SetEntryPointFromJniPtrSize(new_native_code, pointer_size);
-    }
-  }
-  const void* old_code = GetEntryPointFromQuickCompiledCodePtrSize(pointer_size);
-  const void* new_code = visitor(old_code);
-  if (old_code != new_code) {
-    SetEntryPointFromQuickCompiledCodePtrSize(new_code, pointer_size);
   }
 }
 

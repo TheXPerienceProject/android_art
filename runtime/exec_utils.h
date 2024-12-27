@@ -48,7 +48,7 @@ struct ExecCallbacks {
 
 struct ExecResult {
   // This struct needs to be in sync with the ExecResultStatus enum contained within the
-  // OdrefreshReported atom in frameworks/proto_logging/atoms/art/odrefresh_extension_atoms.proto.
+  // OdrefreshReported atom in frameworks/proto_logging/stats/enums/art/common_enums.proto.
   enum Status {
     // Unable to get the status.
     kUnknown = 0,
@@ -118,7 +118,10 @@ class EXPORT ExecUtils {
   virtual int64_t GetTicksPerSec() const;
 
  private:
-  bool GetStat(pid_t pid, /*out*/ ProcessStat* stat, /*out*/ std::string* error_msg) const;
+  bool GetStat(pid_t pid,
+               int64_t start_time,
+               /*out*/ ProcessStat* stat,
+               /*out*/ std::string* error_msg) const;
 };
 
 inline bool Exec(const std::vector<std::string>& arg_vector, /*out*/ std::string* error_msg) {

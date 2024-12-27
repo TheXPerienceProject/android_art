@@ -1,25 +1,16 @@
 # How to update dirty-image-objects
 
-1. Add `imgdiag` to ART APEX.
-
-The easiest way is to modify `art/build/apex/Android.bp` like this:
-```
- art_runtime_binaries_both = [
-     "dalvikvm",
-     "dex2oat",
-+    "imgdiag",
- ]
-```
-
-2. Install ART APEX and reboot, e.g.:
+1. Install ART APEX with imgdiag and reboot, e.g.:
 
 ```
+. ./build/envsetup.sh
+banchan test_imgdiag_com.android.art module_arm64
 m apps_only dist
-adb install out/dist/com.android.art.apex
+adb install out/dist/test_imgdiag_com.android.art.apex
 adb reboot
 ```
 
-3. Collect imgdiag output.
+2. Collect imgdiag output.
 
 ```
 # To see all options check: art/imgdiag/run_imgdiag.py -h
@@ -27,7 +18,7 @@ adb reboot
 art/imgdiag/run_imgdiag.py
 ```
 
-4. Create new dirty-image-objects.
+3. Create new dirty-image-objects.
 
 ```
 # To see all options check: art/imgdiag/create_dirty_image_objects.py -h
@@ -63,13 +54,13 @@ All dirty objects will be placed in the dirty bin of the boot image and sorted
 by the sort\_key values. I.e., dirty entries with sort\_key==N will have lower
 address than entries with sort\_key==N+1.
 
-5. Push new dirty-image-objects to the device.
+4. Push new dirty-image-objects to the device.
 
 ```
 adb push dirty-image-objects.txt /etc/dirty-image-objects
 ```
 
-6. Reinstall ART APEX to update the boot image.
+5. Reinstall ART APEX to update the boot image.
 
 ```
 adb install out/dist/com.android.art.apex

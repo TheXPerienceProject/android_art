@@ -43,6 +43,7 @@ class Throwable;
 }  // namespace mirror
 class ArtField;
 class ArtMethod;
+class Context;
 template <typename T> class Handle;
 template <typename T> class MutableHandle;
 struct NthCallerVisitor;
@@ -533,11 +534,14 @@ class Instrumentation {
                                 DeoptimizationMethodType deopt_type,
                                 bool is_ref,
                                 const JValue& result) REQUIRES_SHARED(Locks::mutator_lock_);
-  void DeoptimizeIfNeeded(Thread* self,
-                          ArtMethod** sp,
-                          DeoptimizationMethodType type,
-                          JValue result,
-                          bool is_ref) REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Deoptimize upon pending exception or if the caller requires it. Returns a long jump context if
+  // a deoptimization is needed and taken.
+  std::unique_ptr<Context> DeoptimizeIfNeeded(Thread* self,
+                                              ArtMethod** sp,
+                                              DeoptimizationMethodType type,
+                                              JValue result,
+                                              bool is_ref) REQUIRES_SHARED(Locks::mutator_lock_);
   // This returns if the caller of runtime method requires a deoptimization. This checks both if the
   // method requires a deopt or if this particular frame needs a deopt because of a class
   // redefinition.

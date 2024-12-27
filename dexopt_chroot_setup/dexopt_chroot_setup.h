@@ -27,6 +27,12 @@
 namespace art {
 namespace dexopt_chroot_setup {
 
+// A comma-separated list, where each entry is a colon-separated pair of a partition name in the
+// super image and a mount point. E.g.,
+// some_partition_1:/some_mount_point_1,some_partition_2:/some_mount_point_2
+constexpr const char* kAdditionalPartitionsSysprop =
+    "dalvik.vm.pr_dexopt_additional_system_partitions";
+
 // A service that sets up the chroot environment for Pre-reboot Dexopt.
 class DexoptChrootSetup : public aidl::com::android::server::art::BnDexoptChrootSetup {
  public:
@@ -35,7 +41,7 @@ class DexoptChrootSetup : public aidl::com::android::server::art::BnDexoptChroot
 
   ndk::ScopedAStatus init() override;
 
-  ndk::ScopedAStatus tearDown() override;
+  ndk::ScopedAStatus tearDown(bool in_allowConcurrent) override;
 
   android::base::Result<void> Start();
 
@@ -51,6 +57,9 @@ class DexoptChrootSetup : public aidl::com::android::server::art::BnDexoptChroot
 };
 
 std::string PathInChroot(std::string_view path);
+
+android::base::Result<std::string> ConstructLinkerConfigCompatEnvSection(
+    const std::string& art_linker_config_content);
 
 }  // namespace dexopt_chroot_setup
 }  // namespace art

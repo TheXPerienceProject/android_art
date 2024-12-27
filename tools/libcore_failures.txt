@@ -351,5 +351,11 @@
    names: ["libcore.java.lang.RecordTest",
            "crossvmtest.java.lang.RecordComponentTest",
            "crossvmtest.java.lang.RecordTest"]
+},
+{
+   description: "Test should run only on device as it depends on compat check and Android specific behavior",
+   result: EXEC_FAILED,
+   modes: [host],
+   names: ["test.java.util.concurrent.tck.ScheduledExecutorTest#testFixedRateSequenceSkipMultipleMissedFixedRateTasksDisabled"]
 }
 ]

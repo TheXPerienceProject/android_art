@@ -250,6 +250,8 @@ inline mirror::Object* Heap::AllocObjectWithAllocator(Thread* self,
   }
   if (AllocatorHasAllocationStack(allocator)) {
     PushOnAllocationStack(self, &obj);
+    // Ensure that the push to allocation stack is done before the object is published.
+    std::atomic_thread_fence(std::memory_order_release);
   }
   if (kInstrumented) {
     if (gc_stress_mode_) {

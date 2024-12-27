@@ -22,4 +22,12 @@ Context* Context::Create() {
   return new RuntimeContextType;
 }
 
+extern "C" void artContextCopyForLongJump(Context* context, uintptr_t* gprs, uintptr_t* fprs) {
+  context->CopyContextTo(gprs, fprs);
+  // Once the context has been copied, it is no longer needed.
+  // The context pointer is passed via hand-written assembly stubs, otherwise we'd take the
+  // context argument as a `std::unique_ptr<>` to indicate the ownership handover.
+  delete context;
+}
+
 }  // namespace art

@@ -327,61 +327,6 @@ END_FUNCTION \name
 // - if load_ins is 1, \ins contains the ins
 // - \code_item is replaced with a pointer to the instructions
 .macro FETCH_CODE_ITEM_INFO code_item, registers, outs, ins, load_ins
-    testl MACRO_LITERAL(1), \code_item
-    je 5f
-    andl $$-2, \code_item  // Remove the extra bit that marks it's a compact dex file.
-    movzwl COMPACT_CODE_ITEM_FIELDS_OFFSET(\code_item), %edx
-    movl %edx, \registers
-    sarl $$COMPACT_CODE_ITEM_REGISTERS_SIZE_SHIFT, \registers
-    andl $$0xf, \registers
-    movl %edx, \outs
-    sarl $$COMPACT_CODE_ITEM_OUTS_SIZE_SHIFT, \outs
-    andl $$0xf, \outs
-    .if \load_ins
-    movl %edx, \ins
-    sarl $$COMPACT_CODE_ITEM_INS_SIZE_SHIFT, \ins
-    andl $$0xf, \ins
-    .else
-    movl %edx, %eax
-    sarl $$COMPACT_CODE_ITEM_INS_SIZE_SHIFT, %eax
-    andl $$0xf, %eax
-    addl %eax, \registers
-    .endif
-    testw $$COMPACT_CODE_ITEM_REGISTERS_INS_OUTS_FLAGS, COMPACT_CODE_ITEM_FLAGS_OFFSET(\code_item)
-    je 4f
-    movl \code_item, %eax
-    testw $$COMPACT_CODE_ITEM_INSNS_FLAG, COMPACT_CODE_ITEM_FLAGS_OFFSET(\code_item)
-    je 1f
-    subl $$4, %eax
-1:
-    testw $$COMPACT_CODE_ITEM_REGISTERS_FLAG, COMPACT_CODE_ITEM_FLAGS_OFFSET(\code_item)
-    je 2f
-    subl $$2, %eax
-    movzwl (%eax), %edx
-    addl %edx, \registers
-2:
-    testw $$COMPACT_CODE_ITEM_INS_FLAG, COMPACT_CODE_ITEM_FLAGS_OFFSET(\code_item)
-    je 3f
-    subl $$2, %eax
-    movzwl (%eax), %edx
-    .if \load_ins
-    addl %edx, \ins
-    .else
-    addl %edx, \registers
-    .endif
-3:
-    testw $$COMPACT_CODE_ITEM_OUTS_FLAG, COMPACT_CODE_ITEM_FLAGS_OFFSET(\code_item)
-    je 4f
-    subl $$2, %eax
-    movzwl (%eax), %edx
-    addl %edx, \outs
-4:
-    .if \load_ins
-    addl \ins, \registers
-    .endif
-    addl $$COMPACT_CODE_ITEM_INSNS_OFFSET, \code_item
-    jmp 6f
-5:
     // Fetch dex register size.
     movzwl CODE_ITEM_REGISTERS_SIZE_OFFSET(\code_item), \registers
     // Fetch outs size.
@@ -390,7 +335,6 @@ END_FUNCTION \name
     movzwl CODE_ITEM_INS_SIZE_OFFSET(\code_item), \ins
     .endif
     addl $$CODE_ITEM_INSNS_OFFSET, \code_item
-6:
 .endm
 
 // Setup the stack to start executing the method. Expects:

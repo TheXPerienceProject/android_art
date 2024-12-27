@@ -21,7 +21,6 @@
 
 #include <map>
 #include <memory>
-#include <unordered_map>
 #include <unordered_set>
 
 #include "barrier.h"
@@ -60,10 +59,8 @@ class MarkCompact final : public GarbageCollector {
 
   static constexpr size_t kAlignment = kObjectAlignment;
   static constexpr int kCopyMode = -1;
-  static constexpr int kMinorFaultMode = -2;
   // Fake file descriptor for fall back mode (when uffd isn't available)
   static constexpr int kFallbackMode = -3;
-  static constexpr int kFdSharedAnon = -1;
   static constexpr int kFdUnused = -2;
 
   // Bitmask for the compaction-done bit in the sigbus_in_progress_count_.
@@ -81,8 +78,6 @@ class MarkCompact final : public GarbageCollector {
   // pause or during concurrent compaction. The flag is reset in next GC cycle's
   // InitializePhase(). Therefore, it's safe to update without any memory ordering.
   bool IsCompacting() const { return compacting_; }
-
-  bool IsUsingSigbusFeature() const { return use_uffd_sigbus_; }
 
   // Called by SIGBUS handler. NO_THREAD_SAFETY_ANALYSIS for mutator-lock, which
   // is asserted in the function.
@@ -260,6 +255,8 @@ class MarkCompact final : public GarbageCollector {
                                              + from_space_slide_diff_);
   }
 
+  inline bool IsOnAllocStack(mirror::Object* ref)
+      REQUIRES_SHARED(Locks::mutator_lock_, Locks::heap_bitmap_lock_);
   // Verifies that that given object reference refers to a valid object.
   // Otherwise fataly dumps logs, including those from callback.
   template <typename Callback>
@@ -486,37 +483,22 @@ class MarkCompact final : public GarbageCollector {
   void KernelPreparation();
   // Called by KernelPreparation() for every memory range being prepared for
   // userfaultfd registration.
-  void KernelPrepareRangeForUffd(uint8_t* to_addr,
-                                 uint8_t* from_addr,
-                                 size_t map_size,
-                                 int fd,
-                                 uint8_t* shadow_addr = nullptr);
+  void KernelPrepareRangeForUffd(uint8_t* to_addr, uint8_t* from_addr, size_t map_size);
 
-  void RegisterUffd(void* addr, size_t size, int mode);
+  void RegisterUffd(void* addr, size_t size);
   void UnregisterUffd(uint8_t* start, size_t len);
 
-  // Called by thread-pool workers to read uffd_ and process fault events.
-  template <int kMode>
-  void ConcurrentCompaction(uint8_t* buf) REQUIRES_SHARED(Locks::mutator_lock_);
-  // Called by thread-pool workers to compact and copy/map the fault page in
-  // moving space.
-  template <int kMode>
+  // Called by SIGBUS handler to compact and copy/map the fault page in moving space.
   void ConcurrentlyProcessMovingPage(uint8_t* fault_page,
                                      uint8_t* buf,
-                                     size_t nr_moving_space_used_pages)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  // Called by thread-pool workers to process and copy/map the fault page in
-  // linear-alloc.
-  template <int kMode>
-  void ConcurrentlyProcessLinearAllocPage(uint8_t* fault_page, bool is_minor_fault)
+                                     size_t nr_moving_space_used_pages,
+                                     bool tolerate_enoent) REQUIRES_SHARED(Locks::mutator_lock_);
+  // Called by SIGBUS handler to process and copy/map the fault page in linear-alloc.
+  void ConcurrentlyProcessLinearAllocPage(uint8_t* fault_page, bool tolerate_enoent)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Process concurrently all the pages in linear-alloc. Called by gc-thread.
   void ProcessLinearAlloc() REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Returns true if the moving space can be compacted using uffd's minor-fault
-  // feature.
-  bool CanCompactMovingSpaceWithMinorFault();
 
   // Does the following:
   // 1. Checks the status of to-space pages in [cur_page_idx,
@@ -530,17 +512,6 @@ class MarkCompact final : public GarbageCollector {
   bool FreeFromSpacePages(size_t cur_page_idx, int mode, size_t end_idx_for_mapping)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Maps processed pages (from moving space and linear-alloc) for uffd's
-  // minor-fault feature. We try to 'claim' all processed (and unmapped) pages
-  // contiguous to 'to_space_start'.
-  // kFirstPageMapping indicates if the first page is already claimed or not. It
-  // also indicates that the ioctl must succeed in mapping the first page.
-  template <bool kFirstPageMapping>
-  void MapProcessedPages(uint8_t* to_space_start,
-                         Atomic<PageState>* state_arr,
-                         size_t arr_idx,
-                         size_t arr_len) REQUIRES_SHARED(Locks::mutator_lock_);
-
   // Maps moving space pages in [start_idx, arr_len) range. It fetches the page
   // address containing the compacted content from moving_pages_status_ array.
   // 'from_fault' is true when called from userfault (sigbus handler).
@@ -550,7 +521,8 @@ class MarkCompact final : public GarbageCollector {
   size_t MapMovingSpacePages(size_t start_idx,
                              size_t arr_len,
                              bool from_fault,
-                             bool return_on_contention) REQUIRES_SHARED(Locks::mutator_lock_);
+                             bool return_on_contention,
+                             bool tolerate_enoent) REQUIRES_SHARED(Locks::mutator_lock_);
 
   bool IsValidFd(int fd) const { return fd >= 0; }
 
@@ -567,12 +539,6 @@ class MarkCompact final : public GarbageCollector {
   ALWAYS_INLINE void UpdateClassAfterObjectMap(mirror::Object* obj)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Updates 'class_after_obj_map_' map by updating the keys (class) with its
-  // highest-address super-class (obtained from 'super_class_after_class_map_'),
-  // if there is any. This is to ensure we don't free from-space pages before
-  // the lowest-address obj is compacted.
-  void UpdateClassAfterObjMap();
-
   void MarkZygoteLargeObjects() REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(Locks::heap_bitmap_lock_);
 
@@ -588,7 +554,8 @@ class MarkCompact final : public GarbageCollector {
   // function also uses thread's priority to decide how long we delay before
   // forcing the ioctl operation. If ioctl returns EEXIST, then also function
   // returns. Returns number of bytes (multiple of page-size) mapped.
-  size_t CopyIoctl(void* dst, void* buffer, size_t length, bool return_on_contention);
+  size_t CopyIoctl(
+      void* dst, void* buffer, size_t length, bool return_on_contention, bool tolerate_enoent);
 
   // Called after updating linear-alloc page(s) to map the page. It first
   // updates the state of the pages to kProcessedAndMapping and after ioctl to
@@ -600,7 +567,8 @@ class MarkCompact final : public GarbageCollector {
                                   Atomic<PageState>* state,
                                   size_t length,
                                   bool free_pages,
-                                  bool single_ioctl);
+                                  bool single_ioctl,
+                                  bool tolerate_enoent);
   // Called for clamping of 'info_map_' and other GC data structures, which are
   // small and/or in >4GB address space. There is no real benefit of clamping
   // them synchronously during app forking. It clamps only if clamp_info_map_status_
@@ -639,7 +607,6 @@ class MarkCompact final : public GarbageCollector {
   // that double updation doesn't happen in the first place.
   std::unique_ptr<std::unordered_set<void*>> updated_roots_ GUARDED_BY(lock_);
   MemMap from_space_map_;
-  MemMap shadow_to_space_map_;
   // Any array of live-bytes in logical chunks of kOffsetChunkSize size
   // in the 'to-be-compacted' space.
   MemMap info_map_;
@@ -664,40 +631,18 @@ class MarkCompact final : public GarbageCollector {
   // have more than one, but this is to be ready for the worst case.
   class LinearAllocSpaceData {
    public:
-    LinearAllocSpaceData(MemMap&& shadow,
-                         MemMap&& page_status_map,
-                         uint8_t* begin,
-                         uint8_t* end,
-                         bool already_shared)
+    LinearAllocSpaceData(MemMap&& shadow, MemMap&& page_status_map, uint8_t* begin, uint8_t* end)
         : shadow_(std::move(shadow)),
           page_status_map_(std::move(page_status_map)),
           begin_(begin),
-          end_(end),
-          already_shared_(already_shared) {}
+          end_(end) {}
 
     MemMap shadow_;
     MemMap page_status_map_;
     uint8_t* begin_;
     uint8_t* end_;
-    // Indicates if the linear-alloc is already MAP_SHARED.
-    bool already_shared_;
   };
-
   std::vector<LinearAllocSpaceData> linear_alloc_spaces_data_;
-
-  class ObjReferenceHash {
-   public:
-    uint32_t operator()(const ObjReference& ref) const {
-      return ref.AsVRegValue() >> kObjectAlignmentShift;
-    }
-  };
-
-  class ObjReferenceEqualFn {
-   public:
-    bool operator()(const ObjReference& a, const ObjReference& b) const {
-      return a.AsMirrorPtr() == b.AsMirrorPtr();
-    }
-  };
 
   class LessByObjReference {
    public:
@@ -705,31 +650,14 @@ class MarkCompact final : public GarbageCollector {
       return std::less<mirror::Object*>{}(a.AsMirrorPtr(), b.AsMirrorPtr());
     }
   };
-
-  // Data structures used to track objects whose layout information is stored in later
-  // allocated classes (at higher addresses). We must be careful not to free the
-  // corresponding from-space pages prematurely.
-  using ObjObjOrderedMap = std::map<ObjReference, ObjReference, LessByObjReference>;
-  using ObjObjUnorderedMap =
-      std::unordered_map<ObjReference, ObjReference, ObjReferenceHash, ObjReferenceEqualFn>;
-  // Unordered map of <K, S> such that the class K (in moving space) has kClassWalkSuper
-  // in reference bitmap and S is its highest address super class.
-  ObjObjUnorderedMap super_class_after_class_hash_map_;
-  // Unordered map of <K, V> such that the class K (in moving space) is after its objects
-  // or would require iterating super-class hierarchy when visiting references. And V is
-  // its lowest address object (in moving space).
-  ObjObjUnorderedMap class_after_obj_hash_map_;
-  // Ordered map constructed before starting compaction using the above two maps. Key is a
-  // class (or super-class) which is higher in address order than some of its object(s) and
-  // value is the corresponding object with lowest address.
-  ObjObjOrderedMap class_after_obj_ordered_map_;
+  using ClassAfterObjectMap = std::map<ObjReference, ObjReference, LessByObjReference>;
+  // map of <K, V> such that the class K (in moving space) is after its
+  // objects, and its object V is the lowest object (in moving space).
+  ClassAfterObjectMap class_after_obj_map_;
   // Since the compaction is done in reverse, we use a reverse iterator. It is maintained
   // either at the pair whose class is lower than the first page to be freed, or at the
   // pair whose object is not yet compacted.
-  ObjObjOrderedMap::const_reverse_iterator class_after_obj_iter_;
-  // Cached reference to the last class which has kClassWalkSuper in reference
-  // bitmap but has all its super classes lower address order than itself.
-  mirror::Class* walk_super_class_cache_;
+  ClassAfterObjectMap::const_reverse_iterator class_after_obj_iter_;
   // Used by FreeFromSpacePages() for maintaining markers in the moving space for
   // how far the pages have been reclaimed (madvised) and checked.
   //
@@ -830,50 +758,33 @@ class MarkCompact final : public GarbageCollector {
   // in MarkingPause(). It reaches the correct count only once the marking phase
   // is completed.
   int32_t freed_objects_;
-  // memfds for moving space for using userfaultfd's minor-fault feature.
-  // Initialized to kFdUnused to indicate that mmap should be MAP_PRIVATE in
-  // KernelPrepareRange().
-  int moving_to_space_fd_;
-  int moving_from_space_fd_;
   // Userfault file descriptor, accessed only by the GC itself.
   // kFallbackMode value indicates that we are in the fallback mode.
   int uffd_;
-  // Number of mutator-threads currently executing SIGBUS handler. When the
-  // GC-thread is done with compaction, it set the most significant bit to
-  // indicate that. Mutator threads check for the flag when incrementing in the
-  // handler.
-  std::atomic<SigbusCounterType> sigbus_in_progress_count_;
-  // Number of mutator-threads/uffd-workers working on moving-space page. It
-  // must be 0 before gc-thread can unregister the space after it's done
-  // sequentially compacting all pages of the space.
-  std::atomic<uint16_t> compaction_in_progress_count_;
+  // Counters to synchronize mutator threads and gc-thread at the end of
+  // compaction. Counter 0 represents the number of mutators still working on
+  // moving space pages which started before gc-thread finished compacting pages,
+  // whereas the counter 1 represents those which started afterwards but
+  // before unregistering the space from uffd. Once counter 1 reaches 0, the
+  // gc-thread madvises spaces and data structures like page-status array.
+  // Both the counters are set to 0 before compaction begins. They are or'ed
+  // with kSigbusCounterCompactionDoneMask one-by-one by gc-thread after
+  // compaction to communicate the status to future mutators.
+  std::atomic<SigbusCounterType> sigbus_in_progress_count_[2];
   // When using SIGBUS feature, this counter is used by mutators to claim a page
   // out of compaction buffers to be used for the entire compaction cycle.
   std::atomic<uint16_t> compaction_buffer_counter_;
-  // Used to exit from compaction loop at the end of concurrent compaction
-  uint8_t thread_pool_counter_;
   // True while compacting.
   bool compacting_;
+  // Set to true in MarkingPause() to indicate when allocation_stack_ should be
+  // checked in IsMarked() for black allocations.
+  bool marking_done_;
   // Flag indicating whether one-time uffd initialization has been done. It will
   // be false on the first GC for non-zygote processes, and always for zygote.
   // Its purpose is to minimize the userfaultfd overhead to the minimal in
   // Heap::PostForkChildAction() as it's invoked in app startup path. With
   // this, we register the compaction-termination page on the first GC.
   bool uffd_initialized_;
-  // Flag indicating if userfaultfd supports minor-faults. Set appropriately in
-  // CreateUserfaultfd(), where we get this information from the kernel.
-  const bool uffd_minor_fault_supported_;
-  // Flag indicating if we should use sigbus signals instead of threads to
-  // handle userfaults.
-  const bool use_uffd_sigbus_;
-  // For non-zygote processes this flag indicates if the spaces are ready to
-  // start using userfaultfd's minor-fault feature. This initialization involves
-  // starting to use shmem (memfd_create) for the userfaultfd protected spaces.
-  bool minor_fault_initialized_;
-  // Set to true when linear-alloc can start mapping with MAP_SHARED. Set on
-  // non-zygote processes during first GC, which sets up everyting for using
-  // minor-fault from next GC.
-  bool map_linear_alloc_shared_;
   // Clamping statue of `info_map_`. Initialized with 'NotDone'. Once heap is
   // clamped but info_map_ is delayed, we set it to 'Pending'. Once 'info_map_'
   // is also clamped, then we set it to 'Finished'.
@@ -892,7 +803,6 @@ class MarkCompact final : public GarbageCollector {
   class ClassLoaderRootsUpdater;
   class LinearAllocPageUpdater;
   class ImmuneSpaceUpdateObjVisitor;
-  class ConcurrentCompactionGcTask;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(MarkCompact);
 };

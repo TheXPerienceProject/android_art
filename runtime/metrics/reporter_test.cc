@@ -125,6 +125,7 @@ class MetricsReporterTest : public CommonRuntimeTest {
   }
 
   void TearDown() override {
+    reporter_->MaybeStopBackgroundThread();
     reporter_ = nullptr;
     backend_ = nullptr;
   }

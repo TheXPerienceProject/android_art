@@ -20,8 +20,12 @@ art_runtime_binaries_both = [
 
 // Binaries for which the "first" version is preferred.
 art_runtime_binaries_first = [
+    "art_boot",
+    "art_exec",
+    "artd",
     "dexdump",
     "dexlist",
+    "dexopt_chroot_setup",
     "dexoptanalyzer",
     "oatdump",
     "profman",
@@ -57,9 +61,6 @@ art_runtime_base_native_shared_libs_minus_libart = [
     "libopenjdkjvm",
     "libopenjdkjvmti",
     "libperfetto_hprof",
-    // TODO(chriswailes): Make libarttools a dependency for another target
-    // when such a target exists
-    "libarttools",
 ]
 // Actual version of ART runtime base libs, used in non-test ART APEXes.
 art_runtime_base_native_shared_libs = ["libart"] +
@@ -191,21 +192,15 @@ apex_defaults {
     compat_configs: ["libcore-platform-compat-config"],
     native_shared_libs: art_runtime_base_native_shared_libs +
         libcore_native_shared_libs,
-    jni_libs: [
-        "libartservice",
-    ],
-    binaries: [
-        "art_boot",
-        "art_exec",
-        "artd",
-        "dexopt_chroot_setup",
-    ],
     multilib: {
         both: {
             binaries: art_runtime_binaries_both,
         },
         first: {
             binaries: art_runtime_binaries_first,
+            jni_libs: [
+                "libartservice",
+            ],
         },
     },
     key: "com.android.art.key",
@@ -241,15 +236,15 @@ apex_defaults {
     manifest: "manifest-art-debug.json",
     native_shared_libs: art_runtime_debug_native_shared_libs +
         libcore_debug_native_shared_libs,
-    jni_libs: [
-        "libartserviced",
-    ],
     multilib: {
         both: {
             binaries: art_debug_binaries_both,
         },
         first: {
             binaries: art_debug_binaries_first,
+            jni_libs: [
+                "libartserviced",
+            ],
         },
     },
 }
@@ -299,6 +294,23 @@ apex_test {
     installable: false,
 }
 
+// Same as "com.android.art" APEX, but also contains "imgdiag" binary.
+// Used to collect dirty-image-objects.
+apex_test {
+    name: "test_imgdiag_com.android.art",
+    defaults: ["com.android.art-defaults"],
+    multilib: {
+        both: {
+            binaries: ["imgdiag"],
+        },
+    },
+    key: "com.android.art.key",
+    manifest: "test_apex_manifest.json",
+    file_contexts: ":com.android.art-file_contexts",
+    certificate: ":com.android.art.certificate",
+    installable: false,
+}
+
 // Release version of the ART APEX module (not containing debug
 // variants nor tools), included in user builds. Also used for
 // storage-constrained devices in userdebug and eng builds.
@@ -319,11 +331,13 @@ apex {
     name: "com.android.art.debug",
     defaults: ["com.android.art-devel-defaults"],
     certificate: ":com.android.art.certificate",
+    visibility: [
+        "//packages/modules/common/build",
+    ],
 }
 
 // ART gtests with dependencies on internal ART APEX libraries.
 art_gtests = [
-    "art_artd_tests",
     "art_cmdline_tests",
     "art_compiler_tests",
     "art_dex2oat_tests",
@@ -334,17 +348,18 @@ art_gtests = [
     "art_dexoptanalyzer_tests",
     "art_imgdiag_tests",
     "art_libartbase_tests",
-    "art_libartpalette_tests",
-    "art_libartservice_tests",
-    "art_libarttools_tests",
     "art_libdexfile_tests",
     "art_libdexfile_support_tests",
     "art_libprofile_tests",
     "art_oatdump_tests",
-    "art_odrefresh_tests",
     "art_profman_tests",
     "art_runtime_tests",
     "art_sigchain_tests",
+]
+
+// ART gtests for which the "first" version is preferred.
+art_gtests_first = [
+    "art_odrefresh_tests",
 ]
 
 // "Testing" version of the ART APEX module (containing both release
@@ -372,12 +387,11 @@ apex_test {
     // and b/233357459). Marking this APEX as "future updatable"
     // disables all symlink optimizations for it.
     future_updatable: true,
-}
-
-// TODO(b/279835185) This is a placeholder to satisfy the current references.
-//   Remove this when all references are removed.
-host_snapshot {
-    name: "com.android.art.host",
+    multilib: {
+        first: {
+            tests: art_gtests_first,
+        },
+    },
 }
 
 python_binary_host {

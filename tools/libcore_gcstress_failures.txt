@@ -46,6 +46,7 @@
           "org.apache.harmony.tests.java.util.TimerTest#testOverdueTaskExecutesImmediately",
           "org.apache.harmony.tests.java.util.WeakHashMapTest#test_keySet_hasNext",
           "test.java.math.BigDecimal.DivideMcTests#mcDivideTests",
+          "test.java.math.BigInteger.BigIntegerTest#testConstructor",
           "test.java.util.Collections.RacingCollections#main"]
 },
 {

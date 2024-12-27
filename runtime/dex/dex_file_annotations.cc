@@ -26,6 +26,7 @@
 #include "class_linker-inl.h"
 #include "class_root-inl.h"
 #include "dex/dex_file-inl.h"
+#include "dex/dex_file_types.h"
 #include "dex/dex_instruction-inl.h"
 #include "jni/jni_internal.h"
 #include "jvalue-inl.h"
@@ -221,6 +222,8 @@ bool SkipAnnotationValue(const DexFile& dex_file, const uint8_t** annotation_ptr
     case DexFile::kDexAnnotationLong:
     case DexFile::kDexAnnotationFloat:
     case DexFile::kDexAnnotationDouble:
+    case DexFile::kDexAnnotationMethodType:
+    case DexFile::kDexAnnotationMethodHandle:
     case DexFile::kDexAnnotationString:
     case DexFile::kDexAnnotationType:
     case DexFile::kDexAnnotationMethod:
@@ -465,6 +468,11 @@ bool ProcessAnnotationValue(const ClassData& klass,
       primitive_type = Primitive::kPrimBoolean;
       width = 0;
       break;
+    case DexFile::kDexAnnotationMethodType:
+    case DexFile::kDexAnnotationMethodHandle:
+      // These annotations are unexpected here. Don't process them.
+      LOG(WARNING) << StringPrintf("Unexpected annotation of type 0x%02x", value_type);
+      return false;
     case DexFile::kDexAnnotationString: {
       uint32_t index = DexFile::ReadUnsignedInt(annotation, value_arg, false);
       if (result_style == DexFile::kAllRaw) {
@@ -1929,6 +1937,11 @@ static VisitorStatus VisitEncodedValue(const ClassData& klass,
 
   VisitorStatus status =
       VisitElement(visitor, element_name, depth, element_index, annotation_value);
+  if (UNLIKELY(visitor->HasError())) {
+    // Stop visiting since we won't verify the class anyway.
+    return annotations::VisitorStatus::kVisitBreak;
+  }
+
   switch (annotation_value.type_) {
     case DexFile::kDexAnnotationArray: {
       DCHECK(!is_consumed) << " unexpected consumption of array-typed element '" << element_name
@@ -1943,6 +1956,10 @@ static VisitorStatus VisitEncodedValue(const ClassData& klass,
       for (; i < array_size && element_status != VisitorStatus::kVisitBreak; ++i) {
         element_status = VisitEncodedValue(
             klass, dex_file, annotation_ptr, visitor, element_name, next_depth, i);
+        if (UNLIKELY(visitor->HasError())) {
+          // Stop visiting since we won't verify the class anyway.
+          return annotations::VisitorStatus::kVisitBreak;
+        }
       }
       for (; i < array_size; ++i) {
         SkipAnnotationValue(dex_file, annotation_ptr);
@@ -1962,6 +1979,17 @@ static VisitorStatus VisitEncodedValue(const ClassData& klass,
       }
       break;
     }
+    case DexFile::kDexAnnotationMethodType:
+    case DexFile::kDexAnnotationMethodHandle:
+      // kDexAnnotationMethodType and kDexAnnotationMethodHandle return false in order to not
+      // crash the process but they are unexpected here.
+      visitor->SetErrorMsg(StringPrintf(
+          "Encountered unexpected annotation element type 0x%02x of %s for the class %s",
+          annotation_value.type_,
+          element_name,
+          klass.GetRealClass()->PrettyClass().c_str()));
+      // Stop visiting since we won't verify the class anyway.
+      return annotations::VisitorStatus::kVisitBreak;
     default: {
       // kDexAnnotationArray and kDexAnnotationAnnotation are the only 2 known value_types causing
       // ProcessAnnotationValue return false. For other value_types, we shouldn't need to iterate
@@ -2014,6 +2042,10 @@ void VisitClassAnnotations(Handle<mirror::Class> klass, AnnotationVisitor* visit
 
       status = VisitEncodedValue(
           data, dex_file, &annotation, visitor, element_name, /*depth=*/0, /*ignored*/ 0);
+      if (UNLIKELY(visitor->HasError())) {
+        // Encountered an error, bail out since we won't verify the class anyway.
+        return;
+      }
       if (status == VisitorStatus::kVisitBreak) {
         break;
       }

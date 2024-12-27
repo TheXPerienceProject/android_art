@@ -141,10 +141,17 @@ filegroup {
 }
 
 // Test configuration template for standalone ART gtests on target (not bundled with the ART APEX)
-// which are part of CTS.
+// which are part of CTS and MCTS.
 filegroup {
     name: "art-gtests-target-standalone-cts-template",
     srcs: ["art-gtests-target-standalone-cts-template.xml"],
+}
+
+// Test configuration template for standalone ART gtests on target (not bundled with the ART APEX)
+// which don't support multilib.
+filegroup {
+    name: "art-gtests-target-standalone-non-multilib-template",
+    srcs: ["art-gtests-target-standalone-non-multilib-template.xml"],
 }
 
 // Test configuration template for standalone ART gtests run with a boot image on target (not
@@ -188,6 +195,7 @@ filegroup {
 cc_library_static {
     name: "standalone_test_lib_check",
     srcs: ["standalone_test_lib_check.cc"],
+    header_libs: ["art_libartbase_headers"],
     static_libs: [
         "libbase",
         "libelf",
@@ -217,9 +225,10 @@ art_cc_defaults {
 
     // Support multilib variants (using different suffix per sub-architecture),
     // which is needed on build targets with secondary architectures, as the
-    // CTS/MTS/etc test suite packaging logic flattens all test artifacts into a
-    // single `testcases` directory. Also, there is CI testing that expects
-    // 64-bit multilib test suites to work for 32-bit devices (b/233550842).
+    // CTS/MCTS/MTS/etc. test suite packaging logic may flatten all test artifacts
+    // into a single `testcases` directory. Also, there is CI testing that
+    // expects 64-bit multilib test suites to work for 32-bit devices
+    // (b/233550842).
     compile_multilib: "both",
     multilib: {
         lib32: {
@@ -490,7 +499,7 @@ filegroup {
 }
 
 // Same as `art-run-test-target-template`, but contains additional
-// options to also make the test part of ART CTS.
+// options to also make the test part of CTS and MCTS.
 filegroup {
     name: "art-run-test-target-cts-template",
     srcs: [
@@ -968,6 +977,7 @@ cc_defaults {
         "2246-trace-v2/dump_trace.cc",
         "2262-miranda-methods/jni_invoke.cc",
         "2270-mh-internal-hiddenapi-use/mh-internal-hidden-api.cc",
+        "2275-pthread-name/native_getname.cc",
         "common/runtime_state.cc",
         "common/stack_inspect.cc",
     ],

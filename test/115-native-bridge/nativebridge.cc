@@ -628,13 +628,6 @@ extern "C" bool native_bridge_isPathSupported([[maybe_unused]] const char* libra
   return false;
 }
 
-extern "C" bool native_bridge_initAnonymousNamespace(
-    [[maybe_unused]] const char* public_ns_sonames,
-    [[maybe_unused]] const char* anon_ns_library_path) {
-  printf("Initializing anonymous namespace in native bridge.\n");
-  return false;
-}
-
 extern "C" android::native_bridge_namespace_t*
 native_bridge_createNamespace([[maybe_unused]] const char* name,
                               [[maybe_unused]] const char* ld_library_path,
@@ -664,23 +657,23 @@ extern "C" void* native_bridge_loadLibraryExt(
 
 // "NativeBridgeItf" is effectively an API (it is the name of the symbol that will be loaded
 // by the native bridge library).
-android::NativeBridgeCallbacks NativeBridgeItf {
-  // v1
-  .version = 3,
-  .initialize = &native_bridge_initialize,
-  .loadLibrary = &native_bridge_loadLibrary,
-  .getTrampoline = &native_bridge_getTrampoline,
-  .isSupported = &native_bridge_isSupported,
-  .getAppEnv = &native_bridge_getAppEnv,
-  // v2
-  .isCompatibleWith = &native_bridge_isCompatibleWith,
-  .getSignalHandler = &native_bridge_getSignalHandler,
-  // v3
-  .unloadLibrary = &native_bridge_unloadLibrary,
-  .getError = &native_bridge_getError,
-  .isPathSupported = &native_bridge_isPathSupported,
-  .initAnonymousNamespace = &native_bridge_initAnonymousNamespace,
-  .createNamespace = &native_bridge_createNamespace,
-  .linkNamespaces = &native_bridge_linkNamespaces,
-  .loadLibraryExt = &native_bridge_loadLibraryExt
+android::NativeBridgeCallbacks NativeBridgeItf{
+    // v1
+    .version = 3,
+    .initialize = &native_bridge_initialize,
+    .loadLibrary = &native_bridge_loadLibrary,
+    .getTrampoline = &native_bridge_getTrampoline,
+    .isSupported = &native_bridge_isSupported,
+    .getAppEnv = &native_bridge_getAppEnv,
+    // v2
+    .isCompatibleWith = &native_bridge_isCompatibleWith,
+    .getSignalHandler = &native_bridge_getSignalHandler,
+    // v3
+    .unloadLibrary = &native_bridge_unloadLibrary,
+    .getError = &native_bridge_getError,
+    .isPathSupported = &native_bridge_isPathSupported,
+    .unused_initAnonymousNamespace = nullptr,
+    .createNamespace = &native_bridge_createNamespace,
+    .linkNamespaces = &native_bridge_linkNamespaces,
+    .loadLibraryExt = &native_bridge_loadLibraryExt,
 };

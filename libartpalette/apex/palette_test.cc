@@ -22,15 +22,14 @@
 #include <unistd.h>
 
 #include <cstring>
-#include <filesystem>
+
+#include "base/common_art_test.h"
+#include "gtest/gtest.h"
 
 #ifdef ART_TARGET_ANDROID
 #include "android-modules-utils/sdk_level.h"
 #include "android/api-level.h"
 #endif
-
-#include "base/common_art_test.h"
-#include "gtest/gtest.h"
 
 namespace {
 
@@ -130,11 +129,6 @@ TEST_F(PaletteClientTest, SetTaskProfiles) {
 #ifndef ART_TARGET_ANDROID
   GTEST_SKIP() << "SetTaskProfiles is only supported on Android";
 #else
-  if (!std::filesystem::exists("/sys/fs/cgroup/cgroup.controllers")) {
-    // This is intended to detect ART chroot setups, where SetTaskProfiles won't work.
-    GTEST_SKIP() << "Kernel cgroup support missing";
-  }
-
   const char* profiles[] = {"ProcessCapacityHigh", "TimerSlackNormal"};
   palette_status_t res = PaletteSetTaskProfiles(GetTid(), &profiles[0], 2);
   if (PaletteSetTaskProfilesIsSupported(res)) {
@@ -153,11 +147,6 @@ TEST_F(PaletteClientTest, SetTaskProfilesCpp) {
 #ifndef ART_TARGET_ANDROID
   GTEST_SKIP() << "SetTaskProfiles is only supported on Android";
 #else
-  if (!std::filesystem::exists("/sys/fs/cgroup/cgroup.controllers")) {
-    // This is intended to detect ART chroot setups, where SetTaskProfiles won't work.
-    GTEST_SKIP() << "Kernel cgroup support missing";
-  }
-
   std::vector<std::string> profiles = {"ProcessCapacityHigh", "TimerSlackNormal"};
   palette_status_t res = PaletteSetTaskProfiles(GetTid(), profiles);
   if (PaletteSetTaskProfilesIsSupported(res)) {

@@ -61,6 +61,7 @@ import org.mockito.Mock;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Function;
 
 @SmallTest
@@ -108,6 +109,7 @@ public class SecondaryDexopterTest {
     @Mock private IArtd mArtd;
     @Mock private DexUseManagerLocal mDexUseManager;
     @Mock private DexMetadataHelper.Injector mDexMetadataHelperInjector;
+    @Mock private ThreadPoolExecutor mReporterExecutor;
     private PackageState mPkgState;
     private AndroidPackage mPkg;
     private CancellationSignal mCancellationSignal;
@@ -144,6 +146,7 @@ public class SecondaryDexopterTest {
         lenient().when(mInjector.isLauncherPackage(any())).thenReturn(false);
         lenient().when(mInjector.getDexUseManager()).thenReturn(mDexUseManager);
         lenient().when(mInjector.getConfig()).thenReturn(mConfig);
+        lenient().when(mInjector.getReporterExecutor()).thenReturn(mReporterExecutor);
         lenient().when(mInjector.getDexMetadataHelper()).thenReturn(mDexMetadataHelper);
 
         List<CheckedSecondaryDexInfo> secondaryDexInfo = createSecondaryDexInfo();

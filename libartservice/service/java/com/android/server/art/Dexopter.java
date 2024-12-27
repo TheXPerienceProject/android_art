@@ -26,10 +26,8 @@ import static com.android.server.art.model.ArtFlags.DexoptFlags;
 import static com.android.server.art.model.Config.Callback;
 import static com.android.server.art.model.DexoptResult.DexContainerFileDexoptResult;
 
-import android.R;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
-import android.app.role.RoleManager;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.os.Build;
@@ -39,13 +37,12 @@ import android.os.ServiceSpecificException;
 import android.os.SystemProperties;
 import android.os.UserManager;
 import android.os.storage.StorageManager;
-import android.text.TextUtils;
-import android.util.Pair;
 
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.server.LocalManagerRegistry;
+import com.android.server.art.Dex2OatStatsReporter.Dex2OatResult;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.Config;
 import com.android.server.art.model.DetailedDexInfo;
@@ -64,6 +61,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Executor;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -193,6 +193,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                     long cpuTimeMs = 0;
                     long sizeBytes = 0;
                     long sizeBeforeBytes = 0;
+                    Dex2OatResult dex2OatResult = Dex2OatResult.notRun();
                     @DexoptResult.DexoptResultExtendedStatusFlags int extendedStatusFlags = 0;
                     try {
                         var target = DexoptTarget.<DexInfoType>builder()
@@ -276,6 +277,8 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                         cpuTimeMs = dexoptResult.cpuTimeMs;
                         sizeBytes = dexoptResult.sizeBytes;
                         sizeBeforeBytes = dexoptResult.sizeBeforeBytes;
+                        dex2OatResult = dexoptResult.cancelled ? Dex2OatResult.cancelled()
+                                                               : Dex2OatResult.exited(0);
 
                         if (status == DexoptResult.DEXOPT_CANCELLED) {
                             return results;
@@ -288,6 +291,16 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                                         dexInfo.classLoaderContext()),
                                 e);
                         status = DexoptResult.DEXOPT_FAILED;
+
+                        // Parse status, exit code and signal from the dex2oat error message
+                        Pattern pattern = Pattern.compile(
+                                "\\[status=(-?\\d+),exit_code=(-?\\d+),signal=(-?\\d+)]");
+                        Matcher matcher = pattern.matcher(Objects.requireNonNull(e.getMessage()));
+                        if (matcher.matches()) {
+                            dex2OatResult = new Dex2OatResult(Integer.parseInt(matcher.group(1)),
+                                    Integer.parseInt(matcher.group(2)),
+                                    Integer.parseInt(matcher.group(3)));
+                        }
                     } finally {
                         if (!externalProfileErrors.isEmpty()) {
                             extendedStatusFlags |= DexoptResult.EXTENDED_BAD_EXTERNAL_PROFILE;
@@ -306,6 +319,17 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
                         // Make sure artd does not leak even if the caller holds
                         // `mCancellationSignal` forever.
                         mCancellationSignal.setOnCancelListener(null);
+
+                        // Variables used in lambda needs to be effectively final.
+                        Dex2OatResult finalDex2OatResult = dex2OatResult;
+                        mInjector.getReporterExecutor().execute(
+                                ()
+                                        -> Dex2OatStatsReporter.report(mPkgState.getAppId(),
+                                                result.getActualCompilerFilter(),
+                                                mParams.getReason(), dmInfo.type(), dexInfo,
+                                                abi.isa(), finalDex2OatResult,
+                                                result.getSizeBytes(),
+                                                result.getDex2oatWallTimeMillis()));
                     }
                 }
 
@@ -757,10 +781,13 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
     public static class Injector {
         @NonNull private final Context mContext;
         @NonNull private final Config mConfig;
+        @NonNull private final Executor mReporterExecutor;
 
-        public Injector(@NonNull Context context, @NonNull Config config) {
+        public Injector(@NonNull Context context, @NonNull Config config,
+                @NonNull Executor reporterExecutor) {
             mContext = context;
             mConfig = config;
+            mReporterExecutor = reporterExecutor;
 
             // Call the getters for various dependencies, to ensure correct initialization order.
             getUserManager();
@@ -820,6 +847,11 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         @NonNull
         public Config getConfig() {
             return mConfig;
+        }
+
+        @NonNull
+        public Executor getReporterExecutor() {
+            return mReporterExecutor;
         }
 
         @NonNull

@@ -15,9 +15,7 @@
 #
 
 # Platform dependencies go through libnativebridge_lazy, which accesses
-# libnativebridge symbols through dlopen/dlsym. That means this list doesn't
-# have much effect, rather it's the function wrappers in native_bridge_lazy.cpp
-# that defines the exported interface. Please keep in sync with this list.
+# libnativebridge symbols through dlopen/dlsym and hence bypasses the stub.
 LIBNATIVEBRIDGE_1 {
   global:
     NativeBridgeGetError; # apex

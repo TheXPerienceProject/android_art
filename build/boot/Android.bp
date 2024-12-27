@@ -21,43 +21,19 @@ package {
     default_applicable_licenses: ["art_license"],
 }
 
-// TODO: b/319697968 - Remove the conditional logic and let art-bootclasspath-fragment always
-// depend on the exportable stubs once metalava fully supports flagged api handling.
-soong_config_module_type {
-    name: "art_bootclasspath_fragment_soong_config_defaults",
-    module_type: "java_defaults",
-    config_namespace: "ANDROID",
-    bool_variables: [
-        "release_hidden_api_exportable_stubs",
-    ],
-    properties: [
-        "core_platform_api.stub_libs",
-    ],
-}
-
-art_bootclasspath_fragment_soong_config_defaults {
+java_defaults {
     name: "art-bootclasspath-fragment-soong-config-defaults",
-    soong_config_variables: {
-        release_hidden_api_exportable_stubs: {
+    core_platform_api: {
+        // TODO: b/319697968 - Remove the conditional logic and let art-bootclasspath-fragment
+        // always depend on the exportable stubs once metalava fully supports flagged api handling.
+        stub_libs: select(release_flag("RELEASE_HIDDEN_API_EXPORTABLE_STUBS"), {
             // When "RELEASE_HIDDEN_API_EXPORTABLE_STUBS" build flag is set,
-            // depend on the exportable stubs
-            core_platform_api: {
-                stub_libs: [
-                    // Core platform (aka. module_lib) stubs for all the non-coverage contents.
-                    "art.module.public.api.stubs.exportable.module_lib",
-                ],
-            },
-            conditions_default: {
-                // When "RELEASE_HIDDEN_API_EXPORTABLE_STUBS" build flag is not set,
-                // depend on the everything stubs
-                core_platform_api: {
-                    stub_libs: [
-                        // Core platform (aka. module_lib) stubs for all the non-coverage contents.
-                        "art.module.public.api.stubs.module_lib",
-                    ],
-                },
-            },
-        },
+            // depend on the exportable stubs, otherwise depend on the everything stubs.
+            // In both cases, use core platform (aka. module_lib) stubs for all the non-coverage
+            // contents.
+            true: ["art.module.public.api.stubs.exportable.module_lib"],
+            false: ["art.module.public.api.stubs.module_lib"],
+        }),
     },
 }
 
@@ -143,6 +119,8 @@ bootclasspath_fragment {
         package_prefixes: [
             "android.compat",
             "android.crypto.hpke",
+            "com.android.art.flags",
+            "com.android.libcore",
             "com.android.okhttp",
             "com.android.org.bouncycastle",
             "com.android.org.kxml2",

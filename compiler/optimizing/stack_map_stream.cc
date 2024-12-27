@@ -153,7 +153,7 @@ void StackMapStream::BeginStackMapEntry(
     size_t stack_map_index = stack_maps_.size();
     // Create lambda method, which will be executed at the very end to verify data.
     // Parameters and local variables will be captured(stored) by the lambda "[=]".
-    dchecks_.emplace_back([=](const CodeInfo& code_info) {
+    dchecks_.emplace_back([=, this](const CodeInfo& code_info) {
       // The `native_pc_offset` may have been overridden using `SetStackMapNativePcOffset(.)`.
       uint32_t final_native_pc_offset = GetStackMapNativePcOffset(stack_map_index);
       if (kind == StackMap::Kind::Default || kind == StackMap::Kind::OSR) {

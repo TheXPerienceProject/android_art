@@ -31,9 +31,10 @@
 #include "utils/assembler.h"
 #include "utils/jni_macro_assembler.h"
 
-// TODO(VIXL): Make VIXL compile with -Wshadow.
+// TODO(VIXL): Make VIXL compile cleanly with -Wshadow, -Wdeprecated-declarations.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "aarch64/macro-assembler-aarch64.h"
 #pragma GCC diagnostic pop
 

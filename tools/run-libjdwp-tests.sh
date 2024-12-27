@@ -118,7 +118,7 @@ if [[ "$has_jdwp_path" = "no" ]]; then
       echo "Please set ANDROID_BUILD_TOP"
       exit 1
     fi
-    args+=(--jdwp-path  $ANDROID_BUILD_TOP/"prebuilts/jdk/jdk17/linux-x86/lib/libjdwp.so")
+    args+=(--jdwp-path  $ANDROID_BUILD_TOP/"prebuilts/jdk/jdk21/linux-x86/lib/libjdwp.so")
   else
     args+=(--jdwp-path  "libjdwp.so")
   fi

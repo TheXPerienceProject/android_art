@@ -77,9 +77,14 @@ import java.util.UUID;
 @RunWith(AndroidJUnit4.class)
 public class DexUseManagerTest {
     private static final String LOADING_PKG_NAME = "com.example.loadingpackage";
+
     private static final String OWNING_PKG_NAME = "com.example.owningpackage";
     private static final String BASE_APK = "/somewhere/app/" + OWNING_PKG_NAME + "/base.apk";
     private static final String SPLIT_APK = "/somewhere/app/" + OWNING_PKG_NAME + "/split_0.apk";
+
+    private static final String INVISIBLE_PKG_NAME = "com.example.invisiblepackage";
+    private static final String INVISIBLE_BASE_APK =
+            "/somewhere/app/" + INVISIBLE_PKG_NAME + "/base.apk";
 
     @Rule
     public StaticMockitoRule mockitoRule = new StaticMockitoRule(
@@ -99,6 +104,8 @@ public class DexUseManagerTest {
     @Mock private IArtd mArtd;
     @Mock private Context mContext;
     @Mock private ArtManagerLocal mArtManagerLocal;
+    @Mock private PackageManagerLocal mPackageManagerLocal;
+    @Mock private PackageManagerLocal.UnfilteredSnapshot mUnfilteredSnapshot;
     private DexUseManagerLocal mDexUseManager;
     private String mCeDir;
     private String mDeDir;
@@ -126,18 +133,21 @@ public class DexUseManagerTest {
         // Put the null package in front of other packages to verify that it's properly skipped.
         PackageState nullPkgState =
                 createPackageState("com.example.null", "arm64-v8a", false /* hasPackage */);
-        addPackage("com.example.null", nullPkgState);
+        addPackage("com.example.null", nullPkgState, true /* isVisible */);
         PackageState loadingPkgState =
                 createPackageState(LOADING_PKG_NAME, "armeabi-v7a", true /* hasPackage */);
-        addPackage(LOADING_PKG_NAME, loadingPkgState);
+        addPackage(LOADING_PKG_NAME, loadingPkgState, true /* isVisible */);
         PackageState owningPkgState =
                 createPackageState(OWNING_PKG_NAME, "arm64-v8a", true /* hasPackage */);
-        addPackage(OWNING_PKG_NAME, owningPkgState);
+        addPackage(OWNING_PKG_NAME, owningPkgState, true /* isVisible */);
         PackageState platformPkgState =
                 createPackageState(Utils.PLATFORM_PACKAGE_NAME, "arm64-v8a", true /* hasPackage */);
-        addPackage(Utils.PLATFORM_PACKAGE_NAME, platformPkgState);
+        addPackage(Utils.PLATFORM_PACKAGE_NAME, platformPkgState, true /* isVisible */);
+        PackageState invisiblePkgState =
+                createPackageState(INVISIBLE_PKG_NAME, "arm64-v8a", true /* hasPackage */);
+        addPackage(INVISIBLE_PKG_NAME, invisiblePkgState, false /* isVisible */);
 
-        lenient().when(mSnapshot.getPackageStates()).thenReturn(mPackageStates);
+        lenient().when(mUnfilteredSnapshot.getPackageStates()).thenReturn(mPackageStates);
 
         mBroadcastReceiverCaptor = ArgumentCaptor.forClass(BroadcastReceiver.class);
         lenient()
@@ -160,6 +170,10 @@ public class DexUseManagerTest {
         lenient().when(ArtJni.validateDexPath(any())).thenReturn(null);
         lenient().when(ArtJni.validateClassLoaderContext(any(), any())).thenReturn(null);
 
+        lenient()
+                .when(mPackageManagerLocal.withUnfilteredSnapshot())
+                .thenReturn(mUnfilteredSnapshot);
+
         lenient().when(mInjector.getArtd()).thenReturn(mArtd);
         lenient().when(mInjector.getCurrentTimeMillis()).thenReturn(0l);
         lenient().when(mInjector.getFilename()).thenReturn(mTempFile.getPath());
@@ -170,6 +184,7 @@ public class DexUseManagerTest {
         lenient().when(mInjector.getAllPackageNames()).thenReturn(mPackageStates.keySet());
         lenient().when(mInjector.isPreReboot()).thenReturn(false);
         lenient().when(mInjector.getArtManagerLocal()).thenReturn(mArtManagerLocal);
+        lenient().when(mInjector.getPackageManagerLocal()).thenReturn(mPackageManagerLocal);
 
         mDexUseManager = new DexUseManagerLocal(mInjector);
         mDexUseManager.systemReady();
@@ -229,6 +244,18 @@ public class DexUseManagerTest {
 
         assertThat(mDexUseManager.getPrimaryDexLoaders(OWNING_PKG_NAME, SPLIT_APK)).isEmpty();
         assertThat(mDexUseManager.isPrimaryDexUsedByOtherApps(OWNING_PKG_NAME, SPLIT_APK))
+                .isFalse();
+    }
+
+    @Test
+    public void testPrimaryDexInvisible() {
+        mDexUseManager.notifyDexContainersLoaded(
+                mSnapshot, LOADING_PKG_NAME, Map.of(INVISIBLE_BASE_APK, "CLC"));
+
+        assertThat(mDexUseManager.getPrimaryDexLoaders(INVISIBLE_PKG_NAME, INVISIBLE_BASE_APK))
+                .isEmpty();
+        assertThat(
+                mDexUseManager.isPrimaryDexUsedByOtherApps(INVISIBLE_PKG_NAME, INVISIBLE_BASE_APK))
                 .isFalse();
     }
 
@@ -650,7 +677,7 @@ public class DexUseManagerTest {
     public void testCleanupDeletedPackage() throws Exception {
         PackageState pkgState = createPackageState(
                 "com.example.deletedpackage", "arm64-v8a", true /* hasPackage */);
-        addPackage("com.example.deletedpackage", pkgState);
+        addPackage("com.example.deletedpackage", pkgState, true /* isVisible */);
         lenient()
                 .when(mArtd.getDexFileVisibility(
                         "/somewhere/app/com.example.deletedpackage/base.apk"))
@@ -879,8 +906,10 @@ public class DexUseManagerTest {
         return pkgState;
     }
 
-    private void addPackage(String packageName, PackageState pkgState) {
-        lenient().when(mSnapshot.getPackageState(packageName)).thenReturn(pkgState);
+    private void addPackage(String packageName, PackageState pkgState, boolean isVisible) {
+        if (isVisible) {
+            lenient().when(mSnapshot.getPackageState(packageName)).thenReturn(pkgState);
+        }
         mPackageStates.put(packageName, pkgState);
     }
 

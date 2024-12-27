@@ -16,15 +16,16 @@ Create the VM (download it and do some initial setup):
 ```
 art/tools/buildbot-vm.sh create
 ```
+Install SSH keys on the VM:
+```
+art/tools/buildbot-vm.sh install-keys
+```
 Boot the VM (login is `$ART_TEST_SSH_USER`, password is `ubuntu`):
 ```
 art/tools/buildbot-vm.sh boot
 ```
-Configure SSH (enter `yes` to add VM to `known_hosts` and then the password):
-```
-art/tools/buildbot-vm.sh setup-ssh
-```
-Now you have the shell (no need to enter password every time):
+Now you have the shell (no need to enter password every time as we've installed
+SSH keys on the VM):
 ```
 art/tools/buildbot-vm.sh connect
 ```

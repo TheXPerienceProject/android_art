@@ -132,7 +132,7 @@ TESTING_ART_APEX := com.android.art.testing
 RUNTIME_APEX := com.android.runtime
 CONSCRYPT_APEX := com.android.conscrypt
 I18N_APEX := com.android.i18n
-STATSD_APEX := com.android.os.statsd
+STATSD_APEX := art_fake_com.android.os.statsd
 TZDATA_APEX := com.android.tzdata
 
 # A phony file to create the ICU data file for host.

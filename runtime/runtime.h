@@ -631,6 +631,9 @@ class Runtime {
   }
 
   bool IsActiveTransaction() {
+    if (kIsDebugBuild) {
+      DCheckNoTransactionCheckAllowed();
+    }
     return active_transaction_;
   }
 
@@ -1129,6 +1132,8 @@ class Runtime {
     }
   }
 
+  bool AreMetricsInitialized() const { return metrics_reporter_ != nullptr; }
+
  private:
   static void InitPlatformSignalHandlers();
 
@@ -1179,14 +1184,12 @@ class Runtime {
 
   void AppendToBootClassPath(const std::string& filename, const std::string& location);
 
+  void DCheckNoTransactionCheckAllowed();
+
   // Don't use EXPORT ("default" visibility), because quick_entrypoints_x86.o
   // refers to this symbol and it can't link with R_386_PC32 relocation.
   // A pointer to the active runtime or null.
   LIBART_PROTECTED static Runtime* instance_;
-
-  // NOTE: these must match the gc::ProcessState values as they come directly from the framework.
-  static constexpr int kProfileForground = 0;
-  static constexpr int kProfileBackground = 1;
 
   static constexpr uint32_t kCalleeSaveSize = 6u;
 

@@ -43,7 +43,8 @@ inline ObjPtr<mirror::Class> ClassLinker::FindArrayClass(Thread* self,
                                                          ObjPtr<mirror::Class> element_class) {
   for (size_t i = 0; i < kFindArrayCacheSize; ++i) {
     // Read the cached array class once to avoid races with other threads setting it.
-    ObjPtr<mirror::Class> array_class = find_array_class_cache_[i].Read();
+    ObjPtr<mirror::Class> array_class =
+        find_array_class_cache_[i].load(std::memory_order_acquire).Read();
     if (array_class != nullptr && array_class->GetComponentType() == element_class) {
       return array_class;
     }
@@ -57,7 +58,8 @@ inline ObjPtr<mirror::Class> ClassLinker::FindArrayClass(Thread* self,
   if (array_class != nullptr) {
     // Benign races in storing array class and incrementing index.
     size_t victim_index = find_array_class_cache_next_victim_;
-    find_array_class_cache_[victim_index] = GcRoot<mirror::Class>(array_class);
+    find_array_class_cache_[victim_index].store(GcRoot<mirror::Class>(array_class),
+                                                std::memory_order_release);
     find_array_class_cache_next_victim_ = (victim_index + 1) % kFindArrayCacheSize;
   } else {
     // We should have a NoClassDefFoundError.

@@ -525,7 +525,7 @@ class ReleaseChecker:
     self._checker.check_native_library('libart-disassembler')
     self._checker.check_native_library('libartbase')
     self._checker.check_native_library('libartpalette')
-    self._checker.check_native_library('libarttools')
+    self._checker.check_prefer64_library('libarttools')
     self._checker.check_native_library('libdt_fd_forward')
     self._checker.check_native_library('libopenjdkjvm')
     self._checker.check_native_library('libopenjdkjvmti')
@@ -595,7 +595,7 @@ class ReleaseTargetChecker:
     self._checker.check_symlinked_multilib_executable('dex2oat')
 
     # Check internal libraries for ART.
-    self._checker.check_native_library('libartservice')
+    self._checker.check_prefer64_library('libartservice')
     self._checker.check_native_library('libperfetto_hprof')
 
     # Check internal Java libraries
@@ -677,7 +677,7 @@ class DebugTargetChecker:
     self._checker.check_symlinked_multilib_executable('dex2oatd')
 
     # Check ART internal libraries.
-    self._checker.check_native_library('libartserviced')
+    self._checker.check_prefer64_library('libartserviced')
     self._checker.check_native_library('libperfetto_hprofd')
 
     # Check internal native library dependencies.
@@ -710,7 +710,6 @@ class TestingTargetChecker:
       self._checker.check_dir(arch_dir)
 
     # Check ART test binaries.
-    self._checker.check_art_test_executable('art_artd_tests')
     self._checker.check_art_test_executable('art_cmdline_tests')
     self._checker.check_art_test_executable('art_compiler_tests')
     self._checker.check_art_test_executable('art_dex2oat_tests')
@@ -721,14 +720,11 @@ class TestingTargetChecker:
     self._checker.check_art_test_executable('art_disassembler_tests')
     self._checker.check_art_test_executable('art_imgdiag_tests')
     self._checker.check_art_test_executable('art_libartbase_tests')
-    self._checker.check_art_test_executable('art_libartpalette_tests')
-    self._checker.check_art_test_executable('art_libartservice_tests')
-    self._checker.check_art_test_executable('art_libarttools_tests')
     self._checker.check_art_test_executable('art_libdexfile_support_tests')
     self._checker.check_art_test_executable('art_libdexfile_tests')
     self._checker.check_art_test_executable('art_libprofile_tests')
     self._checker.check_art_test_executable('art_oatdump_tests')
-    self._checker.check_art_test_executable('art_odrefresh_tests')
+    self._checker.check_art_test_executable('art_odrefresh_tests', MULTILIB_FIRST)
     self._checker.check_art_test_executable('art_profman_tests')
     self._checker.check_art_test_executable('art_runtime_tests')
     self._checker.check_art_test_executable('art_sigchain_tests')
@@ -793,7 +789,8 @@ class TestingTargetChecker:
     self._checker.check_art_test_data('art-gtest-jars-SuperWithAccessChecks.dex')
 
     # Fuzzer cases
-    self._checker.check_art_test_data('fuzzer_corpus.zip')
+    self._checker.check_art_test_data('dex_verification_fuzzer_corpus.zip')
+    self._checker.check_art_test_data('class_verification_fuzzer_corpus.zip')
 
 
 class NoSuperfluousFilesChecker:

@@ -177,9 +177,9 @@ class OdRefreshTest : public CommonArtTest {
     CreateEmptyFile(dirty_image_objects_file_);
     preloaded_classes_file_ = system_etc_dir + "/preloaded-classes";
     CreateEmptyFile(preloaded_classes_file_);
-    std::string art_etc_dir = android_art_root_path + "/etc";
-    ASSERT_TRUE(EnsureDirectoryExists(art_etc_dir));
-    art_profile_ = art_etc_dir + "/boot-image.prof";
+    art_etc_dir_ = android_art_root_path + "/etc";
+    ASSERT_TRUE(EnsureDirectoryExists(art_etc_dir_));
+    art_profile_ = art_etc_dir_ + "/boot-image.prof";
     CreateEmptyFile(art_profile_);
 
     framework_dir_ = android_root_path + "/framework";
@@ -233,11 +233,13 @@ class OdRefreshTest : public CommonArtTest {
     cache_info_xml_ = dalvik_cache_dir_ + "/cache-info.xml";
     check_compilation_space_ = [] { return true; };
     setfilecon_ = [](auto, auto) { return 0; };
+    restorecon_ = [](auto, auto) { return 0; };
     odrefresh_ = std::make_unique<OnDeviceRefresh>(config_,
+                                                   setfilecon_,
+                                                   restorecon_,
                                                    cache_info_xml_,
                                                    std::move(mock_exec_utils),
-                                                   check_compilation_space_,
-                                                   setfilecon_);
+                                                   check_compilation_space_);
   }
 
   void TearDown() override {
@@ -267,6 +269,7 @@ class OdRefreshTest : public CommonArtTest {
   std::string services_foo_jar_;
   std::string services_bar_jar_;
   std::string dalvik_cache_dir_;
+  std::string art_etc_dir_;
   std::string framework_dir_;
   std::string framework_profile_;
   std::string art_profile_;
@@ -276,6 +279,7 @@ class OdRefreshTest : public CommonArtTest {
   std::string cache_info_xml_;
   std::function<bool()> check_compilation_space_;
   std::function<int(const char*, const char*)> setfilecon_;
+  std::function<int(const char*, unsigned int)> restorecon_;
 };
 
 TEST_F(OdRefreshTest, PrimaryBootImage) {
@@ -1008,6 +1012,56 @@ TEST_F(OdRefreshTest, OnlyBootImages) {
       .WillRepeatedly(Return(0));
 
   EXPECT_EQ(odrefresh_->Compile(*metrics_, CompilationOptions::CompileAll(*odrefresh_)),
+            ExitCode::kCompilationSuccess);
+}
+
+TEST_F(OdRefreshTest, DirtyImageObjects) {
+  // Primary.
+  EXPECT_CALL(*mock_exec_utils_,
+              DoExecAndReturnCode(AllOf(
+                  Contains(Flag("--dirty-image-objects-fd=", FdOf(dirty_image_objects_file_))),
+                  Contains(Flag("--dex-file=", core_oj_jar_)))))
+      .WillOnce(Return(0));
+
+  // Mainline extension.
+  EXPECT_CALL(*mock_exec_utils_,
+              DoExecAndReturnCode(AllOf(Contains(Flag("--dex-file=", conscrypt_jar_)))))
+      .WillOnce(Return(0));
+
+  EXPECT_EQ(odrefresh_->Compile(
+                *metrics_,
+                CompilationOptions{
+                    .boot_images_to_generate_for_isas{
+                        {InstructionSet::kX86_64,
+                         {.primary_boot_image = true, .boot_image_mainline_extension = true}}},
+                }),
+            ExitCode::kCompilationSuccess);
+}
+
+TEST_F(OdRefreshTest, DirtyImageObjectsMultipleFiles) {
+  std::string art_dirty_image_objects = art_etc_dir_ + "/dirty-image-objects";
+  auto file = ScopedCreateEmptyFile(art_dirty_image_objects);
+
+  // Primary.
+  EXPECT_CALL(*mock_exec_utils_,
+              DoExecAndReturnCode(AllOf(
+                  Contains(Flag("--dirty-image-objects-fd=", FdOf(dirty_image_objects_file_))),
+                  Contains(Flag("--dirty-image-objects-fd=", FdOf(art_dirty_image_objects))),
+                  Contains(Flag("--dex-file=", core_oj_jar_)))))
+      .WillOnce(Return(0));
+
+  // Mainline extension.
+  EXPECT_CALL(*mock_exec_utils_,
+              DoExecAndReturnCode(AllOf(Contains(Flag("--dex-file=", conscrypt_jar_)))))
+      .WillOnce(Return(0));
+
+  EXPECT_EQ(odrefresh_->Compile(
+                *metrics_,
+                CompilationOptions{
+                    .boot_images_to_generate_for_isas{
+                        {InstructionSet::kX86_64,
+                         {.primary_boot_image = true, .boot_image_mainline_extension = true}}},
+                }),
             ExitCode::kCompilationSuccess);
 }
 

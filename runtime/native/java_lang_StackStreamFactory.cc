@@ -27,7 +27,7 @@ namespace art HIDDEN {
 
 static jobject StackStreamFactory_nativeGetStackAnchor(JNIEnv* env, jclass) {
   ScopedFastNativeObjectAccess soa(env);
-  return soa.Self()->CreateInternalStackTrace(soa);
+  return soa.AddLocalReference<jobject>(soa.Self()->CreateInternalStackTrace(soa));
 }
 
 static jint StackStreamFactory_nativeFetchStackFrameInfo(JNIEnv* env, jclass,

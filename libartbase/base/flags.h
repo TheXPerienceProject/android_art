@@ -311,6 +311,9 @@ struct Flags {
   // to logcat will be in human-readable text format.
   // Supported values are "text" and "xml".
   Flag<std::string> MetricsFormat{"metrics.format", "text", FlagType::kCmdlineOnly};
+
+  // Whether or not to force the metrics initialization.
+  Flag<bool> MetricsForceEnable{"metrics.force-enable", false, FlagType::kCmdlineOnly};
 };
 
 // This is the actual instance of all the flags.

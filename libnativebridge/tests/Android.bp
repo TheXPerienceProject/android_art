@@ -102,19 +102,8 @@ cc_test {
     name: "libnativebridge-tests",
     defaults: [
         "art_defaults",
-        "art_test_internal_library_defaults",
+        "art_standalone_test_defaults",
     ],
-
-    target: {
-        linux: {
-            cflags: [
-                // gtest issue
-                "-Wno-used-but-marked-unused",
-                "-Wno-deprecated",
-                "-Wno-missing-noreturn",
-            ],
-        },
-    },
 
     isolated: true,
 
@@ -137,49 +126,56 @@ cc_test {
         "NativeBridge3UnloadLibrary_test.cpp",
         "NativeBridge3GetError_test.cpp",
         "NativeBridge3IsPathSupported_test.cpp",
-        "NativeBridge3InitAnonymousNamespace_test.cpp",
         "NativeBridge3CreateNamespace_test.cpp",
         "NativeBridge3LoadLibraryExt_test.cpp",
         "NativeBridge6PreZygoteFork_test.cpp",
         "NativeBridge7CriticalNative_test.cpp",
     ],
 
-    shared_libs: [
+    static_libs: [
         "libbase",
-        "liblog",
         "libnativebridge",
+    ],
+    shared_libs: [
+        "liblog",
+        "libnativebridge6prezygotefork",
+        "libnativebridge7criticalnative",
+    ],
+    data_libs: [
         "libnativebridge6prezygotefork",
         "libnativebridge7criticalnative",
 
-        // Ideally these would only need to be listed in data_libs, but they
-        // are dlopen'd by libnativebridge, not by libnativebridge-tests,
-        // and the linker can't find them relative to /system/lib64/libnativebridge.so.
-        // Linking them here causes them to be loaded from alongside
-        // libnativebridge-tests when it is executed, and then the later dlopen
-        // returns the handle to the already-loaded library.
+        // These are dlopen'd by libnativebridge, not libnativebridge-tests, but
+        // the former is statically linked into the latter, so the linker will
+        // find them next to the test binary.
         "libnativebridge-test-case",
         "libnativebridge2-test-case",
         "libnativebridge3-test-case",
         "libnativebridge6-test-case",
         "libnativebridge7-test-case",
     ],
-    data_libs: [
-        "libnativebridge-test-case",
-        "libnativebridge2-test-case",
-        "libnativebridge3-test-case",
-        "libnativebridge6-test-case",
-        "libnativebridge7-test-case",
-        "libnativebridge6prezygotefork",
-        "libnativebridge7criticalnative",
-    ],
+
+    target: {
+        linux: {
+            cflags: [
+                // gtest issue
+                "-Wno-used-but-marked-unused",
+                "-Wno-deprecated",
+                "-Wno-missing-noreturn",
+            ],
+        },
+        android: {
+            shared_libs: ["libdl_android"], // libnativebridge dependency
+        },
+    },
 
     test_suites: [
         "general-tests",
     ],
 }
 
-// Very basic tests in CTS to verify backed-by API coverage of the exported API
-// in libnativebridge.map.txt.
+// Very basic tests in CTS/MCTS to verify backed-by API coverage of the exported
+// API in libnativebridge.map.txt.
 cc_test {
     name: "art_libnativebridge_cts_tests",
     defaults: ["art_standalone_test_defaults"],
@@ -200,8 +196,9 @@ cc_test {
     defaults: ["art_standalone_test_defaults"],
     static_libs: [
         "libbase",
-        "libnativebridge_lazy",
     ],
+    shared_libs: ["libnativebridge_lazy"],
+    data_libs: ["libnativebridge_lazy"],
     srcs: ["libnativebridge_api_test.cpp"],
     test_suites: [
         "general-tests",

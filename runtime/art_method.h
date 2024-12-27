@@ -35,6 +35,7 @@
 #include "dex/primitive.h"
 #include "interpreter/mterp/nterp.h"
 #include "gc_root.h"
+#include "intrinsics_enum.h"
 #include "obj_ptr.h"
 #include "offsets.h"
 #include "read_barrier_option.h"
@@ -246,16 +247,16 @@ class EXPORT ArtMethod final {
     return (access_flags & kAccIntrinsic) != 0;
   }
 
-  ALWAYS_INLINE void SetIntrinsic(uint32_t intrinsic) REQUIRES_SHARED(Locks::mutator_lock_);
+  ALWAYS_INLINE void SetIntrinsic(Intrinsics intrinsic) REQUIRES_SHARED(Locks::mutator_lock_);
 
-  uint32_t GetIntrinsic() const {
+  Intrinsics GetIntrinsic() const {
     static const int kAccFlagsShift = CTZ(kAccIntrinsicBits);
     static_assert(IsPowerOfTwo((kAccIntrinsicBits >> kAccFlagsShift) + 1),
                   "kAccIntrinsicBits are not continuous");
     static_assert((kAccIntrinsic & kAccIntrinsicBits) == 0,
                   "kAccIntrinsic overlaps kAccIntrinsicBits");
     DCHECK(IsIntrinsic());
-    return (GetAccessFlags() & kAccIntrinsicBits) >> kAccFlagsShift;
+    return static_cast<Intrinsics>((GetAccessFlags() & kAccIntrinsicBits) >> kAccFlagsShift);
   }
 
   void SetNotIntrinsic() REQUIRES_SHARED(Locks::mutator_lock_);
@@ -779,7 +780,11 @@ class EXPORT ArtMethod final {
   }
   ALWAYS_INLINE void SetEntryPointFromQuickCompiledCodePtrSize(
       const void* entry_point_from_quick_compiled_code, PointerSize pointer_size)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    SetNativePointer(EntryPointFromQuickCompiledCodeOffset(pointer_size),
+                     entry_point_from_quick_compiled_code,
+                     pointer_size);
+  }
 
   static constexpr MemberOffset DataOffset(PointerSize pointer_size) {
     return MemberOffset(PtrSizedFieldsOffset(pointer_size) + OFFSETOF_MEMBER(
@@ -1048,11 +1053,6 @@ class EXPORT ArtMethod final {
   std::string JniLongName()
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Update entry points by passing them through the visitor.
-  template <typename Visitor>
-  ALWAYS_INLINE void UpdateEntrypoints(const Visitor& visitor, PointerSize pointer_size)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
   // Visit the individual members of an ArtMethod.  Used by imgdiag.
   // As imgdiag does not support mixing instruction sets or pointer sizes (e.g., using imgdiag32
   // to inspect 64-bit images, etc.), we can go beneath the accessors directly to the class members.
@@ -1208,8 +1208,6 @@ class EXPORT ArtMethod final {
 
   // Used by GetName and GetNameView to share common code.
   const char* GetRuntimeMethodName() REQUIRES_SHARED(Locks::mutator_lock_);
-
-  friend class RuntimeImageHelper;  // For SetNativePointer.
 
   DISALLOW_COPY_AND_ASSIGN(ArtMethod);  // Need to use CopyFrom to deal with 32 vs 64 bits.
 };

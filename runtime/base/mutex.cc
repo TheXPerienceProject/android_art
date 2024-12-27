@@ -109,7 +109,7 @@ static void BackOff(uint32_t i) {
     volatile uint32_t x = 0;
     const uint32_t spin_count = 10 * i;
     for (uint32_t spin = 0; spin < spin_count; ++spin) {
-      ++x;  // Volatile; hence should not be optimized away.
+      x = x + 1;  // Volatile; hence should not be optimized away.
     }
     // TODO: Consider adding x86 PAUSE and/or ARM YIELD here.
   } else if (i <= kYieldMax) {

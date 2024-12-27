@@ -60,6 +60,7 @@
 #include "dex/code_item_accessors-inl.h"
 #include "dex/descriptors_names.h"
 #include "dex/dex_file_loader.h"
+#include "dex/dex_instruction-inl.h"
 
 #ifdef ART_TARGET_ANDROID
 #include "android-modules-utils/sdk_level.h"
@@ -119,8 +120,8 @@ static_assert(ProfileCompilationInfo::kIndividualInlineCacheSize < kIsMegamorphi
 static_assert(ProfileCompilationInfo::kIndividualInlineCacheSize < kIsMissingTypesEncoding,
               "InlineCache::kIndividualInlineCacheSize is larger than expected");
 
-static constexpr uint32_t kSizeWarningThresholdBytes = 500000U;
-static constexpr uint32_t kSizeErrorThresholdBytes = 1500000U;
+static constexpr uint32_t kSizeWarningThresholdBytes = 5000000U;
+static constexpr uint32_t kSizeErrorThresholdBytes = 15000000U;
 
 static constexpr uint32_t kSizeWarningThresholdBootBytes = 25000000U;
 static constexpr uint32_t kSizeErrorThresholdBootBytes = 100000000U;
@@ -3030,9 +3031,49 @@ FlattenProfileData::ItemMetadata::ItemMetadata() :
     flags_(0) {
 }
 
-FlattenProfileData::ItemMetadata::ItemMetadata(const ItemMetadata& other) :
-    flags_(other.flags_),
-    annotations_(other.annotations_) {
+void FlattenProfileData::ItemMetadata::ExtractInlineCacheInfo(
+    const ProfileCompilationInfo& profile_info,
+    const DexFile* dex_file,
+    uint16_t dex_method_idx) {
+  ProfileCompilationInfo::MethodHotness hotness =
+      profile_info.GetMethodHotness(MethodReference(dex_file, dex_method_idx));
+  DCHECK(!hotness.IsHot() || hotness.GetInlineCacheMap() != nullptr);
+  if (!hotness.IsHot() || hotness.GetInlineCacheMap()->empty()) {
+    return;
+  }
+  const dex::MethodId& id = dex_file->GetMethodId(dex_method_idx);
+  const ProfileCompilationInfo::InlineCacheMap* inline_caches = hotness.GetInlineCacheMap();
+  const dex::ClassDef* class_def = dex_file->FindClassDef(id.class_idx_);
+  if (class_def == nullptr) {
+    // No class def found.
+    return;
+  }
+
+  CodeItemInstructionAccessor accessor(
+      *dex_file, dex_file->GetCodeItem(dex_file->FindCodeItemOffset(*class_def, dex_method_idx)));
+  for (const auto& [pc, ic_data] : *inline_caches) {
+    if (pc >= accessor.InsnsSizeInCodeUnits()) {
+      // Inlined inline caches are not supported in AOT, so discard any pc beyond the
+      // code item size. See also `HInliner::GetInlineCacheAOT`.
+      continue;
+    }
+    const Instruction& inst = accessor.InstructionAt(pc);
+    const dex::MethodId& target = dex_file->GetMethodId(inst.VRegB());
+    if (ic_data.classes.empty() && !ic_data.is_megamorphic && !ic_data.is_missing_types) {
+      continue;
+    }
+    InlineCacheInfo& val =
+        inline_cache_.FindOrAdd(TypeReference(dex_file, target.class_idx_))->second;
+    if (ic_data.is_megamorphic) {
+      val.is_megamorphic_ = true;
+    }
+    if (ic_data.is_missing_types) {
+      val.is_missing_types_ = true;
+    }
+    for (dex::TypeIndex type_index : ic_data.classes) {
+      val.classes_.insert(profile_info.GetTypeDescriptor(dex_file, type_index));
+    }
+  }
 }
 
 std::unique_ptr<FlattenProfileData> ProfileCompilationInfo::ExtractProfileData(
@@ -3067,6 +3108,8 @@ std::unique_ptr<FlattenProfileData> ProfileCompilationInfo::ExtractProfileData(
             result->method_metadata_.GetOrCreate(ref, create_metadata_fn);
         metadata.flags_ |= hotness.flags_;
         metadata.annotations_.push_back(annotation);
+        metadata.ExtractInlineCacheInfo(*this, dex_file.get(), method_idx);
+
         // Update the max aggregation counter for methods.
         // This is essentially a cache, to avoid traversing all the methods just to find out
         // this value.
@@ -3098,6 +3141,26 @@ std::unique_ptr<FlattenProfileData> ProfileCompilationInfo::ExtractProfileData(
   return result;
 }
 
+void FlattenProfileData::ItemMetadata::MergeInlineCacheInfo(
+    const SafeMap<TypeReference, InlineCacheInfo, TypeReferenceValueComparator>& other) {
+  for (const auto& [target, inline_cache_data] : other) {
+    if (!inline_cache_data.is_megamorphic_ && !inline_cache_data.is_missing_types_ &&
+        inline_cache_data.classes_.empty()) {
+      continue;
+    }
+    InlineCacheInfo& val = inline_cache_.FindOrAdd(target)->second;
+    if (inline_cache_data.is_megamorphic_) {
+      val.is_megamorphic_ = true;
+    }
+    if (inline_cache_data.is_missing_types_) {
+      val.is_missing_types_ = true;
+    }
+    for (const std::string& cls : inline_cache_data.classes_) {
+      val.classes_.insert(cls);
+    }
+  }
+}
+
 void FlattenProfileData::MergeData(const FlattenProfileData& other) {
   auto create_metadata_fn = []() { return FlattenProfileData::ItemMetadata(); };
   for (const auto& it : other.method_metadata_) {
@@ -3111,6 +3174,7 @@ void FlattenProfileData::MergeData(const FlattenProfileData& other) {
     metadata.flags_ |= otherData.GetFlags();
     metadata.annotations_.insert(
         metadata.annotations_.end(), other_annotations.begin(), other_annotations.end());
+    metadata.MergeInlineCacheInfo(otherData.GetInlineCache());
 
     max_aggregation_for_methods_ = std::max(
           max_aggregation_for_methods_,

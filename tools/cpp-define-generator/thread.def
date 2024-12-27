@@ -17,6 +17,7 @@
 #if ASM_DEFINE_INCLUDE_DEPENDENCIES
 #include "entrypoints/quick/quick_entrypoints_enum.h"
 #include "thread.h"
+#include "trace_profile.h"
 #endif
 
 ASM_DEFINE(THREAD_CARD_TABLE_OFFSET,
@@ -71,3 +72,8 @@ ASM_DEFINE(THREAD_SHARED_METHOD_HOTNESS_OFFSET,
            art::Thread::SharedMethodHotnessOffset<art::kRuntimePointerSize>().Int32Value())
 ASM_DEFINE(THREAD_TID_OFFSET,
            art::Thread::TidOffset<art::kRuntimePointerSize>().Int32Value())
+ASM_DEFINE(TRACE_BUFFER_INIT_OFFSET,
+           art::Thread::TraceBufferPtrOffset<art::kRuntimePointerSize>().Int32Value())
+ASM_DEFINE(TRACE_BUFFER_CURRENT_OFFSET,
+           art::Thread::TraceBufferCurrPtrOffset<art::kRuntimePointerSize>().Int32Value())
+ASM_DEFINE(TRACE_BUFFER_SIZE, (art::kAlwaysOnTraceBufSize - 1) * sizeof(uintptr_t))

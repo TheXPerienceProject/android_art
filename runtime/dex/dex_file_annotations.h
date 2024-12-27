@@ -203,6 +203,21 @@ class AnnotationVisitor {
                                           uint32_t index,
                                           uint8_t type,
                                           const JValue& value) = 0;
+
+  bool HasError() const { return has_error_; }
+  void SetErrorMsg(const std::string& msg) {
+    DCHECK(!has_error_) << "Already had an error set. New error: " << msg
+                        << ", old error: " << error_msg_;
+    has_error_ = true;
+    error_msg_ = msg;
+  }
+  const std::string& GetErrorMsg() const { return error_msg_; }
+
+ protected:
+  // Whether we found an error while visiting the annotations. If true, `error_msg_` will contain
+  // the information about the error.
+  bool has_error_ = false;
+  std::string error_msg_;
 };
 
 // Visit all annotation elements and array elements without creating

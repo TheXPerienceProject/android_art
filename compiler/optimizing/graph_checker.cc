@@ -754,10 +754,12 @@ void GraphChecker::VisitInvoke(HInvoke* invoke) {
   // Check for intrinsics which should have been replaced by intermediate representation in the
   // instruction builder.
   if (!IsValidIntrinsicAfterBuilder(invoke->GetIntrinsic())) {
+    std::stringstream ss;
+    ss << invoke->GetIntrinsic();
     AddError(
-        StringPrintf("The graph contains the instrinsic %d which should have been replaced in the "
+        StringPrintf("The graph contains the intrinsic %s which should have been replaced in the "
                      "instruction builder: %s:%d in block %d.",
-                     enum_cast<int>(invoke->GetIntrinsic()),
+                     ss.str().c_str(),
                      invoke->DebugName(),
                      invoke->GetId(),
                      invoke->GetBlock()->GetBlockId()));
@@ -766,7 +768,7 @@ void GraphChecker::VisitInvoke(HInvoke* invoke) {
 
 void GraphChecker::VisitInvokeStaticOrDirect(HInvokeStaticOrDirect* invoke) {
   // We call VisitInvoke and not VisitInstruction to de-duplicate the common code: always throwing
-  // and instrinsic checks.
+  // and intrinsic checks.
   VisitInvoke(invoke);
 
   if (invoke->IsStaticWithExplicitClinitCheck()) {
@@ -1402,7 +1404,7 @@ void GraphChecker::VisitBinaryOperation(HBinaryOperation* op) {
   DataType::Type result_type = op->GetType();
 
   // Type consistency between inputs.
-  if (op->IsUShr() || op->IsShr() || op->IsShl() || op->IsRor()) {
+  if (op->IsUShr() || op->IsShr() || op->IsShl() || op->IsRol() || op->IsRor()) {
     if (DataType::Kind(rhs_type) != DataType::Type::kInt32) {
       AddError(StringPrintf("Shift/rotate operation %s %d has a non-int kind second input: "
                             "%s of type %s.",
@@ -1426,7 +1428,7 @@ void GraphChecker::VisitBinaryOperation(HBinaryOperation* op) {
                             op->GetId(),
                             DataType::PrettyDescriptor(result_type)));
     }
-  } else if (op->IsUShr() || op->IsShr() || op->IsShl() || op->IsRor()) {
+  } else if (op->IsUShr() || op->IsShr() || op->IsShl() || op->IsRol() || op->IsRor()) {
     // Only check the first input (value), as the second one (distance)
     // must invariably be of kind `int`.
     if (result_type != DataType::Kind(lhs_type)) {

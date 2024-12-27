@@ -208,5 +208,4 @@ art_cc_test {
         "art_standalone_gtest_defaults",
         "art_libprofile_tests_defaults",
     ],
-    test_config: "art_standalone_libprofile_tests.xml",
 }

@@ -868,6 +868,11 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* allocator,
                           compilation_stats_.get());
     GraphAnalysisResult result = builder.BuildGraph();
     if (result != kAnalysisSuccess) {
+      // Don't try recompiling this method again.
+      if (method != nullptr) {
+        ScopedObjectAccess soa(Thread::Current());
+        method->SetDontCompile();
+      }
       SCOPED_TRACE << "Not compiling because of " << result;
       switch (result) {
         case kAnalysisSkipped: {

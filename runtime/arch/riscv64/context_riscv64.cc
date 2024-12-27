@@ -120,12 +120,7 @@ void Riscv64Context::SmashCallerSaves() {
   fprs_[FA7] = nullptr;
 }
 
-extern "C" NO_RETURN void art_quick_do_long_jump(uint64_t*, uint64_t*);
-
-void Riscv64Context::DoLongJump() {
-  uint64_t gprs[arraysize(gprs_)];
-  uint64_t fprs[kNumberOfFRegisters];
-
+void Riscv64Context::CopyContextTo(uintptr_t* gprs, uintptr_t* fprs) {
   // The long jump routine called below expects to find the value for SP at index 2.
   DCHECK_EQ(SP, 2);
 
@@ -143,7 +138,6 @@ void Riscv64Context::DoLongJump() {
   if (__hwasan_handle_longjmp != nullptr) {
     __hwasan_handle_longjmp(reinterpret_cast<void*>(gprs[SP]));
   }
-  art_quick_do_long_jump(gprs, fprs);
 }
 
 }  // namespace riscv64

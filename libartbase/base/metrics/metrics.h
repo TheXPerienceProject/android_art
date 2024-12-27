@@ -31,6 +31,7 @@
 #include "base/bit_utils.h"
 #include "base/macros.h"
 #include "base/time_utils.h"
+#include "jni.h"
 #include "tinyxml2.h"
 
 #pragma clang diagnostic push
@@ -106,6 +107,8 @@ namespace art {
 
 class Runtime;
 struct RuntimeArgumentMap;
+
+[[maybe_unused]] static jlong VMRuntime_getFullGcCount(JNIEnv* env, jclass klass);
 
 namespace metrics {
 template <typename value_t>
@@ -340,6 +343,7 @@ class MetricsCounter : public MetricsBase<T> {
   static_assert(std::atomic<value_t>::is_always_lock_free);
 
   friend class ArtMetrics;
+  friend jlong art::VMRuntime_getFullGcCount(JNIEnv* env, jclass klass);
 };
 
 template <DatumId datum_id, typename T = uint64_t>

@@ -33,8 +33,8 @@ ARCHES = ["i386", "x86_64", "arm", "aarch64", "riscv64"]
 IGNORE : Dict[str, List[str]] = {
     # Aligns stack.
     "art_quick_osr_stub": ["i386"],
-    # Intermediate invalid CFI while loading all registers.
-    "art_quick_do_long_jump": ["x86_64"],
+    # Unverifiable intermediate CFI after loading the stack pointer from context.
+    "art_quick_do_long_jump": ["arm", "aarch64", "i386", "x86_64", "riscv64"],
     # Saves/restores SP in other register.
     "art_quick_generic_jni_trampoline": ["arm", "i386", "x86_64"],
     # Starts with non-zero offset at the start of the method.
@@ -57,8 +57,8 @@ def get_inst_semantics(arch: str) -> List[Any]:
     ptr_size = {"i386": 4, "x86_64": 8}[arch]
     add(r"push. .*", lambda m: ptr_size)
     add(r"pop. .*", lambda m: -ptr_size)
-    add(r"sub. \$(\w+), (?:%esp|%rsp)", lambda m: int(m[1], 0))
-    add(r"add. \$(\w+), (?:%esp|%rsp)", lambda m: -int(m[1], 0))
+    add(r"sub. \$(\w+), (?:%esp|%rsp)( # imm = \w+)?", lambda m: int(m[1], 0))
+    add(r"add. \$(\w+), (?:%esp|%rsp)( # imm = \w+)?", lambda m: -int(m[1], 0))
     add(r"call. (0x\w+) <.*", lambda m: ptr_size, adjust_pc=lambda m: int(m[1], 0))
     add(r"j[a-z]* (0x\w+) <.*", adjust_pc=lambda m: int(m[1], 0))
   if arch in ["arm", "aarch64"]:

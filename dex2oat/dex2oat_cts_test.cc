@@ -14,10 +14,27 @@
  * limitations under the License.
  */
 
+#include <sys/wait.h>
+
+#include "android-base/result-gmock.h"
+#include "android-base/result.h"
+#include "android-base/strings.h"
 #include "base/file_utils.h"
 #include "dex2oat_environment_test.h"
 
 namespace art {
+
+using ::android::base::Result;
+using ::android::base::testing::HasValue;
+
+// Test the binary with the same bitness as the test. This is also done to avoid
+// the symlink /apex/com.android.art/bin/dex2oat, which we don't have selinux
+// permission to read on S.
+#if defined(__LP64__)
+constexpr const char* kDex2oatBinary = "dex2oat64";
+#else
+constexpr const char* kDex2oatBinary = "dex2oat32";
+#endif
 
 class Dex2oatCtsTest : public CommonArtTest, public Dex2oatScratchDirs {
  public:
@@ -34,11 +51,9 @@ class Dex2oatCtsTest : public CommonArtTest, public Dex2oatScratchDirs {
  protected:
   // Stripped down counterpart to Dex2oatEnvironmentTest::Dex2Oat that only adds
   // enough arguments for our purposes.
-  int Dex2Oat(const std::vector<std::string>& dex2oat_args,
-              std::string* output,
-              std::string* error_msg) {
-    // This command line should work regardless of bitness, ISA, etc.
-    std::vector<std::string> argv = {std::string(kAndroidArtApexDefaultPath) + "/bin/dex2oat"};
+  Result<int> Dex2Oat(const std::vector<std::string>& dex2oat_args, std::string* output) {
+    std::vector<std::string> argv = {std::string(kAndroidArtApexDefaultPath) + "/bin/" +
+                                     kDex2oatBinary};
     argv.insert(argv.end(), dex2oat_args.begin(), dex2oat_args.end());
 
     // We must set --android-root.
@@ -48,18 +63,20 @@ class Dex2oatCtsTest : public CommonArtTest, public Dex2oatScratchDirs {
 
     // We need dex2oat to actually log things.
     auto post_fork_fn = []() { return setenv("ANDROID_LOG_TAGS", "*:d", 1) == 0; };
+
     ForkAndExecResult res = ForkAndExec(argv, post_fork_fn, output);
     if (res.stage != ForkAndExecResult::kFinished) {
-      *error_msg = strerror(errno);
-      ::testing::AssertionFailure() << "Failed to finish dex2oat invocation: " << *error_msg;
+      return ErrnoErrorf("Failed to finish dex2oat invocation '{}'",
+                         android::base::Join(argv, ' '));
     }
 
-    if (!res.StandardSuccess()) {
-      // We cannot use ASSERT_TRUE since the method returns an int and not void.
-      ::testing::AssertionFailure() << "dex2oat fork/exec failed: " << *error_msg;
+    if (!WIFEXITED(res.status_code)) {
+      return Errorf("dex2oat didn't terminate normally (status_code={:#x}): {}",
+                    res.status_code,
+                    android::base::Join(argv, ' '));
     }
 
-    return res.status_code;
+    return WEXITSTATUS(res.status_code);
   }
 };
 
@@ -85,9 +102,7 @@ TEST_F(Dex2oatCtsTest, CompilationHooks) {
   args.emplace_back("--force-palette-compilation-hooks");
 
   std::string output = "";
-  std::string error_msg;
-  int res = Dex2Oat(args, &output, &error_msg);
-  EXPECT_EQ(res, 0) << error_msg;
+  EXPECT_THAT(Dex2Oat(args, &output), HasValue(0));
   EXPECT_EQ(oat_file->FlushCloseOrErase(), 0);
   EXPECT_EQ(vdex_file->FlushCloseOrErase(), 0);
 }

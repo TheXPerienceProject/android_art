@@ -36,8 +36,6 @@ void InstructionSetAbort(InstructionSet isa) {
       LOG(FATAL) << "Unsupported instruction set " << isa;
       UNREACHABLE();
   }
-  LOG(FATAL) << "Unknown ISA " << isa;
-  UNREACHABLE();
 }
 
 const char* GetInstructionSetString(InstructionSet isa) {
@@ -56,8 +54,6 @@ const char* GetInstructionSetString(InstructionSet isa) {
     case InstructionSet::kNone:
       return "none";
   }
-  LOG(FATAL) << "Unknown ISA " << isa;
-  UNREACHABLE();
 }
 
 InstructionSet GetInstructionSetFromString(const char* isa_str) {

@@ -21,21 +21,10 @@ package {
     default_applicable_licenses: ["art_license"],
 }
 
-// Additional visibility to add to the prebuilt modules that are part of
-// the snapshots of the ART sdk/module_exports to ensure that they are
-// visible to each other.
-prebuilt_visibility = [
-    // TODO(b/155921753): Restrict this when prebuilts are in their proper
-    // locations.
-    "//prebuilts:__subpackages__",
-]
-
 // The SDK for the art module apex.
 sdk {
     name: "art-module-sdk",
     host_supported: true,
-
-    prebuilt_visibility: prebuilt_visibility,
 
     traits: {
         native_bridge_support: [
@@ -69,12 +58,6 @@ sdk {
                 // The host variant of libdexfile is not present in >=V snapshots
                 // via the workaround in https://r.android.com/3011798.
                 "libdexfile",
-            ],
-
-            native_static_libs: [
-                "libdexfile_support",
-                "libdexfile_static",
-                "libnativehelper_lazy",
             ],
         },
 
@@ -112,13 +95,9 @@ sdk {
                 "art-module-lib-api-stubs-system-modules",
                 "art-module-intra-core-api-stubs-system-modules",
             ],
+
             native_header_libs: [
                 "libnativeloader-headers",
-            ],
-            native_shared_libs: [
-                "libnativebridge_lazy",
-                "libnativehelper_compat_libc++",
-                "libnativeloader_lazy",
             ],
         },
 
@@ -135,8 +114,6 @@ sdk {
 module_exports {
     name: "art-module-host-exports",
     host_supported: true,
-
-    prebuilt_visibility: prebuilt_visibility,
 
     target: {
         host: {
@@ -183,8 +160,6 @@ module_exports {
 module_exports {
     name: "art-module-test-exports",
 
-    prebuilt_visibility: prebuilt_visibility,
-
     java_libs: [
         "core-compat-test-rules",
         "core-test-rules",
@@ -226,11 +201,5 @@ module_exports {
 
     native_shared_libs: [
         "libjavacoretests",
-    ],
-    native_static_libs: [
-        // TODO(b/187288515): Providing this as a prebuilt introduces an issue
-        // with sdk_version propagation. Temporarily use the source library
-        // instead.
-        //"libctstiagent",
     ],
 }

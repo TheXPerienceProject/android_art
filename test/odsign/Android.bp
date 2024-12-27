@@ -39,6 +39,7 @@ java_test_host {
     test_suites: [
         "general-tests",
         "cts",
+        "mcts-art",
     ],
 }
 

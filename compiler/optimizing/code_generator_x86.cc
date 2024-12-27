@@ -1274,29 +1274,27 @@ void InstructionCodeGeneratorX86::GenerateMethodEntryExitHook(HInstruction* inst
   // If yes, just take the slow path.
   __ j(kGreater, slow_path->GetEntryLabel());
 
-  // For entry_addr use the first temp that isn't EAX or EDX. We need this after
+  // For curr_entry use the register that isn't EAX or EDX. We need this after
   // rdtsc which returns values in EAX + EDX.
-  Register entry_addr = locations->GetTemp(2).AsRegister<Register>();
-  Register index = locations->GetTemp(1).AsRegister<Register>();
+  Register curr_entry = locations->GetTemp(2).AsRegister<Register>();
+  Register init_entry = locations->GetTemp(1).AsRegister<Register>();
 
   // Check if there is place in the buffer for a new entry, if no, take slow path.
   uint32_t trace_buffer_ptr = Thread::TraceBufferPtrOffset<kX86PointerSize>().Int32Value();
-  uint64_t trace_buffer_index_offset =
-      Thread::TraceBufferIndexOffset<kX86PointerSize>().Int32Value();
+  uint64_t trace_buffer_curr_entry_offset =
+      Thread::TraceBufferCurrPtrOffset<kX86PointerSize>().Int32Value();
 
-  __ fs()->movl(index, Address::Absolute(trace_buffer_index_offset));
-  __ subl(index, Immediate(kNumEntriesForWallClock));
+  __ fs()->movl(curr_entry, Address::Absolute(trace_buffer_curr_entry_offset));
+  __ subl(curr_entry, Immediate(kNumEntriesForWallClock * sizeof(void*)));
+  __ fs()->movl(init_entry, Address::Absolute(trace_buffer_ptr));
+  __ cmpl(curr_entry, init_entry);
   __ j(kLess, slow_path->GetEntryLabel());
 
   // Update the index in the `Thread`.
-  __ fs()->movl(Address::Absolute(trace_buffer_index_offset), index);
-  // Calculate the entry address in the buffer.
-  // entry_addr = base_addr + sizeof(void*) * index
-  __ fs()->movl(entry_addr, Address::Absolute(trace_buffer_ptr));
-  __ leal(entry_addr, Address(entry_addr, index, TIMES_4, 0));
+  __ fs()->movl(Address::Absolute(trace_buffer_curr_entry_offset), curr_entry);
 
   // Record method pointer and trace action.
-  Register method = index;
+  Register method = init_entry;
   __ movl(method, Address(ESP, kCurrentMethodStackOffset));
   // Use last two bits to encode trace method action. For MethodEntry it is 0
   // so no need to set the bits since they are 0 already.
@@ -1306,11 +1304,11 @@ void InstructionCodeGeneratorX86::GenerateMethodEntryExitHook(HInstruction* inst
     static_assert(enum_cast<int32_t>(TraceAction::kTraceMethodExit) == 1);
     __ orl(method, Immediate(enum_cast<int32_t>(TraceAction::kTraceMethodExit)));
   }
-  __ movl(Address(entry_addr, kMethodOffsetInBytes), method);
+  __ movl(Address(curr_entry, kMethodOffsetInBytes), method);
   // Get the timestamp. rdtsc returns timestamp in EAX + EDX.
   __ rdtsc();
-  __ movl(Address(entry_addr, kTimestampOffsetInBytes), EAX);
-  __ movl(Address(entry_addr, kHighTimestampOffsetInBytes), EDX);
+  __ movl(Address(curr_entry, kTimestampOffsetInBytes), EAX);
+  __ movl(Address(curr_entry, kHighTimestampOffsetInBytes), EDX);
   __ Bind(slow_path->GetExitLabel());
 }
 
@@ -2239,8 +2237,7 @@ void LocationsBuilderX86::VisitIf(HIf* if_instr) {
         codegen_->GetCompilerOptions().ProfileBranches() &&
         !Runtime::Current()->IsAotCompiler()) {
       locations->SetInAt(0, Location::RequiresRegister());
-      locations->AddTemp(Location::RequiresRegister());
-      locations->AddTemp(Location::RequiresRegister());
+      locations->AddRegisterTemps(2);
     } else {
       locations->SetInAt(0, Location::Any());
     }
@@ -5055,11 +5052,19 @@ void InstructionCodeGeneratorX86::GenerateUShrLong(const Location& loc, Register
   __ Bind(&done);
 }
 
-void LocationsBuilderX86::VisitRor(HRor* ror) {
-  LocationSummary* locations =
-      new (GetGraph()->GetAllocator()) LocationSummary(ror, LocationSummary::kNoCall);
+void LocationsBuilderX86::VisitRol(HRol* rol) {
+  HandleRotate(rol);
+}
 
-  switch (ror->GetResultType()) {
+void LocationsBuilderX86::VisitRor(HRor* ror) {
+  HandleRotate(ror);
+}
+
+void LocationsBuilderX86::HandleRotate(HBinaryOperation* rotate) {
+  LocationSummary* locations =
+      new (GetGraph()->GetAllocator()) LocationSummary(rotate, LocationSummary::kNoCall);
+
+  switch (rotate->GetResultType()) {
     case DataType::Type::kInt64:
       // Add the temporary needed.
       locations->AddTemp(Location::RequiresRegister());
@@ -5067,39 +5072,62 @@ void LocationsBuilderX86::VisitRor(HRor* ror) {
     case DataType::Type::kInt32:
       locations->SetInAt(0, Location::RequiresRegister());
       // The shift count needs to be in CL (unless it is a constant).
-      locations->SetInAt(1, Location::ByteRegisterOrConstant(ECX, ror->InputAt(1)));
+      locations->SetInAt(1, Location::ByteRegisterOrConstant(ECX, rotate->InputAt(1)));
       locations->SetOut(Location::SameAsFirstInput());
       break;
     default:
-      LOG(FATAL) << "Unexpected operation type " << ror->GetResultType();
+      LOG(FATAL) << "Unexpected operation type " << rotate->GetResultType();
       UNREACHABLE();
   }
 }
 
+void InstructionCodeGeneratorX86::VisitRol(HRol* rol) {
+  HandleRotate(rol);
+}
+
 void InstructionCodeGeneratorX86::VisitRor(HRor* ror) {
-  LocationSummary* locations = ror->GetLocations();
+  HandleRotate(ror);
+}
+
+void InstructionCodeGeneratorX86::HandleRotate(HBinaryOperation* rotate) {
+  LocationSummary* locations = rotate->GetLocations();
   Location first = locations->InAt(0);
   Location second = locations->InAt(1);
 
-  if (ror->GetResultType() == DataType::Type::kInt32) {
+  if (rotate->GetResultType() == DataType::Type::kInt32) {
     Register first_reg = first.AsRegister<Register>();
     if (second.IsRegister()) {
       Register second_reg = second.AsRegister<Register>();
-      __ rorl(first_reg, second_reg);
+      if (rotate->IsRol()) {
+        __ roll(first_reg, second_reg);
+      } else {
+        DCHECK(rotate->IsRor());
+        __ rorl(first_reg, second_reg);
+      }
     } else {
       Immediate imm(second.GetConstant()->AsIntConstant()->GetValue() & kMaxIntShiftDistance);
-      __ rorl(first_reg, imm);
+      if (rotate->IsRol()) {
+        __ roll(first_reg, imm);
+      } else {
+        DCHECK(rotate->IsRor());
+        __ rorl(first_reg, imm);
+      }
     }
     return;
   }
 
-  DCHECK_EQ(ror->GetResultType(), DataType::Type::kInt64);
+  DCHECK_EQ(rotate->GetResultType(), DataType::Type::kInt64);
   Register first_reg_lo = first.AsRegisterPairLow<Register>();
   Register first_reg_hi = first.AsRegisterPairHigh<Register>();
   Register temp_reg = locations->GetTemp(0).AsRegister<Register>();
   if (second.IsRegister()) {
     Register second_reg = second.AsRegister<Register>();
     DCHECK_EQ(second_reg, ECX);
+
+    if (rotate->IsRol()) {
+      __ negl(second_reg);
+    }
+
     __ movl(temp_reg, first_reg_hi);
     __ shrd(first_reg_hi, first_reg_lo, second_reg);
     __ shrd(first_reg_lo, temp_reg, second_reg);
@@ -5108,7 +5136,12 @@ void InstructionCodeGeneratorX86::VisitRor(HRor* ror) {
     __ cmovl(kNotEqual, first_reg_hi, first_reg_lo);
     __ cmovl(kNotEqual, first_reg_lo, temp_reg);
   } else {
-    int32_t shift_amt = second.GetConstant()->AsIntConstant()->GetValue() & kMaxLongShiftDistance;
+    int32_t value = second.GetConstant()->AsIntConstant()->GetValue();
+    if (rotate->IsRol()) {
+      value = -value;
+    }
+    int32_t shift_amt = value & kMaxLongShiftDistance;
+
     if (shift_amt == 0) {
       // Already fine.
       return;
@@ -5290,14 +5323,16 @@ void InstructionCodeGeneratorX86::VisitBooleanNot(HBooleanNot* bool_not) {
 void LocationsBuilderX86::VisitCompare(HCompare* compare) {
   LocationSummary* locations =
       new (GetGraph()->GetAllocator()) LocationSummary(compare, LocationSummary::kNoCall);
-  switch (compare->InputAt(0)->GetType()) {
+  switch (compare->GetComparisonType()) {
     case DataType::Type::kBool:
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
     case DataType::Type::kUint16:
     case DataType::Type::kInt16:
     case DataType::Type::kInt32:
-    case DataType::Type::kInt64: {
+    case DataType::Type::kUint32:
+    case DataType::Type::kInt64:
+    case DataType::Type::kUint64: {
       locations->SetInAt(0, Location::RequiresRegister());
       locations->SetInAt(1, Location::Any());
       locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
@@ -5329,8 +5364,13 @@ void InstructionCodeGeneratorX86::VisitCompare(HCompare* compare) {
 
   NearLabel less, greater, done;
   Condition less_cond = kLess;
+  Condition greater_cond = kGreater;
 
-  switch (compare->InputAt(0)->GetType()) {
+  switch (compare->GetComparisonType()) {
+    case DataType::Type::kUint32:
+      less_cond = kBelow;
+      // greater_cond - is not needed below
+      FALLTHROUGH_INTENDED;
     case DataType::Type::kBool:
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
@@ -5340,6 +5380,10 @@ void InstructionCodeGeneratorX86::VisitCompare(HCompare* compare) {
       codegen_->GenerateIntCompare(left, right);
       break;
     }
+    case DataType::Type::kUint64:
+      less_cond = kBelow;
+      greater_cond = kAbove;
+      FALLTHROUGH_INTENDED;
     case DataType::Type::kInt64: {
       Register left_low = left.AsRegisterPairLow<Register>();
       Register left_high = left.AsRegisterPairHigh<Register>();
@@ -5363,8 +5407,8 @@ void InstructionCodeGeneratorX86::VisitCompare(HCompare* compare) {
         DCHECK(right_is_const) << right;
         codegen_->Compare32BitValue(left_high, val_high);
       }
-      __ j(kLess, &less);  // Signed compare.
-      __ j(kGreater, &greater);  // Signed compare.
+      __ j(less_cond, &less);        // High part compare.
+      __ j(greater_cond, &greater);  // High part compare.
       if (right.IsRegisterPair()) {
         __ cmpl(left_low, right.AsRegisterPairLow<Register>());
       } else if (right.IsDoubleStackSlot()) {
@@ -5374,6 +5418,7 @@ void InstructionCodeGeneratorX86::VisitCompare(HCompare* compare) {
         codegen_->Compare32BitValue(left_low, val_low);
       }
       less_cond = kBelow;  // for CF (unsigned).
+      // greater_cond - is not needed below
       break;
     }
     case DataType::Type::kFloat32: {

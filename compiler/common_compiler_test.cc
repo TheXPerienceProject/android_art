@@ -303,6 +303,23 @@ void CommonCompilerTestImpl::CompileMethod(ArtMethod* method) {
   }
 }
 
+std::vector<uint8_t> CommonCompilerTestImpl::JniCompileCode(ArtMethod* method) {
+  CHECK(method->IsNative());
+  Thread* self = Thread::Current();
+  StackHandleScope<1> hs(self);
+  const DexFile& dex_file = *method->GetDexFile();
+  Handle<mirror::DexCache> dex_cache =
+      hs.NewHandle(GetClassLinker()->FindDexCache(self, dex_file));
+  OneCompiledMethodStorage storage;
+  std::unique_ptr<Compiler> compiler(Compiler::Create(*compiler_options_, &storage));
+  compiler->JniCompile(method->GetAccessFlags(),
+                       method->GetDexMethodIndex(),
+                       dex_file,
+                       dex_cache);
+  ArrayRef<const uint8_t> code = storage.GetCode();
+  return std::vector<uint8_t>(code.begin(), code.end());
+}
+
 void CommonCompilerTestImpl::ClearBootImageOption() {
   compiler_options_->image_type_ = CompilerOptions::ImageType::kNone;
 }

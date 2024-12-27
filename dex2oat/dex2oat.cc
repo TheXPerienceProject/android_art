@@ -39,12 +39,14 @@
 #endif  // __arm__
 #endif
 
-#include "android-base/parseint.h"
-#include "android-base/properties.h"
-#include "android-base/scopeguard.h"
-#include "android-base/stringprintf.h"
-#include "android-base/strings.h"
-#include "android-base/unique_fd.h"
+#include <android-base/parseint.h>
+#include <android-base/properties.h>
+#include <android-base/scopeguard.h>
+#include <android-base/stringprintf.h>
+#include <android-base/strings.h>
+#include <android-base/unique_fd.h>
+
+#include "aot_class_linker.h"
 #include "arch/instruction_set_features.h"
 #include "art_method-inl.h"
 #include "base/callee_save_type.h"
@@ -95,7 +97,6 @@
 #include "mirror/class_loader.h"
 #include "mirror/object-inl.h"
 #include "mirror/object_array-inl.h"
-#include "oat/aot_class_linker.h"
 #include "oat/elf_file.h"
 #include "oat/oat.h"
 #include "oat/oat_file.h"
@@ -378,7 +379,7 @@ class WatchDog {
                                    false);
       runtime->DumpForSigQuit(std::cerr);
     }
-    exit(1);
+    exit(static_cast<int>(dex2oat::ReturnCode::kOther));
   }
 
   void Wait() {
@@ -529,8 +530,6 @@ class Dex2Oat final {
         image_base_(0U),
         image_storage_mode_(ImageHeader::kStorageModeUncompressed),
         passes_to_run_filename_(nullptr),
-        dirty_image_objects_filename_(nullptr),
-        dirty_image_objects_fd_(-1),
         is_host_(false),
         elf_writers_(),
         oat_writers_(),
@@ -667,6 +666,11 @@ class Dex2Oat final {
     if (app_image_fd_ != -1 || !app_image_file_name_.empty()) {
       if (compiler_options_->IsBootImage() || compiler_options_->IsBootImageExtension()) {
         Usage("Can't have both (--image or --image-fd) and (--app-image-fd or --app-image-file)");
+      }
+      if (profile_files_.empty() && profile_file_fds_.empty()) {
+        LOG(WARNING) << "Generating an app image without a profile. This will result in an app "
+                        "image with no classes. Did you forget to add the profile with either "
+                        "--profile-file-fd or --profile-file?";
       }
       compiler_options_->image_type_ = CompilerOptions::ImageType::kAppImage;
     }
@@ -838,7 +842,7 @@ class Dex2Oat final {
       }
     }
 
-    if (dirty_image_objects_filename_ != nullptr && dirty_image_objects_fd_ != -1) {
+    if (!dirty_image_objects_filenames_.empty() && !dirty_image_objects_fds_.empty()) {
       Usage("--dirty-image-objects and --dirty-image-objects-fd should not be both specified");
     }
 
@@ -1104,8 +1108,8 @@ class Dex2Oat final {
     AssignIfExists(args, M::AppImageFileFd, &app_image_fd_);
     AssignIfExists(args, M::NoInlineFrom, &no_inline_from_string_);
     AssignIfExists(args, M::ClasspathDir, &classpath_dir_);
-    AssignIfExists(args, M::DirtyImageObjects, &dirty_image_objects_filename_);
-    AssignIfExists(args, M::DirtyImageObjectsFd, &dirty_image_objects_fd_);
+    AssignIfExists(args, M::DirtyImageObjects, &dirty_image_objects_filenames_);
+    AssignIfExists(args, M::DirtyImageObjectsFd, &dirty_image_objects_fds_);
     AssignIfExists(args, M::ImageFormat, &image_storage_mode_);
     AssignIfExists(args, M::CompilationReason, &compilation_reason_);
     AssignTrueIfExists(args, M::CheckLinkageConditions, &check_linkage_conditions_);
@@ -2523,23 +2527,26 @@ class Dex2Oat final {
   }
 
   bool PrepareDirtyObjects() {
-    if (dirty_image_objects_fd_ != -1) {
-      dirty_image_objects_ =
-          ReadCommentedInputFromFd<std::vector<std::string>>(dirty_image_objects_fd_, nullptr);
-      // Close since we won't need it again.
-      close(dirty_image_objects_fd_);
-      dirty_image_objects_fd_ = -1;
-      if (dirty_image_objects_ == nullptr) {
-        LOG(ERROR) << "Failed to create list of dirty objects from fd " << dirty_image_objects_fd_;
-        return false;
+    if (!dirty_image_objects_fds_.empty()) {
+      dirty_image_objects_ = std::make_unique<std::vector<std::string>>();
+      for (int fd : dirty_image_objects_fds_) {
+        if (!ReadCommentedInputFromFd(fd, nullptr, dirty_image_objects_.get())) {
+          LOG(ERROR) << "Failed to create list of dirty objects from fd " << fd;
+          return false;
+        }
       }
-    } else if (dirty_image_objects_filename_ != nullptr) {
-      dirty_image_objects_ = ReadCommentedInputFromFile<std::vector<std::string>>(
-          dirty_image_objects_filename_, nullptr);
-      if (dirty_image_objects_ == nullptr) {
-        LOG(ERROR) << "Failed to create list of dirty objects from '"
-            << dirty_image_objects_filename_ << "'";
-        return false;
+      // Close since we won't need it again.
+      for (int fd : dirty_image_objects_fds_) {
+        close(fd);
+      }
+      dirty_image_objects_fds_.clear();
+    } else if (!dirty_image_objects_filenames_.empty()) {
+      dirty_image_objects_ = std::make_unique<std::vector<std::string>>();
+      for (const std::string& file : dirty_image_objects_filenames_) {
+        if (!ReadCommentedInputFromFile(file.c_str(), nullptr, dirty_image_objects_.get())) {
+          LOG(ERROR) << "Failed to create list of dirty objects from '" << file << "'";
+          return false;
+        }
       }
     }
     return true;
@@ -2941,8 +2948,8 @@ class Dex2Oat final {
   uintptr_t image_base_;
   ImageHeader::StorageMode image_storage_mode_;
   const char* passes_to_run_filename_;
-  const char* dirty_image_objects_filename_;
-  int dirty_image_objects_fd_;
+  std::vector<std::string> dirty_image_objects_filenames_;
+  std::vector<int> dirty_image_objects_fds_;
   std::unique_ptr<std::vector<std::string>> dirty_image_objects_;
   std::unique_ptr<std::vector<std::string>> passes_to_run_;
   bool is_host_;

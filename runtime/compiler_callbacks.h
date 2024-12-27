@@ -25,7 +25,9 @@
 
 namespace art HIDDEN {
 
+class ClassLinker;
 class CompilerDriver;
+class InternTable;
 
 namespace mirror {
 
@@ -47,6 +49,8 @@ class CompilerCallbacks {
   };
 
   virtual ~CompilerCallbacks() { }
+
+  virtual ClassLinker* CreateAotClassLinker(InternTable* intern_table) = 0;
 
   virtual void AddUncompilableMethod(MethodReference ref) = 0;
   virtual void AddUncompilableClass(ClassReference ref) = 0;

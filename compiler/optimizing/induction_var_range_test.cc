@@ -33,10 +33,10 @@ using Value = InductionVarRange::Value;
 class InductionVarRangeTest : public OptimizingUnitTest {
  public:
   InductionVarRangeTest()
-      : graph_(CreateGraph()),
-        iva_(new (GetAllocator()) HInductionVarAnalysis(graph_)),
+      : iva_(new (GetAllocator()) HInductionVarAnalysis(BuildGraph())),
         range_(iva_) {
-    BuildGraph();
+    // Set arbitrary range analysis hint while testing private methods.
+    SetHint(x_);
   }
 
   ~InductionVarRangeTest() { }
@@ -58,65 +58,27 @@ class InductionVarRangeTest : public OptimizingUnitTest {
   //
 
   /** Constructs bare minimum graph. */
-  void BuildGraph() {
+  HGraph* BuildGraph() {
+    return_block_ = InitEntryMainExitGraphWithReturnVoid();
     graph_->SetNumberOfVRegs(1);
-    entry_block_ = new (GetAllocator()) HBasicBlock(graph_);
-    exit_block_ = new (GetAllocator()) HBasicBlock(graph_);
-    graph_->AddBlock(entry_block_);
-    graph_->AddBlock(exit_block_);
-    graph_->SetEntryBlock(entry_block_);
-    graph_->SetExitBlock(exit_block_);
     // Two parameters.
-    x_ = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                              dex::TypeIndex(0),
-                                              0,
-                                              DataType::Type::kInt32);
-    entry_block_->AddInstruction(x_);
-    y_ = new (GetAllocator()) HParameterValue(graph_->GetDexFile(),
-                                              dex::TypeIndex(0),
-                                              0,
-                                              DataType::Type::kInt32);
-    entry_block_->AddInstruction(y_);
-    // Set arbitrary range analysis hint while testing private methods.
-    SetHint(x_);
+    x_ = MakeParam(DataType::Type::kInt32);
+    y_ = MakeParam(DataType::Type::kInt32);
+    return graph_;
   }
 
   /** Constructs loop with given upper bound. */
   void BuildLoop(int32_t lower, HInstruction* upper, int32_t stride) {
     // Control flow.
-    loop_preheader_ = new (GetAllocator()) HBasicBlock(graph_);
-    graph_->AddBlock(loop_preheader_);
-    loop_header_ = new (GetAllocator()) HBasicBlock(graph_);
-    graph_->AddBlock(loop_header_);
-    loop_body_ = new (GetAllocator()) HBasicBlock(graph_);
-    graph_->AddBlock(loop_body_);
-    HBasicBlock* return_block = new (GetAllocator()) HBasicBlock(graph_);
-    graph_->AddBlock(return_block);
-    entry_block_->AddSuccessor(loop_preheader_);
-    loop_preheader_->AddSuccessor(loop_header_);
-    loop_header_->AddSuccessor(loop_body_);
-    loop_header_->AddSuccessor(return_block);
-    loop_body_->AddSuccessor(loop_header_);
-    return_block->AddSuccessor(exit_block_);
+    std::tie(loop_preheader_, loop_header_, loop_body_) = CreateWhileLoop(return_block_);
+    loop_header_->SwapSuccessors();  // Move the loop exit to the "else" successor.
     // Instructions.
-    loop_preheader_->AddInstruction(new (GetAllocator()) HGoto());
-    HPhi* phi = new (GetAllocator()) HPhi(GetAllocator(), 0, 0, DataType::Type::kInt32);
-    loop_header_->AddPhi(phi);
-    phi->AddInput(graph_->GetIntConstant(lower));  // i = l
-    if (stride > 0) {
-      condition_ = new (GetAllocator()) HLessThan(phi, upper);  // i < u
-    } else {
-      condition_ = new (GetAllocator()) HGreaterThan(phi, upper);  // i > u
-    }
-    loop_header_->AddInstruction(condition_);
-    loop_header_->AddInstruction(new (GetAllocator()) HIf(condition_));
-    increment_ =
-        new (GetAllocator()) HAdd(DataType::Type::kInt32, phi, graph_->GetIntConstant(stride));
-    loop_body_->AddInstruction(increment_);  // i += s
-    phi->AddInput(increment_);
-    loop_body_->AddInstruction(new (GetAllocator()) HGoto());
-    return_block->AddInstruction(new (GetAllocator()) HReturnVoid());
-    exit_block_->AddInstruction(new (GetAllocator()) HExit());
+    HInstruction* lower_const = graph_->GetIntConstant(lower);
+    HPhi* phi;
+    std::tie(phi, increment_) = MakeLinearLoopVar(loop_header_, loop_body_, lower, stride);
+    IfCondition cond = (stride > 0) ? kCondLT : kCondGT;
+    condition_ = MakeCondition(loop_header_, cond, phi, upper);  // i < u or i > u
+    MakeIf(loop_header_, condition_);
   }
 
   /** Constructs SSA and performs induction variable analysis. */
@@ -350,9 +312,7 @@ class InductionVarRangeTest : public OptimizingUnitTest {
   Value MaxValue(Value v1, Value v2) { return range_.MergeVal(v1, v2, false); }
 
   // General building fields.
-  HGraph* graph_;
-  HBasicBlock* entry_block_;
-  HBasicBlock* exit_block_;
+  HBasicBlock* return_block_;
   HBasicBlock* loop_preheader_;
   HBasicBlock* loop_header_;
   HBasicBlock* loop_body_;
@@ -922,14 +882,8 @@ TEST_F(InductionVarRangeTest, MaxValue) {
 
 TEST_F(InductionVarRangeTest, ArrayLengthAndHints) {
   // We pass a bogus constant for the class to avoid mocking one.
-  HInstruction* new_array = new (GetAllocator()) HNewArray(
-      /* cls= */ x_,
-      /* length= */ x_,
-      /* dex_pc= */ 0,
-      /* component_size_shift= */ 0);
-  entry_block_->AddInstruction(new_array);
-  HInstruction* array_length = new (GetAllocator()) HArrayLength(new_array, 0);
-  entry_block_->AddInstruction(array_length);
+  HInstruction* new_array = MakeNewArray(entry_block_, /* cls= */ x_, /* length= */ x_);
+  HInstruction* array_length = MakeArrayLength(entry_block_, new_array);
   // With null hint: yields extreme constants.
   const int32_t max_value = std::numeric_limits<int32_t>::max();
   SetHint(nullptr);
@@ -946,18 +900,12 @@ TEST_F(InductionVarRangeTest, ArrayLengthAndHints) {
 }
 
 TEST_F(InductionVarRangeTest, AddOrSubAndConstant) {
-  HInstruction* add = new (GetAllocator())
-      HAdd(DataType::Type::kInt32, x_, graph_->GetIntConstant(-1));
-  HInstruction* alt = new (GetAllocator())
-      HAdd(DataType::Type::kInt32, graph_->GetIntConstant(-1), x_);
-  HInstruction* sub = new (GetAllocator())
-      HSub(DataType::Type::kInt32, x_, graph_->GetIntConstant(1));
-  HInstruction* rev = new (GetAllocator())
-      HSub(DataType::Type::kInt32, graph_->GetIntConstant(1), x_);
-  entry_block_->AddInstruction(add);
-  entry_block_->AddInstruction(alt);
-  entry_block_->AddInstruction(sub);
-  entry_block_->AddInstruction(rev);
+  HInstruction* plus1 = graph_->GetIntConstant(1);
+  HInstruction* minus1 = graph_->GetIntConstant(-1);
+  HInstruction* add = MakeBinOp<HAdd>(entry_block_, DataType::Type::kInt32, x_, minus1);
+  HInstruction* alt = MakeBinOp<HAdd>(entry_block_, DataType::Type::kInt32, minus1, x_);
+  HInstruction* sub = MakeBinOp<HSub>(entry_block_, DataType::Type::kInt32, x_, plus1);
+  HInstruction* rev = MakeBinOp<HSub>(entry_block_, DataType::Type::kInt32, plus1, x_);
   ExpectEqual(Value(x_, 1, -1), GetMin(CreateFetch(add), nullptr));
   ExpectEqual(Value(x_, 1, -1), GetMax(CreateFetch(add), nullptr));
   ExpectEqual(Value(x_, 1, -1), GetMin(CreateFetch(alt), nullptr));

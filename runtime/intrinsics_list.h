@@ -38,6 +38,7 @@
 //
 // Note: adding a new intrinsic requires an art image version change,
 // as the modifiers flag for some ArtMethods will need to be changed.
+// The image version is located in runtime/oat/image.cc
 //
 // Note: j.l.Integer.valueOf says kNoThrow even though it could throw an
 // OOME. The kNoThrow should be renamed to kNoVisibleThrow, as it is ok to
@@ -179,6 +180,10 @@
   V(MathRoundDouble, kStatic, kNeedsEnvironment, kNoSideEffects, kNoThrow, "Ljava/lang/Math;", "round", "(D)J") \
   V(MathRoundFloat, kStatic, kNeedsEnvironment, kNoSideEffects, kNoThrow, "Ljava/lang/Math;", "round", "(F)I") \
   V(MathMultiplyHigh, kStatic, kNeedsEnvironment, kNoSideEffects, kNoThrow, "Ljava/lang/Math;", "multiplyHigh", "(JJ)J") \
+  V(MathSignumDouble, kStatic, kNeedsEnvironment, kNoSideEffects, kNoThrow, "Ljava/lang/Math;", "signum", "(D)D") \
+  V(MathSignumFloat, kStatic, kNeedsEnvironment, kNoSideEffects, kNoThrow, "Ljava/lang/Math;", "signum", "(F)F") \
+  V(MathCopySignDouble, kStatic, kNeedsEnvironment, kNoSideEffects, kNoThrow, "Ljava/lang/Math;", "copySign", "(DD)D") \
+  V(MathCopySignFloat, kStatic, kNeedsEnvironment, kNoSideEffects, kNoThrow, "Ljava/lang/Math;", "copySign", "(FF)F") \
   V(SystemArrayCopyByte, kStatic, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljava/lang/System;", "arraycopy", "([BI[BII)V") \
   V(SystemArrayCopyChar, kStatic, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljava/lang/System;", "arraycopy", "([CI[CII)V") \
   V(SystemArrayCopyInt, kStatic, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljava/lang/System;", "arraycopy", "([II[III)V") \
@@ -229,6 +234,7 @@
   V(StringBuilderAppendDouble, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljava/lang/StringBuilder;", "append", "(D)Ljava/lang/StringBuilder;") \
   V(StringBuilderLength, kVirtual, kNeedsEnvironment, kReadSideEffects, kNoThrow, "Ljava/lang/StringBuilder;", "length", "()I") \
   V(StringBuilderToString, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljava/lang/StringBuilder;", "toString", "()Ljava/lang/String;") \
+  V(UnsafeArrayBaseOffset, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Lsun/misc/Unsafe;", "arrayBaseOffset", "(Ljava/lang/Class;)I") \
   V(UnsafeCASInt, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Lsun/misc/Unsafe;", "compareAndSwapInt", "(Ljava/lang/Object;JII)Z") \
   V(UnsafeCASLong, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Lsun/misc/Unsafe;", "compareAndSwapLong", "(Ljava/lang/Object;JJJ)Z") \
   V(UnsafeCASObject, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Lsun/misc/Unsafe;", "compareAndSwapObject", "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z") \
@@ -254,6 +260,7 @@
   V(UnsafeGetAndSetInt, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Lsun/misc/Unsafe;", "getAndSetInt", "(Ljava/lang/Object;JI)I") \
   V(UnsafeGetAndSetLong, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Lsun/misc/Unsafe;", "getAndSetLong", "(Ljava/lang/Object;JJ)J") \
   V(UnsafeGetAndSetObject, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Lsun/misc/Unsafe;", "getAndSetObject", "(Ljava/lang/Object;JLjava/lang/Object;)Ljava/lang/Object;") \
+  V(JdkUnsafeArrayBaseOffset, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljdk/internal/misc/Unsafe;", "arrayBaseOffset", "(Ljava/lang/Class;)I") \
   V(JdkUnsafeCASInt, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljdk/internal/misc/Unsafe;", "compareAndSwapInt", "(Ljava/lang/Object;JII)Z") \
   V(JdkUnsafeCASLong, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljdk/internal/misc/Unsafe;", "compareAndSwapLong", "(Ljava/lang/Object;JJJ)Z") \
   V(JdkUnsafeCASObject, kVirtual, kNeedsEnvironment, kAllSideEffects, kCanThrow, "Ljdk/internal/misc/Unsafe;", "compareAndSwapObject", "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z") \

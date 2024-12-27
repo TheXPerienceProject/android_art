@@ -577,7 +577,7 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
 
         when(mArtd.dexopt(any(), eq(mDexPath), any(), any(), any(), any(), any(), any(), anyInt(),
                      any(), any()))
-                .thenThrow(ServiceSpecificException.class);
+                .thenThrow(new ServiceSpecificException(42, "This is an error message"));
 
         mPrimaryDexopter.dexopt();
 

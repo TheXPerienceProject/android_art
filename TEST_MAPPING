@@ -32,6 +32,9 @@
       "name": "art-run-test-011-array-copy"
     },
     {
+      "name": "art-run-test-011-array-copy2"
+    },
+    {
       "name": "art-run-test-012-math"
     },
     {
@@ -452,6 +455,9 @@
       "name": "art-run-test-2244-checker-remove-try-boundary"
     },
     {
+      "name": "art-run-test-2247-checker-write-barrier-elimination"
+    },
+    {
       "name": "art-run-test-2249-checker-return-try-boundary-exit-in-loop"
     },
     {
@@ -500,7 +506,28 @@
       "name": "art-run-test-2268-checker-remove-dead-phis"
     },
     {
-      "name": "art-run-test-2269-checker-constant-folding-instrinsics"
+      "name": "art-run-test-2269-checker-constant-folding-intrinsics"
+    },
+    {
+      "name": "art-run-test-2273-checker-unreachable-intrinsics"
+    },
+    {
+      "name": "art-run-test-2274-checker-bitwise-gvn"
+    },
+    {
+      "name": "art-run-test-2275-checker-empty-loops"
+    },
+    {
+      "name": "art-run-test-2275-integral-unsigned-arithmetic"
+    },
+    {
+      "name": "art-run-test-2278-nested-loops"
+    },
+    {
+      "name": "art-run-test-2279-aconfig-flags"
+    },
+    {
+      "name": "art-run-test-2279-second-inner-loop-references-first"
     },
     {
       "name": "art-run-test-300-package-override"
@@ -669,6 +696,9 @@
     },
     {
       "name": "art-run-test-456-baseline-array-set"
+    },
+    {
+      "name": "art-run-test-458-checker-riscv64-shift-add"
     },
     {
       "name": "art-run-test-458-long-to-fpu"
@@ -1343,6 +1373,12 @@
       "name": "art-run-test-853-checker-inlining"
     },
     {
+      "name": "art-run-test-856-clone"
+    },
+    {
+      "name": "art-run-test-857-default-access"
+    },
+    {
       "name": "art-run-test-963-default-range-smali"
     },
     {
@@ -1376,6 +1412,9 @@
     },
     {
       "name": "art_standalone_dexlist_tests"
+    },
+    {
+      "name": "art_standalone_dexopt_chroot_setup_tests"
     },
     {
       "name": "art_standalone_dexoptanalyzer_tests"
@@ -1422,6 +1461,9 @@
       "name": "art_standalone_sigchain_tests"
     },
     {
+      "name": "libnativebridge-tests"
+    },
+    {
       "name": "libnativeloader_e2e_tests"
     },
     {
@@ -1458,6 +1500,9 @@
     },
     {
       "name": "art-run-test-011-array-copy[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-011-array-copy2[com.google.android.art.apex]"
     },
     {
       "name": "art-run-test-012-math[com.google.android.art.apex]"
@@ -1880,6 +1925,9 @@
       "name": "art-run-test-2244-checker-remove-try-boundary[com.google.android.art.apex]"
     },
     {
+      "name": "art-run-test-2247-checker-write-barrier-elimination[com.google.android.art.apex]"
+    },
+    {
       "name": "art-run-test-2249-checker-return-try-boundary-exit-in-loop[com.google.android.art.apex]"
     },
     {
@@ -1928,7 +1976,28 @@
       "name": "art-run-test-2268-checker-remove-dead-phis[com.google.android.art.apex]"
     },
     {
-      "name": "art-run-test-2269-checker-constant-folding-instrinsics[com.google.android.art.apex]"
+      "name": "art-run-test-2269-checker-constant-folding-intrinsics[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2273-checker-unreachable-intrinsics[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2274-checker-bitwise-gvn[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2275-checker-empty-loops[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2275-integral-unsigned-arithmetic[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2278-nested-loops[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2279-aconfig-flags[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2279-second-inner-loop-references-first[com.google.android.art.apex]"
     },
     {
       "name": "art-run-test-300-package-override[com.google.android.art.apex]"
@@ -2097,6 +2166,9 @@
     },
     {
       "name": "art-run-test-456-baseline-array-set[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-458-checker-riscv64-shift-add[com.google.android.art.apex]"
     },
     {
       "name": "art-run-test-458-long-to-fpu[com.google.android.art.apex]"
@@ -2771,6 +2843,12 @@
       "name": "art-run-test-853-checker-inlining[com.google.android.art.apex]"
     },
     {
+      "name": "art-run-test-856-clone[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-857-default-access[com.google.android.art.apex]"
+    },
+    {
       "name": "art-run-test-963-default-range-smali[com.google.android.art.apex]"
     },
     {
@@ -2804,6 +2882,9 @@
     },
     {
       "name": "art_standalone_dexlist_tests[com.google.android.art.apex]"
+    },
+    {
+      "name": "art_standalone_dexopt_chroot_setup_tests[com.google.android.art.apex]"
     },
     {
       "name": "art_standalone_dexoptanalyzer_tests[com.google.android.art.apex]"
@@ -2904,6 +2985,9 @@
     },
     {
       "name": "art-run-test-011-array-copy"
+    },
+    {
+      "name": "art-run-test-011-array-copy2"
     },
     {
       "name": "art-run-test-012-math"
@@ -3326,6 +3410,9 @@
       "name": "art-run-test-2244-checker-remove-try-boundary"
     },
     {
+      "name": "art-run-test-2247-checker-write-barrier-elimination"
+    },
+    {
       "name": "art-run-test-2249-checker-return-try-boundary-exit-in-loop"
     },
     {
@@ -3374,7 +3461,28 @@
       "name": "art-run-test-2268-checker-remove-dead-phis"
     },
     {
-      "name": "art-run-test-2269-checker-constant-folding-instrinsics"
+      "name": "art-run-test-2269-checker-constant-folding-intrinsics"
+    },
+    {
+      "name": "art-run-test-2273-checker-unreachable-intrinsics"
+    },
+    {
+      "name": "art-run-test-2274-checker-bitwise-gvn"
+    },
+    {
+      "name": "art-run-test-2275-checker-empty-loops"
+    },
+    {
+      "name": "art-run-test-2275-integral-unsigned-arithmetic"
+    },
+    {
+      "name": "art-run-test-2278-nested-loops"
+    },
+    {
+      "name": "art-run-test-2279-aconfig-flags"
+    },
+    {
+      "name": "art-run-test-2279-second-inner-loop-references-first"
     },
     {
       "name": "art-run-test-300-package-override"
@@ -3543,6 +3651,9 @@
     },
     {
       "name": "art-run-test-456-baseline-array-set"
+    },
+    {
+      "name": "art-run-test-458-checker-riscv64-shift-add"
     },
     {
       "name": "art-run-test-458-long-to-fpu"
@@ -4215,6 +4326,12 @@
     },
     {
       "name": "art-run-test-853-checker-inlining"
+    },
+    {
+      "name": "art-run-test-856-clone"
+    },
+    {
+      "name": "art-run-test-857-default-access"
     },
     {
       "name": "art-run-test-963-default-range-smali"
@@ -4342,6 +4459,9 @@
       "name": "art-run-test-011-array-copy"
     },
     {
+      "name": "art-run-test-011-array-copy2"
+    },
+    {
       "name": "art-run-test-012-math"
     },
     {
@@ -4762,6 +4882,9 @@
       "name": "art-run-test-2244-checker-remove-try-boundary"
     },
     {
+      "name": "art-run-test-2247-checker-write-barrier-elimination"
+    },
+    {
       "name": "art-run-test-2249-checker-return-try-boundary-exit-in-loop"
     },
     {
@@ -4810,7 +4933,28 @@
       "name": "art-run-test-2268-checker-remove-dead-phis"
     },
     {
-      "name": "art-run-test-2269-checker-constant-folding-instrinsics"
+      "name": "art-run-test-2269-checker-constant-folding-intrinsics"
+    },
+    {
+      "name": "art-run-test-2273-checker-unreachable-intrinsics"
+    },
+    {
+      "name": "art-run-test-2274-checker-bitwise-gvn"
+    },
+    {
+      "name": "art-run-test-2275-checker-empty-loops"
+    },
+    {
+      "name": "art-run-test-2275-integral-unsigned-arithmetic"
+    },
+    {
+      "name": "art-run-test-2278-nested-loops"
+    },
+    {
+      "name": "art-run-test-2279-aconfig-flags"
+    },
+    {
+      "name": "art-run-test-2279-second-inner-loop-references-first"
     },
     {
       "name": "art-run-test-300-package-override"
@@ -4979,6 +5123,9 @@
     },
     {
       "name": "art-run-test-456-baseline-array-set"
+    },
+    {
+      "name": "art-run-test-458-checker-riscv64-shift-add"
     },
     {
       "name": "art-run-test-458-long-to-fpu"
@@ -5653,6 +5800,12 @@
       "name": "art-run-test-853-checker-inlining"
     },
     {
+      "name": "art-run-test-856-clone"
+    },
+    {
+      "name": "art-run-test-857-default-access"
+    },
+    {
       "name": "art-run-test-963-default-range-smali"
     },
     {
@@ -5738,10 +5891,10 @@
   ],
   "postsubmit": [
     {
-      "name": "art-run-test-2247-checker-write-barrier-elimination"
+      "name": "art-run-test-057-math-intrinsics"
     },
     {
-      "name": "art-run-test-2273-checker-unreachable-intrinsics"
+      "name": "art_standalone_dex2oat_cts_tests"
     }
   ]
 }

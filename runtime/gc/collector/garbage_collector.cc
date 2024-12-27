@@ -300,6 +300,96 @@ void GarbageCollector::SwapBitmaps() {
   }
 }
 
+void GarbageCollector::SweepArray(accounting::ObjectStack* allocations,
+                                  bool swap_bitmaps,
+                                  std::vector<space::ContinuousSpace*>* sweep_spaces) {
+  Thread* self = Thread::Current();
+  static constexpr size_t kSweepArrayChunkFreeSize = 1024;
+  mirror::Object** chunk_free_buffer = new mirror::Object*[kSweepArrayChunkFreeSize];
+  size_t chunk_free_pos = 0;
+  ObjectBytePair freed;
+  ObjectBytePair freed_los;
+  // How many objects are left in the array, modified after each space is swept.
+  StackReference<mirror::Object>* objects = allocations->Begin();
+  size_t count = allocations->Size();
+  // Start by sweeping the continuous spaces.
+  for (space::ContinuousSpace* space : *sweep_spaces) {
+    space::AllocSpace* alloc_space = space->AsAllocSpace();
+    accounting::ContinuousSpaceBitmap* live_bitmap = space->GetLiveBitmap();
+    accounting::ContinuousSpaceBitmap* mark_bitmap = space->GetMarkBitmap();
+    if (swap_bitmaps) {
+      std::swap(live_bitmap, mark_bitmap);
+    }
+    StackReference<mirror::Object>* out = objects;
+    for (size_t i = 0; i < count; ++i) {
+      mirror::Object* const obj = objects[i].AsMirrorPtr();
+      if (kUseThreadLocalAllocationStack && obj == nullptr) {
+        continue;
+      }
+      if (space->HasAddress(obj)) {
+        // This object is in the space, remove it from the array and add it to the sweep buffer
+        // if needed.
+        if (!mark_bitmap->Test(obj)) {
+          // Handle the case where buffer allocation failed.
+          if (LIKELY(chunk_free_buffer != nullptr)) {
+            if (chunk_free_pos >= kSweepArrayChunkFreeSize) {
+              TimingLogger::ScopedTiming t2("FreeList", GetTimings());
+              freed.objects += chunk_free_pos;
+              freed.bytes += alloc_space->FreeList(self, chunk_free_pos, chunk_free_buffer);
+              chunk_free_pos = 0;
+            }
+            chunk_free_buffer[chunk_free_pos++] = obj;
+          } else {
+            freed.objects++;
+            freed.bytes += alloc_space->Free(self, obj);
+          }
+        }
+      } else {
+        (out++)->Assign(obj);
+      }
+    }
+    if (chunk_free_pos > 0) {
+      TimingLogger::ScopedTiming t2("FreeList", GetTimings());
+      freed.objects += chunk_free_pos;
+      freed.bytes += alloc_space->FreeList(self, chunk_free_pos, chunk_free_buffer);
+      chunk_free_pos = 0;
+    }
+    // All of the references which space contained are no longer in the allocation stack, update
+    // the count.
+    count = out - objects;
+  }
+  if (chunk_free_buffer != nullptr) {
+    delete[] chunk_free_buffer;
+  }
+  // Handle the large object space.
+  space::LargeObjectSpace* large_object_space = GetHeap()->GetLargeObjectsSpace();
+  if (large_object_space != nullptr) {
+    accounting::LargeObjectBitmap* large_live_objects = large_object_space->GetLiveBitmap();
+    accounting::LargeObjectBitmap* large_mark_objects = large_object_space->GetMarkBitmap();
+    if (swap_bitmaps) {
+      std::swap(large_live_objects, large_mark_objects);
+    }
+    for (size_t i = 0; i < count; ++i) {
+      mirror::Object* const obj = objects[i].AsMirrorPtr();
+      // Handle large objects.
+      if (kUseThreadLocalAllocationStack && obj == nullptr) {
+        continue;
+      }
+      if (!large_mark_objects->Test(obj)) {
+        ++freed_los.objects;
+        freed_los.bytes += large_object_space->Free(self, obj);
+      }
+    }
+  }
+  {
+    TimingLogger::ScopedTiming t2("RecordFree", GetTimings());
+    RecordFree(freed);
+    RecordFreeLOS(freed_los);
+    t2.NewTiming("ResetStack");
+    allocations->Reset();
+  }
+}
+
 uint64_t GarbageCollector::GetEstimatedMeanThroughput() const {
   // Add 1ms to prevent possible division by 0.
   return (total_freed_bytes_ * 1000) / (NsToMs(GetCumulativeTimings().GetTotalNs()) + 1);
@@ -353,6 +443,13 @@ const Iteration* GarbageCollector::GetCurrentIteration() const {
 }
 
 bool GarbageCollector::ShouldEagerlyReleaseMemoryToOS() const {
+  // We have seen old kernels and custom kernel features misbehave in the
+  // presence of too much usage of MADV_FREE. So always release memory eagerly
+  // while we investigate.
+  static constexpr bool kEnableLazyRelease = false;
+  if (!kEnableLazyRelease) {
+    return true;
+  }
   Runtime* runtime = Runtime::Current();
   // Zygote isn't a memory heavy process, we should always instantly release memory to the OS.
   if (runtime->IsZygote()) {

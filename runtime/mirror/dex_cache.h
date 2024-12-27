@@ -505,7 +505,7 @@ class MANAGED DexCache final : public Object {
                     kDexCacheFieldCacheSize,
                     LinearAllocKind::kNoGCRoots,
                     NativeArray<ArtField>,
-                    ArtField,
+                    ArtField*,
                     NumFieldIds,
                     LinearAllocKind::kNoGCRoots)
 
@@ -527,7 +527,7 @@ class MANAGED DexCache final : public Object {
                     kDexCacheMethodCacheSize,
                     LinearAllocKind::kNoGCRoots,
                     NativeArray<ArtMethod>,
-                    ArtMethod,
+                    ArtMethod*,
                     NumMethodIds,
                     LinearAllocKind::kNoGCRoots)
 

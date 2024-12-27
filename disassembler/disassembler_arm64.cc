@@ -60,6 +60,17 @@ void CustomDisassembler::AppendRegisterNameToOutput(const Instruction* instr,
   Disassembler::AppendRegisterNameToOutput(instr, reg);
 }
 
+void CustomDisassembler::AppendCodeRelativeAddressToOutput(const Instruction* instr,
+                                                           const void* addr) {
+  USE(instr);
+  int64_t rel_addr = CodeRelativeAddress(addr);
+  if (rel_addr >= 0) {
+    AppendToOutput("(addr 0x%08" PRIx64 ")", rel_addr);
+  } else {
+    AppendToOutput("(addr -0x%08" PRIx64 ")", -rel_addr);
+  }
+}
+
 void CustomDisassembler::Visit(vixl::aarch64::Metadata* metadata, const Instruction* instr) {
   vixl::aarch64::Disassembler::Visit(metadata, instr);
   const std::string& form = (*metadata)["form"];

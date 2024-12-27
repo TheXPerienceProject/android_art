@@ -67,11 +67,6 @@ extern "C" bool native_bridge6_isPathSupported(const char* /* path */) {
   return true;
 }
 
-extern "C" bool native_bridge6_initAnonymousNamespace(const char* /* public_ns_sonames */,
-                                                      const char* /* anon_ns_library_path */) {
-  return true;
-}
-
 extern "C" android::native_bridge_namespace_t*
 native_bridge6_createNamespace(const char* /* name */,
                                const char* /* ld_library_path */,
@@ -121,7 +116,7 @@ android::NativeBridgeCallbacks NativeBridgeItf{
     .unloadLibrary = &native_bridge6_unloadLibrary,
     .getError = &native_bridge6_getError,
     .isPathSupported = &native_bridge6_isPathSupported,
-    .initAnonymousNamespace = &native_bridge6_initAnonymousNamespace,
+    .unused_initAnonymousNamespace = nullptr,
     .createNamespace = &native_bridge6_createNamespace,
     .linkNamespaces = &native_bridge6_linkNamespaces,
     .loadLibraryExt = &native_bridge6_loadLibraryExt,
@@ -130,4 +125,5 @@ android::NativeBridgeCallbacks NativeBridgeItf{
     // v5
     &native_bridge6_getExportedNamespace,
     // v6
-    &native_bridge6_preZygoteFork};
+    &native_bridge6_preZygoteFork,
+};

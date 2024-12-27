@@ -261,6 +261,9 @@ template void Split(const std::string_view& s,
 template void Split(const std::string_view& s,
                     char separator,
                     std::vector<std::string>* out_result);
+template void Split(const std::string& s,
+                    char separator,
+                    std::vector<std::string_view>* out_result);
 
 template <typename Str>
 void Split(const Str& s, char separator, size_t len, Str* out_result) {
@@ -283,7 +286,7 @@ template void Split(const std::string_view& s,
                     size_t len,
                     std::string_view* out_result);
 
-void SetThreadName(const char* thread_name) {
+void SetThreadName(pthread_t thr, const char* thread_name) {
   bool hasAt = false;
   bool hasDot = false;
   const char* s = thread_name;
@@ -306,14 +309,20 @@ void SetThreadName(const char* thread_name) {
   char buf[16];       // MAX_TASK_COMM_LEN=16 is hard-coded in the kernel.
   strncpy(buf, s, sizeof(buf)-1);
   buf[sizeof(buf)-1] = '\0';
-  errno = pthread_setname_np(pthread_self(), buf);
+  errno = pthread_setname_np(thr, buf);
   if (errno != 0) {
     PLOG(WARNING) << "Unable to set the name of current thread to '" << buf << "'";
   }
 #else  // __APPLE__
-  pthread_setname_np(thread_name);
+  if (pthread_equal(thr, pthread_self())) {
+    pthread_setname_np(thread_name);
+  } else {
+    PLOG(WARNING) << "Unable to set the name of another thread to '" << thread_name << "'";
+  }
 #endif
 }
+
+void SetThreadName(const char* thread_name) { SetThreadName(pthread_self(), thread_name); }
 
 void GetTaskStats(pid_t tid, char* state, int* utime, int* stime, int* task_cpu) {
   *utime = *stime = *task_cpu = 0;
@@ -368,9 +377,11 @@ std::string GetProcessStatus(const char* key) {
 
 size_t GetOsThreadStat(pid_t tid, char* buf, size_t len) {
 #if defined(__linux__)
-  static constexpr int NAME_BUF_SIZE = 50;
+  static constexpr int NAME_BUF_SIZE = 60;
   char file_name_buf[NAME_BUF_SIZE];
-  snprintf(file_name_buf, NAME_BUF_SIZE, "/proc/%d/stat", tid);
+  // We don't use just /proc/<pid>/stat since, in spite of some documentation to the contrary,
+  // those report utime and stime values for the whole process, not just the thread.
+  snprintf(file_name_buf, NAME_BUF_SIZE, "/proc/%d/task/%d/stat", getpid(), tid);
   int stat_fd = open(file_name_buf, O_RDONLY | O_CLOEXEC);
   if (stat_fd >= 0) {
     ssize_t bytes_read = TEMP_FAILURE_RETRY(read(stat_fd, buf, len));
@@ -389,7 +400,7 @@ size_t GetOsThreadStat(pid_t tid, char* buf, size_t len) {
 }
 
 std::string GetOsThreadStatQuick(pid_t tid) {
-  static constexpr int BUF_SIZE = 90;
+  static constexpr int BUF_SIZE = 100;
   char buf[BUF_SIZE];
 #if defined(__linux__)
   if (GetOsThreadStat(tid, buf, BUF_SIZE) == 0) {

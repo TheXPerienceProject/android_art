@@ -49,6 +49,7 @@
         <option name="push" value="art-gtest-jars-StaticLeafMethods.jar->/data/local/tmp/art_standalone_dex2oat_tests/art-gtest-jars-StaticLeafMethods.jar" />
         <option name="push" value="art-gtest-jars-Statics.jar->/data/local/tmp/art_standalone_dex2oat_tests/art-gtest-jars-Statics.jar" />
         <option name="push" value="art-gtest-jars-StringLiterals.jar->/data/local/tmp/art_standalone_dex2oat_tests/art-gtest-jars-StringLiterals.jar" />
+        <option name="push" value="art-gtest-jars-Transaction.jar->/data/local/tmp/art_standalone_dex2oat_tests/art-gtest-jars-Transaction.jar" />
         <option name="push" value="art-gtest-jars-VerifierDeps.dex->/data/local/tmp/art_standalone_dex2oat_tests/art-gtest-jars-VerifierDeps.dex" />
         <option name="push" value="art-gtest-jars-VerifierDepsMulti.dex->/data/local/tmp/art_standalone_dex2oat_tests/art-gtest-jars-VerifierDepsMulti.dex" />
         <option name="push" value="art-gtest-jars-VerifySoftFailDuringClinit.dex->/data/local/tmp/art_standalone_dex2oat_tests/art-gtest-jars-VerifySoftFailDuringClinit.dex" />

@@ -92,7 +92,6 @@ NO_RETURN void InstructionSetAbort(InstructionSet isa);
 constexpr PointerSize GetInstructionSetPointerSize(InstructionSet isa) {
   switch (isa) {
     case InstructionSet::kArm:
-      // Fall-through.
     case InstructionSet::kThumb2:
       return kArmPointerSize;
     case InstructionSet::kArm64:
@@ -103,11 +102,9 @@ constexpr PointerSize GetInstructionSetPointerSize(InstructionSet isa) {
       return kX86PointerSize;
     case InstructionSet::kX86_64:
       return kX86_64PointerSize;
-
     case InstructionSet::kNone:
-      break;
+      InstructionSetAbort(isa);
   }
-  InstructionSetAbort(isa);
 }
 
 constexpr bool IsValidInstructionSet(InstructionSet isa) {
@@ -119,17 +116,14 @@ constexpr bool IsValidInstructionSet(InstructionSet isa) {
     case InstructionSet::kX86:
     case InstructionSet::kX86_64:
       return true;
-
     case InstructionSet::kNone:
       return false;
   }
-  return false;
 }
 
 constexpr size_t GetInstructionSetInstructionAlignment(InstructionSet isa) {
   switch (isa) {
     case InstructionSet::kArm:
-      // Fall-through.
     case InstructionSet::kThumb2:
       return kThumb2InstructionAlignment;
     case InstructionSet::kArm64:
@@ -140,17 +134,14 @@ constexpr size_t GetInstructionSetInstructionAlignment(InstructionSet isa) {
       return kX86InstructionAlignment;
     case InstructionSet::kX86_64:
       return kX86_64InstructionAlignment;
-
     case InstructionSet::kNone:
-      break;
+      InstructionSetAbort(isa);
   }
-  InstructionSetAbort(isa);
 }
 
 constexpr size_t GetInstructionSetCodeAlignment(InstructionSet isa) {
   switch (isa) {
     case InstructionSet::kArm:
-      // Fall-through.
     case InstructionSet::kThumb2:
       return kArmCodeAlignment;
     case InstructionSet::kArm64:
@@ -158,14 +149,11 @@ constexpr size_t GetInstructionSetCodeAlignment(InstructionSet isa) {
     case InstructionSet::kRiscv64:
       return kRiscv64CodeAlignment;
     case InstructionSet::kX86:
-      // Fall-through.
     case InstructionSet::kX86_64:
       return kX86CodeAlignment;
-
     case InstructionSet::kNone:
-      break;
+      InstructionSetAbort(isa);
   }
-  InstructionSetAbort(isa);
 }
 
 // Returns the difference between the code address and a usable PC.
@@ -178,15 +166,12 @@ constexpr size_t GetInstructionSetEntryPointAdjustment(InstructionSet isa) {
     case InstructionSet::kX86:
     case InstructionSet::kX86_64:
       return 0;
-    case InstructionSet::kThumb2: {
+    case InstructionSet::kThumb2:
       // +1 to set the low-order bit so a BLX will switch to Thumb mode
       return 1;
-    }
-
     case InstructionSet::kNone:
-      break;
+      InstructionSetAbort(isa);
   }
-  InstructionSetAbort(isa);
 }
 
 constexpr bool Is64BitInstructionSet(InstructionSet isa) {
@@ -195,16 +180,13 @@ constexpr bool Is64BitInstructionSet(InstructionSet isa) {
     case InstructionSet::kThumb2:
     case InstructionSet::kX86:
       return false;
-
     case InstructionSet::kArm64:
     case InstructionSet::kRiscv64:
     case InstructionSet::kX86_64:
       return true;
-
     case InstructionSet::kNone:
-      break;
+      InstructionSetAbort(isa);
   }
-  InstructionSetAbort(isa);
 }
 
 constexpr PointerSize InstructionSetPointerSize(InstructionSet isa) {
@@ -214,43 +196,31 @@ constexpr PointerSize InstructionSetPointerSize(InstructionSet isa) {
 constexpr size_t GetBytesPerGprSpillLocation(InstructionSet isa) {
   switch (isa) {
     case InstructionSet::kArm:
-      // Fall-through.
     case InstructionSet::kThumb2:
-      return 4;
-    case InstructionSet::kArm64:
-      return 8;
-    case InstructionSet::kRiscv64:
-      return 8;
     case InstructionSet::kX86:
       return 4;
+    case InstructionSet::kArm64:
+    case InstructionSet::kRiscv64:
     case InstructionSet::kX86_64:
       return 8;
-
     case InstructionSet::kNone:
-      break;
+      InstructionSetAbort(isa);
   }
-  InstructionSetAbort(isa);
 }
 
 constexpr size_t GetBytesPerFprSpillLocation(InstructionSet isa) {
   switch (isa) {
     case InstructionSet::kArm:
-      // Fall-through.
     case InstructionSet::kThumb2:
       return 4;
     case InstructionSet::kArm64:
-      return 8;
     case InstructionSet::kRiscv64:
-      return 8;
     case InstructionSet::kX86:
-      return 8;
     case InstructionSet::kX86_64:
       return 8;
-
     case InstructionSet::kNone:
-      break;
+      InstructionSetAbort(isa);
   }
-  InstructionSetAbort(isa);
 }
 
 // Returns the instruction sets supported by the device, or an empty list on failure.
@@ -297,7 +267,6 @@ constexpr size_t GetStackOverflowReservedBytes(InstructionSet isa) {
       instruction_set_details::GetStackOverflowReservedBytesFailure(
           "kNone has no stack overflow size");
   }
-  instruction_set_details::GetStackOverflowReservedBytesFailure("Unknown instruction set");
 }
 
 // The following definitions create return types for two word-sized entities that will be passed

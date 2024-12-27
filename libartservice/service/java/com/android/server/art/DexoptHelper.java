@@ -29,7 +29,6 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.CancellationSignal;
 import android.os.RemoteException;
-import android.os.WorkSource;
 
 import androidx.annotation.RequiresApi;
 
@@ -54,7 +53,6 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -71,8 +69,9 @@ import java.util.stream.Collectors;
 public class DexoptHelper {
     @NonNull private final Injector mInjector;
 
-    public DexoptHelper(@NonNull Context context, @NonNull Config config) {
-        this(new Injector(context, config));
+    public DexoptHelper(
+            @NonNull Context context, @NonNull Config config, @NonNull Executor reporterExecutor) {
+        this(new Injector(context, config, reporterExecutor));
     }
 
     @VisibleForTesting
@@ -239,7 +238,8 @@ public class DexoptHelper {
                                 .dexopt());
             }
 
-            if ((params.getFlags() & ArtFlags.FLAG_FOR_SECONDARY_DEX) != 0) {
+            if (((params.getFlags() & ArtFlags.FLAG_FOR_SECONDARY_DEX) != 0)
+                    && pkgState.getAppId() > 0) {
                 if (cancellationSignal.isCanceled()) {
                     return createResult.apply(DexoptResult.DEXOPT_CANCELLED);
                 }
@@ -323,10 +323,13 @@ public class DexoptHelper {
     public static class Injector {
         @NonNull private final Context mContext;
         @NonNull private final Config mConfig;
+        @NonNull private final Executor mReporterExecutor;
 
-        Injector(@NonNull Context context, @NonNull Config config) {
+        Injector(@NonNull Context context, @NonNull Config config,
+                @NonNull Executor reporterExecutor) {
             mContext = context;
             mConfig = config;
+            mReporterExecutor = reporterExecutor;
 
             // Call the getters for the dependencies that aren't optional, to ensure correct
             // initialization order.
@@ -337,16 +340,16 @@ public class DexoptHelper {
         PrimaryDexopter getPrimaryDexopter(@NonNull PackageState pkgState,
                 @NonNull AndroidPackage pkg, @NonNull DexoptParams params,
                 @NonNull CancellationSignal cancellationSignal) {
-            return new PrimaryDexopter(
-                    mContext, mConfig, pkgState, pkg, params, cancellationSignal);
+            return new PrimaryDexopter(mContext, mConfig, mReporterExecutor, pkgState, pkg, params,
+                    cancellationSignal);
         }
 
         @NonNull
         SecondaryDexopter getSecondaryDexopter(@NonNull PackageState pkgState,
                 @NonNull AndroidPackage pkg, @NonNull DexoptParams params,
                 @NonNull CancellationSignal cancellationSignal) {
-            return new SecondaryDexopter(
-                    mContext, mConfig, pkgState, pkg, params, cancellationSignal);
+            return new SecondaryDexopter(mContext, mConfig, mReporterExecutor, pkgState, pkg,
+                    params, cancellationSignal);
         }
 
         @NonNull

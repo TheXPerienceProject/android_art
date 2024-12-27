@@ -28,80 +28,28 @@ namespace art HIDDEN {
 class GVNTest : public OptimizingUnitTest {};
 
 TEST_F(GVNTest, LocalFieldElimination) {
-  HGraph* graph = CreateGraph();
-  HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(entry);
-  graph->SetEntryBlock(entry);
-  HInstruction* parameter = new (GetAllocator()) HParameterValue(graph->GetDexFile(),
-                                                                 dex::TypeIndex(0),
-                                                                 0,
-                                                                 DataType::Type::kReference);
-  entry->AddInstruction(parameter);
+  HBasicBlock* block = InitEntryMainExitGraphWithReturnVoid();
 
-  HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(block);
-  entry->AddSuccessor(block);
+  HInstruction* parameter = MakeParam(DataType::Type::kReference);
 
-  block->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                               nullptr,
-                                                               DataType::Type::kReference,
-                                                               MemberOffset(42),
-                                                               false,
-                                                               kUnknownFieldIndex,
-                                                               kUnknownClassDefIndex,
-                                                               graph->GetDexFile(),
-                                                               0));
-  block->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                               nullptr,
-                                                               DataType::Type::kReference,
-                                                               MemberOffset(42),
-                                                               false,
-                                                               kUnknownFieldIndex,
-                                                               kUnknownClassDefIndex,
-                                                               graph->GetDexFile(),
-                                                               0));
-  HInstruction* to_remove = block->GetLastInstruction();
-  block->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                               nullptr,
-                                                               DataType::Type::kReference,
-                                                               MemberOffset(43),
-                                                               false,
-                                                               kUnknownFieldIndex,
-                                                               kUnknownClassDefIndex,
-                                                               graph->GetDexFile(),
-                                                               0));
-  HInstruction* different_offset = block->GetLastInstruction();
+  MakeIFieldGet(block, parameter, DataType::Type::kReference, MemberOffset(42));
+  HInstruction* to_remove =
+      MakeIFieldGet(block, parameter, DataType::Type::kReference, MemberOffset(42));
+  HInstruction* different_offset =
+      MakeIFieldGet(block, parameter, DataType::Type::kReference, MemberOffset(43));
   // Kill the value.
-  block->AddInstruction(new (GetAllocator()) HInstanceFieldSet(parameter,
-                                                               parameter,
-                                                               nullptr,
-                                                               DataType::Type::kReference,
-                                                               MemberOffset(42),
-                                                               false,
-                                                               kUnknownFieldIndex,
-                                                               kUnknownClassDefIndex,
-                                                               graph->GetDexFile(),
-                                                               0));
-  block->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                               nullptr,
-                                                               DataType::Type::kReference,
-                                                               MemberOffset(42),
-                                                               false,
-                                                               kUnknownFieldIndex,
-                                                               kUnknownClassDefIndex,
-                                                               graph->GetDexFile(),
-                                                               0));
-  HInstruction* use_after_kill = block->GetLastInstruction();
-  block->AddInstruction(new (GetAllocator()) HExit());
+  MakeIFieldSet(block, parameter, parameter, MemberOffset(42));
+  HInstruction* use_after_kill =
+      MakeIFieldGet(block, parameter, DataType::Type::kReference, MemberOffset(42));
 
   ASSERT_EQ(to_remove->GetBlock(), block);
   ASSERT_EQ(different_offset->GetBlock(), block);
   ASSERT_EQ(use_after_kill->GetBlock(), block);
 
-  graph->BuildDominatorTree();
-  SideEffectsAnalysis side_effects(graph);
+  graph_->BuildDominatorTree();
+  SideEffectsAnalysis side_effects(graph_);
   side_effects.Run();
-  GVNOptimization(graph, side_effects).Run();
+  GVNOptimization(graph_, side_effects).Run();
 
   ASSERT_TRUE(to_remove->GetBlock() == nullptr);
   ASSERT_EQ(different_offset->GetBlock(), block);
@@ -109,250 +57,101 @@ TEST_F(GVNTest, LocalFieldElimination) {
 }
 
 TEST_F(GVNTest, GlobalFieldElimination) {
-  HGraph* graph = CreateGraph();
-  HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(entry);
-  graph->SetEntryBlock(entry);
-  HInstruction* parameter = new (GetAllocator()) HParameterValue(graph->GetDexFile(),
-                                                                 dex::TypeIndex(0),
-                                                                 0,
-                                                                 DataType::Type::kReference);
-  entry->AddInstruction(parameter);
+  HBasicBlock* join = InitEntryMainExitGraphWithReturnVoid();
+  auto [block, then, else_] = CreateDiamondPattern(join);
 
-  HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(block);
-  entry->AddSuccessor(block);
-  block->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                               nullptr,
-                                                               DataType::Type::kBool,
-                                                               MemberOffset(42),
-                                                               false,
-                                                               kUnknownFieldIndex,
-                                                               kUnknownClassDefIndex,
-                                                               graph->GetDexFile(),
-                                                               0));
+  HInstruction* parameter = MakeParam(DataType::Type::kReference);
 
-  block->AddInstruction(new (GetAllocator()) HIf(block->GetLastInstruction()));
-  HBasicBlock* then = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* else_ = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* join = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(then);
-  graph->AddBlock(else_);
-  graph->AddBlock(join);
+  HInstruction* field_get =
+      MakeIFieldGet(block, parameter, DataType::Type::kBool, MemberOffset(42));
+  MakeIf(block, field_get);
 
-  block->AddSuccessor(then);
-  block->AddSuccessor(else_);
-  then->AddSuccessor(join);
-  else_->AddSuccessor(join);
+  MakeIFieldGet(then, parameter, DataType::Type::kBool, MemberOffset(42));
+  MakeIFieldGet(else_, parameter, DataType::Type::kBool, MemberOffset(42));
+  MakeIFieldGet(join, parameter, DataType::Type::kBool, MemberOffset(42));
 
-  then->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                              nullptr,
-                                                              DataType::Type::kBool,
-                                                              MemberOffset(42),
-                                                              false,
-                                                              kUnknownFieldIndex,
-                                                              kUnknownClassDefIndex,
-                                                              graph->GetDexFile(),
-                                                              0));
-  then->AddInstruction(new (GetAllocator()) HGoto());
-  else_->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                               nullptr,
-                                                               DataType::Type::kBool,
-                                                               MemberOffset(42),
-                                                               false,
-                                                               kUnknownFieldIndex,
-                                                               kUnknownClassDefIndex,
-                                                               graph->GetDexFile(),
-                                                               0));
-  else_->AddInstruction(new (GetAllocator()) HGoto());
-  join->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                              nullptr,
-                                                              DataType::Type::kBool,
-                                                              MemberOffset(42),
-                                                              false,
-                                                              kUnknownFieldIndex,
-                                                              kUnknownClassDefIndex,
-                                                              graph->GetDexFile(),
-                                                              0));
-  join->AddInstruction(new (GetAllocator()) HExit());
-
-  graph->BuildDominatorTree();
-  SideEffectsAnalysis side_effects(graph);
+  graph_->BuildDominatorTree();
+  SideEffectsAnalysis side_effects(graph_);
   side_effects.Run();
-  GVNOptimization(graph, side_effects).Run();
+  GVNOptimization(graph_, side_effects).Run();
 
   // Check that all field get instructions have been GVN'ed.
   ASSERT_TRUE(then->GetFirstInstruction()->IsGoto());
   ASSERT_TRUE(else_->GetFirstInstruction()->IsGoto());
-  ASSERT_TRUE(join->GetFirstInstruction()->IsExit());
+  ASSERT_TRUE(join->GetFirstInstruction()->IsReturnVoid());
 }
 
 TEST_F(GVNTest, LoopFieldElimination) {
-  HGraph* graph = CreateGraph();
-  HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(entry);
-  graph->SetEntryBlock(entry);
+  HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
+  auto [pre_header, loop_header, loop_body] = CreateWhileLoop(return_block);
+  loop_header->SwapSuccessors();  // Move the loop exit to the "else" successor.
 
-  HInstruction* parameter = new (GetAllocator()) HParameterValue(graph->GetDexFile(),
-                                                                 dex::TypeIndex(0),
-                                                                 0,
-                                                                 DataType::Type::kReference);
-  entry->AddInstruction(parameter);
+  HInstruction* parameter = MakeParam(DataType::Type::kReference);
 
-  HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(block);
-  entry->AddSuccessor(block);
-  block->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                               nullptr,
-                                                               DataType::Type::kBool,
-                                                               MemberOffset(42),
-                                                               false,
-                                                               kUnknownFieldIndex,
-                                                               kUnknownClassDefIndex,
-                                                               graph->GetDexFile(),
-                                                               0));
-  block->AddInstruction(new (GetAllocator()) HGoto());
+  MakeIFieldGet(pre_header, parameter, DataType::Type::kBool, MemberOffset(42));
 
-  HBasicBlock* loop_header = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* loop_body = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* exit = new (GetAllocator()) HBasicBlock(graph);
-
-  graph->AddBlock(loop_header);
-  graph->AddBlock(loop_body);
-  graph->AddBlock(exit);
-  block->AddSuccessor(loop_header);
-  loop_header->AddSuccessor(loop_body);
-  loop_header->AddSuccessor(exit);
-  loop_body->AddSuccessor(loop_header);
-
-  loop_header->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                                     nullptr,
-                                                                     DataType::Type::kBool,
-                                                                     MemberOffset(42),
-                                                                     false,
-                                                                     kUnknownFieldIndex,
-                                                                     kUnknownClassDefIndex,
-                                                                     graph->GetDexFile(),
-                                                                     0));
-  HInstruction* field_get_in_loop_header = loop_header->GetLastInstruction();
-  loop_header->AddInstruction(new (GetAllocator()) HIf(block->GetLastInstruction()));
+  HInstruction* field_get_in_loop_header =
+      MakeIFieldGet(loop_header, parameter, DataType::Type::kBool, MemberOffset(42));
+  MakeIf(loop_header, field_get_in_loop_header);
 
   // Kill inside the loop body to prevent field gets inside the loop header
   // and the body to be GVN'ed.
-  loop_body->AddInstruction(new (GetAllocator()) HInstanceFieldSet(parameter,
-                                                                   parameter,
-                                                                   nullptr,
-                                                                   DataType::Type::kBool,
-                                                                   MemberOffset(42),
-                                                                   false,
-                                                                   kUnknownFieldIndex,
-                                                                   kUnknownClassDefIndex,
-                                                                   graph->GetDexFile(),
-                                                                   0));
-  HInstruction* field_set = loop_body->GetLastInstruction();
-  loop_body->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                                   nullptr,
-                                                                   DataType::Type::kBool,
-                                                                   MemberOffset(42),
-                                                                   false,
-                                                                   kUnknownFieldIndex,
-                                                                   kUnknownClassDefIndex,
-                                                                   graph->GetDexFile(),
-                                                                   0));
-  HInstruction* field_get_in_loop_body = loop_body->GetLastInstruction();
-  loop_body->AddInstruction(new (GetAllocator()) HGoto());
+  HInstruction* field_set =
+      MakeIFieldSet(loop_body, parameter, parameter, DataType::Type::kBool, MemberOffset(42));
+  HInstruction* field_get_in_loop_body =
+      MakeIFieldGet(loop_body, parameter, DataType::Type::kBool, MemberOffset(42));
 
-  exit->AddInstruction(new (GetAllocator()) HInstanceFieldGet(parameter,
-                                                              nullptr,
-                                                              DataType::Type::kBool,
-                                                              MemberOffset(42),
-                                                              false,
-                                                              kUnknownFieldIndex,
-                                                              kUnknownClassDefIndex,
-                                                              graph->GetDexFile(),
-                                                              0));
-  HInstruction* field_get_in_exit = exit->GetLastInstruction();
-  exit->AddInstruction(new (GetAllocator()) HExit());
+  HInstruction* field_get_in_return_block =
+      MakeIFieldGet(return_block, parameter, DataType::Type::kBool, MemberOffset(42));
 
   ASSERT_EQ(field_get_in_loop_header->GetBlock(), loop_header);
   ASSERT_EQ(field_get_in_loop_body->GetBlock(), loop_body);
-  ASSERT_EQ(field_get_in_exit->GetBlock(), exit);
+  ASSERT_EQ(field_get_in_return_block->GetBlock(), return_block);
 
-  graph->BuildDominatorTree();
+  graph_->BuildDominatorTree();
   {
-    SideEffectsAnalysis side_effects(graph);
+    SideEffectsAnalysis side_effects(graph_);
     side_effects.Run();
-    GVNOptimization(graph, side_effects).Run();
+    GVNOptimization(graph_, side_effects).Run();
   }
 
   // Check that all field get instructions are still there.
   ASSERT_EQ(field_get_in_loop_header->GetBlock(), loop_header);
   ASSERT_EQ(field_get_in_loop_body->GetBlock(), loop_body);
-  // The exit block is dominated by the loop header, whose field get
+  // The `return_block` is dominated by the `loop_header`, whose field get
   // does not get killed by the loop flags.
-  ASSERT_TRUE(field_get_in_exit->GetBlock() == nullptr);
+  ASSERT_TRUE(field_get_in_return_block->GetBlock() == nullptr);
 
   // Now remove the field set, and check that all field get instructions have been GVN'ed.
   loop_body->RemoveInstruction(field_set);
   {
-    SideEffectsAnalysis side_effects(graph);
+    SideEffectsAnalysis side_effects(graph_);
     side_effects.Run();
-    GVNOptimization(graph, side_effects).Run();
+    GVNOptimization(graph_, side_effects).Run();
   }
 
   ASSERT_TRUE(field_get_in_loop_header->GetBlock() == nullptr);
   ASSERT_TRUE(field_get_in_loop_body->GetBlock() == nullptr);
-  ASSERT_TRUE(field_get_in_exit->GetBlock() == nullptr);
+  ASSERT_TRUE(field_get_in_return_block->GetBlock() == nullptr);
 }
 
 // Test that inner loops affect the side effects of the outer loop.
 TEST_F(GVNTest, LoopSideEffects) {
   static const SideEffects kCanTriggerGC = SideEffects::CanTriggerGC();
 
-  HGraph* graph = CreateGraph();
-  HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(entry);
-  graph->SetEntryBlock(entry);
+  HBasicBlock* outer_loop_exit = InitEntryMainExitGraphWithReturnVoid();
+  auto [outer_preheader, outer_loop_header, inner_loop_exit] = CreateWhileLoop(outer_loop_exit);
+  outer_loop_header->SwapSuccessors();  // Move the loop exit to the "else" successor.
+  auto [outer_loop_body, inner_loop_header, inner_loop_body] = CreateWhileLoop(inner_loop_exit);
+  inner_loop_header->SwapSuccessors();  // Move the loop exit to the "else" successor.
 
-  HBasicBlock* outer_loop_header = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* outer_loop_body = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* outer_loop_exit = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* inner_loop_header = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* inner_loop_body = new (GetAllocator()) HBasicBlock(graph);
-  HBasicBlock* inner_loop_exit = new (GetAllocator()) HBasicBlock(graph);
+  HInstruction* parameter = MakeParam(DataType::Type::kBool);
+  MakeSuspendCheck(outer_loop_header);
+  MakeIf(outer_loop_header, parameter);
+  MakeSuspendCheck(inner_loop_header);
+  MakeIf(inner_loop_header, parameter);
 
-  graph->AddBlock(outer_loop_header);
-  graph->AddBlock(outer_loop_body);
-  graph->AddBlock(outer_loop_exit);
-  graph->AddBlock(inner_loop_header);
-  graph->AddBlock(inner_loop_body);
-  graph->AddBlock(inner_loop_exit);
-
-  entry->AddSuccessor(outer_loop_header);
-  outer_loop_header->AddSuccessor(outer_loop_body);
-  outer_loop_header->AddSuccessor(outer_loop_exit);
-  outer_loop_body->AddSuccessor(inner_loop_header);
-  inner_loop_header->AddSuccessor(inner_loop_body);
-  inner_loop_header->AddSuccessor(inner_loop_exit);
-  inner_loop_body->AddSuccessor(inner_loop_header);
-  inner_loop_exit->AddSuccessor(outer_loop_header);
-
-  HInstruction* parameter = new (GetAllocator()) HParameterValue(graph->GetDexFile(),
-                                                                 dex::TypeIndex(0),
-                                                                 0,
-                                                                 DataType::Type::kBool);
-  entry->AddInstruction(parameter);
-  entry->AddInstruction(new (GetAllocator()) HGoto());
-  outer_loop_header->AddInstruction(new (GetAllocator()) HSuspendCheck());
-  outer_loop_header->AddInstruction(new (GetAllocator()) HIf(parameter));
-  outer_loop_body->AddInstruction(new (GetAllocator()) HGoto());
-  inner_loop_header->AddInstruction(new (GetAllocator()) HSuspendCheck());
-  inner_loop_header->AddInstruction(new (GetAllocator()) HIf(parameter));
-  inner_loop_body->AddInstruction(new (GetAllocator()) HGoto());
-  inner_loop_exit->AddInstruction(new (GetAllocator()) HGoto());
-  outer_loop_exit->AddInstruction(new (GetAllocator()) HExit());
-
-  graph->BuildDominatorTree();
+  graph_->BuildDominatorTree();
 
   ASSERT_TRUE(inner_loop_header->GetLoopInformation()->IsIn(
       *outer_loop_header->GetLoopInformation()));
@@ -360,21 +159,12 @@ TEST_F(GVNTest, LoopSideEffects) {
   // Check that the only side effect of loops is to potentially trigger GC.
   {
     // Make one block with a side effect.
-    entry->AddInstruction(new (GetAllocator()) HInstanceFieldSet(parameter,
-                                                                 parameter,
-                                                                 nullptr,
-                                                                 DataType::Type::kReference,
-                                                                 MemberOffset(42),
-                                                                 false,
-                                                                 kUnknownFieldIndex,
-                                                                 kUnknownClassDefIndex,
-                                                                 graph->GetDexFile(),
-                                                                 0));
+    MakeIFieldSet(entry_block_, parameter, parameter, DataType::Type::kReference, MemberOffset(42));
 
-    SideEffectsAnalysis side_effects(graph);
+    SideEffectsAnalysis side_effects(graph_);
     side_effects.Run();
 
-    ASSERT_TRUE(side_effects.GetBlockEffects(entry).DoesAnyWrite());
+    ASSERT_TRUE(side_effects.GetBlockEffects(entry_block_).DoesAnyWrite());
     ASSERT_FALSE(side_effects.GetBlockEffects(outer_loop_body).DoesAnyWrite());
     ASSERT_FALSE(side_effects.GetLoopEffects(outer_loop_header).DoesAnyWrite());
     ASSERT_FALSE(side_effects.GetLoopEffects(inner_loop_header).DoesAnyWrite());
@@ -384,23 +174,13 @@ TEST_F(GVNTest, LoopSideEffects) {
 
   // Check that the side effects of the outer loop does not affect the inner loop.
   {
-    outer_loop_body->InsertInstructionBefore(
-        new (GetAllocator()) HInstanceFieldSet(parameter,
-                                               parameter,
-                                               nullptr,
-                                               DataType::Type::kReference,
-                                               MemberOffset(42),
-                                               false,
-                                               kUnknownFieldIndex,
-                                               kUnknownClassDefIndex,
-                                               graph->GetDexFile(),
-                                               0),
-        outer_loop_body->GetLastInstruction());
+    MakeIFieldSet(
+        outer_loop_body, parameter, parameter, DataType::Type::kReference, MemberOffset(42));
 
-    SideEffectsAnalysis side_effects(graph);
+    SideEffectsAnalysis side_effects(graph_);
     side_effects.Run();
 
-    ASSERT_TRUE(side_effects.GetBlockEffects(entry).DoesAnyWrite());
+    ASSERT_TRUE(side_effects.GetBlockEffects(entry_block_).DoesAnyWrite());
     ASSERT_TRUE(side_effects.GetBlockEffects(outer_loop_body).DoesAnyWrite());
     ASSERT_TRUE(side_effects.GetLoopEffects(outer_loop_header).DoesAnyWrite());
     ASSERT_FALSE(side_effects.GetLoopEffects(inner_loop_header).DoesAnyWrite());
@@ -410,23 +190,13 @@ TEST_F(GVNTest, LoopSideEffects) {
   // Check that the side effects of the inner loop affects the outer loop.
   {
     outer_loop_body->RemoveInstruction(outer_loop_body->GetFirstInstruction());
-    inner_loop_body->InsertInstructionBefore(
-        new (GetAllocator()) HInstanceFieldSet(parameter,
-                                               parameter,
-                                               nullptr,
-                                               DataType::Type::kReference,
-                                               MemberOffset(42),
-                                               false,
-                                               kUnknownFieldIndex,
-                                               kUnknownClassDefIndex,
-                                               graph->GetDexFile(),
-                                               0),
-        inner_loop_body->GetLastInstruction());
+    MakeIFieldSet(
+        inner_loop_body, parameter, parameter, DataType::Type::kReference, MemberOffset(42));
 
-    SideEffectsAnalysis side_effects(graph);
+    SideEffectsAnalysis side_effects(graph_);
     side_effects.Run();
 
-    ASSERT_TRUE(side_effects.GetBlockEffects(entry).DoesAnyWrite());
+    ASSERT_TRUE(side_effects.GetBlockEffects(entry_block_).DoesAnyWrite());
     ASSERT_FALSE(side_effects.GetBlockEffects(outer_loop_body).DoesAnyWrite());
     ASSERT_TRUE(side_effects.GetLoopEffects(outer_loop_header).DoesAnyWrite());
     ASSERT_TRUE(side_effects.GetLoopEffects(inner_loop_header).DoesAnyWrite());

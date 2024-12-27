@@ -1405,14 +1405,20 @@ class ImageSpace::Loader {
               method.SetImtConflictTable(new_table, kPointerSize);
             }
           }
-          const void* old_code = method.GetEntryPointFromQuickCompiledCodePtrSize(kPointerSize);
-          const void* new_code = forward_code(old_code);
-          if (old_code != new_code) {
-            method.SetEntryPointFromQuickCompiledCodePtrSize(new_code, kPointerSize);
-          }
         } else {
           patch_object_visitor.PatchGcRoot(&method.DeclaringClassRoot());
-          method.UpdateEntrypoints(forward_code, kPointerSize);
+          if (method.IsNative()) {
+            const void* old_native_code = method.GetEntryPointFromJniPtrSize(kPointerSize);
+            const void* new_native_code = forward_code(old_native_code);
+            if (old_native_code != new_native_code) {
+              method.SetEntryPointFromJniPtrSize(new_native_code, kPointerSize);
+            }
+          }
+        }
+        const void* old_code = method.GetEntryPointFromQuickCompiledCodePtrSize(kPointerSize);
+        const void* new_code = forward_code(old_code);
+        if (old_code != new_code) {
+          method.SetEntryPointFromQuickCompiledCode(new_code);
         }
       }, target_base, kPointerSize);
     }

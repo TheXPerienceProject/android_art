@@ -161,12 +161,10 @@ std::string DexFileLoader::GetMultiDexLocation(size_t index, const char* dex_loc
   return StringPrintf("%s%cclasses%zu.dex", dex_location, kMultiDexSeparator, index + 1);
 }
 
-bool DexFileLoader::GetMultiDexChecksum(std::optional<uint32_t>* checksum,
-                                        std::string* error_msg,
-                                        bool* only_contains_uncompressed_dex) {
-  CHECK(checksum != nullptr);
-  checksum->reset();  // Return nullopt for an empty zip archive.
-
+bool DexFileLoader::GetMultiDexChecksums(
+    /*out*/ std::vector<std::pair<std::string, uint32_t>>* checksums,
+    /*out*/ std::string* error_msg,
+    /*out*/ bool* only_contains_uncompressed_dex) {
   uint32_t magic;
   if (!InitAndReadMagic(/*header_offset=*/0, &magic, error_msg)) {
     return false;
@@ -196,7 +194,7 @@ bool DexFileLoader::GetMultiDexChecksum(std::optional<uint32_t>* checksum,
           *only_contains_uncompressed_dex = false;
         }
       }
-      *checksum = checksum->value_or(kEmptyMultiDexChecksum) ^ zip_entry->GetCrc32();
+      checksums->emplace_back(GetMultiDexLocation(i, location_.c_str()), zip_entry->GetCrc32());
     }
     return true;
   }
@@ -205,6 +203,7 @@ bool DexFileLoader::GetMultiDexChecksum(std::optional<uint32_t>* checksum,
   }
   const uint8_t* begin = root_container_->Begin();
   const uint8_t* end = root_container_->End();
+  size_t i = 0;
   for (const uint8_t* ptr = begin; ptr < end;) {
     const auto* header = reinterpret_cast<const DexFile::Header*>(ptr);
     size_t size = dchecked_integral_cast<size_t>(end - ptr);
@@ -216,8 +215,24 @@ bool DexFileLoader::GetMultiDexChecksum(std::optional<uint32_t>* checksum,
       *error_msg = StringPrintf("Truncated dex file: '%s'", filename_.c_str());
       return false;
     }
-    *checksum = checksum->value_or(kEmptyMultiDexChecksum) ^ header->checksum_;
+    checksums->emplace_back(GetMultiDexLocation(i++, location_.c_str()), header->checksum_);
     ptr += header->file_size_;
+  }
+  return true;
+}
+
+bool DexFileLoader::GetMultiDexChecksum(std::optional<uint32_t>* checksum,
+                                        std::string* error_msg,
+                                        bool* only_contains_uncompressed_dex) {
+  CHECK(checksum != nullptr);
+  checksum->reset();  // Return nullopt for an empty zip archive.
+
+  std::vector<std::pair<std::string, uint32_t>> checksums;
+  if (!GetMultiDexChecksums(&checksums, error_msg, only_contains_uncompressed_dex)) {
+    return false;
+  }
+  for (const auto& [location, current_checksum] : checksums) {
+    *checksum = checksum->value_or(kEmptyMultiDexChecksum) ^ current_checksum;
   }
   return true;
 }

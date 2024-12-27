@@ -31,6 +31,7 @@
 
 #include "android-base/file.h"
 #include "android-base/macros.h"
+#include <android-base/properties.h>
 #include "android-base/strings.h"
 #include "android-base/thread_annotations.h"
 #include "base/macros.h"
@@ -40,6 +41,7 @@
 
 #ifdef ART_TARGET_ANDROID
 #include "android-modules-utils/sdk_level.h"
+#include "android/api-level.h"
 #include "library_namespaces.h"
 #include "log/log.h"
 #include "nativeloader/dlext_namespaces.h"
@@ -53,9 +55,6 @@ namespace {
 
 using ::android::base::Result;
 using ::android::nativeloader::LibraryNamespaces;
-
-const std::regex kPartitionNativeLibPathRegex(
-    "/(system(_ext)?|(system/)?(vendor|product))/lib(64)?/.*");
 
 // NATIVELOADER_DEFAULT_NAMESPACE_LIBS is an environment variable that can be
 // used to list extra libraries (separated by ":") that libnativeloader will
@@ -272,6 +271,21 @@ jstring CreateClassLoaderNamespace(JNIEnv* env,
   return nullptr;
 }
 
+#if defined(ART_TARGET_ANDROID)
+static bool ShouldBypassLoadingForB349878424() {
+  struct stat st;
+  if (stat("/system/lib64/libsobridge.so", &st) != 0 &&
+      stat("/system/lib64/libwalkstack.so", &st) != 0) {
+    return false;
+  }
+  std::string property = android::base::GetProperty("ro.product.build.fingerprint", "");
+  return android_get_device_api_level() == 33 &&
+      (property.starts_with("Xiaomi") ||
+       property.starts_with("Redmi") ||
+       property.starts_with("POCO"));
+}
+#endif
+
 void* OpenNativeLibrary(JNIEnv* env,
                         int32_t target_sdk_version,
                         const char* path,
@@ -320,6 +334,17 @@ void* OpenNativeLibrary(JNIEnv* env,
       }
     }
 
+    // Handle issue b/349878424.
+    static bool bypass_loading_for_b349878424 = ShouldBypassLoadingForB349878424();
+
+    if (bypass_loading_for_b349878424 &&
+        (strcmp("libsobridge.so", path) == 0 || strcmp("libwalkstack.so", path) == 0)) {
+      // Load a different library to pretend the loading was successful. This
+      // allows the device to boot.
+      ALOGD("Loading libbase.so instead of %s due to b/349878424", path);
+      path = "libbase.so";
+    }
+
     // Fall back to the system namespace. This happens for preloaded JNI
     // libraries in the zygote.
     void* handle = OpenSystemLibrary(path, RTLD_NOW);
@@ -340,10 +365,10 @@ void* OpenNativeLibrary(JNIEnv* env,
   // path, so we don't affect the lookup process for libraries specified by name
   // only.
   if (caller_location != nullptr &&
-      // Check that the library is in the partition-wide native library
-      // location. Apps in the partition may have their own native libraries,
-      // and those should still be loaded with the app's classloader namespace.
-      std::regex_match(path, kPartitionNativeLibPathRegex) &&
+      // Apps in the partition may have their own native libraries which should
+      // be loaded with the app's classloader namespace, so only do this for
+      // libraries in the partition-wide lib(64) directories.
+      nativeloader::IsPartitionNativeLibPath(path) &&
       // Don't do this if the system image is older than V, to avoid any compat
       // issues with apps and shared libs in them.
       android::modules::sdklevel::IsAtLeastV()) {

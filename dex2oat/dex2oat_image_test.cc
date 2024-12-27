@@ -246,6 +246,28 @@ TEST_F(Dex2oatImageTest, TestModesAndFilters) {
     classes.Close();
     std::cout << "Dirty image object sizes " << image_classes_sizes << std::endl;
   }
+  // Test multiple dirty image objects.
+  {
+    std::array<ScratchFile, 2> files;
+    int idx = 0;
+    VisitDexes(
+        libcore_dexes_array,
+        VoidFunctor(),
+        [&](TypeReference ref) {
+          WriteLine(files[idx].GetFile(), ref.dex_file->PrettyType(ref.TypeIndex()));
+          idx = (idx + 1) % files.size();
+        },
+        /*method_frequency=*/1u,
+        /*class_frequency=*/1u);
+    ImageSizes image_classes_sizes =
+        CompileImageAndGetSizes(dex_files,
+                                {"--dirty-image-objects=" + files[0].GetFilename(),
+                                 "--dirty-image-objects=" + files[1].GetFilename()});
+    for (ScratchFile& file : files) {
+      file.Close();
+    }
+    std::cout << "Dirty image object sizes " << image_classes_sizes << std::endl;
+  }
 }
 
 TEST_F(Dex2oatImageTest, TestExtension) {

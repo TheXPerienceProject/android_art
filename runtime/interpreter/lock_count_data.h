@@ -41,18 +41,18 @@ class LockCountData {
  public:
   // Add the given object to the list of monitors, that is, objects that have been locked. This
   // will not throw (but be skipped if there is an exception pending on entry).
-  void AddMonitor(Thread* self, mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT void AddMonitor(Thread* self, mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Try to remove the given object from the monitor list, indicating an unlock operation.
   // This will throw an IllegalMonitorStateException (clearing any already pending exception), in
   // case that there wasn't a lock recorded for the object.
-  void RemoveMonitorOrThrow(Thread* self,
-                            const mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT void RemoveMonitorOrThrow(Thread* self,
+                                   const mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Check whether all acquired monitors have been released. This will potentially throw an
   // IllegalMonitorStateException, clearing any already pending exception. Returns true if the
   // check shows that everything is OK wrt/ lock counting, false otherwise.
-  bool CheckAllMonitorsReleasedOrThrow(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT bool CheckAllMonitorsReleasedOrThrow(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
 
   template <typename T, typename... Args>
   void VisitMonitors(T visitor, Args&&... args) REQUIRES_SHARED(Locks::mutator_lock_) {

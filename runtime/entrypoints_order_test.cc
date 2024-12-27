@@ -96,22 +96,18 @@ class EntrypointsOrderTest : public CommonArtTest {
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, wait_next, monitor_enter_object, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, monitor_enter_object, top_handle_scope, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, top_handle_scope, class_loader_override, sizeof(void*));
-    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, class_loader_override, long_jump_context, sizeof(void*));
-    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, long_jump_context,
-                        stacked_shadow_frame_record, sizeof(void*));
+    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, class_loader_override, stacked_shadow_frame_record, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, stacked_shadow_frame_record,
                         deoptimization_context_stack, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, deoptimization_context_stack,
                         frame_id_to_shadow_frame, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, frame_id_to_shadow_frame, name, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, name, pthread_self, sizeof(void*));
-    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, pthread_self, last_no_thread_suspension_cause,
-                        sizeof(void*));
-    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, last_no_thread_suspension_cause,
-                        active_suspendall_barrier, sizeof(void*));
+    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, pthread_self, active_suspendall_barrier, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, active_suspendall_barrier,
                         active_suspend1_barriers, sizeof(void*));
-    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, active_suspend1_barriers, thread_local_pos, sizeof(void*));
+    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, active_suspend1_barriers, thread_local_pos,
+                        sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, thread_local_pos, thread_local_end, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, thread_local_end, thread_local_start, sizeof(void*));
     EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, thread_local_start, thread_local_limit, sizeof(void*));
@@ -136,14 +132,20 @@ class EntrypointsOrderTest : public CommonArtTest {
     EXPECT_OFFSET_DIFFP(
         Thread, tlsPtr_, top_reflective_handle_scope, method_trace_buffer, sizeof(void*));
     EXPECT_OFFSET_DIFFP(
-        Thread, tlsPtr_, method_trace_buffer, method_trace_buffer_index, sizeof(void*));
+        Thread, tlsPtr_, method_trace_buffer, method_trace_buffer_curr_entry, sizeof(void*));
     EXPECT_OFFSET_DIFFP(
-        Thread, tlsPtr_, method_trace_buffer_index, thread_exit_flags, sizeof(void*));
+        Thread, tlsPtr_, method_trace_buffer_curr_entry, thread_exit_flags, sizeof(void*));
+    EXPECT_OFFSET_DIFFP(
+        Thread, tlsPtr_, thread_exit_flags, last_no_thread_suspension_cause, sizeof(void*));
+    EXPECT_OFFSET_DIFFP(Thread, tlsPtr_, last_no_thread_suspension_cause,
+                        last_no_transaction_checks_cause, sizeof(void*));
     // The first field after tlsPtr_ is forced to a 16 byte alignment so it might have some space.
     auto offset_tlsptr_end = OFFSETOF_MEMBER(Thread, tlsPtr_) +
         sizeof(decltype(reinterpret_cast<Thread*>(16)->tlsPtr_));
-    CHECKED(offset_tlsptr_end - OFFSETOF_MEMBER(Thread, tlsPtr_.thread_exit_flags) == sizeof(void*),
-            "async_exception last field");
+    CHECKED(
+        offset_tlsptr_end - OFFSETOF_MEMBER(Thread, tlsPtr_.last_no_transaction_checks_cause) ==
+            sizeof(void*),
+        "last_no_transaction_checks_cause last field");
   }
 
   void CheckJniEntryPoints() {
@@ -289,7 +291,10 @@ class EntrypointsOrderTest : public CommonArtTest {
                          pInvokeVirtualTrampolineWithAccessCheck, sizeof(void*));
     EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pInvokeVirtualTrampolineWithAccessCheck,
                          pInvokePolymorphic, sizeof(void*));
-    EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pInvokePolymorphic, pInvokeCustom, sizeof(void*));
+    EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pInvokePolymorphic,
+                         pInvokePolymorphicWithHiddenReceiver, sizeof(void*));
+    EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pInvokePolymorphicWithHiddenReceiver,
+                         pInvokeCustom, sizeof(void*));
     EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pInvokeCustom, pTestSuspend, sizeof(void*));
     EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pTestSuspend, pDeliverException, sizeof(void*));
 
@@ -410,8 +415,10 @@ class EntrypointsOrderTest : public CommonArtTest {
     EXPECT_OFFSET_DIFFNP(
         QuickEntryPoints, pReadBarrierForRootSlow, pMethodEntryHook, sizeof(void*));
     EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pMethodEntryHook, pMethodExitHook, sizeof(void*));
+    EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pMethodExitHook, pRecordEntryTraceEvent, sizeof(void*));
+    EXPECT_OFFSET_DIFFNP(QuickEntryPoints, pRecordEntryTraceEvent, pRecordExitTraceEvent, sizeof(void*));
 
-    CHECKED(OFFSETOF_MEMBER(QuickEntryPoints, pMethodExitHook) + sizeof(void*) ==
+    CHECKED(OFFSETOF_MEMBER(QuickEntryPoints, pRecordExitTraceEvent) + sizeof(void*) ==
                 sizeof(QuickEntryPoints),
             QuickEntryPoints_all);
   }

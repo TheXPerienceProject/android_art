@@ -395,7 +395,8 @@ class ClassLinkerTest : public CommonRuntimeTest {
       k = k->GetSuperClass();
     }
     EXPECT_GE(total_num_reference_instance_fields, 1U);  // Should always have Object's class.
-    if (klass->GetReferenceInstanceOffsets() != mirror::Class::kClassWalkSuper) {
+    if ((klass->GetReferenceInstanceOffsets() & mirror::Class::kVisitReferencesSlowpathMask) == 0 &&
+        klass->ShouldHaveEmbeddedVTable()) {
       // The reference instance offsets have a bit set for each reference offset.
       // +1 for Object's class.
       EXPECT_EQ(static_cast<uint32_t>(POPCOUNT(klass->GetReferenceInstanceOffsets())) + 1,
@@ -777,7 +778,8 @@ struct MethodHandleOffsets : public CheckOffsets<mirror::MethodHandle> {
 struct MethodHandleImplOffsets : public CheckOffsets<mirror::MethodHandleImpl> {
   MethodHandleImplOffsets() : CheckOffsets<mirror::MethodHandleImpl>(
       false, "Ljava/lang/invoke/MethodHandleImpl;") {
-    addOffset(OFFSETOF_MEMBER(mirror::MethodHandleImpl, info_), "info");
+    addOffset(OFFSETOF_MEMBER(mirror::MethodHandleImpl, target_class_or_info_),
+              "targetClassOrMethodHandleInfo");
   }
 };
 

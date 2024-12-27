@@ -31,11 +31,6 @@
     <target_preparer class="com.android.compatibility.common.tradefed.targetprep.FilePusher">
         <option name="cleanup" value="true" />
         <option name="push" value="art-gtest-jars-Main.jar->/data/local/tmp/art_standalone_dex2oat_cts_tests/art-gtest-jars-Main.jar" />
-        <option name="push" value="art-gtest-jars-MainStripped.jar->/data/local/tmp/art_standalone_dex2oat_cts_tests/art-gtest-jars-MainStripped.jar" />
-        <option name="push" value="art-gtest-jars-MultiDex.jar->/data/local/tmp/art_standalone_dex2oat_cts_tests/art-gtest-jars-MultiDex.jar" />
-        <option name="push" value="art-gtest-jars-MultiDexModifiedSecondary.jar->/data/local/tmp/art_standalone_dex2oat_cts_tests/art-gtest-jars-MultiDexModifiedSecondary.jar" />
-        <option name="push" value="art-gtest-jars-MultiDexUncompressedAligned.jar->/data/local/tmp/art_standalone_dex2oat_cts_tests/art-gtest-jars-MultiDexUncompressedAligned.jar" />
-        <option name="push" value="art-gtest-jars-Nested.jar->/data/local/tmp/art_standalone_dex2oat_cts_tests/art-gtest-jars-Nested.jar" />
     </target_preparer>
 
     <target_preparer class="com.android.compatibility.common.tradefed.targetprep.FilePusher">

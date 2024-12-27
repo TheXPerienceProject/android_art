@@ -469,6 +469,8 @@ MACRO0(DELIVER_PENDING_EXCEPTION_FRAME_READY)
     // (Thread*) setup
     movq %gs:THREAD_SELF_OFFSET, %rdi
     call SYMBOL(artDeliverPendingExceptionFromCode)  // artDeliverPendingExceptionFromCode(Thread*)
+    movq %rax, %rdi                                  // pass Context*
+    call SYMBOL(art_quick_do_long_jump)
     UNREACHABLE
 END_MACRO
     /*

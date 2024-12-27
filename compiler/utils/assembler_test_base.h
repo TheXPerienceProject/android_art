@@ -150,7 +150,7 @@ class AssemblerTestBase : public testing::Test {
                 "--compile",
                 "-target",
                 "riscv64-linux-gnu",
-                "-march=rv64imafdcv_zba_zbb_zca_zcd_zcb",
+                "-march=rv64imafdcv_zba_zbb_zbs_zca_zcd_zcb",
                 // Force the assembler to fully emit branch instructions instead of leaving
                 // offsets unresolved with relocation information for the linker.
                 "-mno-relax"};

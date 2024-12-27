@@ -330,54 +330,6 @@ END \name
 // - if load_ins is 1, \ins contains the ins
 // - \code_item is replaced with a pointer to the instructions
 .macro FETCH_CODE_ITEM_INFO code_item, registers, outs, ins, load_ins
-    tst \code_item, #1
-    beq 5f
-    bic \code_item, \code_item, #1 // Remove the extra bit that marks it's a compact dex file
-    ldrh lr, [\code_item, #COMPACT_CODE_ITEM_FIELDS_OFFSET]
-    ubfx \registers, lr, #COMPACT_CODE_ITEM_REGISTERS_SIZE_SHIFT, #4
-    ubfx \outs, lr, #COMPACT_CODE_ITEM_OUTS_SIZE_SHIFT, #4
-    .if \load_ins
-    ubfx \ins, lr, #COMPACT_CODE_ITEM_INS_SIZE_SHIFT, #4
-    .else
-    ubfx ip, lr, #COMPACT_CODE_ITEM_INS_SIZE_SHIFT, #4
-    add \registers, \registers, ip
-    .endif
-
-    ldrh lr, [\code_item, #COMPACT_CODE_ITEM_FLAGS_OFFSET]
-    tst lr, #COMPACT_CODE_ITEM_REGISTERS_INS_OUTS_FLAGS
-    beq 4f
-    mov ip, \code_item
-    tst lr, #COMPACT_CODE_ITEM_INSNS_FLAG
-    beq 1f
-    sub ip, ip, #4
-1:
-    tst lr, #COMPACT_CODE_ITEM_REGISTERS_FLAG
-    beq 2f
-    ldrh lr, [ip, #-2]!
-    add \registers, \registers, lr
-    ldrh lr, [\code_item, #COMPACT_CODE_ITEM_FLAGS_OFFSET]
-2:
-    tst lr, #COMPACT_CODE_ITEM_INS_FLAG
-    beq 3f
-    ldrh lr, [ip, #-2]!
-    .if \load_ins
-    add \ins, \ins, lr
-    .else
-    add \registers, \registers, lr
-    .endif
-    ldrh lr, [\code_item, #COMPACT_CODE_ITEM_FLAGS_OFFSET]
-3:
-    tst lr, #COMPACT_CODE_ITEM_OUTS_FLAG
-    beq 4f
-    ldrh lr, [ip, #-2]!
-    add \outs, \outs, lr
-4:
-    .if \load_ins
-    add \registers, \registers, \ins
-    .endif
-    add \code_item, \code_item, #COMPACT_CODE_ITEM_INSNS_OFFSET
-    b 6f
-5:
     // Fetch dex register size.
     ldrh \registers, [\code_item, #CODE_ITEM_REGISTERS_SIZE_OFFSET]
     // Fetch outs size.
@@ -386,7 +338,6 @@ END \name
     ldrh \ins, [\code_item, #CODE_ITEM_INS_SIZE_OFFSET]
     .endif
     add \code_item, \code_item, #CODE_ITEM_INSNS_OFFSET
-6:
 .endm
 
 // Setup the stack to start executing the method. Expects:

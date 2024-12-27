@@ -133,8 +133,6 @@ namespace art HIDDEN {
 using android::base::StringAppendV;
 using android::base::StringPrintf;
 
-extern "C" NO_RETURN void artDeoptimize(Thread* self, bool skip_method_exit_callbacks);
-
 bool Thread::is_started_ = false;
 pthread_key_t Thread::pthread_key_self_;
 ConditionVariable* Thread::resume_cond_ = nullptr;
@@ -957,8 +955,8 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
   // thread hasn't been through here already...
   CHECK(Thread::Current() == nullptr);
 
-  // Set pthread_self_ ahead of pthread_setspecific, that makes Thread::Current function, this
-  // avoids pthread_self_ ever being invalid when discovered from Thread::Current().
+  // Set pthread_self ahead of pthread_setspecific, that makes Thread::Current function, this
+  // avoids pthread_self ever being invalid when discovered from Thread::Current().
   tlsPtr_.pthread_self = pthread_self();
   CHECK(is_started_);
 
@@ -1266,8 +1264,14 @@ void Thread::SetCachedThreadName(const char* name) {
 }
 
 void Thread::SetThreadName(const char* name) {
+  DCHECK(this == Thread::Current() || IsSuspended());  // O.w. `this` may disappear.
   SetCachedThreadName(name);
-  ::art::SetThreadName(name);
+  if (!IsStillStarting() || this == Thread::Current()) {
+    // The RI is documented to do this only in the this == self case, which would avoid the
+    // IsStillStarting() issue below. We instead use a best effort approach.
+    ::art::SetThreadName(tlsPtr_.pthread_self /* Not necessarily current thread! */, name);
+  }  // O.w. this will normally be set when we finish starting. We can rarely fail to set the
+     // pthread name. See TODO in IsStillStarting().
   Dbg::DdmSendThreadNotification(this, CHUNK_TYPE("THNM"));
 }
 
@@ -2540,6 +2544,13 @@ bool Thread::IsStillStarting() const {
   // assigned fairly early on, and needs to be.
   // It turns out that the last thing to change is the thread name; that's a good proxy for "has
   // this thread _ever_ entered kRunnable".
+  // TODO: I believe that SetThreadName(), ThreadGroup::GetThreads() and many jvmti functions can
+  // call this while the thread is in the process of starting. Thus we appear to have data races
+  // here on opeer and jpeer, and our result may be obsolete by the time we return. Aside from the
+  // data races, it is not immediately clear whether clients are robust against this behavior.  It
+  // may make sense to acquire a per-thread lock during the transition, and have this function
+  // REQUIRE that. `runtime_shutdown_lock_` might almost work, but is global and currently not
+  // held long enough.
   return (tlsPtr_.jpeer == nullptr && tlsPtr_.opeer == nullptr) ||
       (tlsPtr_.name.load() == kThreadNameDuringStartup);
 }
@@ -2683,10 +2694,6 @@ Thread::~Thread() {
 
   delete wait_cond_;
   delete wait_mutex_;
-
-  if (tlsPtr_.long_jump_context != nullptr) {
-    delete tlsPtr_.long_jump_context;
-  }
 
   if (initialized) {
     CleanupCpu();
@@ -3070,7 +3077,8 @@ class BuildInternalStackTraceVisitor : public StackVisitor {
   DISALLOW_COPY_AND_ASSIGN(BuildInternalStackTraceVisitor);
 };
 
-jobject Thread::CreateInternalStackTrace(const ScopedObjectAccessAlreadyRunnable& soa) const {
+ObjPtr<mirror::ObjectArray<mirror::Object>> Thread::CreateInternalStackTrace(
+    const ScopedObjectAccessAlreadyRunnable& soa) const {
   // Compute depth of stack, save frames if possible to avoid needing to recompute many.
   constexpr size_t kMaxSavedFrames = 256;
   std::unique_ptr<ArtMethodDexPcPair[]> saved_frames(new ArtMethodDexPcPair[kMaxSavedFrames]);
@@ -3107,7 +3115,7 @@ jobject Thread::CreateInternalStackTrace(const ScopedObjectAccessAlreadyRunnable
       CHECK(method != nullptr);
     }
   }
-  return soa.AddLocalReference<jobject>(trace);
+  return trace;
 }
 
 bool Thread::IsExceptionThrownByCurrentMethod(ObjPtr<mirror::Throwable> exception) const {
@@ -3660,9 +3668,9 @@ void Thread::ThrowNewWrappedException(const char* exception_class_descriptor,
     if (cause.get() != nullptr) {
       exception->SetCause(DecodeJObject(cause.get())->AsThrowable());
     }
-    ScopedLocalRef<jobject> trace(GetJniEnv(), CreateInternalStackTrace(soa));
-    if (trace.get() != nullptr) {
-      exception->SetStackState(DecodeJObject(trace.get()).Ptr());
+    ObjPtr<mirror::ObjectArray<mirror::Object>> trace = CreateInternalStackTrace(soa);
+    if (trace != nullptr) {
+      exception->SetStackState(trace.Ptr());
     }
     SetException(exception.Get());
   } else {
@@ -3859,6 +3867,7 @@ void Thread::DumpThreadOffset(std::ostream& os, uint32_t offset) {
   QUICK_ENTRY_POINT_INFO(pInvokeSuperTrampolineWithAccessCheck)
   QUICK_ENTRY_POINT_INFO(pInvokeVirtualTrampolineWithAccessCheck)
   QUICK_ENTRY_POINT_INFO(pInvokePolymorphic)
+  QUICK_ENTRY_POINT_INFO(pInvokePolymorphicWithHiddenReceiver)
   QUICK_ENTRY_POINT_INFO(pTestSuspend)
   QUICK_ENTRY_POINT_INFO(pDeliverException)
   QUICK_ENTRY_POINT_INFO(pThrowArrayBounds)
@@ -3924,7 +3933,7 @@ void Thread::DumpThreadOffset(std::ostream& os, uint32_t offset) {
   os << offset;
 }
 
-void Thread::QuickDeliverException(bool skip_method_exit_callbacks) {
+std::unique_ptr<Context> Thread::QuickDeliverException(bool skip_method_exit_callbacks) {
   // Get exception from thread.
   ObjPtr<mirror::Throwable> exception = GetException();
   CHECK(exception != nullptr);
@@ -3932,8 +3941,9 @@ void Thread::QuickDeliverException(bool skip_method_exit_callbacks) {
     // This wasn't a real exception, so just clear it here. If there was an actual exception it
     // will be recorded in the DeoptimizationContext and it will be restored later.
     ClearException();
-    artDeoptimize(this, skip_method_exit_callbacks);
-    UNREACHABLE();
+    return Deoptimize(DeoptimizationKind::kFullFrame,
+                      /*single_frame=*/ false,
+                      skip_method_exit_callbacks);
   }
 
   ReadBarrier::MaybeAssertToSpaceInvariant(exception.Ptr());
@@ -3975,8 +3985,9 @@ void Thread::QuickDeliverException(bool skip_method_exit_callbacks) {
             exception,
             /* from_code= */ false,
             method_type);
-        artDeoptimize(this, skip_method_exit_callbacks);
-        UNREACHABLE();
+        return Deoptimize(DeoptimizationKind::kFullFrame,
+                          /*single_frame=*/ false,
+                          skip_method_exit_callbacks);
       } else {
         LOG(WARNING) << "Got a deoptimization request on un-deoptimizable method "
                      << visitor.caller->PrettyMethod();
@@ -4001,18 +4012,39 @@ void Thread::QuickDeliverException(bool skip_method_exit_callbacks) {
     // Check the to-space invariant on the re-installed exception (if applicable).
     ReadBarrier::MaybeAssertToSpaceInvariant(GetException());
   }
-  exception_handler.DoLongJump();
+  return exception_handler.PrepareLongJump();
 }
 
-Context* Thread::GetLongJumpContext() {
-  Context* result = tlsPtr_.long_jump_context;
-  if (result == nullptr) {
-    result = Context::Create();
-  } else {
-    tlsPtr_.long_jump_context = nullptr;  // Avoid context being shared.
-    result->Reset();
+std::unique_ptr<Context> Thread::Deoptimize(DeoptimizationKind kind,
+                                            bool single_frame,
+                                            bool skip_method_exit_callbacks) {
+  Runtime::Current()->IncrementDeoptimizationCount(kind);
+  if (VLOG_IS_ON(deopt)) {
+    if (single_frame) {
+      // Deopt logging will be in DeoptimizeSingleFrame. It is there to take advantage of the
+      // specialized visitor that will show whether a method is Quick or Shadow.
+    } else {
+      LOG(INFO) << "Deopting:";
+      Dump(LOG_STREAM(INFO));
+    }
   }
-  return result;
+
+  AssertHasDeoptimizationContext();
+  QuickExceptionHandler exception_handler(this, true);
+  if (single_frame) {
+    exception_handler.DeoptimizeSingleFrame(kind);
+  } else {
+    exception_handler.DeoptimizeStack(skip_method_exit_callbacks);
+  }
+  if (exception_handler.IsFullFragmentDone()) {
+    return exception_handler.PrepareLongJump(/*smash_caller_saves=*/ true);
+  } else {
+    exception_handler.DeoptimizePartialFragmentFixup();
+    // We cannot smash the caller-saves, as we need the ArtMethod in a parameter register that would
+    // be caller-saved. This has the downside that we cannot track incorrect register usage down the
+    // line.
+    return exception_handler.PrepareLongJump(/*smash_caller_saves=*/ false);
+  }
 }
 
 ArtMethod* Thread::GetCurrentMethod(uint32_t* dex_pc_out,
@@ -4182,8 +4214,7 @@ class ReferenceMapVisitor : public StackVisitor {
     if (m->IsNative()) {
       // TODO: Spill the `this` reference in the AOT-compiled String.charAt()
       // slow-path for throwing SIOOBE, so that we can remove this carve-out.
-      if (UNLIKELY(m->IsIntrinsic()) &&
-          m->GetIntrinsic() == enum_cast<uint32_t>(Intrinsics::kStringCharAt)) {
+      if (UNLIKELY(m->IsIntrinsic()) && m->GetIntrinsic() == Intrinsics::kStringCharAt) {
         // The String.charAt() method is AOT-compiled with an intrinsic implementation
         // instead of a JNI stub. It has a slow path that constructs a runtime frame
         // for throwing SIOOBE and in that path we do not get the `this` pointer
@@ -4815,20 +4846,6 @@ void Thread::ClearAllInterpreterCaches() {
     }
   } closure;
   Runtime::Current()->GetThreadList()->RunCheckpoint(&closure);
-}
-
-
-void Thread::ReleaseLongJumpContextInternal() {
-  // Each QuickExceptionHandler gets a long jump context and uses
-  // it for doing the long jump, after finding catch blocks/doing deoptimization.
-  // Both finding catch blocks and deoptimization can trigger another
-  // exception such as a result of class loading. So there can be nested
-  // cases of exception handling and multiple contexts being used.
-  // ReleaseLongJumpContext tries to save the context in tlsPtr_.long_jump_context
-  // for reuse so there is no need to always allocate a new one each time when
-  // getting a context. Since we only keep one context for reuse, delete the
-  // existing one since the passed in context is yet to be used for longjump.
-  delete tlsPtr_.long_jump_context;
 }
 
 void Thread::SetNativePriority(int new_priority) {

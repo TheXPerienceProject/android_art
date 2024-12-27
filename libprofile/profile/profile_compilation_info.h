@@ -1092,8 +1092,14 @@ class FlattenProfileData {
  public:
   class ItemMetadata {
    public:
+    struct InlineCacheInfo {
+      bool is_megamorphic_ = false;
+      bool is_missing_types_ = false;
+      std::set<std::string> classes_;
+    };
+
     ItemMetadata();
-    ItemMetadata(const ItemMetadata& other);
+    ItemMetadata(const ItemMetadata& other) = default;
 
     uint16_t GetFlags() const {
       return flags_;
@@ -1111,12 +1117,29 @@ class FlattenProfileData {
       return (flags_ & flag) != 0;
     }
 
+    // Extracts inline cache info for the given method into this instance.
+    // Note that this will collapse all ICs with the same receiver type.
+    void ExtractInlineCacheInfo(const ProfileCompilationInfo& profile_info,
+                                const DexFile* dex_file,
+                                uint16_t dex_method_idx);
+
+    // Merges the inline cache info from the other metadata into this instance.
+    void MergeInlineCacheInfo(
+        const SafeMap<TypeReference, InlineCacheInfo, TypeReferenceValueComparator>& other);
+
+    const SafeMap<TypeReference, InlineCacheInfo, TypeReferenceValueComparator>& GetInlineCache()
+        const {
+      return inline_cache_;
+    }
+
    private:
     // will be 0 for classes and MethodHotness::Flags for methods.
     uint16_t flags_;
     // This is a list that may contain duplicates after a merge operation.
     // It represents that a method was used multiple times across different devices.
     std::list<ProfileCompilationInfo::ProfileSampleAnnotation> annotations_;
+    // Inline cache map for methods.
+    SafeMap<TypeReference, InlineCacheInfo, TypeReferenceValueComparator> inline_cache_;
 
     friend class ProfileCompilationInfo;
     friend class FlattenProfileData;

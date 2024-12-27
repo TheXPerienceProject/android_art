@@ -316,4 +316,23 @@ bool TryReplaceSubSubWithSubAdd(HSub* last_sub) {
   }
 }
 
+void UnfoldRotateLeft(HRol* rol) {
+  HBasicBlock* block = rol->GetBlock();
+  HGraph* graph = block->GetGraph();
+  ArenaAllocator* allocator = graph->GetAllocator();
+  HRor* ror;
+
+  if (rol->GetRight()->IsConstant()) {
+    int32_t value = rol->GetRight()->AsIntConstant()->GetValue();
+    HIntConstant* negated = graph->GetIntConstant(-value);
+    ror = new (allocator) HRor(rol->GetType(), rol->GetLeft(), negated);
+  } else {
+    HNeg* neg = new (allocator) HNeg(DataType::Type::kInt32, rol->GetRight());
+    block->InsertInstructionBefore(neg, rol);
+    ror = new (allocator) HRor(rol->GetType(), rol->GetLeft(), neg);
+  }
+
+  block->ReplaceAndRemoveInstructionWith(rol, ror);
+}
+
 }  // namespace art

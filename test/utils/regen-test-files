@@ -83,6 +83,15 @@ ART_RUN_TEST_MODULE_NAME_PREFIX = "art-run-test-"
 # Number of shards used to declare ART run-tests in the sharded ART MTS test plan.
 NUM_MTS_ART_RUN_TEST_SHARDS = 1
 
+# Name of the ART MTS test list containing "eng-only" test modules,
+# which require a device-under-test running a `userdebug` or `eng`
+# build.
+ENG_ONLY_TEST_LIST_NAME = "mts-art-tests-list-eng-only"
+
+# Name of Lint baseline filename used in certain ART run-tests,
+# e.g. for the `NewApi` check (see e.g. b/268261262).
+LINT_BASELINE_FILENAME = "lint-baseline.xml"
+
 # Curated list of tests that have a custom `run` script, but that are
 # known to work fine with the default test execution strategy (i.e.
 # when ignoring their `run` script), even if not exactly as they would
@@ -91,9 +100,7 @@ runnable_test_exceptions = frozenset([
   "055-enum-performance",
   "059-finalizer-throw",
   "080-oom-throw",
-  "1004-checker-volatile-ref-load",
   "133-static-invoke-super",
-  "1338-gc-no-los",
   "159-app-image-fields",
   "160-read-barrier-stress",
   "163-app-image-methods",
@@ -108,9 +115,15 @@ runnable_test_exceptions = frozenset([
   "678-quickening",
   "818-clinit-nterp",
   "821-madvise-willneed",
+  "1004-checker-volatile-ref-load",
+  "1338-gc-no-los",
 ])
 
+# Known slow tests, for which the timeout value is raised.
 known_slow_tests = frozenset([
+  "080-oom-throw",
+  "099-vmdebug",
+  "109-suspend-check",
   "175-alloc-big-bignums",
 ])
 
@@ -122,10 +135,6 @@ known_failing_tests = frozenset([
   "051-thread",
   "086-null-super",
   "087-gc-after-link",
-  # 1002-notify-startup: Dependency on `libarttest` + custom `check` script.
-  "1002-notify-startup",
-  "1337-gc-coverage",
-  "1339-dead-reference-safe",
   "136-daemon-jni-shutdown",
   "139-register-natives",
   "148-multithread-gc-annotations",
@@ -135,19 +144,7 @@ known_failing_tests = frozenset([
   "169-threadgroup-jni",
   "177-visibly-initialized-deadlock",
   "179-nonvirtual-jni",
-  "1945-proxy-method-arguments",
-  "2011-stack-walk-concurrent-instrument",
-  # 2040-huge-native-alloc: Fails with:
-  #
-  #   Test command execution failed with status FAILED: CommandResult: exit code=1, out=, err=Exception in thread "main" java.lang.ArrayIndexOutOfBoundsException: length=0; index=0
-  #           at Main.main(Main.java:56)
-  #
-  "2040-huge-native-alloc",
   "203-multi-checkpoint",
-  "2033-shutdown-mechanics",
-  "2036-jni-filechannel",
-  "2037-thread-name-inherit",
-  "2235-JdkUnsafeTest",
   "305-other-fault-handler",
   # 449-checker-bce: Dependency on `libarttest`.
   "449-checker-bce",
@@ -213,9 +210,27 @@ known_failing_tests = frozenset([
   "966-default-conflict",
   # These tests need native code.
   "993-breakpoints-non-debuggable",
+  # 1002-notify-startup: Dependency on `libarttest` + custom `check` script.
+  "1002-notify-startup",
+  "1337-gc-coverage",
+  "1339-dead-reference-safe",
+  "1945-proxy-method-arguments",
+  "2011-stack-walk-concurrent-instrument",
+  "2033-shutdown-mechanics",
+  "2036-jni-filechannel",
+  "2037-thread-name-inherit",
+  # 2040-huge-native-alloc: Fails with:
+  #
+  #   Test command execution failed with status FAILED: CommandResult: exit code=1, out=, err=Exception in thread "main" java.lang.ArrayIndexOutOfBoundsException: length=0; index=0
+  #           at Main.main(Main.java:56)
+  #
+  "2040-huge-native-alloc",
+  "2235-JdkUnsafeTest",
   "2243-single-step-default",
   "2262-miranda-methods",
   "2262-default-conflict-methods",
+  # 2275-pthread-name: Dependency on `libarttest`.
+  "2275-pthread-name",
 ])
 
 # These ART run-tests are new and have not had enough post-submit runs
@@ -223,8 +238,7 @@ known_failing_tests = frozenset([
 # removing them from this set (in order to promote them to
 # presubmits).
 postsubmit_only_tests = frozenset([
-  "2247-checker-write-barrier-elimination",
-  "2273-checker-unreachable-intrinsics",
+    "057-math-intrinsics",
 ])
 
 known_failing_on_hwasan_tests = frozenset([
@@ -239,6 +253,7 @@ art_gtest_user_module_names = [
     "art_standalone_artd_tests",
     "art_standalone_cmdline_tests",
     "art_standalone_compiler_tests",
+    "art_standalone_dex2oat_cts_tests",
     "art_standalone_dex2oat_tests",
     "art_standalone_dexdump_tests",
     "art_standalone_dexlist_tests",
@@ -273,10 +288,18 @@ art_gtest_module_names = sorted(art_gtest_user_module_names + art_gtest_eng_only
 # removing them from this set (in order to promote them to
 # presubmits).
 art_gtest_postsubmit_only_module_names = [
+    "art_standalone_dex2oat_cts_tests",
+]
+
+# ART gtests not supported in MTS.
+art_gtest_modules_excluded_from_mts = [
+    # TODO(b/347717488): Consider adding this test to ART MTS.
+    "libnativebridge-tests",
 ]
 
 # ART gtests supported in MTS that do not need root access to the device.
-art_gtest_mts_user_module_names = copy.copy(art_gtest_user_module_names)
+art_gtest_mts_user_module_names = [t for t in art_gtest_user_module_names
+                                   if t not in art_gtest_modules_excluded_from_mts]
 
 # ART gtests supported in presubmits.
 art_gtest_presubmit_module_names = [t for t in art_gtest_module_names
@@ -364,6 +387,60 @@ failing_tests_excluded_from_mainline_presubmits = (
 def is_checker_test(run_test):
   return re.match("^[0-9]+-checker-", run_test)
 
+def gen_mts_test_list_file(tests, test_list_file, copyright_year, configuration_description,
+                           tests_description, comments = []):
+  """Generate an ART MTS test list file."""
+  root = xml.dom.minidom.Document()
+
+  advisory_header = root.createComment(f" {ADVISORY} ")
+  root.appendChild(advisory_header)
+  copyright_header = root.createComment(copyright_header_text(copyright_year))
+  root.appendChild(copyright_header)
+
+  configuration = root.createElement("configuration")
+  root.appendChild(configuration)
+  configuration.setAttribute("description", configuration_description)
+
+  def append_option(name, value):
+    option = root.createElement("option")
+    option.setAttribute("name", name)
+    option.setAttribute("value", value)
+    configuration.appendChild(option)
+
+  def append_comment(comment):
+    xml_comment = root.createComment(f" {comment} ")
+    configuration.appendChild(xml_comment)
+
+  # Test declarations.
+  # ------------------
+
+  test_declarations_comments = [tests_description + "."]
+  test_declarations_comments.extend(comments)
+  for c in test_declarations_comments:
+    append_comment(c)
+  for t in tests:
+    append_option("compatibility:include-filter", t)
+
+  # `MainlineTestModuleController` configurations.
+  # ----------------------------------------------
+
+  module_controller_configuration_comments = [
+      f"Enable MainlineTestModuleController for {tests_description}."]
+  module_controller_configuration_comments.extend(comments)
+  for c in module_controller_configuration_comments:
+    append_comment(c)
+  for t in tests:
+    append_option("compatibility:module-arg", f"{t}:enable:true")
+  for t in tests:
+    if t in ["CtsLibcoreTestCases", "CtsLibcoreOjTestCases"]:
+      append_comment("core-test-mode=mts tells ExpectationBasedFilter to exclude @NonMts Tests")
+      append_option("compatibility:module-arg", f"{t}:instrumentation-arg:core-test-mode:=mts")
+
+  xml_str = root.toprettyxml(indent = XML_INDENT, encoding = "utf-8")
+
+  with open(test_list_file, "wb") as f:
+    logging.debug(f"Writing `{test_list_file}`.")
+    f.write(xml_str)
 
 class Generator:
   def __init__(self, top_dir):
@@ -372,16 +449,26 @@ class Generator:
     self.top_dir = top_dir
     # Path to the ART directory
     self.art_dir = os.path.join(top_dir, "art")
-    # Path to the ART tests directory.
+    # Path to the ART tests top-level directory.
     self.art_test_dir = os.path.join(self.art_dir, "test")
     # Path to the MTS configuration directory.
     self.mts_config_dir = os.path.join(
         top_dir, "test", "mts", "tools", "mts-tradefed", "res", "config")
+    # Path to the ART JVM TI CTS tests top-level directory.
+    self.jvmti_cts_test_dir = os.path.join(top_dir, "cts/hostsidetests/jvmti/run-tests")
 
+  # Return the list of ART run-tests (in short form, i.e. `001-HelloWorld`,
+  # not `art-run-test-001-HelloWorld`).
   def enumerate_run_tests(self):
     return sorted([run_test
                    for run_test in os.listdir(self.art_test_dir)
                    if re.match("^[0-9]{3,}-", run_test)])
+
+  # Return the list of ART JVM TI CTS tests.
+  def enumerate_jvmti_cts_tests(self):
+    return sorted([re.sub(r"test-(\d+)", r"CtsJvmtiRunTest\1HostTestCases", cts_jvmti_test_dir)
+                   for cts_jvmti_test_dir in os.listdir(self.jvmti_cts_test_dir)
+                   if re.match(r"^test-\d+$", cts_jvmti_test_dir)])
 
   # Return the metadata of a test, if any.
   def get_test_metadata(self, run_test):
@@ -476,6 +563,26 @@ class Generator:
       return True
     return False
 
+  # Generate a Blueprint property group as a string, i.e. something looking like
+  # this:
+  #
+  #   ```
+  #       <group_name>: {
+  #         <key0>: "<value0>",
+  #         ...
+  #         <keyN>: "<valueN>",
+  #       }
+  #   ```
+  #
+  # where `(key0, value0), ..., (keyN, valueN)` are key-value pairs in `props`.
+  def gen_prop_group(self, group_name, props):
+    props_joined = """,
+            """.join([f"{k}: \"{v}\"" for (k, v) in props.items()])
+    return f"""
+          {group_name}: {{
+              {props_joined},
+          }},"""
+
   def gen_libs_list_impl(self, library_type, libraries):
     if len(libraries) == 0:
       return ""
@@ -492,7 +599,7 @@ class Generator:
   def gen_static_libs_list(self, libraries):
     return self.gen_libs_list_impl("static_libs", libraries);
 
-  def gen_java_library_rule(self, name, src_dir, libraries):
+  def gen_java_library_rule(self, name, src_dir, libraries, extra_props):
     return f"""\
 
 
@@ -500,7 +607,7 @@ class Generator:
       java_library {{
           name: "{name}",
           defaults: ["art-run-test-defaults"],{self.gen_libs_list(libraries)}
-          srcs: ["{src_dir}/**/*.java"],
+          srcs: ["{src_dir}/**/*.java"],{extra_props}
       }}"""
 
   # Is (successfully) running `run_test` supported?
@@ -541,7 +648,17 @@ class Generator:
 
     # Optional test metadata (JSON file).
     metadata = self.get_test_metadata(run_test)
-    is_cts_test = "cts" in metadata.get("test_suites", [])
+    test_suites = metadata.get("test_suites", [])
+    is_cts_test = "cts" in test_suites
+    is_mcts_test = "mcts-art" in test_suites
+
+    # For now we make it mandatory for an ART CTS test to be an ART
+    # MCTS test and vice versa.
+    if is_cts_test != is_mcts_test:
+      (present, absent) = ("mts", "mcts-art") if is_cts_test else ("mcts-art", "mts")
+      logging.error(f"Inconsistent test suites state in metadata for ART run-test `{run_test}`: " +
+                    f"`test_suites` contains `{present}` but not `{absent}`")
+      sys.exit(1)
 
     run_test_module_name = ART_RUN_TEST_MODULE_NAME_PREFIX + run_test
 
@@ -558,11 +675,10 @@ class Generator:
 
     # Define the `test_suites` property, if test suites are present in
     # the test's metadata.
-    test_suites_list = metadata.get("test_suites")
     test_suites_prop = ""
-    if test_suites_list:
+    if test_suites:
       test_suites_joined = """,
-              """.join([f"\"{s}\"" for s in test_suites_list])
+              """.join([f"\"{s}\"" for s in test_suites])
       test_suites_prop = f"""\
 
           test_suites: [
@@ -581,9 +697,9 @@ class Generator:
     # against, if needed.
     sdk_version_prop = ""
     if is_cts_test:
-      # Have CTS test modules use the test API (`test_current`) so
-      # that they do not depend on the framework private platform API
-      # (`private`), which is the default.
+      # Have CTS and MCTS test modules use the test API
+      # (`test_current`) so that they do not depend on the framework
+      # private platform API (`private`), which is the default.
       sdk_version_prop = """
           sdk_version: "test_current","""
 
@@ -595,9 +711,14 @@ class Generator:
 
     src_library_rules = []
     test_libraries = []
+    extra_props = ""
+    # Honor the Lint baseline file, if present.
+    if os.path.isfile(os.path.join(run_test_path, LINT_BASELINE_FILENAME)):
+      extra_props += self.gen_prop_group("lint", {"baseline_filename": LINT_BASELINE_FILENAME})
     if os.path.isdir(os.path.join(run_test_path, "src2")):
       test_library = f"{run_test_module_name}-{source_dir}"
-      src_library_rules.append(self.gen_java_library_rule(test_library, source_dir, test_libraries))
+      src_library_rules.append(
+          self.gen_java_library_rule(test_library, source_dir, test_libraries, extra_props))
       test_libraries.append(f"\"{test_library}\"")
       source_dir = "src2"
 
@@ -766,17 +887,19 @@ class Generator:
       f.write(test_mapping_contents)
       f.write("\n")
 
-  def create_mts_test_shard(self, description, tests, shard_num, copyright_year, comments = []):
+  def create_mts_test_shard(self, tests_description, tests, shard_num, copyright_year,
+                            comments = []):
     """Factory method instantiating an `MtsTestShard`."""
-    return self.MtsTestShard(self.mts_config_dir,
-                             description, tests, shard_num, copyright_year, comments)
+    return self.MtsTestShard(self.mts_config_dir, tests_description, tests, shard_num,
+                             copyright_year, comments)
 
   class MtsTestShard:
     """Class encapsulating data and generation logic for an ART MTS test shard."""
 
-    def __init__(self, mts_config_dir, description, tests, shard_num, copyright_year, comments):
+    def __init__(self, mts_config_dir, tests_description, tests, shard_num, copyright_year,
+                 comments):
       self.mts_config_dir = mts_config_dir
-      self.description = description
+      self.tests_description = tests_description
       self.tests = tests
       self.shard_num = shard_num
       self.copyright_year = copyright_year
@@ -804,10 +927,17 @@ class Generator:
       root.appendChild(configuration)
       configuration.setAttribute(
           "description",
-          f"Run mts-art-shard-{self.shard_id()} from a preexisting MTS installation.")
+          f"Run {self.test_plan_name()} from a preexisting MTS installation.")
 
       # Included XML files.
       included_xml_files = ["mts", self.test_list_name()]
+      # Special case for the test plan of shard 03 (ART gtests), where we also
+      # include ART MTS eng-only tests.
+      #
+      # TODO(rpl): Restucture the MTS generation logic to avoid special-casing
+      # at that level of the generator.
+      if self.shard_num == 3:
+        included_xml_files.append(ENG_ONLY_TEST_LIST_NAME)
       for xml_file in included_xml_files:
         include = root.createElement("include")
         include.setAttribute("name", xml_file)
@@ -828,70 +958,11 @@ class Generator:
 
     def regen_test_list_file(self):
       """Regenerate ART MTS test list file (`mts-art-tests-list-user-shard-<shard_num>.xml`)."""
-      root = xml.dom.minidom.Document()
-
-      advisory_header = root.createComment(f" {ADVISORY} ")
-      root.appendChild(advisory_header)
-      copyright_header = root.createComment(copyright_header_text(self.copyright_year))
-      root.appendChild(copyright_header)
-
-      configuration = root.createElement("configuration")
-      root.appendChild(configuration)
-      configuration.setAttribute(
-          "description",
-          f"List of ART MTS tests that do not need root access (shard {self.shard_id()})"
-      )
-
-      # Test declarations.
-      # ------------------
-
-      def append_test_declaration(test):
-        option = root.createElement("option")
-        option.setAttribute("name", "compatibility:include-filter")
-        option.setAttribute("value", test)
-        configuration.appendChild(option)
-
-      test_declarations_comments = [self.description + "."]
-      test_declarations_comments.extend(self.comments)
-      for c in test_declarations_comments:
-        xml_comment = root.createComment(f" {c} ")
-        configuration.appendChild(xml_comment)
-      for t in self.tests:
-        append_test_declaration(t)
-
-      # `MainlineTestModuleController` configurations.
-      # ----------------------------------------------
-
-      def append_module_controller_configuration(test):
-        option = root.createElement("option")
-        option.setAttribute("name", "compatibility:module-arg")
-        option.setAttribute("value", f"{test}:enable:true")
-        configuration.appendChild(option)
-
-      module_controller_configuration_comments = [
-          f"Enable MainlineTestModuleController for {self.description}."]
-      module_controller_configuration_comments.extend(self.comments)
-      for c in module_controller_configuration_comments:
-        xml_comment = root.createComment(f" {c} ")
-        configuration.appendChild(xml_comment)
-      for t in self.tests:
-        append_module_controller_configuration(t)
-      for t in self.tests:
-        if t in ["CtsLibcoreTestCases", "CtsLibcoreOjTestCases"]:
-          xml_comment = root.createComment(
-            " core-test-mode=mts tells ExpectationBasedFilter to exclude @NonMts Tests ")
-          configuration.appendChild(xml_comment)
-          option = root.createElement("option")
-          option.setAttribute("name", "compatibility:module-arg")
-          option.setAttribute("value", f"{t}:instrumentation-arg:core-test-mode:=mts")
-          configuration.appendChild(option)
-
-      xml_str = root.toprettyxml(indent = XML_INDENT, encoding = "utf-8")
-
+      configuration_description = \
+        f"List of ART MTS tests that do not need root access (shard {self.shard_id()})"
       test_list_file = os.path.join(self.mts_config_dir, self.test_list_name() + ".xml")
-      with open(test_list_file, "wb") as f:
-        logging.debug(f"Writing `{test_list_file}`.")
-        f.write(xml_str)
+      gen_mts_test_list_file(self.tests, test_list_file, self.copyright_year,
+                             configuration_description, self.tests_description, self.comments)
 
   def regen_mts_art_tests_list_user_file(self, num_mts_art_run_test_shards):
     """Regenerate ART MTS test list file (`mts-art-tests-list-user.xml`)."""
@@ -939,7 +1010,7 @@ class Generator:
       logging.debug(f"Writing `{mts_art_tests_list_user_file}`.")
       f.write(xml_str)
 
-  def regen_art_mts_files(self, art_run_tests):
+  def regen_art_mts_files(self, art_run_tests, art_jvmti_cts_tests):
     """Regenerate ART MTS definition files."""
 
     # Remove any previously MTS ART test plan shard (`mts-art-shard-[0-9]+.xml`)
@@ -972,8 +1043,8 @@ class Generator:
         "CTS Libcore non-OJ tests", ["CtsLibcoreTestCases"], cts_libcore_tests_shard_num, 2020)
     mts_test_shards.append(cts_libcore_tests_shard)
 
-    # Other CTS Libcore tests shard.
-    other_cts_libcore_tests_shard_num = len(mts_test_shards)
+    # Other CTS tests shard.
+    other_cts_tests_shard_num = len(mts_test_shards)
     other_cts_libcore_tests_shard_tests = [
         "CtsLibcoreApiEvolutionTestCases",
         "CtsLibcoreFileIOTestCases",
@@ -984,14 +1055,12 @@ class Generator:
         "MtsLibcoreOkHttpTestCases",
         "MtsLibcoreBouncyCastleTestCases",
     ]
-    other_cts_libcore_tests_shard = self.create_mts_test_shard(
-        "CTS Libcore OJ tests", other_cts_libcore_tests_shard_tests,
-        other_cts_libcore_tests_shard_num, 2021)
-    mts_test_shards.append(other_cts_libcore_tests_shard)
+    other_cts_tests_shard_tests = art_jvmti_cts_tests + other_cts_libcore_tests_shard_tests
+    other_cts_tests_shard = self.create_mts_test_shard(
+        "Other CTS tests", other_cts_tests_shard_tests, other_cts_tests_shard_num, 2021)
+    mts_test_shards.append(other_cts_tests_shard)
 
     # ART gtests shard.
-    # TODO: Also handle the case of gtests requiring root access to the device
-    # (`art_gtest_eng_only_module_names`).
     art_gtests_shard_num = len(mts_test_shards)
     art_gtests_shard_tests = art_gtest_mts_user_module_names
     art_gtests_shard = self.create_mts_test_shard(
@@ -1001,6 +1070,20 @@ class Generator:
     for s in mts_test_shards:
       s.regen_test_plan_file()
       s.regen_test_list_file()
+
+    # Generate the MTS test list file of "eng-only" tests (tests that
+    # need root access to the device-under-test and are not part of
+    # "user" test plans).
+    #
+    # TODO(rpl): Refactor the MTS file generation logic to better
+    # handle the special case of "eng-only" tests, which do not play
+    # well with `MtsTestShard` at the moment).
+    eng_only_test_list_file = os.path.join(self.mts_config_dir, ENG_ONLY_TEST_LIST_NAME + ".xml")
+    gen_mts_test_list_file(
+        art_gtest_eng_only_module_names, eng_only_test_list_file,
+        copyright_year = 2020,
+        configuration_description = "List of ART MTS tests that need root access.",
+        tests_description = "ART gtests")
 
     self.regen_mts_art_tests_list_user_file(len(mts_test_shards))
 
@@ -1092,7 +1175,7 @@ class Generator:
     # -----------------------------------------
 
     if regen_art_mts:
-      self.regen_art_mts_files(expected_succeeding_tests)
+      self.regen_art_mts_files(expected_succeeding_tests, self.enumerate_jvmti_cts_tests())
       print(f"Generated ART MTS entries for {num_expected_succeeding_tests} ART run-tests out"
             f" of {len(run_tests)} ({expected_succeeding_tests_percentage}%).")
 

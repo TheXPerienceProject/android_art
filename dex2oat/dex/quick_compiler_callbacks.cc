@@ -16,11 +16,16 @@
 
 #include "quick_compiler_callbacks.h"
 
+#include "aot_class_linker.h"
 #include "dex/verification_results.h"
 #include "driver/compiler_driver.h"
 #include "mirror/class-inl.h"
 
 namespace art {
+
+ClassLinker* QuickCompilerCallbacks::CreateAotClassLinker(InternTable* intern_table) {
+  return new AotClassLinker(intern_table);
+}
 
 void QuickCompilerCallbacks::AddUncompilableMethod(MethodReference ref) {
   if (verification_results_ != nullptr) {

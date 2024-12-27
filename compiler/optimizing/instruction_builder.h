@@ -132,6 +132,9 @@ class HInstructionBuilder : public ValueObject {
                           bool second_is_lit,
                           bool is_div);
 
+  template <DataType::Type type>
+  void BuildMove(uint32_t dest_reg, uint32_t src_reg);
+
   void BuildReturn(const Instruction& instruction, DataType::Type type, uint32_t dex_pc);
 
   // Builds an instance field access node and returns whether the instruction is supported.

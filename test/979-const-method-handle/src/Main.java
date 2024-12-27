@@ -29,7 +29,7 @@ class Main {
      * Number of iterations run to attempt to trigger JIT compilation. These tests run on ART and
      * the RI so they iterate rather than using the ART only native method ensureJitCompiled().
      */
-    private static final int ITERATIONS_FOR_JIT = 12000;
+    private static final int ITERATIONS_FOR_JIT = 30000;
 
     /** A static field updated by method handle getters and setters. */
     private static String name = "default";

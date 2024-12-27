@@ -230,10 +230,15 @@ public class DeviceState {
             mMountPoints.remove(remotePath);
         }
 
+        String fileContext = getFileContext(remotePath);
+        mTestUtils.assertCommandSucceeds(String.format("chcon %s %s", fileContext, tempFile));
         mTestUtils.assertCommandSucceeds(
                 String.format("mount --bind '%s' '%s'", tempFile, remotePath));
         mMountPoints.add(remotePath);
-        mTestUtils.assertCommandSucceeds(String.format("restorecon '%s'", remotePath));
+    }
+
+    private String getFileContext(String remotePath) throws Exception {
+        return mTestUtils.assertCommandSucceeds(String.format("stat -c %%C %s", remotePath));
     }
 
     /** A helper class for mutating an XML file. */

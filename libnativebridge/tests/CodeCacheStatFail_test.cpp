@@ -26,17 +26,17 @@ namespace android {
 // Tests that the bridge is initialized without errors if the code_cache is
 // existed as a file.
 TEST_F(NativeBridgeTest, CodeCacheStatFail) {
-  int fd = creat(codeCache(), O_RDWR);
+  int fd = creat(CodeCache(), O_RDWR);
   ASSERT_NE(-1, fd);
   close(fd);
 
   struct stat st;
-  ASSERT_EQ(-1, stat(codeCacheStatFail(), &st));
+  ASSERT_EQ(-1, stat(CodeCacheStatFail(), &st));
   ASSERT_EQ(ENOTDIR, errno);
 
   // Init
   ASSERT_TRUE(LoadNativeBridge(kNativeBridgeLibrary, nullptr));
-  ASSERT_TRUE(PreInitializeNativeBridge(codeCacheStatFail(), "isa"));
+  ASSERT_TRUE(PreInitializeNativeBridge(CodeCacheStatFail(), "isa"));
   ASSERT_TRUE(InitializeNativeBridge(nullptr, nullptr));
   ASSERT_TRUE(NativeBridgeAvailable());
   ASSERT_FALSE(NativeBridgeError());
@@ -45,7 +45,7 @@ TEST_F(NativeBridgeTest, CodeCacheStatFail) {
   UnloadNativeBridge();
 
   ASSERT_FALSE(NativeBridgeError());
-  unlink(codeCache());
+  unlink(CodeCache());
 }
 
 }  // namespace android

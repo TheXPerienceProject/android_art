@@ -128,8 +128,8 @@ class InductionVarRange {
   HInstruction* GenerateLastValue(HInstruction* instruction, HGraph* graph, HBasicBlock* block);
 
   /**
-   * Updates all matching fetches with the given replacement in all induction information
-   * that is associated with the given instruction.
+   * Updates all matching `fetch`es with the given `replacement` in all induction information
+   * that is present in the loops of the given `instruction`.
    */
   void Replace(HInstruction* instruction, HInstruction* fetch, HInstruction* replacement);
 

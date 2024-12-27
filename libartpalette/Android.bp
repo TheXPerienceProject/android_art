@@ -27,8 +27,10 @@ package {
 cc_defaults {
     name: "libartpalette_defaults",
     defaults: ["art_defaults"],
-    host_supported: true,
     export_include_dirs: ["include"],
+    header_libs: [
+        "jni_headers",
+    ],
 }
 
 cc_library_headers {
@@ -47,6 +49,7 @@ cc_library_headers {
 art_cc_library {
     name: "libartpalette",
     defaults: ["libartpalette_defaults"],
+    host_supported: true,
     visibility: [
         // TODO(b/183483755): Please visibility checks when the prebuilt
         // libartpalette is present but not preferred, and the prebuilt
@@ -57,7 +60,6 @@ art_cc_library {
     ],
     header_libs: [
         "libbase_headers",
-        "jni_headers",
     ],
     export_header_lib_headers: [
         "jni_headers",
@@ -112,6 +114,23 @@ art_cc_library {
     ],
 }
 
+art_cc_library {
+    name: "libartpalette_fake",
+    defaults: ["libartpalette_defaults"],
+    srcs: ["system/palette_fake.cc"],
+    stem: "libartpalette-system",
+    relative_install_path: "art_fake", // Avoid conflict with the real lib.
+    shared_libs: [
+        "libbase",
+        "liblog",
+    ],
+    compile_multilib: "both",
+    visibility: [
+        "//visibility:override",
+        "//visibility:private",
+    ],
+}
+
 art_cc_defaults {
     name: "art_libartpalette_tests_defaults",
     srcs: ["apex/palette_test.cc"],
@@ -122,7 +141,7 @@ art_cc_defaults {
     },
 }
 
-// Version of ART gtest `art_libartpalette_tests` bundled with the ART APEX on target.
+// Version of ART gtest `art_libartpalette_tests` for host.
 // TODO(b/192274705): Remove this module when the migration to standalone ART gtests is complete.
 art_cc_test {
     name: "art_libartpalette_tests",
@@ -131,13 +150,13 @@ art_cc_test {
         "art_libartpalette_tests_defaults",
     ],
     host_supported: true,
+    device_supported: false,
 }
 
 // Standalone version of ART gtest `art_libartpalette_tests`, not bundled with the ART APEX on
 // target.
 art_cc_test {
     name: "art_standalone_libartpalette_tests",
-    team: "trendy_team_art_performance",
     defaults: [
         "art_standalone_gtest_defaults",
         "art_libartpalette_tests_defaults",

@@ -826,10 +826,8 @@ struct CmdlineType<ProfileSaverOptions> : CmdlineTypeParser<ProfileSaverOptions>
              type_parser.Parse(suffix));
     }
     if (option.starts_with("save-resolved-classes-delay-ms:")) {
-      CmdlineType<unsigned int> type_parser;
-      return ParseInto(existing,
-             &ProfileSaverOptions::save_resolved_classes_delay_ms_,
-             type_parser.Parse(suffix));
+      LOG(WARNING) << "-Xps-save-resolved-classes-delay-ms is deprecated";
+      return Result::SuccessNoValue();
     }
     if (option.starts_with("hot-startup-method-samples:")) {
       LOG(WARNING) << "-Xps-hot-startup-method-samples option is deprecated";
