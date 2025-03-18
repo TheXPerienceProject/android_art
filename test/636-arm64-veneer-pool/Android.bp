@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-636-arm64-veneer-pool-expected-stdout",
         ":art-run-test-636-arm64-veneer-pool-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

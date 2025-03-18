@@ -72,6 +72,7 @@
 
 namespace art {
 
+using android::base::ConsumePrefix;
 using android::base::GetBoolProperty;
 using android::base::GetProperty;
 using android::base::StringPrintf;
@@ -374,7 +375,7 @@ static bool MaybeAppendBootImageMainlineExtension(const std::string& android_roo
                                                   bool deny_art_apex_data_files,
                                                   /*inout*/ std::string* location,
                                                   /*out*/ std::string* error_msg) {
-  if (!kIsTargetAndroid) {
+  if (!kIsTargetAndroid || RunningOnVM()) {
     return true;
   }
   // Due to how the runtime determines the mapping between boot images and bootclasspath jars, the
@@ -382,9 +383,6 @@ static bool MaybeAppendBootImageMainlineExtension(const std::string& android_roo
   // `<primary-boot-image-stem>-<first-library-name>.art`.
   std::string library_name = GetFirstMainlineFrameworkLibraryName(error_msg);
   if (library_name.empty()) {
-    if (kRuntimeISA == InstructionSet::kRiscv64) {
-      return true;
-    }
     return false;
   }
 
@@ -427,8 +425,8 @@ std::string GetDefaultBootImageLocationSafe(const std::string& android_root,
   // If an update for the ART module has been been installed, a single boot image for the entire
   // bootclasspath is in the ART APEX data directory.
   if (kIsTargetBuild && !deny_art_apex_data_files) {
-    const std::string boot_image =
-        GetApexDataDalvikCacheDirectory(InstructionSet::kNone) + "/" + kBootImageStem + ".art";
+    const std::string boot_image = GetApexDataDalvikCacheDirectory(InstructionSet::kNone) + "/" +
+                                   kBootImageStem + kArtExtension;
     const std::string boot_image_filename = GetSystemImageFilename(boot_image.c_str(), kRuntimeISA);
     if (OS::FileExists(boot_image_filename.c_str(), /*check_file_type=*/true)) {
       // Boot image consists of two parts:
@@ -461,7 +459,7 @@ std::string GetDefaultBootImageLocationSafe(const std::string& android_root,
     // ART module, when it fails to generate a single boot image for the entire bootclasspath (i.e.,
     // full boot image). Use it if it exists.
     const std::string minimal_boot_image = GetApexDataDalvikCacheDirectory(InstructionSet::kNone) +
-                                           "/" + kMinimalBootImageStem + ".art";
+                                           "/" + kMinimalBootImageStem + kArtExtension;
     const std::string minimal_boot_image_filename =
         GetSystemImageFilename(minimal_boot_image.c_str(), kRuntimeISA);
     if (OS::FileExists(minimal_boot_image_filename.c_str(), /*check_file_type=*/true)) {
@@ -634,7 +632,8 @@ static bool GetLocationEncodedFilename(std::string_view location,
   *filename += location;  // Including the leading slash.
   size_t replace_start = cache_location.length() + /* skip the leading slash from `location` */ 1u;
   std::replace(filename->begin() + replace_start, filename->end(), '/', '@');
-  if (!location.ends_with(".dex") && !location.ends_with(".art") && !location.ends_with(".oat")) {
+  if (!location.ends_with(".dex") && !location.ends_with(kArtExtension) &&
+      !location.ends_with(kOatExtension)) {
     *filename += "@";
     *filename += kClassesDex;
   }
@@ -683,26 +682,23 @@ static std::string GetApexDataDalvikCacheFilename(std::string_view dex_location,
 }
 
 std::string GetApexDataOatFilename(std::string_view location, InstructionSet isa) {
-  return GetApexDataDalvikCacheFilename(location, isa, /*is_boot_classpath_location=*/true, "oat");
+  return GetApexDataDalvikCacheFilename(
+      location, isa, /*is_boot_classpath_location=*/true, kOatExtension);
 }
 
 std::string GetApexDataOdexFilename(std::string_view location, InstructionSet isa) {
   return GetApexDataDalvikCacheFilename(
-      location, isa, /*is_boot_classpath_location=*/false, "odex");
+      location, isa, /*is_boot_classpath_location=*/false, kOdexExtension);
 }
 
 std::string GetApexDataBootImage(std::string_view dex_location) {
-  return GetApexDataDalvikCacheFilename(dex_location,
-                                        InstructionSet::kNone,
-                                        /*is_boot_classpath_location=*/true,
-                                        kArtImageExtension);
+  return GetApexDataDalvikCacheFilename(
+      dex_location, InstructionSet::kNone, /*is_boot_classpath_location=*/true, kArtExtension);
 }
 
 std::string GetApexDataImage(std::string_view dex_location) {
-  return GetApexDataDalvikCacheFilename(dex_location,
-                                        InstructionSet::kNone,
-                                        /*is_boot_classpath_location=*/false,
-                                        kArtImageExtension);
+  return GetApexDataDalvikCacheFilename(
+      dex_location, InstructionSet::kNone, /*is_boot_classpath_location=*/false, kArtExtension);
 }
 
 std::string GetApexDataDalvikCacheFilename(std::string_view dex_location,
@@ -713,13 +709,14 @@ std::string GetApexDataDalvikCacheFilename(std::string_view dex_location,
 }
 
 std::string GetVdexFilename(const std::string& oat_location) {
-  return ReplaceFileExtension(oat_location, "vdex");
+  return ReplaceFileExtension(oat_location, kVdexExtension);
 }
 
 std::string GetDmFilename(const std::string& dex_location) {
-  return ReplaceFileExtension(dex_location, "dm");
+  return ReplaceFileExtension(dex_location, kDmExtension);
 }
 
+// check for the file in /system, followed by /system_ext
 std::string GetSystemOdexFilenameForApex(std::string_view location, InstructionSet isa) {
   DCHECK(LocationIsOnApex(location));
   std::string dir = GetAndroidRoot() + "/framework/oat/" + GetInstructionSetString(isa);
@@ -728,7 +725,17 @@ std::string GetSystemOdexFilenameForApex(std::string_view location, InstructionS
   // This should never fail. The function fails only if the location is not absolute, and a location
   // on /apex is always absolute.
   DCHECK(ret) << error_msg;
-  return ReplaceFileExtension(result, "odex");
+  std::string path = ReplaceFileExtension(result, kOdexExtension);
+  if (OS::FileExists(path.c_str(), /*check_file_type=*/true)) {
+    return path;
+  }
+  // check in /system_ext
+  dir = GetSystemExtRoot() + "/framework/oat/" + GetInstructionSetString(isa);
+  ret = GetLocationEncodedFilename(location, dir, &result, &error_msg);
+  // This should never fail. The function fails only if the location is not absolute, and a location
+  // on /apex is always absolute.
+  DCHECK(ret) << error_msg;
+  return ReplaceFileExtension(result, kOdexExtension);
 }
 
 static void InsertIsaDirectory(const InstructionSet isa, std::string* filename) {
@@ -749,6 +756,7 @@ std::string GetSystemImageFilename(const char* location, const InstructionSet is
 }
 
 std::string ReplaceFileExtension(std::string_view filename, std::string_view new_extension) {
+  ConsumePrefix(&new_extension, ".");
   const size_t last_ext = filename.find_last_of("./");
   std::string result;
   if (last_ext == std::string::npos || filename[last_ext] != '.') {

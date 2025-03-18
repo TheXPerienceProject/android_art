@@ -243,6 +243,51 @@ inline ArenaAllocatorAdapter<void> ArenaAllocator::Adapter(ArenaAllocKind kind) 
   return ArenaAllocatorAdapter<void>(this, kind);
 }
 
+// Special deleter that only calls the destructor. Also checks for double free errors.
+template <typename T>
+class ArenaDelete {
+  static constexpr uint8_t kMagicFill = 0xCE;
+
+ protected:
+  // Used for variable sized objects such as RegisterLine.
+  ALWAYS_INLINE void ProtectMemory(T* ptr, size_t size) const {
+    if (kRunningOnMemoryTool) {
+      memset(ptr, kMagicFill, size);
+      MEMORY_TOOL_MAKE_NOACCESS(ptr, size);
+    } else if (kIsDebugBuild) {
+      // Write a magic value to try and catch use after free errors.
+      memset(ptr, kMagicFill, size);
+    }
+  }
+
+ public:
+  void operator()(T* ptr) const {
+    if (ptr != nullptr) {
+      ptr->~T();
+      ProtectMemory(ptr, sizeof(T));
+    }
+  }
+};
+
+// In general we lack support for arrays. We would need to call the destructor on each element,
+// which requires access to the array size. Support for that is future work.
+//
+// However, we can support trivially destructible component types, as then a destructor doesn't
+// need to be called.
+template <typename T>
+class ArenaDelete<T[]> {
+ public:
+  void operator()([[maybe_unused]] T* ptr) const {
+    static_assert(std::is_trivially_destructible_v<T>,
+                  "ArenaUniquePtr does not support non-trivially-destructible arrays.");
+    // TODO: Implement debug checks, and MEMORY_TOOL support.
+  }
+};
+
+// Arena unique ptr that only calls the destructor of the element.
+template <typename T>
+using ArenaUniquePtr = std::unique_ptr<T, ArenaDelete<T>>;
+
 }  // namespace art
 
 #endif  // ART_LIBARTBASE_BASE_ARENA_CONTAINERS_H_

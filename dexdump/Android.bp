@@ -43,7 +43,7 @@ art_cc_binary {
     target: {
         android: {
             shared_libs: [
-                "libdexfile",
+                "libdexfile#impl",
                 "libartbase",
                 "libbase",
             ],

@@ -181,8 +181,7 @@ class ClassLinkerTest : public CommonRuntimeTest {
     Thread* self = Thread::Current();
     StackHandleScope<2> hs(self);
     Handle<mirror::ClassLoader> loader(hs.NewHandle(class_loader));
-    Handle<mirror::Class> array(
-        hs.NewHandle(class_linker_->FindClass(self, array_descriptor.c_str(), loader)));
+    Handle<mirror::Class> array = hs.NewHandle(FindClass(array_descriptor.c_str(), loader));
     std::string temp;
     EXPECT_STREQ(component_type.c_str(), array->GetComponentType()->GetDescriptor(&temp));
     EXPECT_OBJ_PTR_EQ(loader.Get(), array->GetClassLoader());
@@ -912,13 +911,12 @@ TEST_F(ClassLinkerTest, FindClassNested) {
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Nested"))));
 
-  ObjPtr<mirror::Class> outer = class_linker_->FindClass(soa.Self(), "LNested;", class_loader);
+  ObjPtr<mirror::Class> outer = FindClass("LNested;", class_loader);
   ASSERT_TRUE(outer != nullptr);
   EXPECT_EQ(0U, outer->NumVirtualMethods());
   EXPECT_EQ(1U, outer->NumDirectMethods());
 
-  ObjPtr<mirror::Class> inner =
-      class_linker_->FindClass(soa.Self(), "LNested$Inner;", class_loader);
+  ObjPtr<mirror::Class> inner = FindClass("LNested$Inner;", class_loader);
   ASSERT_TRUE(inner != nullptr);
   EXPECT_EQ(0U, inner->NumVirtualMethods());
   EXPECT_EQ(1U, inner->NumDirectMethods());
@@ -948,7 +946,7 @@ TEST_F(ClassLinkerTest, FindClass) {
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("MyClass"))));
   AssertNonExistentClass("LMyClass;");
-  ObjPtr<mirror::Class> MyClass = class_linker_->FindClass(soa.Self(), "LMyClass;", class_loader);
+  ObjPtr<mirror::Class> MyClass = FindClass("LMyClass;", class_loader);
   ASSERT_TRUE(MyClass != nullptr);
   ASSERT_TRUE(MyClass->GetClass() != nullptr);
   ASSERT_OBJ_PTR_EQ(MyClass->GetClass(), MyClass->GetClass()->GetClass());
@@ -997,7 +995,7 @@ TEST_F(ClassLinkerTest, LookupResolvedType) {
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("MyClass"))));
   AssertNonExistentClass("LMyClass;");
-  ObjPtr<mirror::Class> klass = class_linker_->FindClass(soa.Self(), "LMyClass;", class_loader);
+  ObjPtr<mirror::Class> klass = FindClass("LMyClass;", class_loader);
   dex::TypeIndex type_idx = klass->GetClassDef()->class_idx_;
   ObjPtr<mirror::DexCache> dex_cache = klass->GetDexCache();
   EXPECT_OBJ_PTR_EQ(
@@ -1017,8 +1015,7 @@ TEST_F(ClassLinkerTest, LookupResolvedTypeArray) {
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("AllFields"))));
   // Get the AllFields class for the dex cache and dex file.
-  ObjPtr<mirror::Class> all_fields_klass
-      = class_linker_->FindClass(soa.Self(), "LAllFields;", class_loader);
+  ObjPtr<mirror::Class> all_fields_klass = FindClass("LAllFields;", class_loader);
   ASSERT_TRUE(all_fields_klass != nullptr);
   Handle<mirror::DexCache> dex_cache = hs.NewHandle(all_fields_klass->GetDexCache());
   const DexFile& dex_file = *dex_cache->GetDexFile();
@@ -1030,8 +1027,7 @@ TEST_F(ClassLinkerTest, LookupResolvedTypeArray) {
   EXPECT_TRUE(
       class_linker_->LookupResolvedType(array_idx, dex_cache.Get(), class_loader.Get()) == nullptr);
   // Resolve the array class we want to test.
-  ObjPtr<mirror::Class> array_klass
-      = class_linker_->FindClass(soa.Self(), "[Ljava/lang/Object;", class_loader);
+  ObjPtr<mirror::Class> array_klass = FindClass("[Ljava/lang/Object;", class_loader);
   ASSERT_TRUE(array_klass != nullptr);
   // Test that LookupResolvedType() finds the array class.
   EXPECT_OBJ_PTR_EQ(
@@ -1051,8 +1047,7 @@ TEST_F(ClassLinkerTest, LookupResolvedTypeErroneousInit) {
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("ErroneousInit"))));
   AssertNonExistentClass("LErroneousInit;");
-  Handle<mirror::Class> klass =
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LErroneousInit;", class_loader));
+  Handle<mirror::Class> klass = hs.NewHandle(FindClass("LErroneousInit;", class_loader));
   ASSERT_TRUE(klass != nullptr);
   dex::TypeIndex type_idx = klass->GetClassDef()->class_idx_;
   Handle<mirror::DexCache> dex_cache = hs.NewHandle(klass->GetDexCache());
@@ -1146,21 +1141,21 @@ TEST_F(ClassLinkerTest, ValidateBoxedTypes) {
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> class_loader;
   ObjPtr<mirror::Class> c;
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Boolean;", class_loader);
+  c = FindClass("Ljava/lang/Boolean;", class_loader);
   EXPECT_STREQ("value", c->GetIFieldsPtr()->At(0).GetName());
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Byte;", class_loader);
+  c = FindClass("Ljava/lang/Byte;", class_loader);
   EXPECT_STREQ("value", c->GetIFieldsPtr()->At(0).GetName());
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Character;", class_loader);
+  c = FindClass("Ljava/lang/Character;", class_loader);
   EXPECT_STREQ("value", c->GetIFieldsPtr()->At(0).GetName());
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Double;", class_loader);
+  c = FindClass("Ljava/lang/Double;", class_loader);
   EXPECT_STREQ("value", c->GetIFieldsPtr()->At(0).GetName());
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Float;", class_loader);
+  c = FindClass("Ljava/lang/Float;", class_loader);
   EXPECT_STREQ("value", c->GetIFieldsPtr()->At(0).GetName());
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Integer;", class_loader);
+  c = FindClass("Ljava/lang/Integer;", class_loader);
   EXPECT_STREQ("value", c->GetIFieldsPtr()->At(0).GetName());
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Long;", class_loader);
+  c = FindClass("Ljava/lang/Long;", class_loader);
   EXPECT_STREQ("value", c->GetIFieldsPtr()->At(0).GetName());
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Short;", class_loader);
+  c = FindClass("Ljava/lang/Short;", class_loader);
   EXPECT_STREQ("value", c->GetIFieldsPtr()->At(0).GetName());
 }
 
@@ -1171,10 +1166,8 @@ TEST_F(ClassLinkerTest, TwoClassLoadersOneClass) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("MyClass"))));
   Handle<mirror::ClassLoader> class_loader_2(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("MyClass"))));
-  Handle<mirror::Class> MyClass_1 = hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LMyClass;", class_loader_1));
-  ObjPtr<mirror::Class> MyClass_2 =
-      class_linker_->FindClass(soa.Self(), "LMyClass;", class_loader_2);
+  Handle<mirror::Class> MyClass_1 = hs.NewHandle(FindClass("LMyClass;", class_loader_1));
+  ObjPtr<mirror::Class> MyClass_2 = FindClass("LMyClass;", class_loader_2);
   EXPECT_TRUE(MyClass_1 != nullptr);
   EXPECT_TRUE(MyClass_2 != nullptr);
   EXPECT_OBJ_PTR_NE(MyClass_1.Get(), MyClass_2);
@@ -1185,8 +1178,7 @@ TEST_F(ClassLinkerTest, StaticFields) {
   StackHandleScope<2> hs(soa.Self());
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Statics"))));
-  Handle<mirror::Class> statics(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LStatics;", class_loader)));
+  Handle<mirror::Class> statics = hs.NewHandle(FindClass("LStatics;", class_loader));
   class_linker_->EnsureInitialized(soa.Self(), statics, true, true);
 
   // Static final primitives that are initialized by a compile-time constant
@@ -1261,16 +1253,11 @@ TEST_F(ClassLinkerTest, Interfaces) {
   StackHandleScope<6> hs(soa.Self());
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Interfaces"))));
-  Handle<mirror::Class> I(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LInterfaces$I;", class_loader)));
-  Handle<mirror::Class> J(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LInterfaces$J;", class_loader)));
-  Handle<mirror::Class> K(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LInterfaces$K;", class_loader)));
-  Handle<mirror::Class> A(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LInterfaces$A;", class_loader)));
-  Handle<mirror::Class> B(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LInterfaces$B;", class_loader)));
+  Handle<mirror::Class> I = hs.NewHandle(FindClass("LInterfaces$I;", class_loader));
+  Handle<mirror::Class> J = hs.NewHandle(FindClass("LInterfaces$J;", class_loader));
+  Handle<mirror::Class> K = hs.NewHandle(FindClass("LInterfaces$K;", class_loader));
+  Handle<mirror::Class> A = hs.NewHandle(FindClass("LInterfaces$A;", class_loader));
+  Handle<mirror::Class> B = hs.NewHandle(FindClass("LInterfaces$B;", class_loader));
   EXPECT_TRUE(I->IsAssignableFrom(A.Get()));
   EXPECT_TRUE(J->IsAssignableFrom(A.Get()));
   EXPECT_TRUE(J->IsAssignableFrom(K.Get()));
@@ -1336,8 +1323,7 @@ TEST_F(ClassLinkerTest, ResolveVerifyAndClinit) {
   StackHandleScope<1> hs(soa.Self());
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
-  ObjPtr<mirror::Class> klass =
-      class_linker_->FindClass(soa.Self(), "LStaticsFromCode;", class_loader);
+  ObjPtr<mirror::Class> klass = FindClass("LStaticsFromCode;", class_loader);
   ArtMethod* clinit = klass->FindClassInitializer(kRuntimePointerSize);
   ArtMethod* getS0 =
       klass->FindClassMethod("getS0", "()Ljava/lang/Object;", kRuntimePointerSize);
@@ -1370,7 +1356,7 @@ TEST_F(ClassLinkerTest, ErroneousClass) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
   hs.Self()->AssertNoPendingException();
   const char* descriptor = "LErroneous;";
-  ObjPtr<mirror::Class> klass = class_linker_->FindClass(soa.Self(), descriptor, class_loader);
+  ObjPtr<mirror::Class> klass = FindClass(descriptor, class_loader);
   // Erronenous since we are extending final class.
   hs.Self()->AssertPendingException();
   EXPECT_TRUE(klass == nullptr);
@@ -1429,19 +1415,19 @@ TEST_F(ClassLinkerTest, ValidatePredefinedClassSizes) {
   ScopedNullHandle<mirror::ClassLoader> class_loader;
   ObjPtr<mirror::Class> c;
 
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Class;", class_loader);
+  c = FindClass("Ljava/lang/Class;", class_loader);
   ASSERT_TRUE(c != nullptr);
   EXPECT_EQ(c->GetClassSize(), mirror::Class::ClassClassSize(kRuntimePointerSize));
 
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/Object;", class_loader);
+  c = FindClass("Ljava/lang/Object;", class_loader);
   ASSERT_TRUE(c != nullptr);
   EXPECT_EQ(c->GetClassSize(), mirror::Object::ClassSize(kRuntimePointerSize));
 
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/String;", class_loader);
+  c = FindClass("Ljava/lang/String;", class_loader);
   ASSERT_TRUE(c != nullptr);
   EXPECT_EQ(c->GetClassSize(), mirror::String::ClassSize(kRuntimePointerSize));
 
-  c = class_linker_->FindClass(soa.Self(), "Ljava/lang/DexCache;", class_loader);
+  c = FindClass("Ljava/lang/DexCache;", class_loader);
   ASSERT_TRUE(c != nullptr);
   EXPECT_EQ(c->GetClassSize(), mirror::DexCache::ClassSize(kRuntimePointerSize));
 }
@@ -1494,8 +1480,7 @@ TEST_F(ClassLinkerTest, Preverified_App) {
   StackHandleScope<2> hs(soa.Self());
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Statics"))));
-  Handle<mirror::Class> statics(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LStatics;", class_loader)));
+  Handle<mirror::Class> statics = hs.NewHandle(FindClass("LStatics;", class_loader));
 
   CheckVerificationAttempted(statics.Get(), false);
 
@@ -1517,8 +1502,7 @@ TEST_F(ClassLinkerTest, IsBootStrapClassLoaded) {
   EXPECT_TRUE(jlo_class->IsBootStrapClassLoaded());
 
   // Statics is not a bootstrap class.
-  Handle<mirror::Class> statics(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LStatics;", class_loader)));
+  Handle<mirror::Class> statics = hs.NewHandle(FindClass("LStatics;", class_loader));
   ASSERT_TRUE(statics != nullptr);
   EXPECT_FALSE(statics->IsBootStrapClassLoaded());
 }
@@ -1568,8 +1552,7 @@ TEST_F(ClassLinkerMethodHandlesTest, TestResolveMethodTypes) {
 
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("MethodTypes"))));
-  Handle<mirror::Class> method_types(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LMethodTypes;", class_loader)));
+  Handle<mirror::Class> method_types = hs.NewHandle(FindClass("LMethodTypes;", class_loader));
   class_linker_->EnsureInitialized(soa.Self(), method_types, true, true);
 
   ArtMethod* method1 = method_types->FindClassMethod(
@@ -1596,9 +1579,7 @@ TEST_F(ClassLinkerMethodHandlesTest, TestResolveMethodTypes) {
   ASSERT_TRUE(method1_type != nullptr);
 
   // Assert that the return type and the method arguments are as we expect.
-  Handle<mirror::Class> string_class(hs.NewHandle(class_linker_->FindClass(soa.Self(),
-                                                                           "Ljava/lang/String;",
-                                                                           class_loader)));
+  Handle<mirror::Class> string_class = hs.NewHandle(FindClass("Ljava/lang/String;", class_loader));
   ASSERT_OBJ_PTR_EQ(string_class.Get(), method1_type->GetRType());
   ASSERT_OBJ_PTR_EQ(string_class.Get(), method1_type->GetPTypes()->Get(0));
 
@@ -1704,8 +1685,8 @@ class ClassLinkerClassLoaderTest : public ClassLinkerTest {
     Handle<mirror::ClassLoader> class_loader_to_search(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader_to_search_obj)));
 
-    Handle<mirror::Class> klass = hs.NewHandle(
-        class_linker_->FindClass(soa.Self(), descriptor.c_str(), class_loader_to_search));
+    Handle<mirror::Class> klass =
+        hs.NewHandle(FindClass(descriptor.c_str(), class_loader_to_search));
 
     if (!should_find) {
       if (self->IsExceptionPending()) {

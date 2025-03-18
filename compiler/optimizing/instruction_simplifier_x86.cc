@@ -48,7 +48,6 @@ class InstructionSimplifierX86Visitor final : public HGraphVisitor {
   }
 
   void VisitAnd(HAnd * instruction) override;
-  void VisitRol(HRol* instruction) override;
   void VisitXor(HXor* instruction) override;
 
  private:
@@ -69,21 +68,6 @@ void InstructionSimplifierX86Visitor::VisitAnd(HAnd* instruction) {
       RecordSimplification();
     }
   }
-}
-
-void InstructionSimplifierX86Visitor::VisitRol(HRol* rol) {
-  if (rol->GetType() != DataType::Type::kInt64) {
-    return;
-  }
-
-  HBasicBlock* block = rol->GetBlock();
-  HGraph* graph = block->GetGraph();
-  ArenaAllocator* allocator = graph->GetAllocator();
-
-  HNeg* neg = new (allocator) HNeg(DataType::Type::kInt32, rol->GetRight());
-  block->InsertInstructionBefore(neg, rol);
-  HRor* ror = new (allocator) HRor(rol->GetType(), rol->GetLeft(), neg);
-  block->ReplaceAndRemoveInstructionWith(rol, ror);
 }
 
 void InstructionSimplifierX86Visitor::VisitXor(HXor* instruction) {

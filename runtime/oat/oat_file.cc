@@ -1862,7 +1862,7 @@ class OatFileBackedByVdex final : public OatFileBase {
       store.Put(OatHeader::kClassPathKey, context->EncodeContextForOatFile(""));
     }
 
-    oat_header_.reset(OatHeader::Create(kRuntimeISA,
+    oat_header_.reset(OatHeader::Create(kRuntimeQuickCodeISA,
                                         isa_features.get(),
                                         number_of_dex_files,
                                         &store));

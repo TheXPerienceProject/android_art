@@ -51,13 +51,6 @@ namespace art HIDDEN {
 // double).
 static constexpr bool kEnableFloatingPointStaticEvaluation = (FLT_EVAL_METHOD == 0);
 
-ReferenceTypeInfo::TypeHandle HandleCache::CreateRootHandle(VariableSizedHandleScope* handles,
-                                                            ClassRoot class_root) {
-  // Mutator lock is required for NewHandle and GetClassRoot().
-  ScopedObjectAccess soa(Thread::Current());
-  return handles->NewHandle(GetClassRoot(class_root));
-}
-
 void HGraph::AddBlock(HBasicBlock* block) {
   block->SetBlockId(blocks_.size());
   blocks_.push_back(block);
@@ -691,6 +684,26 @@ void HLoopInformation::Dump(std::ostream& os) {
   }
 }
 
+template <class InstructionType, typename ValueType>
+InstructionType* HGraph::CreateConstant(ValueType value,
+                                        ArenaSafeMap<ValueType, InstructionType*>* cache) {
+  // Try to find an existing constant of the given value.
+  InstructionType* constant = nullptr;
+  auto cached_constant = cache->find(value);
+  if (cached_constant != cache->end()) {
+    constant = cached_constant->second;
+  }
+
+  // If not found or previously deleted, create and cache a new instruction.
+  // Don't bother reviving a previously deleted instruction, for simplicity.
+  if (constant == nullptr || constant->GetBlock() == nullptr) {
+    constant = new (allocator_) InstructionType(value);
+    cache->Overwrite(value, constant);
+    InsertConstant(constant);
+  }
+  return constant;
+}
+
 void HGraph::InsertConstant(HConstant* constant) {
   // New constants are inserted before the SuspendCheck at the bottom of the
   // entry block. Note that this method can be called from the graph builder and
@@ -714,12 +727,12 @@ void HGraph::InsertConstant(HConstant* constant) {
   }
 }
 
-HNullConstant* HGraph::GetNullConstant(uint32_t dex_pc) {
+HNullConstant* HGraph::GetNullConstant() {
   // For simplicity, don't bother reviving the cached null constant if it is
   // not null and not in a block. Otherwise, we need to clear the instruction
   // id and/or any invariants the graph is assuming when adding new instructions.
   if ((cached_null_constant_ == nullptr) || (cached_null_constant_->GetBlock() == nullptr)) {
-    cached_null_constant_ = new (allocator_) HNullConstant(dex_pc);
+    cached_null_constant_ = new (allocator_) HNullConstant();
     cached_null_constant_->SetReferenceTypeInfo(GetInexactObjectRti());
     InsertConstant(cached_null_constant_);
   }
@@ -728,6 +741,22 @@ HNullConstant* HGraph::GetNullConstant(uint32_t dex_pc) {
     DCHECK(cached_null_constant_->GetReferenceTypeInfo().IsValid());
   }
   return cached_null_constant_;
+}
+
+HIntConstant* HGraph::GetIntConstant(int32_t value) {
+  return CreateConstant(value, &cached_int_constants_);
+}
+
+HLongConstant* HGraph::GetLongConstant(int64_t value) {
+  return CreateConstant(value, &cached_long_constants_);
+}
+
+HFloatConstant* HGraph::GetFloatConstant(float value) {
+  return CreateConstant(bit_cast<int32_t, float>(value), &cached_float_constants_);
+}
+
+HDoubleConstant* HGraph::GetDoubleConstant(double value) {
+  return CreateConstant(bit_cast<int64_t, double>(value), &cached_double_constants_);
 }
 
 HCurrentMethod* HGraph::GetCurrentMethod() {
@@ -757,7 +786,7 @@ std::string HGraph::PrettyMethod(bool with_signature) const {
   return dex_file_.PrettyMethod(method_idx_, with_signature);
 }
 
-HConstant* HGraph::GetConstant(DataType::Type type, int64_t value, uint32_t dex_pc) {
+HConstant* HGraph::GetConstant(DataType::Type type, int64_t value) {
   switch (type) {
     case DataType::Type::kBool:
       DCHECK(IsUint<1>(value));
@@ -768,10 +797,10 @@ HConstant* HGraph::GetConstant(DataType::Type type, int64_t value, uint32_t dex_
     case DataType::Type::kInt16:
     case DataType::Type::kInt32:
       DCHECK(IsInt(DataType::Size(type) * kBitsPerByte, value));
-      return GetIntConstant(static_cast<int32_t>(value), dex_pc);
+      return GetIntConstant(static_cast<int32_t>(value));
 
     case DataType::Type::kInt64:
-      return GetLongConstant(value, dex_pc);
+      return GetLongConstant(value);
 
     default:
       LOG(FATAL) << "Unsupported constant type";
@@ -1142,7 +1171,7 @@ void HEnvironment::CopyFrom(ArrayRef<HInstruction* const> locals) {
   }
 }
 
-void HEnvironment::CopyFrom(HEnvironment* env) {
+void HEnvironment::CopyFrom(const HEnvironment* env) {
   for (size_t i = 0; i < env->Size(); i++) {
     HInstruction* instruction = env->GetInstructionAt(i);
     SetRawEnvAt(i, instruction);
@@ -1174,7 +1203,7 @@ void HEnvironment::CopyFromWithLoopPhiAdjustment(HEnvironment* env,
 }
 
 void HEnvironment::RemoveAsUserOfInput(size_t index) const {
-  const HUserRecord<HEnvironment*>& env_use = vregs_[index];
+  const HUserRecord<HEnvironment*>& env_use = GetVRegs()[index];
   HInstruction* user = env_use.GetInstruction();
   auto before_env_use_node = env_use.GetBeforeUseNode();
   user->env_uses_.erase_after(before_env_use_node);
@@ -1182,7 +1211,7 @@ void HEnvironment::RemoveAsUserOfInput(size_t index) const {
 }
 
 void HEnvironment::ReplaceInput(HInstruction* replacement, size_t index) {
-  const HUserRecord<HEnvironment*>& env_use_record = vregs_[index];
+  const HUserRecord<HEnvironment*>& env_use_record = GetVRegs()[index];
   HInstruction* orig_instr = env_use_record.GetInstruction();
 
   DCHECK(orig_instr != replacement);
@@ -1714,19 +1743,19 @@ HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {
     int32_t value = input->AsIntConstant()->GetValue();
     switch (GetResultType()) {
       case DataType::Type::kInt8:
-        return graph->GetIntConstant(static_cast<int8_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int8_t>(value));
       case DataType::Type::kUint8:
-        return graph->GetIntConstant(static_cast<uint8_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<uint8_t>(value));
       case DataType::Type::kInt16:
-        return graph->GetIntConstant(static_cast<int16_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int16_t>(value));
       case DataType::Type::kUint16:
-        return graph->GetIntConstant(static_cast<uint16_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<uint16_t>(value));
       case DataType::Type::kInt64:
-        return graph->GetLongConstant(static_cast<int64_t>(value), GetDexPc());
+        return graph->GetLongConstant(static_cast<int64_t>(value));
       case DataType::Type::kFloat32:
-        return graph->GetFloatConstant(static_cast<float>(value), GetDexPc());
+        return graph->GetFloatConstant(static_cast<float>(value));
       case DataType::Type::kFloat64:
-        return graph->GetDoubleConstant(static_cast<double>(value), GetDexPc());
+        return graph->GetDoubleConstant(static_cast<double>(value));
       default:
         return nullptr;
     }
@@ -1734,19 +1763,19 @@ HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {
     int64_t value = input->AsLongConstant()->GetValue();
     switch (GetResultType()) {
       case DataType::Type::kInt8:
-        return graph->GetIntConstant(static_cast<int8_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int8_t>(value));
       case DataType::Type::kUint8:
-        return graph->GetIntConstant(static_cast<uint8_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<uint8_t>(value));
       case DataType::Type::kInt16:
-        return graph->GetIntConstant(static_cast<int16_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int16_t>(value));
       case DataType::Type::kUint16:
-        return graph->GetIntConstant(static_cast<uint16_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<uint16_t>(value));
       case DataType::Type::kInt32:
-        return graph->GetIntConstant(static_cast<int32_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int32_t>(value));
       case DataType::Type::kFloat32:
-        return graph->GetFloatConstant(static_cast<float>(value), GetDexPc());
+        return graph->GetFloatConstant(static_cast<float>(value));
       case DataType::Type::kFloat64:
-        return graph->GetDoubleConstant(static_cast<double>(value), GetDexPc());
+        return graph->GetDoubleConstant(static_cast<double>(value));
       default:
         return nullptr;
     }
@@ -1755,22 +1784,22 @@ HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {
     switch (GetResultType()) {
       case DataType::Type::kInt32:
         if (std::isnan(value))
-          return graph->GetIntConstant(0, GetDexPc());
+          return graph->GetIntConstant(0);
         if (value >= static_cast<float>(kPrimIntMax))
-          return graph->GetIntConstant(kPrimIntMax, GetDexPc());
+          return graph->GetIntConstant(kPrimIntMax);
         if (value <= kPrimIntMin)
-          return graph->GetIntConstant(kPrimIntMin, GetDexPc());
-        return graph->GetIntConstant(static_cast<int32_t>(value), GetDexPc());
+          return graph->GetIntConstant(kPrimIntMin);
+        return graph->GetIntConstant(static_cast<int32_t>(value));
       case DataType::Type::kInt64:
         if (std::isnan(value))
-          return graph->GetLongConstant(0, GetDexPc());
+          return graph->GetLongConstant(0);
         if (value >= static_cast<float>(kPrimLongMax))
-          return graph->GetLongConstant(kPrimLongMax, GetDexPc());
+          return graph->GetLongConstant(kPrimLongMax);
         if (value <= kPrimLongMin)
-          return graph->GetLongConstant(kPrimLongMin, GetDexPc());
-        return graph->GetLongConstant(static_cast<int64_t>(value), GetDexPc());
+          return graph->GetLongConstant(kPrimLongMin);
+        return graph->GetLongConstant(static_cast<int64_t>(value));
       case DataType::Type::kFloat64:
-        return graph->GetDoubleConstant(static_cast<double>(value), GetDexPc());
+        return graph->GetDoubleConstant(static_cast<double>(value));
       default:
         return nullptr;
     }
@@ -1779,22 +1808,22 @@ HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {
     switch (GetResultType()) {
       case DataType::Type::kInt32:
         if (std::isnan(value))
-          return graph->GetIntConstant(0, GetDexPc());
+          return graph->GetIntConstant(0);
         if (value >= kPrimIntMax)
-          return graph->GetIntConstant(kPrimIntMax, GetDexPc());
+          return graph->GetIntConstant(kPrimIntMax);
         if (value <= kPrimLongMin)
-          return graph->GetIntConstant(kPrimIntMin, GetDexPc());
-        return graph->GetIntConstant(static_cast<int32_t>(value), GetDexPc());
+          return graph->GetIntConstant(kPrimIntMin);
+        return graph->GetIntConstant(static_cast<int32_t>(value));
       case DataType::Type::kInt64:
         if (std::isnan(value))
-          return graph->GetLongConstant(0, GetDexPc());
+          return graph->GetLongConstant(0);
         if (value >= static_cast<double>(kPrimLongMax))
-          return graph->GetLongConstant(kPrimLongMax, GetDexPc());
+          return graph->GetLongConstant(kPrimLongMax);
         if (value <= kPrimLongMin)
-          return graph->GetLongConstant(kPrimLongMin, GetDexPc());
-        return graph->GetLongConstant(static_cast<int64_t>(value), GetDexPc());
+          return graph->GetLongConstant(kPrimLongMin);
+        return graph->GetLongConstant(static_cast<int64_t>(value));
       case DataType::Type::kFloat32:
-        return graph->GetFloatConstant(static_cast<float>(value), GetDexPc());
+        return graph->GetFloatConstant(static_cast<float>(value));
       default:
         return nullptr;
     }
@@ -1880,6 +1909,29 @@ std::ostream& operator<<(std::ostream& os, ComparisonBias rhs) {
       return os << "gt";
     case ComparisonBias::kLtBias:
       return os << "lt";
+  }
+}
+
+HCondition* HCondition::Create(HGraph* graph,
+                               IfCondition cond,
+                               HInstruction* lhs,
+                               HInstruction* rhs,
+                               uint32_t dex_pc) {
+  ArenaAllocator* allocator = graph->GetAllocator();
+  switch (cond) {
+    case kCondEQ: return new (allocator) HEqual(lhs, rhs, dex_pc);
+    case kCondNE: return new (allocator) HNotEqual(lhs, rhs, dex_pc);
+    case kCondLT: return new (allocator) HLessThan(lhs, rhs, dex_pc);
+    case kCondLE: return new (allocator) HLessThanOrEqual(lhs, rhs, dex_pc);
+    case kCondGT: return new (allocator) HGreaterThan(lhs, rhs, dex_pc);
+    case kCondGE: return new (allocator) HGreaterThanOrEqual(lhs, rhs, dex_pc);
+    case kCondB:  return new (allocator) HBelow(lhs, rhs, dex_pc);
+    case kCondBE: return new (allocator) HBelowOrEqual(lhs, rhs, dex_pc);
+    case kCondA:  return new (allocator) HAbove(lhs, rhs, dex_pc);
+    case kCondAE: return new (allocator) HAboveOrEqual(lhs, rhs, dex_pc);
+    default:
+      LOG(FATAL) << "Unexpected condition " << cond;
+      UNREACHABLE();
   }
 }
 
@@ -2424,7 +2476,6 @@ void HBasicBlock::DisconnectAndDelete() {
 
   // (7) Delete from the graph, update reverse post order.
   graph_->DeleteDeadEmptyBlock(this);
-  SetGraph(nullptr);
 }
 
 void HBasicBlock::DisconnectFromSuccessors(const ArenaBitVector* visited) {
@@ -2541,7 +2592,6 @@ void HBasicBlock::MergeWith(HBasicBlock* other) {
 
   // Delete `other` from the graph. The function updates reverse post order.
   graph_->DeleteDeadEmptyBlock(other);
-  other->SetGraph(nullptr);
 }
 
 void HBasicBlock::MergeWithInlined(HBasicBlock* other) {
@@ -2673,7 +2723,6 @@ HInstruction* HGraph::InlineInto(HGraph* outer_graph, HInvoke* invoke) {
       }
     }
   }
-  outer_graph->UpdateMaximumNumberOfOutVRegs(GetMaximumNumberOfOutVRegs());
 
   if (HasBoundsChecks()) {
     outer_graph->SetHasBoundsChecks(true);
@@ -2906,19 +2955,15 @@ HInstruction* HGraph::InlineInto(HGraph* outer_graph, HInvoke* invoke) {
     HInstruction* current = it.Current();
     HInstruction* replacement = nullptr;
     if (current->IsNullConstant()) {
-      replacement = outer_graph->GetNullConstant(current->GetDexPc());
+      replacement = outer_graph->GetNullConstant();
     } else if (current->IsIntConstant()) {
-      replacement = outer_graph->GetIntConstant(
-          current->AsIntConstant()->GetValue(), current->GetDexPc());
+      replacement = outer_graph->GetIntConstant(current->AsIntConstant()->GetValue());
     } else if (current->IsLongConstant()) {
-      replacement = outer_graph->GetLongConstant(
-          current->AsLongConstant()->GetValue(), current->GetDexPc());
+      replacement = outer_graph->GetLongConstant(current->AsLongConstant()->GetValue());
     } else if (current->IsFloatConstant()) {
-      replacement = outer_graph->GetFloatConstant(
-          current->AsFloatConstant()->GetValue(), current->GetDexPc());
+      replacement = outer_graph->GetFloatConstant(current->AsFloatConstant()->GetValue());
     } else if (current->IsDoubleConstant()) {
-      replacement = outer_graph->GetDoubleConstant(
-          current->AsDoubleConstant()->GetValue(), current->GetDexPc());
+      replacement = outer_graph->GetDoubleConstant(current->AsDoubleConstant()->GetValue());
     } else if (current->IsParameterValue()) {
       if (kIsDebugBuild &&
           invoke->IsInvokeStaticOrDirect() &&
@@ -3084,9 +3129,9 @@ HBasicBlock* HGraph::TransformLoopForVectorization(HBasicBlock* header,
   return new_pre_header;
 }
 
-static void CheckAgainstUpperBound(ReferenceTypeInfo rti, ReferenceTypeInfo upper_bound_rti)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
+static void CheckAgainstUpperBound(ReferenceTypeInfo rti, ReferenceTypeInfo upper_bound_rti) {
   if (rti.IsValid()) {
+    ScopedObjectAccess soa(Thread::Current());
     DCHECK(upper_bound_rti.IsSupertypeOf(rti))
         << " upper_bound_rti: " << upper_bound_rti
         << " rti: " << rti;
@@ -3099,7 +3144,6 @@ static void CheckAgainstUpperBound(ReferenceTypeInfo rti, ReferenceTypeInfo uppe
 void HInstruction::SetReferenceTypeInfo(ReferenceTypeInfo rti) {
   if (kIsDebugBuild) {
     DCHECK_EQ(GetType(), DataType::Type::kReference);
-    ScopedObjectAccess soa(Thread::Current());
     DCHECK(rti.IsValid()) << "Invalid RTI for " << DebugName();
     if (IsBoundType()) {
       // Having the test here spares us from making the method virtual just for
@@ -3127,35 +3171,12 @@ bool HBoundType::InstructionDataEquals(const HInstruction* other) const {
 
 void HBoundType::SetUpperBound(const ReferenceTypeInfo& upper_bound, bool can_be_null) {
   if (kIsDebugBuild) {
-    ScopedObjectAccess soa(Thread::Current());
     DCHECK(upper_bound.IsValid());
     DCHECK(!upper_bound_.IsValid()) << "Upper bound should only be set once.";
     CheckAgainstUpperBound(GetReferenceTypeInfo(), upper_bound);
   }
   upper_bound_ = upper_bound;
   SetPackedFlag<kFlagUpperCanBeNull>(can_be_null);
-}
-
-ReferenceTypeInfo ReferenceTypeInfo::Create(TypeHandle type_handle, bool is_exact) {
-  if (kIsDebugBuild) {
-    ScopedObjectAccess soa(Thread::Current());
-    DCHECK(IsValidHandle(type_handle));
-    if (!is_exact) {
-      DCHECK(!type_handle->CannotBeAssignedFromOtherTypes())
-          << "Callers of ReferenceTypeInfo::Create should ensure is_exact is properly computed";
-    }
-  }
-  return ReferenceTypeInfo(type_handle, is_exact);
-}
-
-std::ostream& operator<<(std::ostream& os, const ReferenceTypeInfo& rhs) {
-  ScopedObjectAccess soa(Thread::Current());
-  os << "["
-     << " is_valid=" << rhs.IsValid()
-     << " type=" << (!rhs.IsValid() ? "?" : mirror::Class::PrettyClass(rhs.GetTypeHandle().Get()))
-     << " is_exact=" << rhs.IsExact()
-     << " ]";
-  return os;
 }
 
 bool HInstruction::HasAnyEnvironmentUseBefore(HInstruction* other) {
@@ -3240,17 +3261,35 @@ std::ostream& operator<<(std::ostream& os, HInvokeStaticOrDirect::ClinitCheckReq
 }
 
 bool HInvokeStaticOrDirect::CanBeNull() const {
-  if (GetType() != DataType::Type::kReference || IsStringInit()) {
+  if (IsStringInit()) {
     return false;
   }
+  return HInvoke::CanBeNull();
+}
+
+bool HInvoke::CanBeNull() const {
   switch (GetIntrinsic()) {
+    case Intrinsics::kThreadCurrentThread:
+    case Intrinsics::kStringBufferAppend:
+    case Intrinsics::kStringBufferToString:
+    case Intrinsics::kStringBuilderAppendObject:
+    case Intrinsics::kStringBuilderAppendString:
+    case Intrinsics::kStringBuilderAppendCharSequence:
+    case Intrinsics::kStringBuilderAppendCharArray:
+    case Intrinsics::kStringBuilderAppendBoolean:
+    case Intrinsics::kStringBuilderAppendChar:
+    case Intrinsics::kStringBuilderAppendInt:
+    case Intrinsics::kStringBuilderAppendLong:
+    case Intrinsics::kStringBuilderAppendFloat:
+    case Intrinsics::kStringBuilderAppendDouble:
+    case Intrinsics::kStringBuilderToString:
 #define DEFINE_BOXED_CASE(name, unused1, unused2, unused3, unused4) \
-    case Intrinsics::k##name##ValueOf: \
-      return false;
+    case Intrinsics::k##name##ValueOf:
     BOXED_TYPES(DEFINE_BOXED_CASE)
 #undef DEFINE_BOXED_CASE
+      return false;
     default:
-      return true;
+      return GetType() == DataType::Type::kReference;
   }
 }
 
@@ -3338,28 +3377,6 @@ HInstruction* ReplaceInstrOrPhiByClone(HInstruction* instr) {
     }
   }
   return clone;
-}
-
-HCondition* HGraph::CreateCondition(IfCondition cond,
-                                    HInstruction* lhs,
-                                    HInstruction* rhs,
-                                    uint32_t dex_pc) {
-  ArenaAllocator* allocator = GetAllocator();
-  switch (cond) {
-    case kCondEQ: return new (allocator) HEqual(lhs, rhs, dex_pc);
-    case kCondNE: return new (allocator) HNotEqual(lhs, rhs, dex_pc);
-    case kCondLT: return new (allocator) HLessThan(lhs, rhs, dex_pc);
-    case kCondLE: return new (allocator) HLessThanOrEqual(lhs, rhs, dex_pc);
-    case kCondGT: return new (allocator) HGreaterThan(lhs, rhs, dex_pc);
-    case kCondGE: return new (allocator) HGreaterThanOrEqual(lhs, rhs, dex_pc);
-    case kCondB:  return new (allocator) HBelow(lhs, rhs, dex_pc);
-    case kCondBE: return new (allocator) HBelowOrEqual(lhs, rhs, dex_pc);
-    case kCondA:  return new (allocator) HAbove(lhs, rhs, dex_pc);
-    case kCondAE: return new (allocator) HAboveOrEqual(lhs, rhs, dex_pc);
-    default:
-      LOG(FATAL) << "Unexpected condition " << cond;
-      UNREACHABLE();
-  }
 }
 
 std::ostream& operator<<(std::ostream& os, const MoveOperands& rhs) {

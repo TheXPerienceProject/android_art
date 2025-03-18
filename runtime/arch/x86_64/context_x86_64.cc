@@ -37,6 +37,7 @@ void X86_64Context::Reset() {
 }
 
 void X86_64Context::FillCalleeSaves(uint8_t* frame, const QuickMethodFrameInfo& frame_info) {
+  const size_t frame_size = frame_info.FrameSizeInBytes();
   int spill_pos = 0;
 
   // Core registers come first, from the highest down to the lowest.
@@ -44,7 +45,7 @@ void X86_64Context::FillCalleeSaves(uint8_t* frame, const QuickMethodFrameInfo& 
       frame_info.CoreSpillMask() & ~(static_cast<uint32_t>(-1) << kNumberOfCpuRegisters);
   DCHECK_EQ(1, POPCOUNT(frame_info.CoreSpillMask() & ~core_regs));  // Return address spill.
   for (uint32_t core_reg : HighToLowBits(core_regs)) {
-    gprs_[core_reg] = CalleeSaveAddress(frame, spill_pos, frame_info.FrameSizeInBytes());
+    gprs_[core_reg] = CalleeSaveAddress<InstructionSet::kX86_64>(frame, spill_pos, frame_size);
     ++spill_pos;
   }
   DCHECK_EQ(spill_pos, POPCOUNT(frame_info.CoreSpillMask()) - 1);
@@ -54,7 +55,7 @@ void X86_64Context::FillCalleeSaves(uint8_t* frame, const QuickMethodFrameInfo& 
   DCHECK_EQ(0u, fp_regs & (static_cast<uint32_t>(-1) << kNumberOfFloatRegisters));
   for (uint32_t fp_reg : HighToLowBits(fp_regs)) {
     fprs_[fp_reg] = reinterpret_cast<uint64_t*>(
-        CalleeSaveAddress(frame, spill_pos, frame_info.FrameSizeInBytes()));
+        CalleeSaveAddress<InstructionSet::kX86_64>(frame, spill_pos, frame_size));
     ++spill_pos;
   }
   DCHECK_EQ(spill_pos,

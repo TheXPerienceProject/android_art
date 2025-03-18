@@ -709,6 +709,9 @@ bool InstructionSimplifierVisitor::TryReplaceWithRotateRegisterSubPattern(HBinar
 
 void InstructionSimplifierVisitor::VisitNullCheck(HNullCheck* null_check) {
   HInstruction* obj = null_check->InputAt(0);
+  // Note we don't do `CanEnsureNotNullAt` here. If we do that, we may get rid of a NullCheck but
+  // what we should do instead is coalesce them. This is what GVN does, and so InstructionSimplifier
+  // doesn't do this.
   if (!obj->CanBeNull()) {
     null_check->ReplaceWith(obj);
     null_check->GetBlock()->RemoveInstruction(null_check);
@@ -911,7 +914,7 @@ HInstruction* InstructionSimplifierVisitor::InsertOppositeCondition(HInstruction
     HInstruction* lhs = cond->InputAt(0);
     HInstruction* rhs = cond->InputAt(1);
     HInstruction* replacement =
-        GetGraph()->CreateCondition(cond->AsCondition()->GetOppositeCondition(), lhs, rhs);
+        HCondition::Create(GetGraph(), cond->AsCondition()->GetOppositeCondition(), lhs, rhs);
     cursor->GetBlock()->InsertInstructionBefore(replacement, cursor);
     return replacement;
   } else if (cond->IsIntConstant()) {
@@ -1840,7 +1843,7 @@ static HInstruction* CreateUnsignedConditionReplacement(ArenaAllocator* allocato
       //   unsigned(-1) < 0 -> False
       //   0 < 0 -> False
       //   1 < 0 -> False
-      return block->GetGraph()->GetConstant(DataType::Type::kBool, 0, cond->GetDexPc());
+      return block->GetGraph()->GetConstant(DataType::Type::kBool, 0);
     case HInstruction::kBelowOrEqual:
       // BelowOrEqual(Compare(x, y), 0) transforms into Equal(x, y)
       //    unsigned(-1) <= 0 -> False
@@ -1858,7 +1861,7 @@ static HInstruction* CreateUnsignedConditionReplacement(ArenaAllocator* allocato
       //   unsigned(-1) >= 0 -> True
       //   0 >= 0 -> True
       //   1 >= 0 -> True
-      return block->GetGraph()->GetConstant(DataType::Type::kBool, 1, cond->GetDexPc());
+      return block->GetGraph()->GetConstant(DataType::Type::kBool, 1);
     default:
       LOG(FATAL) << "Unknown ConditionType " << cond->GetKind();
       UNREACHABLE();
@@ -1879,7 +1882,7 @@ void InstructionSimplifierVisitor::VisitCondition(HCondition* condition) {
   HInstruction* right = condition->GetRight();
   if (left->IsConstant() && !right->IsConstant()) {
     IfCondition new_cond = GetOppositeConditionForOperandSwap(condition->GetCondition());
-    HCondition* replacement = GetGraph()->CreateCondition(new_cond, right, left);
+    HCondition* replacement = HCondition::Create(GetGraph(), new_cond, right, left);
     block->ReplaceAndRemoveInstructionWith(condition, replacement);
     // If it is a FP condition, we must set the opposite bias.
     if (condition->IsLtBias()) {
@@ -1961,12 +1964,12 @@ static HInstruction* CheckSignedToUnsignedCompareConversion(HInstruction* operan
       HIntConstant* int_constant = constant->AsIntConstant();
       int32_t old_value = int_constant->GetValue();
       int32_t new_value = old_value - std::numeric_limits<int32_t>::min();
-      return operand->GetBlock()->GetGraph()->GetIntConstant(new_value, constant->GetDexPc());
+      return operand->GetBlock()->GetGraph()->GetIntConstant(new_value);
     } else if (constant->IsLongConstant()) {
       HLongConstant* long_constant = constant->AsLongConstant();
       int64_t old_value = long_constant->GetValue();
       int64_t new_value = old_value - std::numeric_limits<int64_t>::min();
-      return operand->GetBlock()->GetGraph()->GetLongConstant(new_value, constant->GetDexPc());
+      return operand->GetBlock()->GetGraph()->GetLongConstant(new_value);
     } else {
       return nullptr;
     }
@@ -2973,13 +2976,8 @@ void InstructionSimplifierVisitor::SimplifyReturnThis(HInvoke* invoke) {
 
 // Helper method for StringBuffer escape analysis.
 static bool NoEscapeForStringBufferReference(HInstruction* reference, HInstruction* user) {
-  if (user->IsInvokeStaticOrDirect()) {
-    // Any constructor on StringBuffer is okay.
-    return user->AsInvokeStaticOrDirect()->GetResolvedMethod() != nullptr &&
-           user->AsInvokeStaticOrDirect()->GetResolvedMethod()->IsConstructor() &&
-           user->InputAt(0) == reference;
-  } else if (user->IsInvokeVirtual()) {
-    switch (user->AsInvokeVirtual()->GetIntrinsic()) {
+  if (user->IsInvoke()) {
+    switch (user->AsInvoke()->GetIntrinsic()) {
       case Intrinsics::kStringBufferLength:
       case Intrinsics::kStringBufferToString:
         DCHECK_EQ(user->InputAt(0), reference);
@@ -2993,10 +2991,18 @@ static bool NoEscapeForStringBufferReference(HInstruction* reference, HInstructi
         break;
     }
   }
+
+  if (user->IsInvokeStaticOrDirect()) {
+    // Any constructor on StringBuffer is okay.
+    return user->AsInvokeStaticOrDirect()->GetResolvedMethod() != nullptr &&
+           user->AsInvokeStaticOrDirect()->GetResolvedMethod()->IsConstructor() &&
+           user->InputAt(0) == reference;
+  }
+
   return false;
 }
 
-static bool TryReplaceStringBuilderAppend(HInvoke* invoke) {
+static bool TryReplaceStringBuilderAppend(CodeGenerator* codegen, HInvoke* invoke) {
   DCHECK_EQ(invoke->GetIntrinsic(), Intrinsics::kStringBuilderToString);
   if (invoke->CanThrowIntoCatchBlock()) {
     return false;
@@ -3048,13 +3054,24 @@ static bool TryReplaceStringBuilderAppend(HInvoke* invoke) {
         return false;
       }
     }
-    // Then we should see the arguments.
-    if (user->IsInvokeVirtual()) {
-      HInvokeVirtual* as_invoke_virtual = user->AsInvokeVirtual();
+
+    // Pattern match seeing arguments, then constructor, then constructor fence.
+    if (user->IsInvokeStaticOrDirect() &&
+        user->AsInvokeStaticOrDirect()->GetResolvedMethod() != nullptr &&
+        user->AsInvokeStaticOrDirect()->GetResolvedMethod()->IsConstructor() &&
+        user->AsInvokeStaticOrDirect()->GetNumberOfArguments() == 1u) {
+      // After arguments, we should see the constructor.
+      // We accept only the constructor with no extra arguments.
+      DCHECK(!seen_constructor);
+      DCHECK(!seen_constructor_fence);
+      seen_constructor = true;
+    } else if (user->IsInvoke()) {
+      // The arguments.
+      HInvoke* as_invoke = user->AsInvoke();
       DCHECK(!seen_constructor);
       DCHECK(!seen_constructor_fence);
       StringBuilderAppend::Argument arg;
-      switch (as_invoke_virtual->GetIntrinsic()) {
+      switch (as_invoke->GetIntrinsic()) {
         case Intrinsics::kStringBuilderAppendObject:
           // TODO: Unimplemented, needs to call String.valueOf().
           return false;
@@ -3086,7 +3103,7 @@ static bool TryReplaceStringBuilderAppend(HInvoke* invoke) {
           has_fp_args = true;
           break;
         case Intrinsics::kStringBuilderAppendCharSequence: {
-          ReferenceTypeInfo rti = user->AsInvokeVirtual()->InputAt(1)->GetReferenceTypeInfo();
+          ReferenceTypeInfo rti = as_invoke->InputAt(1)->GetReferenceTypeInfo();
           if (!rti.IsValid()) {
             return false;
           }
@@ -3109,23 +3126,14 @@ static bool TryReplaceStringBuilderAppend(HInvoke* invoke) {
         }
       }
       // Uses of the append return value should have been replaced with the first input.
-      DCHECK(!as_invoke_virtual->HasUses());
-      DCHECK(!as_invoke_virtual->HasEnvironmentUses());
+      DCHECK(!as_invoke->HasUses());
+      DCHECK(!as_invoke->HasEnvironmentUses());
       if (num_args == StringBuilderAppend::kMaxArgs) {
         return false;
       }
       format = (format << StringBuilderAppend::kBitsPerArg) | static_cast<uint32_t>(arg);
-      args[num_args] = as_invoke_virtual->InputAt(1u);
+      args[num_args] = as_invoke->InputAt(1u);
       ++num_args;
-    } else if (user->IsInvokeStaticOrDirect() &&
-               user->AsInvokeStaticOrDirect()->GetResolvedMethod() != nullptr &&
-               user->AsInvokeStaticOrDirect()->GetResolvedMethod()->IsConstructor() &&
-               user->AsInvokeStaticOrDirect()->GetNumberOfArguments() == 1u) {
-      // After arguments, we should see the constructor.
-      // We accept only the constructor with no extra arguments.
-      DCHECK(!seen_constructor);
-      DCHECK(!seen_constructor_fence);
-      seen_constructor = true;
     } else if (user->IsConstructorFence()) {
       // The last use we see is the constructor fence.
       DCHECK(seen_constructor);
@@ -3153,11 +3161,25 @@ static bool TryReplaceStringBuilderAppend(HInvoke* invoke) {
     }
   }
 
+  // Calculate outgoing vregs, including padding for 64-bit arg alignment.
+  const PointerSize pointer_size = InstructionSetPointerSize(codegen->GetInstructionSet());
+  const size_t method_vregs = static_cast<size_t>(pointer_size) / kVRegSize;
+  uint32_t number_of_out_vregs = method_vregs;  // For correct alignment padding; subtracted below.
+  for (uint32_t f = format; f != 0u; f >>= StringBuilderAppend::kBitsPerArg) {
+    auto a = enum_cast<StringBuilderAppend::Argument>(f & StringBuilderAppend::kArgMask);
+    if (a == StringBuilderAppend::Argument::kLong || a == StringBuilderAppend::Argument::kDouble) {
+      number_of_out_vregs += /* alignment */ ((number_of_out_vregs) & 1u) + /* vregs */ 2u;
+    } else {
+      number_of_out_vregs += /* vregs */ 1u;
+    }
+  }
+  number_of_out_vregs -= method_vregs;
+
   // Create replacement instruction.
   HIntConstant* fmt = block->GetGraph()->GetIntConstant(static_cast<int32_t>(format));
   ArenaAllocator* allocator = block->GetGraph()->GetAllocator();
   HStringBuilderAppend* append = new (allocator) HStringBuilderAppend(
-      fmt, num_args, has_fp_args, allocator, invoke->GetDexPc());
+      fmt, num_args, number_of_out_vregs, has_fp_args, allocator, invoke->GetDexPc());
   append->SetReferenceTypeInfoIfValid(invoke->GetReferenceTypeInfo());
   for (size_t i = 0; i != num_args; ++i) {
     append->SetArgumentAt(i, args[num_args - 1u - i]);
@@ -3202,7 +3224,7 @@ void InstructionSimplifierVisitor::SimplifyAllocationIntrinsic(HInvoke* invoke) 
       RecordSimplification();
     }
   } else if (invoke->GetIntrinsic() == Intrinsics::kStringBuilderToString &&
-             TryReplaceStringBuilderAppend(invoke)) {
+             TryReplaceStringBuilderAppend(codegen_, invoke)) {
     RecordSimplification();
   }
 }

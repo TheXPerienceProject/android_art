@@ -16,6 +16,8 @@
 
 set -e
 
+. "$(dirname $0)/buildbot-utils.sh"
+
 if [[ $1 = -h ]]; then
   cat <<EOF
 Usage: $0 [<gtest>...] [--] [<gtest-option>...]
@@ -99,6 +101,7 @@ for t in ${tests[@]}; do
     env ANDROID_ART_ROOT="$android_art_root" \
         ANDROID_I18N_ROOT="$android_i18n_root" \
         ANDROID_TZDATA_ROOT="$android_tzdata_root" \
+        ART_TEST_ON_VM="$ART_TEST_ON_VM" \
         $(maybe_get_fake_dex2oatbootclasspath) \
         $t $options \
     || failing_tests+=("$t")

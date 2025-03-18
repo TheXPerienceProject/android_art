@@ -28,6 +28,7 @@
 #include "dex/inline_method_analyser.h"
 #include "driver/compiler_options.h"
 #include "driver/dex_compilation_unit.h"
+#include "handle_cache-inl.h"
 #include "instruction_simplifier.h"
 #include "intrinsics.h"
 #include "jit/jit.h"
@@ -421,7 +422,13 @@ static bool AlwaysThrows(ArtMethod* method)
   if (!method->IsCompilable() || !IsMethodVerified(method)) {
     return false;
   }
+
   // Skip native methods, methods with try blocks, and methods that are too large.
+  // TODO(solanes): We could correctly mark methods with try/catch blocks as always throwing as long
+  // as we can get rid of the infinite loop cases. These cases (e.g. `void foo() {while (true) {}}`)
+  // are the only ones that can have no return instruction and still not be an "always throwing
+  // method". Unfortunately, we need to construct the graph to know there's an infinite loop and
+  // therefore not worth the trouble.
   CodeItemDataAccessor accessor(method->DexInstructionData());
   if (!accessor.HasCodeItem() ||
       accessor.TriesSize() != 0 ||
@@ -775,9 +782,10 @@ HInliner::InlineCacheType HInliner::GetInlineCacheAOT(
   Thread* self = Thread::Current();
   for (const dex::TypeIndex& type_index : dex_pc_data.classes) {
     const DexFile* dex_file = caller_compilation_unit_.GetDexFile();
-    const char* descriptor = pci->GetTypeDescriptor(dex_file, type_index);
-    ObjPtr<mirror::Class> clazz =
-        class_linker->FindClass(self, descriptor, caller_compilation_unit_.GetClassLoader());
+    size_t descriptor_length;
+    const char* descriptor = pci->GetTypeDescriptor(dex_file, type_index, &descriptor_length);
+    ObjPtr<mirror::Class> clazz = class_linker->FindClass(
+        self, descriptor, descriptor_length, caller_compilation_unit_.GetClassLoader());
     if (clazz == nullptr) {
       self->ClearException();  // Clean up the exception left by type resolution.
       VLOG(compiler) << "Could not find class from inline cache in AOT mode "
@@ -919,7 +927,7 @@ void HInliner::AddCHAGuard(HInstruction* invoke_instruction,
   // requested we deoptimize before we execute any code and hence we shouldn't
   // see that case here.
   HInstruction* compare = new (graph_->GetAllocator()) HNotEqual(
-      deopt_flag, graph_->GetIntConstant(0, dex_pc));
+      deopt_flag, graph_->GetIntConstant(0));
   HInstruction* deopt = new (graph_->GetAllocator()) HDeoptimize(
       graph_->GetAllocator(), compare, DeoptimizationKind::kCHA, dex_pc);
 
@@ -1277,11 +1285,9 @@ bool HInliner::TryInlinePolymorphicCallToSameTarget(
 
   HConstant* constant;
   if (type == DataType::Type::kInt64) {
-    constant = graph_->GetLongConstant(
-        reinterpret_cast<intptr_t>(actual_method), invoke_instruction->GetDexPc());
+    constant = graph_->GetLongConstant(reinterpret_cast<intptr_t>(actual_method));
   } else {
-    constant = graph_->GetIntConstant(
-        reinterpret_cast<intptr_t>(actual_method), invoke_instruction->GetDexPc());
+    constant = graph_->GetIntConstant(reinterpret_cast<intptr_t>(actual_method));
   }
 
   HNotEqual* compare = new (graph_->GetAllocator()) HNotEqual(class_table_get, constant);
@@ -1336,13 +1342,6 @@ bool HInliner::TryDevirtualize(HInvoke* invoke_instruction,
     return false;
   }
 
-  // Don't try to devirtualize intrinsics as it breaks pattern matching from later phases.
-  // TODO(solanes): This `if` could be removed if we update optimizations like
-  // TryReplaceStringBuilderAppend.
-  if (invoke_instruction->IsIntrinsic()) {
-    return false;
-  }
-
   // Don't devirtualize to an intrinsic invalid after the builder phase. The ArtMethod might be an
   // intrinsic even when the HInvoke isn't e.g. java.lang.CharSequence.isEmpty (not an intrinsic)
   // can get devirtualized into java.lang.String.isEmpty (which is an intrinsic).
@@ -1385,6 +1384,7 @@ bool HInliner::TryDevirtualize(HInvoke* invoke_instruction,
   HInvokeStaticOrDirect* new_invoke = new (graph_->GetAllocator()) HInvokeStaticOrDirect(
       graph_->GetAllocator(),
       invoke_instruction->GetNumberOfArguments(),
+      invoke_instruction->GetNumberOfOutVRegs(),
       invoke_instruction->GetType(),
       invoke_instruction->GetDexPc(),
       MethodReference(invoke_instruction->GetMethodReference().dex_file, dex_method_index),
@@ -1604,6 +1604,7 @@ bool HInliner::TryBuildAndInline(HInvoke* invoke_instruction,
     HInvokeVirtual* new_invoke = new (graph_->GetAllocator()) HInvokeVirtual(
         graph_->GetAllocator(),
         invoke_instruction->GetNumberOfArguments(),
+        invoke_instruction->GetNumberOfOutVRegs(),
         invoke_instruction->GetType(),
         invoke_instruction->GetDexPc(),
         invoke_instruction->GetMethodReference(),  // Use existing invoke's method's reference.
@@ -1767,17 +1768,14 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
       uint16_t iput_args[] = { data.iput0_arg, data.iput1_arg, data.iput2_arg };
       static_assert(arraysize(iput_args) == arraysize(iput_field_indexes), "Size mismatch");
       // Count valid field indexes.
-      size_t number_of_iputs = 0u;
-      while (number_of_iputs != arraysize(iput_field_indexes) &&
-          iput_field_indexes[number_of_iputs] != DexFile::kDexNoIndex16) {
+      for (size_t i = 0, end = data.iput_count; i < end; i++) {
         // Check that there are no duplicate valid field indexes.
-        DCHECK_EQ(0, std::count(iput_field_indexes + number_of_iputs + 1,
-                                iput_field_indexes + arraysize(iput_field_indexes),
-                                iput_field_indexes[number_of_iputs]));
-        ++number_of_iputs;
+        DCHECK_EQ(0, std::count(iput_field_indexes + i + 1,
+                                iput_field_indexes + end,
+                                iput_field_indexes[i]));
       }
       // Check that there are no valid field indexes in the rest of the array.
-      DCHECK_EQ(0, std::count_if(iput_field_indexes + number_of_iputs,
+      DCHECK_EQ(0, std::count_if(iput_field_indexes + data.iput_count,
                                  iput_field_indexes + arraysize(iput_field_indexes),
                                  [](uint16_t index) { return index != DexFile::kDexNoIndex16; }));
 
@@ -1785,7 +1783,7 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
       HInstruction* obj = GetInvokeInputForArgVRegIndex(invoke_instruction,
                                                         /* arg_vreg_index= */ 0u);
       bool needs_constructor_barrier = false;
-      for (size_t i = 0; i != number_of_iputs; ++i) {
+      for (size_t i = 0, end = data.iput_count; i != end; ++i) {
         HInstruction* value = GetInvokeInputForArgVRegIndex(invoke_instruction, iput_args[i]);
         if (!IsZeroBitPattern(value)) {
           uint16_t field_index = iput_field_indexes[i];
@@ -1810,7 +1808,7 @@ bool HInliner::TryPatternSubstitution(HInvoke* invoke_instruction,
                                                                 invoke_instruction);
       }
       *return_replacement = nullptr;
-      number_of_instructions = number_of_iputs + (needs_constructor_barrier ? 1u : 0u);
+      number_of_instructions = data.iput_count + (needs_constructor_barrier ? 1u : 0u);
       break;
     }
   }
@@ -1995,11 +1993,13 @@ bool HInliner::CanInlineBody(const HGraph* callee_graph,
   }
 
   bool has_one_return = false;
+  bool has_try_catch = false;
   for (HBasicBlock* predecessor : exit_block->GetPredecessors()) {
     const HInstruction* last_instruction = predecessor->GetLastInstruction();
     // On inlinees, we can have Return/ReturnVoid/Throw -> TryBoundary -> Exit. To check for the
     // actual last instruction, we have to skip the TryBoundary instruction.
     if (last_instruction->IsTryBoundary()) {
+      has_try_catch = true;
       predecessor = predecessor->GetSinglePredecessor();
       last_instruction = predecessor->GetLastInstruction();
 
@@ -2041,7 +2041,9 @@ bool HInliner::CanInlineBody(const HGraph* callee_graph,
   }
 
   if (!has_one_return) {
-    if (!is_speculative) {
+    // If a method has a try catch, all throws are potentially caught. We are conservative and
+    // don't assume a method always throws unless we can guarantee that.
+    if (!is_speculative && !has_try_catch) {
       // If we know that the method always throws with the particular parameters, set it as such.
       // This is better than using the dex instructions as we have more information about this
       // particular call. We don't mark speculative inlines (e.g. the ones from the inline cache) as
@@ -2050,6 +2052,13 @@ bool HInliner::CanInlineBody(const HGraph* callee_graph,
       graph_->SetHasAlwaysThrowingInvokes(/* value= */ true);
     }
 
+    // Methods that contain infinite loops with try catches fall into this line too as we construct
+    // an Exit block for them. This will mean that the stat `kNotInlinedAlwaysThrows` might not be
+    // 100% correct but:
+    // 1) This is a very small fraction of methods, and
+    // 2) It is not easy to disambiguate between those.
+    // Since we want to avoid inlining methods with infinite loops anyway, we return false for these
+    // cases too.
     LOG_FAIL(stats_, MethodCompilationStat::kNotInlinedAlwaysThrows)
         << "Method " << resolved_method->PrettyMethod()
         << " could not be inlined because it always throws";
@@ -2436,7 +2445,7 @@ bool HInliner::ReturnTypeMoreSpecific(HInstruction* return_replacement,
       ReferenceTypeInfo invoke_rti = invoke_instruction->GetReferenceTypeInfo();
       if (IsReferenceTypeRefinement(invoke_rti.GetTypeHandle().Get(),
                                     invoke_rti.IsExact(),
-                                    /*declared_can_be_null=*/ true,
+                                    invoke_instruction->CanBeNull(),
                                     return_replacement)) {
         return true;
       } else if (return_replacement->IsInstanceFieldGet()) {

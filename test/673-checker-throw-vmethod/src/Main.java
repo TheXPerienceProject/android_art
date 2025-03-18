@@ -49,7 +49,7 @@ public class Main {
   /// CHECK:                If [<<Tst>>]
   /// CHECK: end_block
   /// CHECK: begin_block
-  /// CHECK:                InvokeVirtual [{{l\d+}},<<Str>>]
+  /// CHECK:                InvokeStaticOrDirect [{{l\d+}},<<Str>>] method_name:java.lang.StringBuilder.append
   /// CHECK:                Throw
   /// CHECK: end_block
   //
@@ -60,7 +60,7 @@ public class Main {
   /// CHECK: end_block
   /// CHECK: begin_block
   /// CHECK:   <<Str:l\d+>> LoadString
-  /// CHECK:                InvokeVirtual [{{l\d+}},<<Str>>]
+  /// CHECK:                InvokeStaticOrDirect [{{l\d+}},<<Str>>] method_name:java.lang.StringBuilder.append
   /// CHECK:                Throw
   /// CHECK: end_block
   public void doit1(int[] a) {
@@ -111,7 +111,7 @@ public class Main {
   /// CHECK:                If [<<Tst>>]
   /// CHECK: end_block
   /// CHECK: begin_block
-  /// CHECK:                InvokeVirtual [{{l\d+}},<<Str>>]
+  /// CHECK:                InvokeStaticOrDirect [{{l\d+}},<<Str>>] method_name:java.lang.StringBuilder.append
   /// CHECK:                Throw
   /// CHECK: end_block
   //
@@ -122,7 +122,7 @@ public class Main {
   /// CHECK: end_block
   /// CHECK: begin_block
   /// CHECK:   <<Str:l\d+>> LoadString
-  /// CHECK:                InvokeVirtual [{{l\d+}},<<Str>>]
+  /// CHECK:                InvokeStaticOrDirect [{{l\d+}},<<Str>>] method_name:java.lang.StringBuilder.append
   /// CHECK:                Throw
   /// CHECK: end_block
   public void doit3(int[] a) {

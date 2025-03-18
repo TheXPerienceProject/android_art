@@ -30,6 +30,10 @@ public class StreamTraceParser extends BaseTraceParser {
             int threadId = GetThreadID();
             if (threadId != 0) {
               String eventString = ProcessEventEntry(threadId);
+              // This is an event from one of the ignored methods. Don't record this entry.
+              if (eventString == null) {
+                continue;
+              }
               if (!ShouldCheckThread(threadId, threadName)) {
                 continue;
               }

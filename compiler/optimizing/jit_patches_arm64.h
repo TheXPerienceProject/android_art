@@ -20,10 +20,12 @@
 #include "base/arena_allocator.h"
 #include "base/arena_containers.h"
 #include "dex/dex_file.h"
+#include "dex/proto_reference.h"
 #include "dex/string_reference.h"
 #include "dex/type_reference.h"
 #include "handle.h"
 #include "mirror/class.h"
+#include "mirror/method_type.h"
 #include "mirror/string.h"
 #include "utils/arm64/assembler_arm64.h"
 
@@ -56,7 +58,9 @@ class JitPatchesARM64 {
       jit_string_patches_(StringReferenceValueComparator(),
                           allocator->Adapter(kArenaAllocCodeGenerator)),
       jit_class_patches_(TypeReferenceValueComparator(),
-                         allocator->Adapter(kArenaAllocCodeGenerator)) {
+                         allocator->Adapter(kArenaAllocCodeGenerator)),
+      jit_method_type_patches_(ProtoReferenceValueComparator(),
+                               allocator->Adapter(kArenaAllocCodeGenerator)) {
   }
 
   using Uint64ToLiteralMap = ArenaSafeMap<uint64_t, vixl::aarch64::Literal<uint64_t>*>;
@@ -67,6 +71,9 @@ class JitPatchesARM64 {
   using TypeToLiteralMap = ArenaSafeMap<TypeReference,
                                         vixl::aarch64::Literal<uint32_t>*,
                                         TypeReferenceValueComparator>;
+  using ProtoToLiteralMap = ArenaSafeMap<ProtoReference,
+                                         vixl::aarch64::Literal<uint32_t>*,
+                                         ProtoReferenceValueComparator>;
 
   vixl::aarch64::Literal<uint32_t>* DeduplicateUint32Literal(uint32_t value);
   vixl::aarch64::Literal<uint64_t>* DeduplicateUint64Literal(uint64_t value);
@@ -80,6 +87,11 @@ class JitPatchesARM64 {
       const DexFile& dex_file,
       dex::TypeIndex type_index,
       Handle<mirror::Class> handle,
+      CodeGenerationData* code_generation_data);
+  vixl::aarch64::Literal<uint32_t>* DeduplicateJitMethodTypeLiteral(
+      const DexFile& dex_file,
+      dex::ProtoIndex proto_index,
+      Handle<mirror::MethodType> handle,
       CodeGenerationData* code_generation_data);
 
   void EmitJitRootPatches(uint8_t* code,
@@ -99,6 +111,8 @@ class JitPatchesARM64 {
   StringToLiteralMap jit_string_patches_;
   // Patches for class literals in JIT compiled code.
   TypeToLiteralMap jit_class_patches_;
+  // Patches for MethodType literals in JIT compiled code.
+  ProtoToLiteralMap jit_method_type_patches_;
 };
 
 }  // namespace arm64

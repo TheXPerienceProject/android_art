@@ -20,3 +20,15 @@
     new-instance v0, LAbstractFinal;
     return-void
 .end method
+
+.method public static test2()V
+    .registers 1
+    const/4 v0, 0
+    invoke-static {v0}, LTestClass;->test2Target(LAbstractFinal;)V
+    return-void
+.end method
+
+.method public static test2Target(LAbstractFinal;)V
+    .registers 1
+    return-void
+.end method

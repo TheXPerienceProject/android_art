@@ -32,43 +32,48 @@
 namespace art HIDDEN {
 namespace mirror {
 
-class MethodTypeTest : public CommonRuntimeTest {};
+class MethodTypeTest : public CommonRuntimeTest {
+ protected:
+  ObjPtr<mirror::MethodType> CreateMethodType(const std::string& return_type,
+                                              const std::vector<std::string>& param_types);
+};
 
 static std::string FullyQualifiedType(const std::string& shorthand) {
   return "Ljava/lang/" + shorthand + ";";
 }
 
-ObjPtr<mirror::Class> FindClass(Thread* self, ClassLinker* const cl, const std::string& shorthand)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
-  StackHandleScope<1> hs(self);
-  Handle<mirror::ClassLoader> boot_class_loader = hs.NewHandle<mirror::ClassLoader>(nullptr);
+std::string ExpandShortHand(const std::string& shorthand) {
   if (shorthand.size() == 1) {
-    return cl->FindSystemClass(self, shorthand.c_str());
+    return shorthand;
   } else if (shorthand.find('/') == std::string::npos) {
-    return cl->FindClass(self, FullyQualifiedType(shorthand).c_str(), boot_class_loader);
+    return FullyQualifiedType(shorthand);
   } else {
-    return cl->FindClass(self, shorthand.c_str(), boot_class_loader);
+    return shorthand;
   }
 }
 
-static ObjPtr<mirror::MethodType> CreateMethodType(const std::string& return_type,
-                                                   const std::vector<std::string>& param_types) {
+ObjPtr<mirror::MethodType> MethodTypeTest::CreateMethodType(
+    const std::string& return_type,
+    const std::vector<std::string>& param_types) {
   Runtime* const runtime = Runtime::Current();
-  ClassLinker* const class_linker = runtime->GetClassLinker();
   Thread* const self = Thread::Current();
 
   ScopedObjectAccess soa(self);
   StackHandleScope<2> hs(soa.Self());
 
-  Handle<mirror::Class> return_clazz = hs.NewHandle(FindClass(self, class_linker, return_type));
+  ScopedNullHandle<mirror::ClassLoader> boot_class_loader;
+  Handle<mirror::Class> return_clazz =
+      hs.NewHandle(FindClass(ExpandShortHand(return_type).c_str(), boot_class_loader));
   CHECK(return_clazz != nullptr);
 
   ObjPtr<mirror::Class> class_array_type =
-      GetClassRoot<mirror::ObjectArray<mirror::Class>>(class_linker);
+      GetClassRoot<mirror::ObjectArray<mirror::Class>>(class_linker_);
   Handle<mirror::ObjectArray<mirror::Class>> param_classes = hs.NewHandle(
       mirror::ObjectArray<mirror::Class>::Alloc(self, class_array_type, param_types.size()));
+  CHECK(param_classes != nullptr);
   for (uint32_t i = 0; i < param_types.size(); ++i) {
-    ObjPtr<mirror::Class> param = FindClass(self, class_linker, param_types[i]);
+    ObjPtr<mirror::Class> param =
+        FindClass(ExpandShortHand(param_types[i]).c_str(), boot_class_loader);
     CHECK(!param.IsNull());
     param_classes->Set(i, param);
   }

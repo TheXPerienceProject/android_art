@@ -532,7 +532,12 @@ inline bool Instruction::HasVRegH() const {
 }
 
 inline int32_t Instruction::VRegH() const {
-  switch (FormatOf(Opcode())) {
+  return VRegH(FormatOf(Opcode()));
+}
+
+inline int32_t Instruction::VRegH(Format format) const {
+  DCHECK_EQ(format, FormatOf(Opcode()));
+  switch (format) {
     case k45cc: return VRegH_45cc();
     case k4rcc: return VRegH_4rcc();
     default :

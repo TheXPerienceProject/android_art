@@ -76,7 +76,7 @@ struct InlineConstructorData {
   uint16_t iput0_arg : 4;
   uint16_t iput1_arg : 4;
   uint16_t iput2_arg : 4;
-  uint16_t reserved : 4;
+  uint16_t iput_count: 4;
 };
 static_assert(sizeof(InlineConstructorData) == sizeof(uint64_t),
               "Invalid size of InlineConstructorData");

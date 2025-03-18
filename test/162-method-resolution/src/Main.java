@@ -424,8 +424,13 @@ public class Main {
      *     invoke-direct Test11Derived.<init>(Ljava/lang/String;)V from Test11User in first dex
      *         TODO b/183485797 This should throw a NSME (constructors are never inherited, JLS 8.8)
      *                          but actually calls the superclass constructor.
-     *         expected: Throws NoSuchMethodError
-     *         actual: Successful construction of a Test11Derived instance.
+     *         expected: Successful construction of a Test11Derived instance.
+     * According to JLS, constructors are never inherited, so we should throw NoSuchMethodError and
+     * the RI does exactly that. However, ART has been permissive and allowed calling a superclass
+     * constructor directly for a long time and bytecode optimizers such as R8 are now using this
+     * to significantly reduce the dex file size. It is undesirable to implement strict checks now
+     * due to app compatibility issues and dex file size impact. Therefore ART deliberately
+     * diverges from the RI in this case and accepts the call to the superclass constructor.
      *
      * Files:
      *   src/Test11Base.java          - defines Test11Base with <init>(Ljava/lang/String;)V
@@ -434,7 +439,7 @@ public class Main {
      */
     private static void test11() throws Exception {
         if (usingRI) {
-            // For RI, just print the expected output to hide the divergence for now.
+            // For RI, just print the expected output to hide the deliberate divergence.
             System.out.println("Calling Test11User.test():\n" +
                                "Test11Base.<init>(\"Test\")");
         } else {

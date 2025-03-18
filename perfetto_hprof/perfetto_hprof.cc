@@ -129,21 +129,18 @@ void ArmWatchdogOrDie() {
   }
 }
 
-bool StartsWith(const std::string& str, const std::string& prefix) {
-  return str.compare(0, prefix.length(), prefix) == 0;
-}
-
 // Sample entries that match one of the following
 // start with /system/
 // start with /vendor/
 // start with /data/app/
 // contains "extracted in memory from Y", where Y matches any of the above
 bool ShouldSampleSmapsEntry(const perfetto::profiling::SmapsEntry& e) {
-  if (StartsWith(e.pathname, "/system/") || StartsWith(e.pathname, "/vendor/") ||
-      StartsWith(e.pathname, "/data/app/")) {
+  if (e.pathname.starts_with("/system/") ||
+      e.pathname.starts_with("/vendor/") ||
+      e.pathname.starts_with("/data/app/")) {
     return true;
   }
-  if (StartsWith(e.pathname, "[anon:")) {
+  if (e.pathname.starts_with("[anon:")) {
     if (e.pathname.find("extracted in memory from /system/") != std::string::npos) {
       return true;
     }
@@ -318,7 +315,6 @@ void SetupDataSource(const std::string& ds_name, bool is_oome_heap) {
   dsd.set_name(ds_name);
   dsd.set_will_notify_on_stop(true);
   JavaHprofDataSource::Register(dsd, is_oome_heap);
-  LOG(INFO) << "registered data source " << ds_name;
 }
 
 // Waits for the data source OnStart
@@ -758,6 +754,26 @@ class HeapGraphDumper {
       object_proto->set_self_size(obj->SizeOf());
     }
 
+    const art::gc::Heap* heap = art::Runtime::Current()->GetHeap();
+    const auto* space = heap->FindContinuousSpaceFromObject(obj, /*fail_ok=*/true);
+    auto heap_type = perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_APP;
+    if (space != nullptr) {
+      if (space->IsZygoteSpace()) {
+        heap_type = perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_ZYGOTE;
+      } else if (space->IsImageSpace() && heap->ObjectIsInBootImageSpace(obj)) {
+        heap_type = perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_BOOT_IMAGE;
+      }
+    } else {
+      const auto* los = heap->GetLargeObjectsSpace();
+      if (los->Contains(obj) && los->IsZygoteLargeObject(art::Thread::Current(), obj)) {
+        heap_type = perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_ZYGOTE;
+      }
+    }
+    if (heap_type != prev_heap_type_) {
+      object_proto->set_heap_type_delta(heap_type);
+      prev_heap_type_ = heap_type;
+    }
+
     FillReferences(obj, klass, object_proto);
 
     FillFieldValues(obj, klass, object_proto);
@@ -922,6 +938,9 @@ class HeapGraphDumper {
 
   // Id of the previous object that was dumped. Used for delta encoding.
   uint64_t prev_object_id_ = 0;
+  // Heap type of the previous object that was dumped. Used for delta encoding.
+  perfetto::protos::pbzero::HeapGraphObject::HeapType prev_heap_type_ =
+      perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_UNKNOWN;
 };
 
 // waitpid with a timeout implemented by ~busy-waiting
@@ -957,6 +976,11 @@ enum class ResumeParentPolicy {
   DEFERRED
 };
 
+pid_t ForkUnderThreadListLock(art::Thread* self) {
+  art::MutexLock lk(self, *art::Locks::thread_list_lock_);
+  return fork();
+}
+
 void ForkAndRun(art::Thread* self,
                 ResumeParentPolicy resume_parent_policy,
                 const std::function<void(pid_t child)>& parent_runnable,
@@ -970,6 +994,8 @@ void ForkAndRun(art::Thread* self,
   // We need to do this before the fork, because otherwise it can deadlock
   // waiting for the GC, as all other threads get terminated by the clone, but
   // their locks are not released.
+  // We must also avoid any logd logging actions on the forked process; art LogdLoggerLocked
+  // serializes logging from different threads via a mutex.
   // This does not perfectly solve all fork-related issues, as there could still be threads that
   // are unaffected by ScopedSuspendAll and in a non-fork-friendly situation
   // (e.g. inside a malloc holding a lock). This situation is quite rare, and in that case we will
@@ -979,7 +1005,8 @@ void ForkAndRun(art::Thread* self,
 
   std::optional<art::ScopedSuspendAll> ssa(std::in_place, __FUNCTION__, /* long_suspend=*/ true);
 
-  pid_t pid = fork();
+  // Optimistically get the thread_list_lock_ to avoid the child process deadlocking
+  pid_t pid = ForkUnderThreadListLock(self);
   if (pid == -1) {
     // Fork error.
     PLOG(ERROR) << "fork";
@@ -1032,7 +1059,7 @@ void WriteHeapPackets(pid_t parent_pid, uint64_t timestamp) {
               dump_smaps = ds->dump_smaps();
               ignored_types = ds->ignored_types();
             }
-            LOG(INFO) << "dumping heap for " << parent_pid;
+            art::ScopedTrace trace("ART heap dump for " + std::to_string(parent_pid));
             if (dump_smaps) {
               DumpSmaps(&ctx);
             }

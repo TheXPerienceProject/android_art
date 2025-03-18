@@ -578,6 +578,8 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
                                                   const PcRelativePatchInfo* info_high = nullptr);
   PcRelativePatchInfo* NewBootImageRelRoPatch(uint32_t boot_image_offset,
                                               const PcRelativePatchInfo* info_high = nullptr);
+  PcRelativePatchInfo* NewAppImageMethodPatch(MethodReference target_method,
+                                              const PcRelativePatchInfo* info_high = nullptr);
   PcRelativePatchInfo* NewBootImageMethodPatch(MethodReference target_method,
                                                const PcRelativePatchInfo* info_high = nullptr);
   PcRelativePatchInfo* NewMethodBssEntryPatch(MethodReference target_method,
@@ -817,6 +819,8 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
 
   // PC-relative method patch info for kBootImageLinkTimePcRelative.
   ArenaDeque<PcRelativePatchInfo> boot_image_method_patches_;
+  // PC-relative method patch info for kAppImageRelRo.
+  ArenaDeque<PcRelativePatchInfo> app_image_method_patches_;
   // PC-relative method patch info for kBssEntry.
   ArenaDeque<PcRelativePatchInfo> method_bss_entry_patches_;
   // PC-relative type patch info for kBootImageLinkTimePcRelative.

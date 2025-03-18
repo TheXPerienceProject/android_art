@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-036-finalizer-expected-stdout",
         ":art-run-test-036-finalizer-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

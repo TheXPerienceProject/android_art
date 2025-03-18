@@ -526,7 +526,7 @@ std::string GetBootImageComponentBasename(const std::string& jar_path, bool is_f
     return kFirstBootImageBasename;
   }
   std::string jar_name = Basename(jar_path);
-  return "boot-" + ReplaceFileExtension(jar_name, "art");
+  return "boot-" + ReplaceFileExtension(jar_name, kArtExtension);
 }
 
 Result<void> AddCompiledBootClasspathFdsIfAny(
@@ -566,7 +566,7 @@ Result<void> AddCompiledBootClasspathFdsIfAny(
       return ErrnoErrorf("Failed to open boot image file '{}'", image_path);
     }
 
-    std::string oat_path = ReplaceFileExtension(image_path, "oat");
+    std::string oat_path = ReplaceFileExtension(image_path, kOatExtension);
     std::unique_ptr<File> oat_file(OS::OpenFileForReading(oat_path.c_str()));
     if (oat_file != nullptr) {
       bcp_oat_fds.push_back(std::to_string(oat_file->Fd()));
@@ -578,7 +578,7 @@ Result<void> AddCompiledBootClasspathFdsIfAny(
       return ErrnoErrorf("Failed to open boot image file '{}'", oat_path);
     }
 
-    std::string vdex_path = ReplaceFileExtension(image_path, "vdex");
+    std::string vdex_path = ReplaceFileExtension(image_path, kVdexExtension);
     std::unique_ptr<File> vdex_file(OS::OpenFileForReading(vdex_path.c_str()));
     if (vdex_file != nullptr) {
       bcp_vdex_fds.push_back(std::to_string(vdex_file->Fd()));
@@ -1018,7 +1018,7 @@ std::string OnDeviceRefresh::GetSystemServerImagePath(bool on_system,
       return GetSystemOdexFilenameForApex(jar_path, config_.GetSystemServerIsa());
     }
     std::string jar_name = Basename(jar_path);
-    std::string image_name = ReplaceFileExtension(jar_name, "art");
+    std::string image_name = ReplaceFileExtension(jar_name, kArtExtension);
     const char* isa_str = GetInstructionSetString(config_.GetSystemServerIsa());
     // Typically "/system/framework/oat/<isa>/services.art".
     return ART_FORMAT("{}/oat/{}/{}", Dirname(jar_path), isa_str, image_name);

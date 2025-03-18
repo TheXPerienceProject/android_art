@@ -44,8 +44,12 @@ template<class T> class Handle;
 // Export all symbols in `CommonCompilerTestImpl` for dex2oat tests.
 class EXPORT CommonCompilerTestImpl {
  public:
-  static std::unique_ptr<CompilerOptions> CreateCompilerOptions(InstructionSet instruction_set,
-                                                                const std::string& variant);
+  // Create compiler options from the given instruction set and variant. Optionally use a string of
+  // instruction set features in addition to the features from the variant.
+  static std::unique_ptr<CompilerOptions> CreateCompilerOptions(
+      InstructionSet instruction_set,
+      const std::string& variant,
+      const std::optional<std::string>& extra_features = std::nullopt);
 
   CommonCompilerTestImpl();
   virtual ~CommonCompilerTestImpl();

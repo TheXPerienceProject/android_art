@@ -27,16 +27,16 @@ public class Main {
   // Variant intrinsics remain in the loop, but invariant references are hoisted out of the loop.
   //
   /// CHECK-START: int Main.liveIndexOf() licm (before)
-  /// CHECK-DAG: InvokeVirtual intrinsic:StringIndexOf            loop:{{B\d+}} outer_loop:none
-  /// CHECK-DAG: InvokeVirtual intrinsic:StringIndexOfAfter       loop:{{B\d+}} outer_loop:none
-  /// CHECK-DAG: InvokeVirtual intrinsic:StringStringIndexOf      loop:{{B\d+}} outer_loop:none
-  /// CHECK-DAG: InvokeVirtual intrinsic:StringStringIndexOfAfter loop:{{B\d+}} outer_loop:none
+  /// CHECK-DAG: InvokeVirtual intrinsic:StringIndexOf                   loop:{{B\d+}} outer_loop:none
+  /// CHECK-DAG: InvokeVirtual intrinsic:StringIndexOfAfter              loop:{{B\d+}} outer_loop:none
+  /// CHECK-DAG: InvokeStaticOrDirect intrinsic:StringStringIndexOf      loop:{{B\d+}} outer_loop:none
+  /// CHECK-DAG: InvokeStaticOrDirect intrinsic:StringStringIndexOfAfter loop:{{B\d+}} outer_loop:none
   //
   /// CHECK-START: int Main.liveIndexOf() licm (after)
-  /// CHECK-DAG: InvokeVirtual intrinsic:StringIndexOf            loop:{{B\d+}} outer_loop:none
-  /// CHECK-DAG: InvokeVirtual intrinsic:StringIndexOfAfter       loop:{{B\d+}} outer_loop:none
-  /// CHECK-DAG: InvokeVirtual intrinsic:StringStringIndexOf      loop:none
-  /// CHECK-DAG: InvokeVirtual intrinsic:StringStringIndexOfAfter loop:none
+  /// CHECK-DAG: InvokeVirtual intrinsic:StringIndexOf                   loop:{{B\d+}} outer_loop:none
+  /// CHECK-DAG: InvokeVirtual intrinsic:StringIndexOfAfter              loop:{{B\d+}} outer_loop:none
+  /// CHECK-DAG: InvokeStaticOrDirect intrinsic:StringStringIndexOf      loop:none
+  /// CHECK-DAG: InvokeStaticOrDirect intrinsic:StringStringIndexOfAfter loop:none
   static int liveIndexOf() {
     int k = ABC.length() + XYZ.length();  // does LoadString before loops
     for (char c = 'A'; c <= 'Z'; c++) {
@@ -89,8 +89,8 @@ public class Main {
   // Explicit null check on receiver, implicit null check on argument prevents hoisting.
   //
   /// CHECK-START: int Main.indexOfExceptions(java.lang.String, java.lang.String) licm (after)
-  /// CHECK-DAG: <<String:l\d+>> NullCheck                                                         loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG:                 InvokeVirtual [<<String>>,{{l\d+}}] intrinsic:StringStringIndexOf loop:<<Loop>>      outer_loop:none
+  /// CHECK-DAG: <<String:l\d+>> NullCheck                                                                loop:<<Loop:B\d+>> outer_loop:none
+  /// CHECK-DAG:                 InvokeStaticOrDirect [<<String>>,{{l\d+}}] intrinsic:StringStringIndexOf loop:<<Loop>>      outer_loop:none
   static int indexOfExceptions(String s, String t) {
     int k = 0;
     for (char c = 'A'; c <= 'Z'; c++) {
@@ -234,17 +234,27 @@ public class Main {
   }
 
   //
-  // All calls in the loop-body and thus loop can be eliminated.
+  // All calls in the loop-body are dead and thus loop can be eliminated.
   //
-  /// CHECK-START: int Main.bufferDeadLoop() instruction_simplifier (before)
+  /// CHECK-START: int Main.bufferDeadLoop() dead_code_elimination$initial (before)
   /// CHECK-DAG: Phi                                              loop:<<Loop:B\d+>>
   /// CHECK-DAG: InvokeVirtual intrinsic:StringBufferToString     loop:<<Loop>>
   /// CHECK-DAG: InvokeVirtual intrinsic:StringStringIndexOfAfter loop:<<Loop>>
   //
+  /// CHECK-START: int Main.bufferDeadLoop() dead_code_elimination$initial (after)
+  /// CHECK-NOT: InvokeVirtual intrinsic:StringStringIndexOfAfter
+  //
+  /// CHECK-START: int Main.bufferDeadLoop() instruction_simplifier$after_inlining (before)
+  /// CHECK: InvokeStaticOrDirect intrinsic:StringBufferToString
+  //
+  /// CHECK-START: int Main.bufferDeadLoop() instruction_simplifier$after_inlining (after)
+  /// CHECK-NOT: InvokeStaticOrDirect intrinsic:StringBufferToString
+  //
+  /// CHECK-START: int Main.bufferDeadLoop() loop_optimization (before)
+  /// CHECK: Phi
+  //
   /// CHECK-START: int Main.bufferDeadLoop() loop_optimization (after)
   /// CHECK-NOT: Phi
-  /// CHECK-NOT: InvokeVirtual intrinsic:StringBufferToString
-  /// CHECK-NOT: InvokeVirtual intrinsic:StringStringIndexOfAfter
   static int bufferDeadLoop() {
     StringBuffer b = new StringBuffer();
     String x = "x";
@@ -255,7 +265,7 @@ public class Main {
   }
 
   //
-  // All calls in the loop-body and thus loop can be eliminated.
+  // All calls in the loop-body are dead and thus loop can be eliminated.
   //
   /// CHECK-START: int Main.builderDeadLoop() instruction_simplifier (before)
   /// CHECK-DAG: Phi                                              loop:<<Loop:B\d+>>

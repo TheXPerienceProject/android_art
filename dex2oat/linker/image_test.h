@@ -245,7 +245,6 @@ inline void ImageTest::DoCompile(ImageHeader::StorageMode storage_mode,
         elf_writers.emplace_back(CreateElfWriterQuick(*compiler_options_, oat_file.GetFile()));
         elf_writers.back()->Start();
         oat_writers.emplace_back(new OatWriter(*compiler_options_,
-                                               verification_results_.get(),
                                                &timings,
                                                /*profile_compilation_info*/nullptr));
       }
@@ -300,7 +299,7 @@ inline void ImageTest::DoCompile(ImageHeader::StorageMode storage_mode,
                                                        rodata[i],
                                                        (i == 0u) ? &key_value_store : nullptr);
         ASSERT_TRUE(start_rodata_ok);
-        oat_writer->Initialize(driver, writer.get(), cur_dex_files);
+        oat_writer->Initialize(driver, verification_results_.get(), writer.get(), cur_dex_files);
 
         oat_writer->FinishVdexFile(out_helper.vdex_files[i].GetFile(), /*verifier_deps=*/ nullptr);
 

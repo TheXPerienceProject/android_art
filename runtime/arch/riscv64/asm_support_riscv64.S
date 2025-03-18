@@ -161,6 +161,61 @@
 .endm
 
 
+// 8 argument GPRS: a0 - a7 and 8 argument FPRs: fa0 - fa7
+#define ALL_ARGS_SIZE (8 * (8 + 8))
+
+
+.macro SAVE_ALL_ARGS_INCREASE_FRAME extra_space
+    // Reserve space for all argument registers, plus the extra space.
+    INCREASE_FRAME (ALL_ARGS_SIZE + \extra_space)
+
+    // Argument GPRs a0 - a7.
+    sd    a0, (8*0)(sp)
+    sd    a1, (8*1)(sp)
+    sd    a2, (8*2)(sp)
+    sd    a3, (8*3)(sp)
+    sd    a4, (8*4)(sp)
+    sd    a5, (8*5)(sp)
+    sd    a6, (8*6)(sp)
+    sd    a7, (8*7)(sp)
+
+    // Argument FPRs fa0 - fa7.
+    fsd   fa0, (8*8)(sp)
+    fsd   fa1, (8*9)(sp)
+    fsd   fa2, (8*10)(sp)
+    fsd   fa3, (8*11)(sp)
+    fsd   fa4, (8*12)(sp)
+    fsd   fa5, (8*13)(sp)
+    fsd   fa6, (8*14)(sp)
+    fsd   fa7, (8*15)(sp)
+.endm
+
+
+.macro RESTORE_ALL_ARGS_DECREASE_FRAME extra_space
+    // Argument GPRs a0 - a7.
+    ld    a0, (8*0)(sp)
+    ld    a1, (8*1)(sp)
+    ld    a2, (8*2)(sp)
+    ld    a3, (8*3)(sp)
+    ld    a4, (8*4)(sp)
+    ld    a5, (8*5)(sp)
+    ld    a6, (8*6)(sp)
+    ld    a7, (8*7)(sp)
+
+    // Argument FPRs fa0 - fa7.
+    fld   fa0, (8*8)(sp)
+    fld   fa1, (8*9)(sp)
+    fld   fa2, (8*10)(sp)
+    fld   fa3, (8*11)(sp)
+    fld   fa4, (8*12)(sp)
+    fld   fa5, (8*13)(sp)
+    fld   fa6, (8*14)(sp)
+    fld   fa7, (8*15)(sp)
+
+    DECREASE_FRAME (ALL_ARGS_SIZE + \extra_space)
+.endm
+
+
 .macro LOAD_RUNTIME_INSTANCE reg
 #if __has_feature(hwaddress_sanitizer)
 #error "ART does not support HWASAN on RISC-V yet"

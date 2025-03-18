@@ -124,8 +124,8 @@ class FuzzerCorpusTest : public CommonRuntimeTest {
           scope.NewHandle<art::mirror::DexCache>(nullptr));
 
       for (art::ClassAccessor accessor : dex_file.GetClasses()) {
-        const char* descriptor = accessor.GetDescriptor();
-        h_klass.Assign(class_linker->FindClass(soa.Self(), descriptor, h_loader));
+        h_klass.Assign(
+            class_linker->FindClass(soa.Self(), dex_file, accessor.GetClassIdx(), h_loader));
         // Ignore classes that couldn't be loaded since we are looking for crashes during
         // class/method verification.
         if (h_klass == nullptr || h_klass->IsErroneous()) {

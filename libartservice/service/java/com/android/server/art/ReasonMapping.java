@@ -18,6 +18,7 @@ package com.android.server.art;
 
 import static com.android.server.art.model.ArtFlags.PriorityClassApi;
 
+import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
 import android.annotation.StringDef;
 import android.annotation.SystemApi;
@@ -27,6 +28,7 @@ import android.text.TextUtils;
 
 import androidx.annotation.RequiresApi;
 
+import com.android.art.flags.Flags;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.pm.PackageManagerLocal;
 
@@ -62,7 +64,11 @@ public class ReasonMapping {
     public static final String REASON_CMDLINE = "cmdline";
     /** Downgrading the compiler filter when an app is not used for a long time. */
     public static final String REASON_INACTIVE = "inactive";
-    /** @hide */
+    /**
+     * Dexopting apps before the reboot for an OTA or a mainline update, known as Pre-reboot
+     * Dexopt.
+     */
+    @FlaggedApi(Flags.FLAG_ART_SERVICE_V3)
     public static final String REASON_PRE_REBOOT_DEXOPT = "ab-ota";
 
     // Reasons for Play Install Hints (go/install-hints).

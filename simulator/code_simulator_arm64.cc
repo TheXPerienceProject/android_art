@@ -47,6 +47,7 @@ CodeSimulatorArm64::CodeSimulatorArm64()
   SimStack::Allocated stack = stack_builder.Allocate();
 
   simulator_ = new Simulator(decoder_, stdout, std::move(stack));
+  simulator_->SetVectorLengthInBits(kArm64DefaultSVEVectorLength);
 }
 
 CodeSimulatorArm64::~CodeSimulatorArm64() {

@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-542-bitfield-rotates-expected-stdout",
         ":art-run-test-542-bitfield-rotates-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

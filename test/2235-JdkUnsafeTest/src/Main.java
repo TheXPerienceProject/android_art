@@ -18,6 +18,34 @@ import java.lang.reflect.Field;
 import jdk.internal.misc.Unsafe;
 
 public class Main {
+  private static void check(boolean actual, boolean expected, String msg) {
+    if (actual != expected) {
+      System.out.println(msg + " : " + actual + " != " + expected);
+      System.exit(1);
+    }
+  }
+
+  private static void check(byte actual, byte expected, String msg) {
+    if (actual != expected) {
+      System.out.println(msg + " : " + actual + " != " + expected);
+      System.exit(1);
+    }
+  }
+
+  private static void check(char actual, char expected, String msg) {
+    if (actual != expected) {
+      System.out.println(msg + " : " + actual + " != " + expected);
+      System.exit(1);
+    }
+  }
+
+  private static void check(short actual, short expected, String msg) {
+    if (actual != expected) {
+      System.out.println(msg + " : " + actual + " != " + expected);
+      System.exit(1);
+    }
+  }
+
   private static void check(int actual, int expected, String msg) {
     if (actual != expected) {
       System.out.println(msg + " : " + actual + " != " + expected);
@@ -345,6 +373,54 @@ public class Main {
           intValue,
           "Unsafe.getIntVolatile(Object, long)");
 
+    boolean booleanValue = true;
+    Field volatileBooleanField = TestVolatileClass.class.getDeclaredField("volatileBooleanVar");
+    long volatileBooleanOffset = unsafe.objectFieldOffset(volatileBooleanField);
+    check(unsafe.getBooleanVolatile(tv, volatileBooleanOffset),
+          false,
+          "Unsafe.getBooleanVolatile(Object, long) - initial");
+    unsafe.putBooleanVolatile(tv, volatileBooleanOffset, booleanValue);
+    check(tv.volatileBooleanVar, booleanValue, "Unsafe.putBooleanVolatile(Object, long, boolean)");
+    check(unsafe.getBooleanVolatile(tv, volatileBooleanOffset),
+          booleanValue,
+          "Unsafe.getBooleanVolatile(Object, long)");
+
+    byte byteValue = 125;
+    Field volatileByteField = TestVolatileClass.class.getDeclaredField("volatileByteVar");
+    long volatileByteOffset = unsafe.objectFieldOffset(volatileByteField);
+    check(unsafe.getByteVolatile(tv, volatileByteOffset),
+          0,
+          "Unsafe.getByteVolatile(Object, long) - initial");
+    unsafe.putByteVolatile(tv, volatileByteOffset, byteValue);
+    check(tv.volatileByteVar, byteValue, "Unsafe.putByteVolatile(Object, long, byte)");
+    check(unsafe.getByteVolatile(tv, volatileByteOffset),
+          byteValue,
+          "Unsafe.getByteVolatile(Object, long)");
+
+    char charValue = 'X';
+    Field volatileCharField = TestVolatileClass.class.getDeclaredField("volatileCharVar");
+    long volatileCharOffset = unsafe.objectFieldOffset(volatileCharField);
+    check(unsafe.getCharVolatile(tv, volatileCharOffset),
+          '\0',
+          "Unsafe.getCharVolatile(Object, long) - initial");
+    unsafe.putCharVolatile(tv, volatileCharOffset, charValue);
+    check(tv.volatileCharVar, charValue, "Unsafe.putCharVolatile(Object, long, char)");
+    check(unsafe.getCharVolatile(tv, volatileCharOffset),
+          charValue,
+          "Unsafe.getCharVolatile(Object, long)");
+
+    short shortValue = 32523;
+    Field volatileShortField = TestVolatileClass.class.getDeclaredField("volatileShortVar");
+    long volatileShortOffset = unsafe.objectFieldOffset(volatileShortField);
+    check(unsafe.getShortVolatile(tv, volatileShortOffset),
+          0,
+          "Unsafe.getShortVolatile(Object, long) - initial");
+    unsafe.putShortVolatile(tv, volatileShortOffset, shortValue);
+    check(tv.volatileShortVar, shortValue, "Unsafe.putShortVolatile(Object, long, short)");
+    check(unsafe.getShortVolatile(tv, volatileShortOffset),
+          shortValue,
+          "Unsafe.getShortVolatile(Object, long)");
+
     long longValue = 1234567887654321L;
     Field volatileLongField = TestVolatileClass.class.getDeclaredField("volatileLongVar");
     long volatileLongOffset = unsafe.objectFieldOffset(volatileLongField);
@@ -357,17 +433,41 @@ public class Main {
           longValue,
           "Unsafe.getLongVolatile(Object, long)");
 
+    float floatValue = 123456.7890123f;
+    Field volatileFloatField = TestVolatileClass.class.getDeclaredField("volatileFloatVar");
+    long volatileFloatOffset = unsafe.objectFieldOffset(volatileFloatField);
+    check(unsafe.getFloatVolatile(tv, volatileFloatOffset),
+          0.0f,
+          "Unsafe.getFloatVolatile(Object, long) - initial");
+    unsafe.putFloatVolatile(tv, volatileFloatOffset, floatValue);
+    check(tv.volatileFloatVar, floatValue, "Unsafe.putFloatVolatile(Object, long, float)");
+    check(unsafe.getFloatVolatile(tv, volatileFloatOffset),
+          floatValue,
+          "Unsafe.getFloatVolatile(Object, long)");
+
+    double doubleValue = 654321.7890123d;
+    Field volatileDoubleField = TestVolatileClass.class.getDeclaredField("volatileDoubleVar");
+    long volatileDoubleOffset = unsafe.objectFieldOffset(volatileDoubleField);
+    check(unsafe.getDoubleVolatile(tv, volatileDoubleOffset),
+          0.0d,
+          "Unsafe.getDoubleVolatile(Object, double) - initial");
+    unsafe.putDoubleVolatile(tv, volatileDoubleOffset, doubleValue);
+    check(tv.volatileDoubleVar, doubleValue, "Unsafe.putDoubleVolatile(Object, long, double)");
+    check(unsafe.getDoubleVolatile(tv, volatileDoubleOffset),
+          doubleValue,
+          "Unsafe.getDoubleVolatile(Object, long)");
+
     Object objectValue = new Object();
     Field volatileObjectField = TestVolatileClass.class.getDeclaredField("volatileObjectVar");
     long volatileObjectOffset = unsafe.objectFieldOffset(volatileObjectField);
-    check(unsafe.getObjectVolatile(tv, volatileObjectOffset),
+    check(unsafe.getReferenceVolatile(tv, volatileObjectOffset),
           null,
-          "Unsafe.getObjectVolatile(Object, long) - initial");
-    unsafe.putObjectVolatile(tv, volatileObjectOffset, objectValue);
-    check(tv.volatileObjectVar, objectValue, "Unsafe.putObjectVolatile(Object, long, Object)");
-    check(unsafe.getObjectVolatile(tv, volatileObjectOffset),
+          "Unsafe.getReferenceVolatile(Object, long) - initial");
+    unsafe.putReferenceVolatile(tv, volatileObjectOffset, objectValue);
+    check(tv.volatileObjectVar, objectValue, "Unsafe.putReferenceVolatile(Object, long, Object)");
+    check(unsafe.getReferenceVolatile(tv, volatileObjectOffset),
           objectValue,
-          "Unsafe.getObjectVolatile(Object, long)");
+          "Unsafe.getReferenceVolatile(Object, long)");
   }
 
   private static void testGetAcquireAndPutRelease(Unsafe unsafe) throws NoSuchFieldException {
@@ -513,7 +613,13 @@ public class Main {
 
   private static class TestVolatileClass {
     public volatile int volatileIntVar = 0;
+    public volatile boolean volatileBooleanVar = false;
+    public volatile byte volatileByteVar = 0;
+    public volatile short volatileShortVar = 0;
+    public volatile char volatileCharVar = 0;
     public volatile long volatileLongVar = 0;
+    public volatile float volatileFloatVar = 0.0f;
+    public volatile double volatileDoubleVar = 0.0d;
     public volatile Object volatileObjectVar = null;
   }
 

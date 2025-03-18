@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-477-long-2-float-convers-precision-expected-stdout",
         ":art-run-test-477-long-2-float-convers-precision-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

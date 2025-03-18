@@ -911,6 +911,7 @@ class DexFile {
   static int CompareDescriptors(std::string_view lhs, std::string_view rhs);
   static int CompareMemberNames(std::string_view lhs, std::string_view rhs);
 
+  static size_t Utf8Length(const char* utf8_data, size_t utf16_length);
   static std::string_view StringViewFromUtf16Length(const char* utf8_data, size_t utf16_length);
 
  protected:

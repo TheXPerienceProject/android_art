@@ -63,6 +63,7 @@ inline bool IsAdrpPatch(const LinkerPatch& patch) {
     case LinkerPatch::Type::kIntrinsicReference:
     case LinkerPatch::Type::kBootImageRelRo:
     case LinkerPatch::Type::kMethodRelative:
+    case LinkerPatch::Type::kMethodAppImageRelRo:
     case LinkerPatch::Type::kMethodBssEntry:
     case LinkerPatch::Type::kJniEntrypointRelative:
     case LinkerPatch::Type::kTypeRelative:
@@ -273,13 +274,15 @@ void Arm64RelativePatcher::PatchPcRelativeReference(std::vector<uint8_t>* code,
     } else {
       // LDR/STR 32-bit or 64-bit with imm12 == 0 (unset).
       DCHECK(patch.GetType() == LinkerPatch::Type::kBootImageRelRo ||
+             patch.GetType() == LinkerPatch::Type::kMethodAppImageRelRo ||
              patch.GetType() == LinkerPatch::Type::kMethodBssEntry ||
              patch.GetType() == LinkerPatch::Type::kJniEntrypointRelative ||
              patch.GetType() == LinkerPatch::Type::kTypeAppImageRelRo ||
              patch.GetType() == LinkerPatch::Type::kTypeBssEntry ||
              patch.GetType() == LinkerPatch::Type::kPublicTypeBssEntry ||
              patch.GetType() == LinkerPatch::Type::kPackageTypeBssEntry ||
-             patch.GetType() == LinkerPatch::Type::kStringBssEntry) << patch.GetType();
+             patch.GetType() == LinkerPatch::Type::kStringBssEntry ||
+             patch.GetType() == LinkerPatch::Type::kMethodTypeBssEntry) << patch.GetType();
       DCHECK_EQ(insn & 0xbfbffc00, 0xb9000000) << std::hex << insn;
     }
     if (kIsDebugBuild) {

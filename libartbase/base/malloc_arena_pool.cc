@@ -106,9 +106,25 @@ Arena* MallocArenaPool::AllocArena(size_t size) {
   Arena* ret = nullptr;
   {
     std::lock_guard<std::mutex> lock(lock_);
+    // We used to check only the first free arena but we're now checking two.
+    //
+    // FIXME: This is a workaround for `oatdump` running out of memory because of an allocation
+    // pattern where we would allocate a large arena (more than the default size) and then a
+    // normal one (default size) and then return them to the pool together, with the normal one
+    // passed as `first` to `FreeArenaChain()`, thus becoming the first in the `free_arenas_`
+    // list. Since we checked only the first arena, doing this repeatedly would never reuse the
+    // existing freed larger arenas and they would just accumulate in the free arena list until
+    // running out of memory. This workaround allows reusing the second arena in the list, thus
+    // fixing the problem for this specific allocation pattern. Similar allocation patterns
+    // with three or more arenas can still result in out of memory issues.
     if (free_arenas_ != nullptr && LIKELY(free_arenas_->Size() >= size)) {
       ret = free_arenas_;
       free_arenas_ = free_arenas_->next_;
+    } else if (free_arenas_ != nullptr &&
+               free_arenas_->next_ != nullptr &&
+               free_arenas_->next_->Size() >= size) {
+      ret = free_arenas_->next_;
+      free_arenas_->next_ = free_arenas_->next_->next_;
     }
   }
   if (ret == nullptr) {

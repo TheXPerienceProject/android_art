@@ -371,7 +371,7 @@ inline bool ArtField::IsPrimitiveType() {
 inline ObjPtr<mirror::Class> ArtField::LookupResolvedType() {
   ScopedAssertNoThreadSuspension ants(__FUNCTION__);
   if (UNLIKELY(IsProxyField())) {
-    return ProxyFindSystemClass(GetTypeDescriptor());
+    return ProxyFindSystemClass(GetTypeDescriptorView());
   }
   ObjPtr<mirror::Class> type = Runtime::Current()->GetClassLinker()->LookupResolvedType(
       GetDexFile()->GetFieldId(GetDexFieldIndex()).type_idx_, this);
@@ -381,7 +381,7 @@ inline ObjPtr<mirror::Class> ArtField::LookupResolvedType() {
 
 inline ObjPtr<mirror::Class> ArtField::ResolveType() {
   if (UNLIKELY(IsProxyField())) {
-    return ProxyFindSystemClass(GetTypeDescriptor());
+    return ProxyFindSystemClass(GetTypeDescriptorView());
   }
   ObjPtr<mirror::Class> type = Runtime::Current()->GetClassLinker()->ResolveType(
       GetDexFile()->GetFieldId(GetDexFieldIndex()).type_idx_, this);

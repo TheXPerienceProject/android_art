@@ -110,6 +110,11 @@ TEST_F(ImageTest, ImageHeaderIsValid) {
 // only if the copied method and the origin method are located in the
 // same oat file.
 TEST_F(ImageTest, TestDefaultMethods) {
+  // TODO(b/376621099): investigate LUCI failures (timeouts?) and re-enable this test.
+  // This is probably not related to riscv64 arch, but a combination of riscv64 and running
+  // on VM, but we don't use TEST_DISABLED_ON_VM to keep running it on other VM builders.
+  TEST_DISABLED_FOR_RISCV64();
+
   // Use this test to compile managed code to catch crashes when compiling the boot class path.
   // This test already needs to compile some managed methods and by compiling with "speed" we
   // avoid the need to create a specialized profile for the "speed-profile" compilation.

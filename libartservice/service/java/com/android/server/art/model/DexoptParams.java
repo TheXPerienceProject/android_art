@@ -30,6 +30,7 @@ import com.android.internal.annotations.Immutable;
 import com.android.server.art.ArtConstants;
 import com.android.server.art.ReasonMapping;
 import com.android.server.art.Utils;
+import com.android.server.art.proto.DexoptParamsProto;
 
 /** @hide */
 @SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
@@ -230,5 +231,27 @@ public class DexoptParams {
                 .setCompilerFilter(mCompilerFilter)
                 .setPriorityClass(mPriorityClass)
                 .setSplitName(mSplitName);
+    }
+
+    /** @hide */
+    public static @NonNull DexoptParams fromProto(@NonNull DexoptParamsProto proto) {
+        return new DexoptParams.Builder(proto.getReason(), proto.getFlags())
+                .setCompilerFilter(proto.getCompilerFilter())
+                .setPriorityClass(proto.getPriorityClass())
+                .build();
+    }
+
+    /** @hide */
+    public @NonNull DexoptParamsProto toProto() {
+        // The split name is intentionally omitted from the proto because it's for batch dexopt
+        // only. Extend the proto when it's used for other purposes.
+        Utils.check(getSplitName() == null);
+
+        return DexoptParamsProto.newBuilder()
+                .setFlags(getFlags())
+                .setCompilerFilter(getCompilerFilter())
+                .setPriorityClass(getPriorityClass())
+                .setReason(getReason())
+                .build();
     }
 }

@@ -79,11 +79,6 @@ RegisterAllocatorLinearScan::RegisterAllocatorLinearScan(ScopedArenaAllocator* a
   codegen->SetupBlockedRegisters();
   physical_core_register_intervals_.resize(codegen->GetNumberOfCoreRegisters(), nullptr);
   physical_fp_register_intervals_.resize(codegen->GetNumberOfFloatingPointRegisters(), nullptr);
-  // Always reserve for the current method and the graph's max out registers.
-  // TODO: compute it instead.
-  // ArtMethod* takes 2 vregs for 64 bits.
-  size_t ptr_size = static_cast<size_t>(InstructionSetPointerSize(codegen->GetInstructionSet()));
-  reserved_out_slots_ = ptr_size / kVRegSize + codegen->GetGraph()->GetMaximumNumberOfOutVRegs();
 }
 
 RegisterAllocatorLinearScan::~RegisterAllocatorLinearScan() {}
@@ -181,6 +176,10 @@ void RegisterAllocatorLinearScan::AllocateRegistersInternal() {
     }
   }
 
+  // Add the current method to the `reserved_out_slots_`. ArtMethod* takes 2 vregs for 64 bits.
+  PointerSize pointer_size = InstructionSetPointerSize(codegen_->GetInstructionSet());
+  reserved_out_slots_ += static_cast<size_t>(pointer_size) / kVRegSize;
+
   number_of_registers_ = codegen_->GetNumberOfCoreRegisters();
   registers_array_ = allocator_->AllocArray<size_t>(number_of_registers_,
                                                     kArenaAllocRegisterAllocator);
@@ -247,6 +246,17 @@ void RegisterAllocatorLinearScan::ProcessInstruction(HInstruction* instruction) 
     return;
   }
 
+  if (locations->CanCall()) {
+    // Update the `reserved_out_slots_` for invokes that make a call, including intrinsics
+    // that make the call only on the slow-path. Same for the `HStringBuilderAppend`.
+    if (instruction->IsInvoke()) {
+      reserved_out_slots_ = std::max<size_t>(
+          reserved_out_slots_, instruction->AsInvoke()->GetNumberOfOutVRegs());
+    } else if (instruction->IsStringBuilderAppend()) {
+      reserved_out_slots_ = std::max<size_t>(
+          reserved_out_slots_, instruction->AsStringBuilderAppend()->GetNumberOfOutVRegs());
+    }
+  }
   bool will_call = locations->WillCall();
   if (will_call) {
     // If a call will happen, add the range to a fixed interval that represents all the

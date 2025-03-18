@@ -1544,6 +1544,9 @@ END \name
     ldr ip, [r0, #ART_METHOD_ACCESS_FLAGS_OFFSET]
     tst ip, #ART_METHOD_IS_MEMORY_SHARED_FLAG
     beq \if_hot
+    // Intrinsics are always in the boot image and considered hot.
+    tst ip, #ART_METHOD_IS_INTRINSIC_FLAG
+    bne \if_hot
     ldr ip, [rSELF, #THREAD_SHARED_METHOD_HOTNESS_OFFSET]
     cmp ip, #0
     beq \if_hot

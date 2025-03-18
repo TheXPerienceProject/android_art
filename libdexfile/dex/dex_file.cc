@@ -692,7 +692,7 @@ std::string DexFile::PrettyField(uint32_t field_idx, bool with_type) const {
   const FieldId& field_id = GetFieldId(field_idx);
   std::string result;
   if (with_type) {
-    result += GetFieldTypeDescriptor(field_id);
+    AppendPrettyDescriptor(GetFieldTypeDescriptor(field_id), &result);
     result += ' ';
   }
   AppendPrettyDescriptor(GetFieldDeclaringClassDescriptor(field_id), &result);

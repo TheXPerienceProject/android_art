@@ -58,15 +58,6 @@ class InstructionFlags final {
   bool IsBranchTarget() const {
     return (flags_ & (1 << kBranchTarget)) != 0;
   }
-  void SetCompileTimeInfoPoint() {
-    flags_ |= 1 << kCompileTimeInfoPoint;
-  }
-  void ClearCompileTimeInfoPoint() {
-    flags_ &= ~(1 << kCompileTimeInfoPoint);
-  }
-  bool IsCompileTimeInfoPoint() const {
-    return (flags_ & (1 << kCompileTimeInfoPoint)) != 0;
-  }
 
   void SetVisited() {
     flags_ |= 1 << kVisited;
@@ -104,6 +95,10 @@ class InstructionFlags final {
 
   std::string ToString() const;
 
+  bool Equals(const InstructionFlags& other) const {
+    return flags_ == other.flags_;
+  }
+
  private:
   enum {
     // The instruction has been visited and unless IsChanged() verified.
@@ -117,10 +112,8 @@ class InstructionFlags final {
     kInTry = 3,
     // Instruction is the target of a branch (ie the start of a basic block).
     kBranchTarget = 4,
-    // Location of interest to the compiler for GC maps and verifier based method sharpening.
-    kCompileTimeInfoPoint = 5,
     // A return instruction.
-    kReturn = 6,
+    kReturn = 5,
   };
   uint8_t flags_;
 };

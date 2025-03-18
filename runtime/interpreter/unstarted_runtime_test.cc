@@ -784,7 +784,7 @@ TEST_F(UnstartedRuntimeTest, IsAnonymousClass) {
   StackHandleScope<1> hs(soa.Self());
   Handle<mirror::ClassLoader> loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader)));
-  ObjPtr<mirror::Class> c = class_linker_->FindClass(soa.Self(), "LNested$1;", loader);
+  ObjPtr<mirror::Class> c = FindClass("LNested$1;", loader);
   ASSERT_TRUE(c != nullptr);
   shadow_frame->SetVRegReference(0, c);
   UnstartedClassIsAnonymousClass(self, shadow_frame.get(), &result, 0);
@@ -803,12 +803,9 @@ TEST_F(UnstartedRuntimeTest, GetDeclaringClass) {
   Handle<mirror::ClassLoader> loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader)));
 
-  Handle<mirror::Class> nested_klass(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LNested;", loader)));
-  Handle<mirror::Class> inner_klass(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LNested$Inner;", loader)));
-  Handle<mirror::Class> anon_klass(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LNested$1;", loader)));
+  Handle<mirror::Class> nested_klass = hs.NewHandle(FindClass("LNested;", loader));
+  Handle<mirror::Class> inner_klass = hs.NewHandle(FindClass("LNested$Inner;", loader));
+  Handle<mirror::Class> anon_klass = hs.NewHandle(FindClass("LNested$1;", loader));
 
   shadow_frame->SetVRegReference(0, nested_klass.Get());
   UnstartedClassGetDeclaringClass(self, shadow_frame.get(), &result, 0);
@@ -835,9 +832,7 @@ TEST_F(UnstartedRuntimeTest, ThreadLocalGet) {
   // Positive test. See that We get something for float conversion.
   {
     Handle<mirror::Class> floating_decimal = hs.NewHandle(
-        class_linker_->FindClass(self,
-                                 "Ljdk/internal/math/FloatingDecimal;",
-                                 ScopedNullHandle<mirror::ClassLoader>()));
+        FindClass("Ljdk/internal/math/FloatingDecimal;", ScopedNullHandle<mirror::ClassLoader>()));
     ASSERT_TRUE(floating_decimal != nullptr);
     ASSERT_TRUE(class_linker_->EnsureInitialized(self, floating_decimal, true, true));
 
@@ -865,10 +860,8 @@ TEST_F(UnstartedRuntimeTest, FloatConversion) {
   ScopedObjectAccess soa(self);
 
   StackHandleScope<1> hs(self);
-  Handle<mirror::Class> double_class = hs.NewHandle(
-          class_linker_->FindClass(self,
-                                   "Ljava/lang/Double;",
-                                   ScopedNullHandle<mirror::ClassLoader>()));
+  Handle<mirror::Class> double_class =
+      hs.NewHandle(FindClass("Ljava/lang/Double;", ScopedNullHandle<mirror::ClassLoader>()));
   ASSERT_TRUE(double_class != nullptr);
   ASSERT_TRUE(class_linker_->EnsureInitialized(self, double_class, true, true));
 
@@ -905,8 +898,8 @@ TEST_F(UnstartedRuntimeTest, LogManager) {
   ScopedObjectAccess soa(self);
 
   StackHandleScope<1> hs(self);
-  Handle<mirror::Class> log_manager_class = hs.NewHandle(class_linker_->FindClass(
-      self, "Ljava/util/logging/LogManager;", ScopedNullHandle<mirror::ClassLoader>()));
+  Handle<mirror::Class> log_manager_class = hs.NewHandle(
+      FindClass("Ljava/util/logging/LogManager;", ScopedNullHandle<mirror::ClassLoader>()));
   ASSERT_TRUE(log_manager_class.Get() != nullptr);
   ASSERT_TRUE(class_linker_->EnsureInitialized(self, log_manager_class, true, true));
 }
@@ -991,10 +984,8 @@ TEST_F(UnstartedRuntimeTest, ClassGetSignatureAnnotation) {
   ScopedObjectAccess soa(self);
 
   StackHandleScope<1> hs(self);
-  Handle<mirror::Class> list_class = hs.NewHandle(
-      class_linker_->FindClass(self,
-                               "Ljava/util/List;",
-                               ScopedNullHandle<mirror::ClassLoader>()));
+  Handle<mirror::Class> list_class =
+      hs.NewHandle(FindClass("Ljava/util/List;", ScopedNullHandle<mirror::ClassLoader>()));
   ASSERT_TRUE(list_class.Get() != nullptr);
   ASSERT_TRUE(class_linker_->EnsureInitialized(self, list_class, true, true));
 

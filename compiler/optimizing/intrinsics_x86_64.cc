@@ -27,8 +27,8 @@
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints_enum.h"
 #include "heap_poisoning.h"
-#include "intrinsics.h"
 #include "intrinsic_objects.h"
+#include "intrinsics.h"
 #include "intrinsics_utils.h"
 #include "lock_word.h"
 #include "mirror/array-inl.h"
@@ -36,6 +36,8 @@
 #include "mirror/reference.h"
 #include "mirror/string.h"
 #include "optimizing/code_generator.h"
+#include "optimizing/data_type.h"
+#include "optimizing/locations.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread-current-inl.h"
 #include "utils/x86_64/assembler_x86_64.h"
@@ -162,7 +164,7 @@ class InvokePolymorphicSlowPathX86_64 : public SlowPathCode {
     SaveLiveRegisters(codegen, instruction_->GetLocations());
 
     // Passing `MethodHandle` object as hidden argument.
-    __ movq(CpuRegister(RDI), method_handle_);
+    __ movl(CpuRegister(RDI), method_handle_);
     x86_64_codegen->InvokeRuntime(QuickEntrypointEnum::kQuickInvokePolymorphicWithHiddenReceiver,
                                   instruction_,
                                   instruction_->GetDexPc());
@@ -328,7 +330,7 @@ static void CreateFPToFPLocations(ArenaAllocator* allocator, HInvoke* invoke) {
   LocationSummary* locations =
       new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
   locations->SetInAt(0, Location::RequiresFpuRegister());
-  locations->SetOut(Location::RequiresFpuRegister());
+  locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
 }
 
 void IntrinsicLocationsBuilderX86_64::VisitMathSqrt(HInvoke* invoke) {
@@ -1888,6 +1890,43 @@ static void GenUnsafeGet(HInvoke* invoke,
   }
 }
 
+static void GenUnsafeGetAbsolute(HInvoke* invoke,
+                                 DataType::Type type,
+                                 CodeGeneratorX86_64* codegen) {
+  X86_64Assembler* assembler = down_cast<X86_64Assembler*>(codegen->GetAssembler());
+  LocationSummary* locations = invoke->GetLocations();
+  Location address_loc = locations->InAt(1);
+  Address address = Address(address_loc.AsRegister<CpuRegister>(), 0);
+  Location output_loc = locations->Out();
+  CpuRegister output = output_loc.AsRegister<CpuRegister>();
+
+  switch (type) {
+    case DataType::Type::kInt8:
+      __ movsxb(output, address);
+      break;
+
+    case DataType::Type::kInt32:
+      __ movl(output, address);
+      break;
+
+    case DataType::Type::kInt64:
+      __ movq(output, address);
+      break;
+
+    default:
+      LOG(FATAL) << "Unsupported op size " << type;
+      UNREACHABLE();
+  }
+}
+
+static void CreateIntIntToIntLocations(ArenaAllocator* allocator, HInvoke* invoke) {
+  LocationSummary* locations =
+      new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
+  locations->SetInAt(0, Location::NoLocation());        // Unused receiver.
+  locations->SetInAt(1, Location::RequiresRegister());
+  locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
+}
+
 static void CreateIntIntIntToIntLocations(ArenaAllocator* allocator,
                                           HInvoke* invoke,
                                           CodeGeneratorX86_64* codegen) {
@@ -1911,6 +1950,9 @@ static void CreateIntIntIntToIntLocations(ArenaAllocator* allocator,
 void IntrinsicLocationsBuilderX86_64::VisitUnsafeGet(HInvoke* invoke) {
   VisitJdkUnsafeGet(invoke);
 }
+void IntrinsicLocationsBuilderX86_64::VisitUnsafeGetAbsolute(HInvoke* invoke) {
+  VisitJdkUnsafeGetAbsolute(invoke);
+}
 void IntrinsicLocationsBuilderX86_64::VisitUnsafeGetVolatile(HInvoke* invoke) {
   VisitJdkUnsafeGetVolatile(invoke);
 }
@@ -1932,6 +1974,9 @@ void IntrinsicLocationsBuilderX86_64::VisitUnsafeGetByte(HInvoke* invoke) {
 
 void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafeGet(HInvoke* invoke) {
   CreateIntIntIntToIntLocations(allocator_, invoke, codegen_);
+}
+void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafeGetAbsolute(HInvoke* invoke) {
+  CreateIntIntToIntLocations(allocator_, invoke);
 }
 void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafeGetVolatile(HInvoke* invoke) {
   CreateIntIntIntToIntLocations(allocator_, invoke, codegen_);
@@ -1964,6 +2009,9 @@ void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafeGetByte(HInvoke* invoke) {
 void IntrinsicCodeGeneratorX86_64::VisitUnsafeGet(HInvoke* invoke) {
   VisitJdkUnsafeGet(invoke);
 }
+void IntrinsicCodeGeneratorX86_64::VisitUnsafeGetAbsolute(HInvoke* invoke) {
+  VisitJdkUnsafeGetAbsolute(invoke);
+}
 void IntrinsicCodeGeneratorX86_64::VisitUnsafeGetVolatile(HInvoke* invoke) {
   VisitJdkUnsafeGetVolatile(invoke);
 }
@@ -1985,6 +2033,9 @@ void IntrinsicCodeGeneratorX86_64::VisitUnsafeGetByte(HInvoke* invoke) {
 
 void IntrinsicCodeGeneratorX86_64::VisitJdkUnsafeGet(HInvoke* invoke) {
   GenUnsafeGet(invoke, DataType::Type::kInt32, /*is_volatile=*/ false, codegen_);
+}
+void IntrinsicCodeGeneratorX86_64::VisitJdkUnsafeGetAbsolute(HInvoke* invoke) {
+  GenUnsafeGetAbsolute(invoke, DataType::Type::kInt32, codegen_);
 }
 void IntrinsicCodeGeneratorX86_64::VisitJdkUnsafeGetVolatile(HInvoke* invoke) {
   GenUnsafeGet(invoke, DataType::Type::kInt32, /*is_volatile=*/ true, codegen_);
@@ -2014,6 +2065,16 @@ void IntrinsicCodeGeneratorX86_64::VisitJdkUnsafeGetByte(HInvoke* invoke) {
   GenUnsafeGet(invoke, DataType::Type::kInt8, /*is_volatile=*/false, codegen_);
 }
 
+static void CreateIntIntIntToVoidPlusTempsLocations(ArenaAllocator* allocator,
+                                                    [[maybe_unused]] DataType::Type type,
+                                                    HInvoke* invoke) {
+  LocationSummary* locations =
+      new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
+  locations->SetInAt(0, Location::NoLocation());        // Unused receiver.
+  locations->SetInAt(1, Location::RequiresRegister());
+  locations->SetInAt(2, Location::RequiresRegister());
+}
+
 static void CreateIntIntIntIntToVoidPlusTempsLocations(ArenaAllocator* allocator,
                                                        DataType::Type type,
                                                        HInvoke* invoke) {
@@ -2032,6 +2093,9 @@ static void CreateIntIntIntIntToVoidPlusTempsLocations(ArenaAllocator* allocator
 
 void IntrinsicLocationsBuilderX86_64::VisitUnsafePut(HInvoke* invoke) {
   VisitJdkUnsafePut(invoke);
+}
+void IntrinsicLocationsBuilderX86_64::VisitUnsafePutAbsolute(HInvoke* invoke) {
+  VisitJdkUnsafePutAbsolute(invoke);
 }
 void IntrinsicLocationsBuilderX86_64::VisitUnsafePutOrdered(HInvoke* invoke) {
   VisitJdkUnsafePutOrdered(invoke);
@@ -2063,6 +2127,9 @@ void IntrinsicLocationsBuilderX86_64::VisitUnsafePutByte(HInvoke* invoke) {
 
 void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafePut(HInvoke* invoke) {
   CreateIntIntIntIntToVoidPlusTempsLocations(allocator_, DataType::Type::kInt32, invoke);
+}
+void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafePutAbsolute(HInvoke* invoke) {
+  CreateIntIntIntToVoidPlusTempsLocations(allocator_, DataType::Type::kInt32, invoke);
 }
 void IntrinsicLocationsBuilderX86_64::VisitJdkUnsafePutOrdered(HInvoke* invoke) {
   CreateIntIntIntIntToVoidPlusTempsLocations(allocator_, DataType::Type::kInt32, invoke);
@@ -2138,8 +2205,36 @@ static void GenUnsafePut(LocationSummary* locations, DataType::Type type, bool i
   }
 }
 
+// We don't care for ordered: it requires an AnyStore barrier, which is already given by the x86
+// memory model.
+static void GenUnsafePutAbsolute(LocationSummary* locations,
+                                 DataType::Type type,
+                                 bool is_volatile,
+                                 CodeGeneratorX86_64* codegen) {
+  X86_64Assembler* assembler = down_cast<X86_64Assembler*>(codegen->GetAssembler());
+  CpuRegister address_reg = locations->InAt(1).AsRegister<CpuRegister>();
+  Address address = Address(address_reg, 0);
+  CpuRegister value = locations->InAt(2).AsRegister<CpuRegister>();
+
+  if (type == DataType::Type::kInt64) {
+    __ movq(address, value);
+  } else if (type == DataType::Type::kInt32) {
+    __ movl(address, value);
+  } else {
+    CHECK_EQ(type, DataType::Type::kInt8) << "Unimplemented GenUnsafePut data type";
+    __ movb(address, value);
+  }
+
+  if (is_volatile) {
+    codegen->MemoryFence();
+  }
+}
+
 void IntrinsicCodeGeneratorX86_64::VisitUnsafePut(HInvoke* invoke) {
   VisitJdkUnsafePut(invoke);
+}
+void IntrinsicCodeGeneratorX86_64::VisitUnsafePutAbsolute(HInvoke* invoke) {
+  VisitJdkUnsafePutAbsolute(invoke);
 }
 void IntrinsicCodeGeneratorX86_64::VisitUnsafePutOrdered(HInvoke* invoke) {
   VisitJdkUnsafePutOrdered(invoke);
@@ -2171,6 +2266,10 @@ void IntrinsicCodeGeneratorX86_64::VisitUnsafePutByte(HInvoke* invoke) {
 
 void IntrinsicCodeGeneratorX86_64::VisitJdkUnsafePut(HInvoke* invoke) {
   GenUnsafePut(invoke->GetLocations(), DataType::Type::kInt32, /*is_volatile=*/ false, codegen_);
+}
+void IntrinsicCodeGeneratorX86_64::VisitJdkUnsafePutAbsolute(HInvoke* invoke) {
+  GenUnsafePutAbsolute(
+      invoke->GetLocations(), DataType::Type::kInt32, /*is_volatile=*/false, codegen_);
 }
 void IntrinsicCodeGeneratorX86_64::VisitJdkUnsafePutOrdered(HInvoke* invoke) {
   GenUnsafePut(invoke->GetLocations(), DataType::Type::kInt32, /*is_volatile=*/ false, codegen_);
@@ -2633,7 +2732,13 @@ static void CreateUnsafeGetAndUpdateLocations(ArenaAllocator* allocator,
   // Use the same register for both the output and the new value or addend
   // to take advantage of XCHG or XADD. Arbitrarily pick RAX.
   locations->SetInAt(3, Location::RegisterLocation(RAX));
-  locations->SetOut(Location::RegisterLocation(RAX));
+  // Only set the `out` register if it's needed. In the void case we can still use RAX in the
+  // same manner as it is marked as a temp register.
+  if (invoke->GetType() == DataType::Type::kVoid) {
+    locations->AddTemp(Location::RegisterLocation(RAX));
+  } else {
+    locations->SetOut(Location::RegisterLocation(RAX));
+  }
 }
 
 void IntrinsicLocationsBuilderX86_64::VisitUnsafeGetAndAddInt(HInvoke* invoke) {
@@ -2697,32 +2802,43 @@ static void GenUnsafeGetAndUpdate(HInvoke* invoke,
   X86_64Assembler* assembler = down_cast<X86_64Assembler*>(codegen->GetAssembler());
   LocationSummary* locations = invoke->GetLocations();
 
-  CpuRegister out = locations->Out().AsRegister<CpuRegister>();       // Result.
-  CpuRegister base = locations->InAt(1).AsRegister<CpuRegister>();    // Object pointer.
-  CpuRegister offset = locations->InAt(2).AsRegister<CpuRegister>();  // Long offset.
-  DCHECK_EQ(out, locations->InAt(3).AsRegister<CpuRegister>());       // New value or addend.
+  const bool is_void = invoke->GetType() == DataType::Type::kVoid;
+  Location rax_loc = Location::RegisterLocation(RAX);
+  // We requested RAX to use as a temporary for void methods, as we don't return the value.
+  DCHECK_IMPLIES(!is_void, locations->Out().Equals(rax_loc));
+  CpuRegister out_or_temp = rax_loc.AsRegister<CpuRegister>();           // Result.
+  CpuRegister base = locations->InAt(1).AsRegister<CpuRegister>();       // Object pointer.
+  CpuRegister offset = locations->InAt(2).AsRegister<CpuRegister>();     // Long offset.
+  DCHECK_EQ(out_or_temp, locations->InAt(3).AsRegister<CpuRegister>());  // New value or addend.
   Address field_address(base, offset, TIMES_1, 0);
 
   if (type == DataType::Type::kInt32) {
     if (get_and_update_op == GetAndUpdateOp::kAdd) {
-      __ LockXaddl(field_address, out);
+      __ LockXaddl(field_address, out_or_temp);
     } else {
       DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
-      __ xchgl(out, field_address);
+      __ xchgl(out_or_temp, field_address);
     }
   } else if (type == DataType::Type::kInt64) {
     if (get_and_update_op == GetAndUpdateOp::kAdd) {
-      __ LockXaddq(field_address, out);
+      __ LockXaddq(field_address, out_or_temp);
     } else {
       DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
-      __ xchgq(out, field_address);
+      __ xchgq(out_or_temp, field_address);
     }
   } else {
     DCHECK_EQ(type, DataType::Type::kReference);
     DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
-    CpuRegister temp1 = locations->GetTemp(0).AsRegister<CpuRegister>();
-    CpuRegister temp2 = locations->GetTemp(1).AsRegister<CpuRegister>();
-    CpuRegister temp3 = locations->GetTemp(2).AsRegister<CpuRegister>();
+
+    // In the void case, we have an extra temp register, which is used to signal the register
+    // allocator that we are clobering RAX.
+    const uint32_t extra_temp = is_void ? 1u : 0u;
+    DCHECK_EQ(locations->GetTempCount(), 3u + extra_temp);
+    DCHECK_IMPLIES(is_void, locations->GetTemp(0u).Equals(Location::RegisterLocation(RAX)));
+
+    CpuRegister temp1 = locations->GetTemp(0u + extra_temp).AsRegister<CpuRegister>();
+    CpuRegister temp2 = locations->GetTemp(1u + extra_temp).AsRegister<CpuRegister>();
+    CpuRegister temp3 = locations->GetTemp(2u + extra_temp).AsRegister<CpuRegister>();
 
     if (codegen->EmitReadBarrier()) {
       DCHECK(kUseBakerReadBarrier);
@@ -2740,18 +2856,20 @@ static void GenUnsafeGetAndUpdate(HInvoke* invoke,
 
     // Mark card for object as a new value shall be stored.
     bool new_value_can_be_null = true;  // TODO: Worth finding out this information?
-    codegen->MaybeMarkGCCard(temp1, temp2, base, /*value=*/out, new_value_can_be_null);
+    codegen->MaybeMarkGCCard(temp1, temp2, base, /*value=*/out_or_temp, new_value_can_be_null);
 
     if (kPoisonHeapReferences) {
       // Use a temp to avoid poisoning base of the field address, which might happen if `out`
       // is the same as `base` (for code like `unsafe.getAndSet(obj, offset, obj)`).
-      __ movl(temp1, out);
+      __ movl(temp1, out_or_temp);
       __ PoisonHeapReference(temp1);
       __ xchgl(temp1, field_address);
-      __ UnpoisonHeapReference(temp1);
-      __ movl(out, temp1);
+      if (!is_void) {
+        __ UnpoisonHeapReference(temp1);
+        __ movl(out_or_temp, temp1);
+      }
     } else {
-      __ xchgl(out, field_address);
+      __ xchgl(out_or_temp, field_address);
     }
   }
 }
@@ -4099,12 +4217,6 @@ static void GenerateVarHandleGet(HInvoke* invoke,
 }
 
 void IntrinsicLocationsBuilderX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
-  // Don't emit intrinsic code for MethodHandle.invokeExact when it certainly does not target
-  // invoke-virtual: if invokeExact is called w/o arguments or if the first argument in that
-  // call is not a reference.
-  if (!invoke->AsInvokePolymorphic()->CanHaveFastPath()) {
-    return;
-  }
   ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
   LocationSummary* locations = new (allocator)
       LocationSummary(invoke, LocationSummary::kCallOnMainAndSlowPath, kIntrinsified);
@@ -4124,10 +4236,11 @@ void IntrinsicLocationsBuilderX86_64::VisitMethodHandleInvokeExact(HInvoke* invo
   locations->SetInAt(number_of_args, Location::RequiresRegister());
 
   locations->AddTemp(Location::RequiresRegister());
+  // Hidden arg for invoke-interface.
+  locations->AddTemp(Location::RegisterLocation(RAX));
 }
 
 void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
-  DCHECK(invoke->AsInvokePolymorphic()->CanHaveFastPath());
   LocationSummary* locations = invoke->GetLocations();
 
   CpuRegister method_handle = locations->InAt(0).AsRegister<CpuRegister>();
@@ -4137,59 +4250,108 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
   codegen_->AddSlowPath(slow_path);
   X86_64Assembler* assembler = codegen_->GetAssembler();
 
-  Address method_handle_kind = Address(method_handle, mirror::MethodHandle::HandleKindOffset());
-
-  // If it is not InvokeVirtual then go to slow path.
-  // Even if MethodHandle's kind is kInvokeVirtual, the underlying method can still be an interface
-  // or a direct method (that's what current `MethodHandles$Lookup.findVirtual` is doing). We don't
-  // check whether `method` is an interface method explicitly: in that case the subtype check below
-  // will fail.
-  // TODO(b/297147201): check whether it can be more precise and what d8/r8 can produce.
-  __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeVirtual));
-  __ j(kNotEqual, slow_path->GetEntryLabel());
-
   CpuRegister call_site_type =
       locations->InAt(invoke->GetNumberOfArguments()).AsRegister<CpuRegister>();
 
   // Call site should match with MethodHandle's type.
+  __ MaybePoisonHeapReference(call_site_type);
   __ cmpl(call_site_type, Address(method_handle, mirror::MethodHandle::MethodTypeOffset()));
   __ j(kNotEqual, slow_path->GetEntryLabel());
 
   CpuRegister method = CpuRegister(kMethodRegisterArgument);
-
-  // Get method to call.
   __ movq(method, Address(method_handle, mirror::MethodHandle::ArtFieldOrMethodOffset()));
 
-  CpuRegister receiver = locations->InAt(1).AsRegister<CpuRegister>();
+  Label static_dispatch;
+  Label execute_target_method;
 
-  __ testl(receiver, receiver);
-  __ j(kEqual, slow_path->GetEntryLabel());
+  Address method_handle_kind = Address(method_handle, mirror::MethodHandle::HandleKindOffset());
+  if (invoke->AsInvokePolymorphic()->CanTargetInstanceMethod()) {
+    CpuRegister receiver = locations->InAt(1).AsRegister<CpuRegister>();
 
-  // Using vtable_index register as temporary in subtype check. It will be overridden later.
-  // If `method` is an interface method this check will fail.
-  CpuRegister vtable_index = locations->GetTemp(0).AsRegister<CpuRegister>();
-  // We deliberately avoid the read barrier, letting the slow path handle the false negatives.
-  GenerateSubTypeObjectCheckNoReadBarrier(codegen_,
-                                          slow_path,
-                                          receiver,
-                                          vtable_index,
-                                          Address(method, ArtMethod::DeclaringClassOffset()));
+    // Receiver shouldn't be null for all the following cases.
+    __ testl(receiver, receiver);
+    __ j(kEqual, slow_path->GetEntryLabel());
 
-  NearLabel execute_target_method;
-  // Skip virtual dispatch if `method` is private.
-  __ testl(Address(method, ArtMethod::AccessFlagsOffset()), Immediate(kAccPrivate));
-  __ j(kNotZero, &execute_target_method);
+    __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeDirect));
+    // No dispatch is needed for invoke-direct.
+    __ j(kEqual, &execute_target_method);
 
-  // MethodIndex is uint16_t.
-  __ movzxw(vtable_index, Address(method, ArtMethod::MethodIndexOffset()));
+    Label non_virtual_dispatch;
+    // Handle invoke-virtual case.
+    __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeVirtual));
+    __ j(kNotEqual, &non_virtual_dispatch);
 
-  constexpr uint32_t class_offset = mirror::Object::ClassOffset().Int32Value();
-  // Re-using method register for receiver class.
-  __ movl(method, Address(receiver, class_offset));
+    // Skip virtual dispatch if `method` is private.
+    __ testl(Address(method, ArtMethod::AccessFlagsOffset()), Immediate(kAccPrivate));
+    __ j(kNotZero, &execute_target_method);
 
-  constexpr uint32_t vtable_offset =
-      mirror::Class::EmbeddedVTableOffset(art::PointerSize::k64).Int32Value();
-  __ movq(method, Address(method, vtable_index, TIMES_8, vtable_offset));
+    CpuRegister temp = locations->GetTemp(0).AsRegister<CpuRegister>();
+
+    __ movl(temp, Address(method, ArtMethod::DeclaringClassOffset()));
+    __ cmpl(temp, Address(receiver, mirror::Object::ClassOffset()));
+    // If method is defined in the receiver's class, execute it as it is.
+    __ j(kEqual, &execute_target_method);
+
+    // MethodIndex is uint16_t.
+    __ movzxw(temp, Address(method, ArtMethod::MethodIndexOffset()));
+
+    constexpr uint32_t class_offset = mirror::Object::ClassOffset().Int32Value();
+    // Re-using method register for receiver class.
+    __ movl(method, Address(receiver, class_offset));
+    __ MaybeUnpoisonHeapReference(method);
+
+    constexpr uint32_t vtable_offset =
+        mirror::Class::EmbeddedVTableOffset(art::PointerSize::k64).Int32Value();
+    __ movq(method, Address(method, temp, TIMES_8, vtable_offset));
+    __ Jump(&execute_target_method);
+
+    __ Bind(&non_virtual_dispatch);
+    __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeInterface));
+    __ j(kNotEqual, &static_dispatch);
+
+    __ movl(temp, Address(method, ArtMethod::AccessFlagsOffset()));
+
+    __ testl(temp, Immediate(kAccPrivate));
+    __ j(kNotZero, &execute_target_method);
+
+    CpuRegister hidden_arg = locations->GetTemp(1).AsRegister<CpuRegister>();
+    // Set the hidden argument.
+    DCHECK_EQ(RAX, hidden_arg.AsRegister());
+    __ movq(hidden_arg, method);
+
+    Label get_imt_index_from_method_index;
+    Label do_imt_dispatch;
+
+    // Get IMT index.
+    // Not doing default conflict check as IMT index is set for all method which have
+    // kAccAbstract bit.
+    __ testl(temp, Immediate(kAccAbstract));
+    __ j(kZero, &get_imt_index_from_method_index);
+
+    // imt_index_ is uint16_t
+    __ movzxw(temp, Address(method, ArtMethod::ImtIndexOffset()));
+    __ Jump(&do_imt_dispatch);
+
+    // Default method, do method->GetMethodIndex() & (ImTable::kSizeTruncToPowerOfTwo - 1);
+    __ Bind(&get_imt_index_from_method_index);
+    __ movl(temp, Address(method, ArtMethod::MethodIndexOffset()));
+    __ andl(temp, Immediate(ImTable::kSizeTruncToPowerOfTwo - 1));
+
+    __ Bind(&do_imt_dispatch);
+    // Re-using `method` to store receiver class and ImTableEntry.
+    __ movl(method, Address(receiver, mirror::Object::ClassOffset()));
+    __ MaybeUnpoisonHeapReference(method);
+
+    __ movq(method, Address(method, mirror::Class::ImtPtrOffset(kX86_64PointerSize).Uint32Value()));
+    // method = receiver->GetClass()->embedded_imtable_->Get(method_offset);
+    __ movq(method, Address(method, temp, TIMES_8, /* disp= */ 0));
+
+    __ Jump(&execute_target_method);
+  }
+  __ Bind(&static_dispatch);
+  __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeStatic));
+  __ j(kNotEqual, slow_path->GetEntryLabel());
+  // MH's kind is invoke-static. The method can be called directly, hence fall-through.
 
   __ Bind(&execute_target_method);
   __ call(Address(
@@ -4502,23 +4664,26 @@ static void CreateVarHandleGetAndSetLocations(HInvoke* invoke, CodeGeneratorX86_
     return;
   }
 
+  // Get the type from the shorty as the invokes may not return a value.
   uint32_t number_of_arguments = invoke->GetNumberOfArguments();
   uint32_t new_value_index = number_of_arguments - 1;
-  DataType::Type type = invoke->GetType();
-  DCHECK_EQ(type, GetDataTypeFromShorty(invoke, new_value_index));
+  DataType::Type value_type = GetDataTypeFromShorty(invoke, new_value_index);
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  DCHECK_IMPLIES(!is_void, return_type == value_type);
 
   LocationSummary* locations = CreateVarHandleCommonLocations(invoke);
 
-  if (DataType::IsFloatingPointType(type)) {
-    locations->SetOut(Location::RequiresFpuRegister());
+  if (DataType::IsFloatingPointType(value_type)) {
+    // Only set the `out` register if it's needed. In the void case we don't use `out`.
+    if (!is_void) {
+      locations->SetOut(Location::RequiresFpuRegister());
+    }
     // A temporary is needed to load the new floating-point value into a register for XCHG.
     locations->AddTemp(Location::RequiresRegister());
   } else {
-    // Use the same register for both the new value and output to take advantage of XCHG.
-    // It doesn't have to be RAX, but we need to choose some to make sure it's the same.
-    locations->SetOut(Location::RegisterLocation(RAX));
     locations->SetInAt(new_value_index, Location::RegisterLocation(RAX));
-    if (type == DataType::Type::kReference) {
+    if (value_type == DataType::Type::kReference) {
       // Need two temporaries for MarkGCCard.
       locations->AddRegisterTemps(2);
       if (codegen->EmitReadBarrier()) {
@@ -4526,6 +4691,15 @@ static void CreateVarHandleGetAndSetLocations(HInvoke* invoke, CodeGeneratorX86_
         DCHECK(kUseBakerReadBarrier);
         locations->AddTemp(Location::RequiresRegister());
       }
+    }
+    // Only set the `out` register if it's needed. In the void case we can still use RAX in the
+    // same manner as it is marked as a temp register.
+    if (is_void) {
+      locations->AddTemp(Location::RegisterLocation(RAX));
+    } else {
+      // Use the same register for both the new value and output to take advantage of XCHG.
+      // It doesn't have to be RAX, but we need to choose some to make sure it's the same.
+      locations->SetOut(Location::RegisterLocation(RAX));
     }
   }
 }
@@ -4541,6 +4715,9 @@ static void GenerateVarHandleGetAndSet(HInvoke* invoke,
   LocationSummary* locations = invoke->GetLocations();
   Location out = locations->Out();
   uint32_t temp_count = locations->GetTempCount();
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  DCHECK_IMPLIES(!is_void, return_type == type);
 
   if (DataType::IsFloatingPointType(type)) {
     // `getAndSet` for floating-point types: move the new FP value into a register, atomically
@@ -4560,38 +4737,48 @@ static void GenerateVarHandleGetAndSet(HInvoke* invoke,
     if (byte_swap) {
       codegen->GetInstructionCodegen()->Bswap(temp, bswap_type);
     }
-    __ movd(out.AsFpuRegister<XmmRegister>(), temp.AsRegister<CpuRegister>(), is64bit);
+    if (!is_void) {
+      __ movd(out.AsFpuRegister<XmmRegister>(), temp.AsRegister<CpuRegister>(), is64bit);
+    }
   } else if (type == DataType::Type::kReference) {
     // `getAndSet` for references: load reference and atomically exchange it with the field.
     // Output register is the same as the one holding new value, so no need to move the result.
     DCHECK(!byte_swap);
 
-    CpuRegister temp1 = locations->GetTemp(temp_count - 1).AsRegister<CpuRegister>();
-    CpuRegister temp2 = locations->GetTemp(temp_count - 2).AsRegister<CpuRegister>();
+    // In the void case, we have an extra temp register, which is used to signal the register
+    // allocator that we are clobering RAX.
+    const uint32_t extra_temp = is_void ? 1u : 0u;
+    DCHECK_IMPLIES(is_void,
+                   locations->GetTemp(temp_count - 1u).Equals(Location::RegisterLocation(RAX)));
+
+    CpuRegister temp1 = locations->GetTemp(temp_count - extra_temp - 1u).AsRegister<CpuRegister>();
+    CpuRegister temp2 = locations->GetTemp(temp_count - extra_temp - 2u).AsRegister<CpuRegister>();
     CpuRegister valreg = value.AsRegister<CpuRegister>();
 
     if (codegen->EmitBakerReadBarrier()) {
       codegen->GenerateReferenceLoadWithBakerReadBarrier(
           invoke,
-          locations->GetTemp(temp_count - 3),
+          locations->GetTemp(temp_count - extra_temp - 3u),
           ref,
           field_addr,
-          /*needs_null_check=*/ false,
-          /*always_update_field=*/ true,
+          /*needs_null_check=*/false,
+          /*always_update_field=*/true,
           &temp1,
           &temp2);
     }
     codegen->MarkGCCard(temp1, temp2, ref);
 
-    DCHECK_EQ(valreg, out.AsRegister<CpuRegister>());
+    DCHECK_IMPLIES(!is_void, valreg == out.AsRegister<CpuRegister>());
     if (kPoisonHeapReferences) {
       // Use a temp to avoid poisoning base of the field address, which might happen if `valreg` is
       // the same as `target.object` (for code like `vh.getAndSet(obj, obj)`).
       __ movl(temp1, valreg);
       __ PoisonHeapReference(temp1);
       __ xchgl(temp1, field_addr);
-      __ UnpoisonHeapReference(temp1);
-      __ movl(valreg, temp1);
+      if (!is_void) {
+        __ UnpoisonHeapReference(temp1);
+        __ movl(valreg, temp1);
+      }
     } else {
       __ xchgl(valreg, field_addr);
     }
@@ -4602,24 +4789,32 @@ static void GenerateVarHandleGetAndSet(HInvoke* invoke,
       codegen->GetInstructionCodegen()->Bswap(value, type);
     }
     CpuRegister valreg = value.AsRegister<CpuRegister>();
-    DCHECK_EQ(valreg, out.AsRegister<CpuRegister>());
+    DCHECK_IMPLIES(!is_void, valreg == out.AsRegister<CpuRegister>());
     switch (type) {
       case DataType::Type::kBool:
       case DataType::Type::kUint8:
         __ xchgb(valreg, field_addr);
-        __ movzxb(valreg, valreg);
+        if (!is_void) {
+          __ movzxb(valreg, valreg);
+        }
         break;
       case DataType::Type::kInt8:
         __ xchgb(valreg, field_addr);
-        __ movsxb(valreg, valreg);
+        if (!is_void) {
+          __ movsxb(valreg, valreg);
+        }
         break;
       case DataType::Type::kUint16:
         __ xchgw(valreg, field_addr);
-        __ movzxw(valreg, valreg);
+        if (!is_void) {
+          __ movzxw(valreg, valreg);
+        }
         break;
       case DataType::Type::kInt16:
         __ xchgw(valreg, field_addr);
-        __ movsxw(valreg, valreg);
+        if (!is_void) {
+          __ movsxw(valreg, valreg);
+        }
         break;
       case DataType::Type::kInt32:
       case DataType::Type::kUint32:
@@ -4644,25 +4839,35 @@ static void CreateVarHandleGetAndBitwiseOpLocations(HInvoke* invoke, CodeGenerat
     return;
   }
 
+  // Get the type from the shorty as the invokes may not return a value.
   uint32_t number_of_arguments = invoke->GetNumberOfArguments();
   uint32_t new_value_index = number_of_arguments - 1;
-  DataType::Type type = invoke->GetType();
-  DCHECK_EQ(type, GetDataTypeFromShorty(invoke, new_value_index));
+  DataType::Type value_type = GetDataTypeFromShorty(invoke, new_value_index);
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  DCHECK_IMPLIES(!is_void, return_type == value_type);
 
   LocationSummary* locations = CreateVarHandleCommonLocations(invoke);
 
-  DCHECK_NE(DataType::Type::kReference, type);
-  DCHECK(!DataType::IsFloatingPointType(type));
-
+  DCHECK_NE(DataType::Type::kReference, value_type);
+  DCHECK(!DataType::IsFloatingPointType(value_type));
   // A temporary to compute the bitwise operation on the old and the new values.
   locations->AddTemp(Location::RequiresRegister());
   // We need value to be either in a register, or a 32-bit constant (as there are no arithmetic
   // instructions that accept 64-bit immediate on x86_64).
-  locations->SetInAt(new_value_index, DataType::Is64BitType(type)
-      ? Location::RequiresRegister()
-      : Location::RegisterOrConstant(invoke->InputAt(new_value_index)));
-  // Output is in RAX to accommodate CMPXCHG. It is also used as a temporary.
-  locations->SetOut(Location::RegisterLocation(RAX));
+  locations->SetInAt(new_value_index,
+                     DataType::Is64BitType(value_type) ?
+                         Location::RequiresRegister() :
+                         Location::RegisterOrConstant(invoke->InputAt(new_value_index)));
+  if (is_void) {
+    // Used as a temporary, even when we are not outputting it so reserve it. This has to be
+    // requested before the other temporary since there's variable number of temp registers and the
+    // other temp register is expected to be the last one.
+    locations->AddTemp(Location::RegisterLocation(RAX));
+  } else {
+    // Output is in RAX to accommodate CMPXCHG. It is also used as a temporary.
+    locations->SetOut(Location::RegisterLocation(RAX));
+  }
 }
 
 static void GenerateVarHandleGetAndOp(HInvoke* invoke,
@@ -4674,18 +4879,24 @@ static void GenerateVarHandleGetAndOp(HInvoke* invoke,
                                       bool byte_swap) {
   X86_64Assembler* assembler = codegen->GetAssembler();
   LocationSummary* locations = invoke->GetLocations();
-  Location temp_loc = locations->GetTemp(locations->GetTempCount() - 1);
-  Location rax_loc = locations->Out();
+  // In the void case, we have an extra temp register, which is used to signal the register
+  // allocator that we are clobering RAX.
+  const bool is_void = invoke->GetType() == DataType::Type::kVoid;
+  const uint32_t extra_temp = is_void ? 1u : 0u;
+  const uint32_t temp_count = locations->GetTempCount();
+  DCHECK_IMPLIES(is_void,
+                 locations->GetTemp(temp_count - 1u).Equals(Location::RegisterLocation(RAX)));
+  Location temp_loc = locations->GetTemp(temp_count - extra_temp - 1u);
+  Location rax_loc = Location::RegisterLocation(RAX);
+  DCHECK_IMPLIES(!is_void, locations->Out().Equals(rax_loc));
   CpuRegister temp = temp_loc.AsRegister<CpuRegister>();
-  CpuRegister rax = rax_loc.AsRegister<CpuRegister>();
-  DCHECK_EQ(rax.AsRegister(), RAX);
   bool is64Bit = DataType::Is64BitType(type);
 
   NearLabel retry;
   __ Bind(&retry);
 
   // Load field value into RAX and copy it into a temporary register for the operation.
-  codegen->LoadFromMemoryNoReference(type, Location::RegisterLocation(RAX), field_addr);
+  codegen->LoadFromMemoryNoReference(type, rax_loc, field_addr);
   codegen->Move(temp_loc, rax_loc);
   if (byte_swap) {
     // Byte swap the temporary, since we need to perform operation in native endianness.
@@ -4783,15 +4994,21 @@ static void CreateVarHandleGetAndAddLocations(HInvoke* invoke, CodeGeneratorX86_
     return;
   }
 
+  // Get the type from the shorty as the invokes may not return a value.
   uint32_t number_of_arguments = invoke->GetNumberOfArguments();
   uint32_t new_value_index = number_of_arguments - 1;
-  DataType::Type type = invoke->GetType();
-  DCHECK_EQ(type, GetDataTypeFromShorty(invoke, new_value_index));
+  DataType::Type value_type = GetDataTypeFromShorty(invoke, new_value_index);
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  DCHECK_IMPLIES(!is_void, return_type == value_type);
 
   LocationSummary* locations = CreateVarHandleCommonLocations(invoke);
 
-  if (DataType::IsFloatingPointType(type)) {
-    locations->SetOut(Location::RequiresFpuRegister());
+  if (DataType::IsFloatingPointType(value_type)) {
+    // Only set the `out` register if it's needed. In the void case we don't use `out`
+    if (!is_void) {
+      locations->SetOut(Location::RequiresFpuRegister());
+    }
     // Require that the new FP value is in a register (and not a constant) for ADDSS/ADDSD.
     locations->SetInAt(new_value_index, Location::RequiresFpuRegister());
     // CMPXCHG clobbers RAX.
@@ -4801,11 +5018,7 @@ static void CreateVarHandleGetAndAddLocations(HInvoke* invoke, CodeGeneratorX86_
     // A temporary to hold the new value for CMPXCHG.
     locations->AddTemp(Location::RequiresRegister());
   } else {
-    DCHECK_NE(type, DataType::Type::kReference);
-    // Use the same register for both the new value and output to take advantage of XADD.
-    // It should be RAX, because the byte-swapping path of GenerateVarHandleGetAndAdd falls
-    // back to GenerateVarHandleGetAndOp that expects out in RAX.
-    locations->SetOut(Location::RegisterLocation(RAX));
+    DCHECK_NE(value_type, DataType::Type::kReference);
     locations->SetInAt(new_value_index, Location::RegisterLocation(RAX));
     if (GetExpectedVarHandleCoordinatesCount(invoke) == 2) {
       // For byte array views with non-native endianness we need extra BSWAP operations, so we
@@ -4814,6 +5027,16 @@ static void CreateVarHandleGetAndAddLocations(HInvoke* invoke, CodeGeneratorX86_
       // clobbered by repeated CMPXCHG) and one for performing the operation. At compile time we
       // cannot distinguish this case from arrays or native-endian byte array views.
       locations->AddRegisterTemps(2);
+    }
+    // Only set the `out` register if it's needed. In the void case we can still use RAX in the
+    // same manner as it is marked as a temp register.
+    if (is_void) {
+      locations->AddTemp(Location::RegisterLocation(RAX));
+    } else {
+      // Use the same register for both the new value and output to take advantage of XADD.
+      // It should be RAX, because the byte-swapping path of GenerateVarHandleGetAndAdd falls
+      // back to GenerateVarHandleGetAndOp that expects out in RAX.
+      locations->SetOut(Location::RegisterLocation(RAX));
     }
   }
 }
@@ -4828,6 +5051,10 @@ static void GenerateVarHandleGetAndAdd(HInvoke* invoke,
   LocationSummary* locations = invoke->GetLocations();
   Location out = locations->Out();
   uint32_t temp_count = locations->GetTempCount();
+
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  DCHECK_IMPLIES(!is_void, return_type == type);
 
   if (DataType::IsFloatingPointType(type)) {
     if (byte_swap) {
@@ -4891,7 +5118,9 @@ static void GenerateVarHandleGetAndAdd(HInvoke* invoke,
     if (byte_swap) {
       codegen->GetInstructionCodegen()->Bswap(rax_loc, bswap_type);
     }
-    __ movd(out.AsFpuRegister<XmmRegister>(), CpuRegister(RAX), is64bit);
+    if (!is_void) {
+      __ movd(out.AsFpuRegister<XmmRegister>(), CpuRegister(RAX), is64bit);
+    }
   } else {
     if (byte_swap) {
       // We cannot use XADD since we need to byte-swap the old value when reading it from memory,
@@ -4899,7 +5128,12 @@ static void GenerateVarHandleGetAndAdd(HInvoke* invoke,
       // implementation that is also used for bitwise operations.
       // Move value from RAX to a temporary register, as RAX may get clobbered by repeated CMPXCHG.
       DCHECK_EQ(GetExpectedVarHandleCoordinatesCount(invoke), 2u);
-      Location temp = locations->GetTemp(temp_count - 2);
+      // In the void case, we have an extra temp register, which is used to signal the register
+      // allocator that we are clobering RAX.
+      const uint32_t extra_temp = is_void ? 1u : 0u;
+      DCHECK_IMPLIES(is_void,
+                     locations->GetTemp(temp_count - 1u).Equals(Location::RegisterLocation(RAX)));
+      Location temp = locations->GetTemp(temp_count - extra_temp - 2u);
       codegen->Move(temp, value);
       GenerateVarHandleGetAndOp(
           invoke, codegen, temp, type, field_addr, GetAndUpdateOp::kAdd, byte_swap);
@@ -4908,24 +5142,32 @@ static void GenerateVarHandleGetAndAdd(HInvoke* invoke,
       // the old value to the field. Output register is the same as the one holding new value. Do
       // sign extend / zero extend as needed.
       CpuRegister valreg = value.AsRegister<CpuRegister>();
-      DCHECK_EQ(valreg, out.AsRegister<CpuRegister>());
+      DCHECK_IMPLIES(!is_void, valreg == out.AsRegister<CpuRegister>());
       switch (type) {
         case DataType::Type::kBool:
         case DataType::Type::kUint8:
           __ LockXaddb(field_addr, valreg);
-          __ movzxb(valreg, valreg);
+          if (!is_void) {
+            __ movzxb(valreg, valreg);
+          }
           break;
         case DataType::Type::kInt8:
           __ LockXaddb(field_addr, valreg);
-          __ movsxb(valreg, valreg);
+          if (!is_void) {
+            __ movsxb(valreg, valreg);
+          }
           break;
         case DataType::Type::kUint16:
           __ LockXaddw(field_addr, valreg);
-          __ movzxw(valreg, valreg);
+          if (!is_void) {
+            __ movzxw(valreg, valreg);
+          }
           break;
         case DataType::Type::kInt16:
           __ LockXaddw(field_addr, valreg);
-          __ movsxw(valreg, valreg);
+          if (!is_void) {
+            __ movsxw(valreg, valreg);
+          }
           break;
         case DataType::Type::kInt32:
         case DataType::Type::kUint32:
@@ -4954,9 +5196,10 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
   X86_64Assembler* assembler = codegen->GetAssembler();
   LocationSummary* locations = invoke->GetLocations();
 
+  // Get the type from the shorty as the invokes may not return a value.
   uint32_t number_of_arguments = invoke->GetNumberOfArguments();
   Location value = locations->InAt(number_of_arguments - 1);
-  DataType::Type type = invoke->GetType();
+  DataType::Type type = GetDataTypeFromShorty(invoke, number_of_arguments - 1);
 
   VarHandleSlowPathX86_64* slow_path = nullptr;
   VarHandleTarget target = GetVarHandleTarget(invoke);
@@ -5214,7 +5457,7 @@ void VarHandleSlowPathX86_64::EmitByteArrayViewCode(CodeGeneratorX86_64* codegen
   CpuRegister varhandle = locations->InAt(0).AsRegister<CpuRegister>();
   CpuRegister object = locations->InAt(1).AsRegister<CpuRegister>();
   CpuRegister index = locations->InAt(2).AsRegister<CpuRegister>();
-  CpuRegister temp = locations->GetTemp(locations->GetTempCount() - 1).AsRegister<CpuRegister>();
+  CpuRegister temp = locations->GetTemp(locations->GetTempCount() - 1u).AsRegister<CpuRegister>();
 
   MemberOffset class_offset = mirror::Object::ClassOffset();
   MemberOffset array_length_offset = mirror::Array::LengthOffset();

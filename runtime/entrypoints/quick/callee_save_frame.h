@@ -96,7 +96,7 @@ struct CSFSelector<InstructionSet::kX86_64> {
 
 }  // namespace detail
 
-using RuntimeCalleeSaveFrame = detail::CSFSelector<kRuntimeISA>::type;
+using RuntimeCalleeSaveFrame = detail::CSFSelector<kRuntimeQuickCodeISA>::type;
 
 }  // namespace art
 

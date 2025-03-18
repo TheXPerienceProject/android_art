@@ -17,6 +17,7 @@
 package art;
 
 import dalvik.system.InMemoryDexClassLoader;
+import dalvik.system.VMRuntime;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -26,7 +27,7 @@ import java.util.function.Supplier;
 public class Test2001 {
   private static final int NUM_THREADS = 20;
   // Don't perform more than this many repeats per thread to prevent OOMEs
-  private static final int TASK_COUNT_LIMIT = 1000;
+  private static int TASK_COUNT_LIMIT = 1000;
 
   public static class Transform {
     public String greetingEnglish;
@@ -226,6 +227,13 @@ public class Test2001 {
   }
 
   public static void doTest() throws Exception {
+    if (!VMRuntime.getRuntime().is64Bit()) {
+      // Reduce the task count limit on 32-bit VMs. Since we create a class loader for each task,
+      // we create too many linear alloc spaces. On 32-bit systems this might cause an OOM because
+      // we run out of virtual address space.
+      TASK_COUNT_LIMIT = 100;
+    }
+
     MyThread[] threads = startThreads(NUM_THREADS);
     Redefinition.doCommonStructuralClassRedefinition(Transform.class, DEX_BYTES);
     finishThreads(threads);

@@ -17,12 +17,16 @@
 package com.android.server.art.prereboot;
 
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.content.Context;
 import android.os.ArtModuleServiceManager;
 import android.os.Build;
 import android.os.CancellationSignal;
 
 import androidx.annotation.RequiresApi;
+
+import com.android.server.art.proto.BatchDexoptParamsProto;
+import com.android.server.pm.PackageManagerLocal;
 
 /**
  * The interface for the entry point of Pre-reboot Dexopt, called through reflection from an old
@@ -37,12 +41,27 @@ import androidx.annotation.RequiresApi;
  *
  * During Pre-reboot Dexopt, the new version of this code is run.
  *
+ * Methods in this interface must not take an instance of a class defined in `service-art.jar`. See
+ * comments in {@link PreRebootDriver#runFromChroot} for the reason.
+ *
  * @hide
  */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public interface PreRebootManagerInterface {
+    /** Since Android V. For backward compatibility only. */
     void run(@NonNull ArtModuleServiceManager artModuleServiceManager, @NonNull Context context,
             @NonNull CancellationSignal cancellationSignal) throws SystemRequirementException;
+
+    /**
+     * Since Android B. The current API.
+     *
+     * @param snapshot The snapshot that {@code batchDexoptParamsProto} is created with.
+     * @param batchDexoptParamsProto {@link BatchDexoptParamsProto}, in binary format.
+     */
+    void run(@NonNull ArtModuleServiceManager artModuleServiceManager, @NonNull Context context,
+            @NonNull CancellationSignal cancellationSignal,
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
+            @Nullable byte[] batchDexoptParamsProto) throws SystemRequirementException;
 
     public static class SystemRequirementException extends Exception {
         public SystemRequirementException(@NonNull String message) {

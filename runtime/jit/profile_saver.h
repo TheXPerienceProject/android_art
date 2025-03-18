@@ -17,6 +17,9 @@
 #ifndef ART_RUNTIME_JIT_PROFILE_SAVER_H_
 #define ART_RUNTIME_JIT_PROFILE_SAVER_H_
 
+#include <utility>
+
+#include "app_info.h"
 #include "base/mutex.h"
 #include "base/safe_map.h"
 #include "dex/method_reference.h"
@@ -38,7 +41,8 @@ class ProfileSaver {
                     const std::string& output_filename,
                     jit::JitCodeCache* jit_code_cache,
                     const std::vector<std::string>& code_paths,
-                    const std::string& ref_profile_filename)
+                    const std::string& ref_profile_filename,
+                    AppInfo::CodeType code_type)
       REQUIRES(!Locks::profiler_lock_, !instance_->wait_lock_);
 
   // Stops the profile saver thread.
@@ -92,8 +96,8 @@ class ProfileSaver {
 
   void AddTrackedLocations(const std::string& output_filename,
                            const std::vector<std::string>& code_paths,
-                           const std::string& ref_profile_filename)
-      REQUIRES(Locks::profiler_lock_);
+                           const std::string& ref_profile_filename,
+                           AppInfo::CodeType code_type) REQUIRES(Locks::profiler_lock_);
 
   // Fetches the current resolved classes and methods from the ClassLinker and stores them in the
   // profile_cache_ for later save.
@@ -134,10 +138,11 @@ class ProfileSaver {
       GUARDED_BY(Locks::profiler_lock_);
 
   // Collection of output profiles that the profile tracks.
-  // It maps output profile locations to reference profiles, and is used
-  // to determine if any profile is non-empty at the start of the ProfileSaver.
-  // This influences the time of the first ever save.
-  SafeMap<std::string, std::string> tracked_profiles_
+  // It maps output profile locations to reference profiles and code types.
+  // This is used to determine if any profile is non-empty at the start of the ProfileSaver, which
+  // influences the time of the first ever save.
+  // It's also used to determine the save order.
+  SafeMap<std::string, std::pair<std::string, AppInfo::CodeType>> tracked_profiles_
       GUARDED_BY(Locks::profiler_lock_);
 
   bool shutting_down_ GUARDED_BY(Locks::profiler_lock_);

@@ -178,6 +178,9 @@ public class DumpedStuff extends SuperDumpedStuff {
   public String nonAscii = "Sigma (Ʃ) is not ASCII";
   public String embeddedZero = "embedded\0...";  // Non-ASCII for string compression purposes.
   public char[] charArray = "char thing".toCharArray();
+  public byte[] byteString = new byte[] {'h', 'i', '.', '\n', '\0', '\0', '\0'};
+  public byte[] byteNotString = new byte[] {0, 1, 2, 3, 4, 5};
+  public byte[] byteEmpty = new byte[] {};
   public String nullString = null;
   public Object anObject = new Object();
   public Object aCleanedObject = new Object();

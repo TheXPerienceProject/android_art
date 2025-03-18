@@ -49,6 +49,7 @@ static constexpr const char* x86_known_variants[] = {
     "goldmont-without-sha-xsaves",
     "tremont",
     "kabylake",
+    "alderlake",
     "default",
 };
 
@@ -60,6 +61,7 @@ static constexpr const char* x86_variants_with_ssse3[] = {
     "goldmont-plus",
     "goldmont-without-sha-xsaves",
     "tremont",
+    "alderlake",
     "kabylake",
 };
 
@@ -70,6 +72,7 @@ static constexpr const char* x86_variants_with_sse4_1[] = {
     "goldmont-plus",
     "goldmont-without-sha-xsaves",
     "tremont",
+    "alderlake",
     "kabylake",
 };
 
@@ -80,6 +83,7 @@ static constexpr const char* x86_variants_with_sse4_2[] = {
     "goldmont-plus",
     "goldmont-without-sha-xsaves",
     "tremont",
+    "alderlake",
     "kabylake",
 };
 
@@ -90,14 +94,17 @@ static constexpr const char* x86_variants_with_popcnt[] = {
     "goldmont-plus",
     "goldmont-without-sha-xsaves",
     "tremont",
+    "alderlake",
     "kabylake",
 };
 static constexpr const char* x86_variants_with_avx[] = {
     "kabylake",
+    "alderlake",
 };
 
 static constexpr const char* x86_variants_with_avx2[] = {
     "kabylake",
+    "alderlake",
 };
 
 X86FeaturesUniquePtr X86InstructionSetFeatures::Create(bool x86_64,

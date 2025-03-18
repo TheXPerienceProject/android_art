@@ -48,10 +48,10 @@ template<typename T> using ConstHandleArrayIter = ArrayIter<T, const Handle<Obje
 template<class T>
 class Handle : public ValueObject {
  public:
-  Handle() : reference_(nullptr) {
+  constexpr Handle() : reference_(nullptr) {
   }
 
-  ALWAYS_INLINE Handle(const Handle<T>& handle) = default;
+  constexpr ALWAYS_INLINE Handle(const Handle<T>& handle) = default;
 
   ALWAYS_INLINE Handle<T>& operator=(const Handle<T>& handle) = default;
 
@@ -93,11 +93,11 @@ class Handle : public ValueObject {
     return reference_->IsNull();
   }
 
-  ALWAYS_INLINE StackReference<mirror::Object>* GetReference() {
+  constexpr ALWAYS_INLINE StackReference<mirror::Object>* GetReference() {
     return reference_;
   }
 
-  ALWAYS_INLINE const StackReference<mirror::Object>* GetReference() const {
+  constexpr ALWAYS_INLINE const StackReference<mirror::Object>* GetReference() const {
     return reference_;
   }
 

@@ -45,10 +45,12 @@ class ReferenceTableTest : public CommonRuntimeTest {
   ReferenceTableTest() {
     use_boot_image_ = true;  // Make the Runtime creation cheaper.
   }
+
+  ObjPtr<mirror::Object> CreateWeakReference(ObjPtr<mirror::Object> referent)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
-static ObjPtr<mirror::Object> CreateWeakReference(ObjPtr<mirror::Object> referent)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
+ObjPtr<mirror::Object> ReferenceTableTest::CreateWeakReference(ObjPtr<mirror::Object> referent) {
   Thread* self = Thread::Current();
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
 
@@ -56,9 +58,7 @@ static ObjPtr<mirror::Object> CreateWeakReference(ObjPtr<mirror::Object> referen
   Handle<mirror::Object> h_referent(scope.NewHandle<mirror::Object>(referent));
 
   Handle<mirror::Class> h_ref_class(scope.NewHandle<mirror::Class>(
-      class_linker->FindClass(self,
-                              "Ljava/lang/ref/WeakReference;",
-                              ScopedNullHandle<mirror::ClassLoader>())));
+      FindClass("Ljava/lang/ref/WeakReference;", ScopedNullHandle<mirror::ClassLoader>())));
   CHECK(h_ref_class != nullptr);
   CHECK(class_linker->EnsureInitialized(self, h_ref_class, true, true));
 

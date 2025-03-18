@@ -132,7 +132,7 @@ inline bool IsEdgeValid(HEdge edge, HGraph* graph) {
 //        (X, Y_1)).
 // 3. Adjust control flow structures and relations (dominance, reverse post order, loops, etc).
 // 4. Fix/resolve data flow.
-// 5. Do cleanups (DCE, critical edges splitting, etc).
+// 5. Do cleanups e.g. critical edges splitting.
 //
 class SuperblockCloner : public ValueObject {
  public:

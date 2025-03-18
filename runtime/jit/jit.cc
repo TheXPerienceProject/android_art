@@ -19,6 +19,7 @@
 #include <dlfcn.h>
 #include <sys/resource.h>
 
+#include "app_info.h"
 #include "art_method-inl.h"
 #include "base/file_utils.h"
 #include "base/logging.h"  // For VLOG.
@@ -35,6 +36,7 @@
 #include "entrypoints/entrypoint_utils-inl.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "gc/space/image_space.h"
+#include "gc/task_processor.h"
 #include "interpreter/interpreter.h"
 #include "jit-inl.h"
 #include "jit_code_cache.h"
@@ -275,13 +277,15 @@ void Jit::DeleteThreadPool() {
 
 void Jit::StartProfileSaver(const std::string& profile_filename,
                             const std::vector<std::string>& code_paths,
-                            const std::string& ref_profile_filename) {
+                            const std::string& ref_profile_filename,
+                            AppInfo::CodeType code_type) {
   if (options_->GetSaveProfilingInfo()) {
     ProfileSaver::Start(options_->GetProfileSaverOptions(),
                         profile_filename,
                         code_cache_,
                         code_paths,
-                        ref_profile_filename);
+                        ref_profile_filename,
+                        code_type);
   }
 }
 
@@ -432,7 +436,7 @@ OsrData* Jit::PrepareForOsr(ArtMethod* method, uint32_t dex_pc, uint32_t* vregs)
       }
     }
 
-    osr_data->native_pc = stack_map.GetNativePcOffset(kRuntimeISA) +
+    osr_data->native_pc = stack_map.GetNativePcOffset(kRuntimeQuickCodeISA) +
         osr_method->GetEntryPoint();
     VLOG(jit) << "Jumping to "
               << method_name
@@ -452,7 +456,7 @@ bool Jit::MaybeDoOnStackReplacement(Thread* thread,
     return false;
   }
 
-  if (UNLIKELY(__builtin_frame_address(0) < thread->GetStackEnd())) {
+  if (UNLIKELY(__builtin_frame_address(0) < thread->GetStackEnd<kNativeStackType>())) {
     // Don't attempt to do an OSR if we are close to the stack limit. Since
     // the interpreter frames are still on stack, OSR has the potential
     // to stack overflow even for a simple loop.
@@ -568,6 +572,7 @@ void Jit::NotifyZygoteCompilationDone() {
       /* start= */ 0,
       /* low_4gb= */ false,
       "boot-image-methods",
+      /* reuse= */ true,  // The mapping will be reused by the mremaps below.
       &error_str);
 
   if (!child_mapping_methods.IsValid()) {
@@ -640,10 +645,6 @@ void Jit::NotifyZygoteCompilationDone() {
   // Mark that compilation of boot classpath is done, and memory can now be
   // shared. Other processes will pick up this information.
   code_cache_->GetZygoteMap()->SetCompilationState(ZygoteCompilationState::kNotifiedOk);
-
-  // The private mapping created for this process has been mremaped. We can
-  // reset it.
-  child_mapping_methods.Reset();
 }
 
 class JitCompileTask final : public Task {
@@ -805,15 +806,17 @@ class ZygoteVerificationTask final : public Task {
     const std::vector<const DexFile*>& boot_class_path =
         runtime->GetClassLinker()->GetBootClassPath();
     ScopedObjectAccess soa(self);
-    StackHandleScope<1> hs(self);
+    StackHandleScope<2> hs(self);
+    MutableHandle<mirror::DexCache> dex_cache = hs.NewHandle<mirror::DexCache>(nullptr);
     MutableHandle<mirror::Class> klass = hs.NewHandle<mirror::Class>(nullptr);
     uint64_t start_ns = ThreadCpuNanoTime();
     uint64_t number_of_classes = 0;
     for (const DexFile* dex_file : boot_class_path) {
+      dex_cache.Assign(linker->FindDexCache(self, *dex_file));
       for (uint32_t i = 0; i < dex_file->NumClassDefs(); ++i) {
         const dex::ClassDef& class_def = dex_file->GetClassDef(i);
-        const char* descriptor = dex_file->GetClassDescriptor(class_def);
-        klass.Assign(linker->LookupResolvedType(descriptor, /* class_loader= */ nullptr));
+        klass.Assign(linker->LookupResolvedType(
+            class_def.class_idx_, dex_cache.Get(), /* class_loader= */ nullptr));
         if (klass == nullptr) {
           // Class not loaded yet.
           DCHECK(!self->IsExceptionPending());
@@ -975,6 +978,7 @@ void Jit::MapBootImageMethods() {
       /* start= */ 0,
       /* low_4gb= */ false,
       "boot-image-methods",
+      /* reuse= */ true,  // The mapping will be reused by the mremaps below.
       &error_str);
 
   // We don't need the fd anymore.
@@ -1071,9 +1075,6 @@ void Jit::MapBootImageMethods() {
     offset += capacity;
   }
 
-  // The private mapping created for this process has been mremaped. We can
-  // reset it.
-  child_mapping_methods.Reset();
   LOG(INFO) << "Successfully mapped boot image methods";
 }
 
@@ -1226,8 +1227,7 @@ bool Jit::CompileMethodFromProfile(Thread* self,
                                    Handle<mirror::ClassLoader> class_loader,
                                    bool add_to_queue,
                                    bool compile_after_boot) {
-  ArtMethod* method = class_linker->ResolveMethodWithoutInvokeType(
-      method_idx, dex_cache, class_loader);
+  ArtMethod* method = class_linker->ResolveMethodId(method_idx, dex_cache, class_loader);
   if (method == nullptr) {
     self->ClearException();
     return false;
@@ -1481,40 +1481,25 @@ ScopedJitSuspend::~ScopedJitSuspend() {
   }
 }
 
-static void* RunPollingThread(void* arg) {
-  Jit* jit = reinterpret_cast<Jit*>(arg);
-  do {
-    sleep(10);
-  } while (!jit->GetCodeCache()->GetZygoteMap()->IsCompilationNotified());
+class MapBootImageMethodsTask : public gc::HeapTask {
+ public:
+  explicit MapBootImageMethodsTask(uint64_t target_run_time) : gc::HeapTask(target_run_time) {}
 
-  // We will suspend other threads: we can only do that if we're attached to the
-  // runtime.
-  Runtime* runtime = Runtime::Current();
-  bool thread_attached = runtime->AttachCurrentThread(
-      "BootImagePollingThread",
-      /* as_daemon= */ true,
-      /* thread_group= */ nullptr,
-      /* create_peer= */ false);
-  CHECK(thread_attached);
-
-  if (getpriority(PRIO_PROCESS, 0 /* this thread */) == 0) {
-    // Slightly reduce thread priority, mostly so the suspend logic notices that we're
-    // not a high priority thread, and can time out more slowly. May fail on host.
-    (void)setpriority(PRIO_PROCESS, 0 /* this thread */, 1);
-  } else {
-    PLOG(ERROR) << "Unexpected BootImagePollingThread priority: " << getpriority(PRIO_PROCESS, 0);
-  }
-  {
+  void Run(Thread* self ATTRIBUTE_UNUSED) override {
+    Runtime* runtime = Runtime::Current();
+    if (!runtime->GetJit()->GetCodeCache()->GetZygoteMap()->IsCompilationNotified()) {
+      // Add a new task that will execute in 10 seconds.
+      static constexpr uint64_t kWaitTimeNs = MsToNs(10000);  // 10 seconds
+      runtime->GetHeap()->AddHeapTask(new MapBootImageMethodsTask(NanoTime() + kWaitTimeNs));
+      return;
+    }
     // Prevent other threads from running while we are remapping the boot image
     // ArtMethod's. Native threads might still be running, but they cannot
     // change the contents of ArtMethod's.
     ScopedSuspendAll ssa(__FUNCTION__);
     runtime->GetJit()->MapBootImageMethods();
   }
-
-  Runtime::Current()->DetachCurrentThread();
-  return nullptr;
-}
+};
 
 void Jit::PostForkChildAction(bool is_system_server, bool is_zygote) {
   // Clear the potential boot tasks inherited from the zygote.
@@ -1526,19 +1511,8 @@ void Jit::PostForkChildAction(bool is_system_server, bool is_zygote) {
   Runtime* const runtime = Runtime::Current();
   // Check if we'll need to remap the boot image methods.
   if (!is_zygote && fd_methods_ != -1) {
-    // Create a thread that will poll the status of zygote compilation, and map
-    // the private mapping of boot image methods.
-    // For child zygote, we instead query IsCompilationNotified() post zygote fork.
-    zygote_mapping_methods_.ResetInForkedProcess();
-    pthread_t polling_thread;
-    pthread_attr_t attr;
-    CHECK_PTHREAD_CALL(pthread_attr_init, (&attr), "new thread");
-    CHECK_PTHREAD_CALL(pthread_attr_setdetachstate, (&attr, PTHREAD_CREATE_DETACHED),
-                       "PTHREAD_CREATE_DETACHED");
-    CHECK_PTHREAD_CALL(
-        pthread_create,
-        (&polling_thread, &attr, RunPollingThread, reinterpret_cast<void*>(this)),
-        "Methods maps thread");
+    Runtime::Current()->GetHeap()->AddHeapTask(
+        new MapBootImageMethodsTask(NanoTime() + MsToNs(10000)));
   }
 
   if (is_zygote || runtime->IsSafeMode()) {
@@ -1716,7 +1690,8 @@ void Jit::MaybeEnqueueCompilation(ArtMethod* method, Thread* self) {
   }
 
   static constexpr size_t kIndividualSharedMethodHotnessThreshold = 0x3f;
-  if (method->IsMemorySharedMethod()) {
+  // Intrinsics are always in the boot image and considered hot.
+  if (method->IsMemorySharedMethod() && !method->IsIntrinsic()) {
     MutexLock mu(self, lock_);
     auto it = shared_method_counters_.find(method);
     if (it == shared_method_counters_.end()) {

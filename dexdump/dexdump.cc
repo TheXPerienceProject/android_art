@@ -968,13 +968,6 @@ static std::unique_ptr<char[]> indexString(const DexFile* pDexFile,
         outSize = snprintf(buf.get(), bufSize, "<field?> // field@%0*x", width, index);
       }
       break;
-    case Instruction::kIndexVtableOffset:
-      outSize = snprintf(buf.get(), bufSize, "[%0*x] // vtable #%0*x",
-                         width, index, width, index);
-      break;
-    case Instruction::kIndexFieldOffset:
-      outSize = snprintf(buf.get(), bufSize, "[obj+%0*x]", width, index);
-      break;
     case Instruction::kIndexMethodAndProtoRef: {
       std::string method("<method?>");
       std::string proto("<proto?>");

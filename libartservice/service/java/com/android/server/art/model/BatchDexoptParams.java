@@ -18,8 +18,12 @@ package com.android.server.art.model;
 
 import android.annotation.NonNull;
 import android.annotation.SystemApi;
+import android.os.Build;
+
+import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.Immutable;
+import com.android.server.art.proto.BatchDexoptParamsProto;
 
 import com.google.auto.value.AutoValue;
 
@@ -29,6 +33,7 @@ import java.util.List;
 
 /** @hide */
 @SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
+@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 @Immutable
 @AutoValue
 public abstract class BatchDexoptParams {
@@ -84,4 +89,19 @@ public abstract class BatchDexoptParams {
 
     /** The params for dexopting each package. */
     public abstract @NonNull DexoptParams getDexoptParams();
+
+    /** @hide */
+    public static @NonNull BatchDexoptParams fromProto(@NonNull BatchDexoptParamsProto proto) {
+        return new BatchDexoptParams
+                .Builder(proto.getPackageList(), DexoptParams.fromProto(proto.getDexoptParams()))
+                .build();
+    }
+
+    /** @hide */
+    public @NonNull BatchDexoptParamsProto toProto() {
+        return BatchDexoptParamsProto.newBuilder()
+                .addAllPackage(getPackages())
+                .setDexoptParams(getDexoptParams().toProto())
+                .build();
+    }
 }

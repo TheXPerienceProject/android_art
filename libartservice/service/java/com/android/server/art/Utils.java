@@ -501,6 +501,19 @@ public final class Utils {
         return path.length() == prefixLen || path.charAt(prefixLen) == '/';
     }
 
+    /**
+     * Replaces the file extension of the given path with the given new extension.
+     *
+     * @param path the path to replace the extension for
+     * @param newExtension the new extension, including the leading dot
+     */
+    @NonNull
+    public static String replaceFileExtension(@NonNull String path, @NonNull String newExtension) {
+        int pos = path.lastIndexOf('.');
+        int slashPos = path.indexOf('/', pos);
+        return ((pos != -1 && slashPos == -1) ? path.substring(0, pos) : path) + newExtension;
+    }
+
     @AutoValue
     public abstract static class Abi {
         static @NonNull Abi create(

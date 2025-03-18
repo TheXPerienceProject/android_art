@@ -156,20 +156,17 @@ python_binary_host {
     srcs: ["appcompat.py"],
     data: [
         ":veridex",
-        ":platform-bootclasspath{hiddenapi-flags.csv}",
         ":org.apache.http.legacy-stubs.zip",
         ":system-stubs.zip",
     ],
-    version: {
-        py3: {
-            embedded_launcher: true,
-        },
-    },
+    device_common_data: [
+        ":platform-bootclasspath{hiddenapi-flags.csv}",
+    ],
 }
 
 // TODO: Remove `veridex_zip` and `appcompat.sh` after migrating
 //       `GtsUnofficialApisUsageTestCases` and `GtsNetUnofficialApisUsageTestCases` to use appcompat.
-genrule {
+java_genrule {
     name: "veridex_zip",
     srcs: [
         "appcompat.sh",

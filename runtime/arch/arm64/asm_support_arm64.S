@@ -152,6 +152,13 @@
     SAVE_TWO_REGS_BASE sp, \reg1, \reg2, \offset
 .endm
 
+.macro SAVE_TWO_REGS_INCREASE_FRAME reg1, reg2, frame_adjustment
+    stp \reg1, \reg2, [sp, #-(\frame_adjustment)]!
+    .cfi_adjust_cfa_offset (\frame_adjustment)
+    .cfi_rel_offset \reg1, 0
+    .cfi_rel_offset \reg2, 8
+.endm
+
 .macro RESTORE_TWO_REGS_BASE base, reg1, reg2, offset
     ldp \reg1, \reg2, [\base, #(\offset)]
     .cfi_restore \reg1
@@ -160,6 +167,40 @@
 
 .macro RESTORE_TWO_REGS reg1, reg2, offset
     RESTORE_TWO_REGS_BASE sp, \reg1, \reg2, \offset
+.endm
+
+.macro RESTORE_TWO_REGS_DECREASE_FRAME reg1, reg2, frame_adjustment
+    ldp \reg1, \reg2, [sp], #(\frame_adjustment)
+    .cfi_restore \reg1
+    .cfi_restore \reg2
+    .cfi_adjust_cfa_offset -(\frame_adjustment)
+.endm
+
+#define ALL_ARGS_SIZE (/*x0-x7*/ 8 * 8 + /*d0-d7*/ 8 * 8)
+
+.macro SAVE_ALL_ARGS_INCREASE_FRAME extra_space
+    // Save register args x0-x7, d0-d7 and return address.
+    stp    x0, x1, [sp, #-(ALL_ARGS_SIZE + \extra_space)]!
+    .cfi_adjust_cfa_offset (ALL_ARGS_SIZE + \extra_space)
+    stp    x2, x3, [sp, #16]
+    stp    x4, x5, [sp, #32]
+    stp    x6, x7, [sp, #48]
+    stp    d0, d1, [sp, #64]
+    stp    d2, d3, [sp, #80]
+    stp    d4, d5, [sp, #96]
+    stp    d6, d7, [sp, #112]
+.endm
+
+.macro RESTORE_ALL_ARGS_DECREASE_FRAME extra_space
+    ldp    x2, x3, [sp, #16]
+    ldp    x4, x5, [sp, #32]
+    ldp    x6, x7, [sp, #48]
+    ldp    d0, d1, [sp, #64]
+    ldp    d2, d3, [sp, #80]
+    ldp    d4, d5, [sp, #96]
+    ldp    d6, d7, [sp, #112]
+    ldp    x0, x1, [sp], #(ALL_ARGS_SIZE + \extra_space)
+    .cfi_adjust_cfa_offset -(ALL_ARGS_SIZE + \extra_space)
 .endm
 
 .macro LOAD_RUNTIME_INSTANCE reg

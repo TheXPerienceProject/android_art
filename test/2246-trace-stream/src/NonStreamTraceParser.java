@@ -82,6 +82,10 @@ public class NonStreamTraceParser extends BaseTraceParser {
         for (int i = 0; i < numEntries; i++) {
             int threadId = GetThreadID();
             String eventString = ProcessEventEntry(threadId);
+            // This is an event from one of the ignored methods. Don't record this entry.
+            if (eventString == null) {
+              continue;
+            }
             // Ignore daemons (ex: heap task daemon, reference queue daemon) because they may not
             // be deterministic.
             if (!ShouldCheckThread(threadId, threadName)) {

@@ -33,7 +33,7 @@
 #include "base/malloc_arena_pool.h"
 #include "base/mem_map.h"
 #include "base/safe_map.h"
-#include "dex/dex_file.h"
+#include "dex/dex_file-inl.h"
 #include "dex/dex_file_types.h"
 #include "dex/method_reference.h"
 #include "dex/type_reference.h"
@@ -474,13 +474,13 @@ class ProfileCompilationInfo {
   bool MergeWith(const std::string& filename);
 
   // Save the profile data to the given file descriptor.
-  bool Save(int fd);
+  bool Save(int fd, bool flush = false);
 
   // Save the current profile into the given file. Overwrites any existing data.
-  bool Save(const std::string& filename, uint64_t* bytes_written);
+  bool Save(const std::string& filename, uint64_t* bytes_written, bool flush = false);
 
   // A fallback implementation of `Save` that uses a flock.
-  bool SaveFallback(const std::string& filename, uint64_t* bytes_written);
+  bool SaveFallback(const std::string& filename, uint64_t* bytes_written, bool flush = false);
 
   // Return the number of dex files referenced in the profile.
   size_t GetNumberOfDexFiles() const {
@@ -674,13 +674,25 @@ class ProfileCompilationInfo {
   // Get type descriptor for a valid type index, whether a normal type index
   // referencing a `dex::TypeId` in the dex file, or an artificial type index
   // referencing an "extra descriptor".
-  const char* GetTypeDescriptor(const DexFile* dex_file, dex::TypeIndex type_index) const {
+  const char* GetTypeDescriptor(const DexFile* dex_file,
+                                dex::TypeIndex type_index,
+                                /*out*/ size_t* utf8_length = nullptr) const {
     DCHECK(type_index.IsValid());
     uint32_t num_type_ids = dex_file->NumTypeIds();
     if (type_index.index_ < num_type_ids) {
-      return dex_file->GetTypeDescriptor(type_index);
+      uint32_t utf16_length;
+      const char* descriptor = dex_file->GetStringDataAndUtf16Length(
+          dex_file->GetTypeId(type_index).descriptor_idx_, &utf16_length);
+      if (utf8_length != nullptr) {
+        *utf8_length = DexFile::Utf8Length(descriptor, utf16_length);
+      }
+      return descriptor;
     } else {
-      return extra_descriptors_[type_index.index_ - num_type_ids].c_str();
+      const std::string& descriptor = extra_descriptors_[type_index.index_ - num_type_ids];
+      if (utf8_length != nullptr) {
+        *utf8_length = descriptor.length();
+      }
+      return descriptor.c_str();
     }
   }
 

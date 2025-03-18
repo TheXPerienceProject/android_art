@@ -875,13 +875,6 @@ static HBasicBlock* GetInnerLoopFiniteSingleExit(HLoopInformation* loop_info) {
   return exit;
 }
 
-// Determines whether predicated loop vectorization should be tried for ALL loops.
-#ifdef ART_FORCE_TRY_PREDICATED_SIMD
-  static constexpr bool kForceTryPredicatedSIMD = true;
-#else
-  static constexpr bool kForceTryPredicatedSIMD = false;
-#endif
-
 bool HLoopOptimization::TryOptimizeInnerLoopFinite(LoopNode* node) {
   HBasicBlock* header = node->loop_info->GetHeader();
   HBasicBlock* preheader = node->loop_info->GetPreHeader();
@@ -2049,7 +2042,6 @@ bool HLoopOptimization::TrySetVectorType(DataType::Type type, uint64_t* restrict
     case InstructionSet::kArm64:
       if (IsInPredicatedVectorizationMode()) {
         // SVE vectorization.
-        CHECK(features->AsArm64InstructionSetFeatures()->HasSVE());
         size_t vector_length = simd_register_size_ / DataType::Size(type);
         DCHECK_EQ(simd_register_size_ % DataType::Size(type), 0u);
         switch (type) {
@@ -2396,6 +2388,13 @@ HInstruction* HLoopOptimization::ReduceAndExtractIfNeeded(HInstruction* instruct
   }                                                            \
   break;
 
+// Some instructions in the scalar loop body can only occur in loops with control flow; for such
+// loops we don't support clean ups loop (generated via kSequential); see TryVectorizePredicated.
+#define GENERATE_PRED_VEC(x)                              \
+  DCHECK_EQ(synthesis_mode_, LoopSynthesisMode::kVector); \
+  vector = (x);                                           \
+  break;
+
 HInstruction* HLoopOptimization::GenerateVecOp(HInstruction* org,
                                                HInstruction* opa,
                                                HInstruction* opb,
@@ -2469,13 +2468,46 @@ HInstruction* HLoopOptimization::GenerateVecOp(HInstruction* org,
       GENERATE_VEC(
         new (global_allocator_) HVecAbs(global_allocator_, opa, type, vector_length_, dex_pc),
         new (global_allocator_) HAbs(org_type, opa, dex_pc));
-    case HInstruction::kEqual: {
-        // Special case.
-        DCHECK_EQ(synthesis_mode_, LoopSynthesisMode::kVector);
-        vector = new (global_allocator_)
-            HVecCondition(global_allocator_, opa, opb, type, vector_length_, dex_pc);
-      }
-      break;
+    case HInstruction::kEqual:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecEqual(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kNotEqual:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecNotEqual(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kLessThan:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecLessThan(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kLessThanOrEqual:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecLessThanOrEqual(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kGreaterThan:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecGreaterThan(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kGreaterThanOrEqual:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecGreaterThanOrEqual(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kBelow:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecBelow(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kBelowOrEqual:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecBelowOrEqual(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kAbove:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecAbove(global_allocator_, opa, opb, type, vector_length_, dex_pc));
+    case HInstruction::kAboveOrEqual:
+      GENERATE_PRED_VEC(
+        new (global_allocator_)
+          HVecAboveOrEqual(global_allocator_, opa, opb, type, vector_length_, dex_pc));
     default:
       break;
   }  // switch
@@ -2733,8 +2765,7 @@ bool HLoopOptimization::VectorizeIfCondition(LoopNode* node,
     return false;
   }
 
-  if (!if_input->IsEqual()) {
-    // TODO: Support other condition types.
+  if (!if_input->IsCondition()) {
     return false;
   }
 

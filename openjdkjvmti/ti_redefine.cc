@@ -343,23 +343,7 @@ namespace {
 // We need to make sure we only have one redefinition in progress. Redefining involves
 // re-verification and potentially new allocations among other things. So we only allow one
 // redefinition at a time.
-static art::Mutex redefinition_lock("JVMTI Redefinition lock", art::LockLevel::kGenericBottomLock);
-static bool redefinition_in_progress GUARDED_BY(redefinition_lock) = false;
-
-bool canHandleRedefinition(art::Thread* self) {
-  art::MutexLock mu(self, redefinition_lock);
-  if (redefinition_in_progress) {
-    return false;
-  }
-  redefinition_in_progress = true;
-  return true;
-}
-
-void finishRedefinition(art::Thread* self) {
-  art::MutexLock mu(self, redefinition_lock);
-  DCHECK_EQ(redefinition_in_progress, true);
-  redefinition_in_progress = false;
-}
+static std::mutex redefinition_lock;
 }  // namespace
 
 template <RedefinitionType kType>
@@ -660,15 +644,34 @@ jvmtiError Redefiner::RedefineClassesDirect(ArtJvmTiEnv* env,
     // We don't actually need to do anything. Just return OK.
     return OK;
   }
+
+  // Take a lock to avoid any concurrent redefinitions.
+  // TODO(mythria): It is hard to reason that it is safe to hold locks here. It is probably okay,
+  // since the thread is suspended and we know the thread isn't in the middle of allocations. The
+  // current implementation of redefinition is prone to deadlocks. For example, we pause allocations
+  // and then allocate new objects which could trigger a GC. This is unsafe. See b/359829378 for
+  // more details. Ideally we should rework the code so that:
+  // 1. Estimate the size required for the new allocations
+  // 2. Ensure we have the required space
+  // 3. Acquire any locks required (this would also include the lock to prevent
+  // concurrent redefinitions)
+  // 3. SuspendAll the threads
+  // 4. If the estimated size is no longer sufficient - retry from 1.
+  // 5. Finish redefinition.
+  //
+  // Step 4 is required because there might be allocations after we have estimated and before we
+  // suspend all threads. This isn't expected to be frequent so we shouldn't usually need to retry
+  // multiple times.
+  // Using a lock here is a short-term fix to block on concurrent redefinitions (instead of
+  // returning an error) while we rework the redefinition code.
+  // art::MutexLock lg(self, redefinition_lock);
+  std::lock_guard<std::mutex> lg(redefinition_lock);
+
   // We need to fiddle with the verification class flags. To do this we need to make sure there are
   // no concurrent redefinitions of the same class at the same time. For simplicity and because
   // this is not expected to be a common occurrence we will just wrap the whole thing in a TOP-level
   // lock.
   Redefiner r(env, runtime, self, type, error_msg);
-  if (!canHandleRedefinition(self)) {
-    r.RecordFailure(ERR(INTERNAL), "Another redefinition is in progress");
-    return r.result_;
-  }
 
   // Stop JIT for the duration of this redefine since the JIT might concurrently compile a method we
   // are going to redefine.
@@ -681,13 +684,11 @@ jvmtiError Redefiner::RedefineClassesDirect(ArtJvmTiEnv* env,
     if (def.IsModified()) {
       jvmtiError res = r.AddRedefinition(env, def);
       if (res != OK) {
-        finishRedefinition(self);
         return res;
       }
     }
   }
   jvmtiError res = r.Run();
-  finishRedefinition(self);
   return res;
 }
 
@@ -1095,14 +1096,13 @@ bool Redefiner::ClassRedefinition::CheckClass() {
   // Check class name.
   // These should have been checked by the dexfile verifier on load.
   DCHECK_NE(def.class_idx_, art::dex::TypeIndex::Invalid()) << "Invalid type index";
-  const char* descriptor = dex_file_->GetTypeDescriptor(def.class_idx_);
-  DCHECK(descriptor != nullptr) << "Invalid dex file structure!";
+  const std::string_view descriptor = dex_file_->GetTypeDescriptorView(def.class_idx_);
   if (!current_class->DescriptorEquals(descriptor)) {
     std::string storage;
     RecordFailure(ERR(NAMES_DONT_MATCH),
                   StringPrintf("expected file to contain class called '%s' but found '%s'!",
                                current_class->GetDescriptor(&storage),
-                               descriptor));
+                               std::string(descriptor).c_str()));
     return false;
   }
   if (current_class->IsObjectClass()) {
@@ -1111,8 +1111,7 @@ bool Redefiner::ClassRedefinition::CheckClass() {
       return false;
     }
   } else {
-    const char* super_descriptor = dex_file_->GetTypeDescriptor(def.superclass_idx_);
-    DCHECK(descriptor != nullptr) << "Invalid dex file structure!";
+    const std::string_view super_descriptor = dex_file_->GetTypeDescriptorView(def.superclass_idx_);
     if (!current_class->GetSuperClass()->DescriptorEquals(super_descriptor)) {
       RecordFailure(ERR(UNSUPPORTED_REDEFINITION_HIERARCHY_CHANGED), "Superclass changed");
       return false;
@@ -1136,9 +1135,8 @@ bool Redefiner::ClassRedefinition::CheckClass() {
     // The order of interfaces is (barely) meaningful so we error if it changes.
     const art::DexFile& orig_dex_file = current_class->GetDexFile();
     for (uint32_t i = 0; i < interfaces->Size(); i++) {
-      if (strcmp(
-            dex_file_->GetTypeDescriptor(interfaces->GetTypeItem(i).type_idx_),
-            orig_dex_file.GetTypeDescriptor(current_interfaces->GetTypeItem(i).type_idx_)) != 0) {
+      if (dex_file_->GetTypeDescriptorView(interfaces->GetTypeItem(i).type_idx_) !=
+          orig_dex_file.GetTypeDescriptorView(current_interfaces->GetTypeItem(i).type_idx_)) {
         RecordFailure(ERR(UNSUPPORTED_REDEFINITION_HIERARCHY_CHANGED),
                       "Interfaces changed or re-ordered");
         return false;

@@ -31,7 +31,8 @@ aconfig_declarations {
     visibility: [
         "//art:__subpackages__",
         "//libcore:__subpackages__",
-        "//frameworks/base", // Needed for exporting flags.
+        "//frameworks/base:__subpackages__",
+        "//packages/modules/UprobeStats:__subpackages__",
     ],
 }
 
@@ -57,5 +58,14 @@ java_aconfig_library {
     apex_available: [
         "//apex_available:platform",
         "//apex_available:anyapex",
+    ],
+}
+
+java_aconfig_library {
+    name: "art-aconfig-flags-java-lib-host",
+    host_supported: true,
+    aconfig_declarations: "art-aconfig-flags",
+    visibility: [
+        "//cts/hostsidetests/compilation:__subpackages__",
     ],
 }

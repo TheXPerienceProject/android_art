@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -188,6 +189,11 @@ bool CacheOperationsMaySegFault() {
 #else
   return false;
 #endif
+}
+
+bool RunningOnVM() {
+  const char* on_vm = getenv("ART_TEST_ON_VM");
+  return on_vm != nullptr && std::strcmp("true", on_vm) == 0;
 }
 
 uint32_t GetTid() {

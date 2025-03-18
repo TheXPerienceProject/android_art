@@ -72,7 +72,7 @@ class HConstantFoldingVisitor final : public HGraphDelegateVisitor {
 // This visitor tries to simplify operations with an absorbing input,
 // yielding a constant. For example `input * 0` is replaced by a
 // null constant.
-class InstructionWithAbsorbingInputSimplifier : public HGraphVisitor {
+class InstructionWithAbsorbingInputSimplifier final : public HGraphVisitor {
  public:
   explicit InstructionWithAbsorbingInputSimplifier(HGraph* graph) : HGraphVisitor(graph) {}
 

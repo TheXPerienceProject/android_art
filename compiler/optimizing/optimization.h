@@ -81,6 +81,7 @@ enum class OptimizationPass {
   kInvariantCodeMotion,
   kLoadStoreElimination,
   kLoopOptimization,
+  kReferenceTypePropagation,
   kScheduling,
   kSelectGenerator,
   kSideEffectsAnalysis,

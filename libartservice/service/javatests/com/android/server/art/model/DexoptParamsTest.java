@@ -21,6 +21,8 @@ import static com.google.common.truth.Truth.assertThat;
 import androidx.test.filters.SmallTest;
 import androidx.test.runner.AndroidJUnit4;
 
+import com.android.server.art.proto.DexoptParamsProto;
+
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -117,12 +119,7 @@ public class DexoptParamsTest {
     @Test
     public void testToBuilder() {
         // Update this test with new fields if this assertion fails.
-        assertThat(Arrays.stream(DexoptParams.class.getDeclaredFields())
-                           .filter(field -> !Modifier.isStatic(field.getModifiers()))
-                           .map(Field::getName)
-                           .collect(Collectors.toList()))
-                .containsExactly(
-                        "mFlags", "mCompilerFilter", "mPriorityClass", "mReason", "mSplitName");
+        checkFieldCoverage();
 
         DexoptParams params1 =
                 new DexoptParams.Builder("install")
@@ -139,5 +136,54 @@ public class DexoptParamsTest {
         assertThat(params1.getPriorityClass()).isEqualTo(params2.getPriorityClass());
         assertThat(params1.getReason()).isEqualTo(params2.getReason());
         assertThat(params1.getSplitName()).isEqualTo(params2.getSplitName());
+    }
+
+    @Test
+    public void testToProto() {
+        // Update this test with new fields if this assertion fails.
+        checkFieldCoverage();
+
+        DexoptParams params = new DexoptParams.Builder("install")
+                                      .setFlags(ArtFlags.FLAG_FOR_PRIMARY_DEX)
+                                      .setCompilerFilter("speed")
+                                      .setPriorityClass(90)
+                                      .build();
+
+        DexoptParamsProto proto = params.toProto();
+
+        assertThat(proto.getFlags()).isEqualTo(params.getFlags());
+        assertThat(proto.getCompilerFilter()).isEqualTo(params.getCompilerFilter());
+        assertThat(proto.getPriorityClass()).isEqualTo(params.getPriorityClass());
+        assertThat(proto.getReason()).isEqualTo(params.getReason());
+    }
+
+    @Test
+    public void testFromProto() {
+        // Update this test with new fields if this assertion fails.
+        checkFieldCoverage();
+
+        DexoptParamsProto proto = DexoptParamsProto.newBuilder()
+                                          .setFlags(ArtFlags.FLAG_FOR_PRIMARY_DEX)
+                                          .setCompilerFilter("speed")
+                                          .setPriorityClass(90)
+                                          .setReason("install")
+                                          .build();
+
+        DexoptParams params = DexoptParams.fromProto(proto);
+
+        assertThat(params.getFlags()).isEqualTo(proto.getFlags());
+        assertThat(params.getCompilerFilter()).isEqualTo(proto.getCompilerFilter());
+        assertThat(params.getPriorityClass()).isEqualTo(proto.getPriorityClass());
+        assertThat(params.getReason()).isEqualTo(proto.getReason());
+        assertThat(params.getSplitName()).isNull();
+    }
+
+    private void checkFieldCoverage() {
+        assertThat(Arrays.stream(DexoptParams.class.getDeclaredFields())
+                           .filter(field -> !Modifier.isStatic(field.getModifiers()))
+                           .map(Field::getName)
+                           .collect(Collectors.toList()))
+                .containsExactly(
+                        "mFlags", "mCompilerFilter", "mPriorityClass", "mReason", "mSplitName");
     }
 }

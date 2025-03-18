@@ -178,6 +178,30 @@ public class InstanceTest {
   }
 
   @Test
+  public void asStringByteArray() throws IOException {
+    TestDump dump = TestDump.getTestDump();
+    AhatInstance obj = dump.getDumpedAhatInstance("byteString");
+    assertNotNull(obj);
+    assertEquals("hi.\n", obj.asString());
+  }
+
+  @Test
+  public void asStringByteArrayNotString() throws IOException {
+    TestDump dump = TestDump.getTestDump();
+    AhatInstance obj = dump.getDumpedAhatInstance("byteNotString");
+    assertNotNull(obj);
+    assertNull(obj.asString());
+  }
+
+  @Test
+  public void asStringByteArrayNotString2() throws IOException {
+    TestDump dump = TestDump.getTestDump();
+    AhatInstance obj = dump.getDumpedAhatInstance("byteEmpty");
+    assertNotNull(obj);
+    assertNull(obj.asString());
+  }
+
+  @Test
   public void asStringNull() throws IOException {
     TestDump dump = TestDump.getTestDump();
     AhatInstance obj = dump.getDumpedAhatInstance("nullString");

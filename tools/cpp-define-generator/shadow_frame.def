@@ -36,7 +36,5 @@ ASM_DEFINE(SHADOWFRAME_METHOD_OFFSET,
            art::ShadowFrame::MethodOffset())
 ASM_DEFINE(SHADOWFRAME_NUMBER_OF_VREGS_OFFSET,
            art::ShadowFrame::NumberOfVRegsOffset())
-ASM_DEFINE(SHADOWFRAME_RESULT_REGISTER_OFFSET,
-           art::ShadowFrame::ResultRegisterOffset())
 ASM_DEFINE(SHADOWFRAME_VREGS_OFFSET,
            art::ShadowFrame::VRegsOffset())

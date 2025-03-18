@@ -20,6 +20,7 @@ import static com.android.server.art.model.DexoptResult.PackageDexoptResult;
 import static com.android.server.art.proto.PreRebootStats.Status;
 
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.content.Context;
 import android.os.ArtModuleServiceManager;
 import android.os.Build;
@@ -34,9 +35,13 @@ import com.android.server.art.AsLog;
 import com.android.server.art.ReasonMapping;
 import com.android.server.art.Utils;
 import com.android.server.art.model.ArtFlags;
+import com.android.server.art.model.BatchDexoptParams;
 import com.android.server.art.model.DexoptResult;
 import com.android.server.art.model.OperationProgress;
+import com.android.server.art.proto.BatchDexoptParamsProto;
 import com.android.server.pm.PackageManagerLocal;
+
+import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +66,18 @@ import java.util.function.Consumer;
 public class PreRebootManager implements PreRebootManagerInterface {
     public void run(@NonNull ArtModuleServiceManager artModuleServiceManager,
             @NonNull Context context, @NonNull CancellationSignal cancellationSignal) {
+        PackageManagerLocal packageManagerLocal =
+                Objects.requireNonNull(LocalManagerRegistry.getManager(PackageManagerLocal.class));
+        try (var snapshot = packageManagerLocal.withFilteredSnapshot()) {
+            run(artModuleServiceManager, context, cancellationSignal, snapshot,
+                    null /* batchDexoptParamsProto */);
+        }
+    }
+
+    public void run(@NonNull ArtModuleServiceManager artModuleServiceManager,
+            @NonNull Context context, @NonNull CancellationSignal cancellationSignal,
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
+            @Nullable byte[] batchDexoptParamsProto) {
         ExecutorService callbackExecutor = Executors.newSingleThreadExecutor();
         try {
             if (!PreRebootGlobalInjector.init(
@@ -68,8 +85,6 @@ public class PreRebootManager implements PreRebootManagerInterface {
                 return;
             }
             ArtManagerLocal artManagerLocal = new ArtManagerLocal(context);
-            PackageManagerLocal packageManagerLocal = Objects.requireNonNull(
-                    LocalManagerRegistry.getManager(PackageManagerLocal.class));
 
             var progressSession = new PreRebootStatsReporter().new ProgressSession();
 
@@ -109,11 +124,19 @@ public class PreRebootManager implements PreRebootManagerInterface {
                         progress.getTotal(), values.get(3));
             };
 
-            try (var snapshot = packageManagerLocal.withFilteredSnapshot()) {
-                artManagerLocal.dexoptPackages(snapshot, ReasonMapping.REASON_PRE_REBOOT_DEXOPT,
-                        cancellationSignal, callbackExecutor,
-                        Map.of(ArtFlags.PASS_MAIN, progressCallback));
+            BatchDexoptParams params;
+            try {
+                params = batchDexoptParamsProto != null
+                        ? BatchDexoptParams.fromProto(
+                                  BatchDexoptParamsProto.parseFrom(batchDexoptParamsProto))
+                        : null;
+            } catch (InvalidProtocolBufferException e) {
+                throw new IllegalArgumentException(e);
             }
+
+            artManagerLocal.dexoptPackagesWithParams(snapshot,
+                    ReasonMapping.REASON_PRE_REBOOT_DEXOPT, cancellationSignal, callbackExecutor,
+                    Map.of(ArtFlags.PASS_MAIN, progressCallback), params);
         } finally {
             ArtdRefCache.getInstance().reset();
             callbackExecutor.shutdown();

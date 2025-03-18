@@ -68,6 +68,8 @@ using ::testing::Not;
 
 class Dex2oatTest : public Dex2oatEnvironmentTest {
  public:
+  enum class Status { kFailCompile, kFailOpenOat, kSuccess };
+
   void TearDown() override {
     Dex2oatEnvironmentTest::TearDown();
 
@@ -122,14 +124,14 @@ class Dex2oatTest : public Dex2oatEnvironmentTest {
                                       const std::string& odex_location,
                                       CompilerFilter::Filter filter,
                                       const std::vector<std::string>& extra_args = {},
-                                      bool expect_success = true,
+                                      Status expect_status = Status::kSuccess,
                                       bool use_fd = false,
                                       bool use_zip_fd = false) WARN_UNUSED {
     return GenerateOdexForTest(dex_location,
                                odex_location,
                                filter,
                                extra_args,
-                               expect_success,
+                               expect_status,
                                use_fd,
                                use_zip_fd,
                                [](const OatFile&) {});
@@ -142,7 +144,7 @@ class Dex2oatTest : public Dex2oatEnvironmentTest {
                                       const std::string& odex_location,
                                       CompilerFilter::Filter filter,
                                       const std::vector<std::string>& extra_args,
-                                      bool expect_success,
+                                      Status expect_status,
                                       bool use_fd,
                                       bool use_zip_fd,
                                       T check_oat) WARN_UNUSED {
@@ -163,7 +165,7 @@ class Dex2oatTest : public Dex2oatEnvironmentTest {
         GenerateOdexForTestWithStatus(dex_locations, odex_location, filter, extra_args, use_fd);
 
     bool success = status.ok() && status.value() == 0;
-    if (expect_success) {
+    if (expect_status != Status::kFailCompile) {
       if (!success) {
         return AssertionFailure() << "Failed to compile odex ("
                                   << (status.ok() ? StringPrintf("status=%d", status.value()) :
@@ -180,6 +182,13 @@ class Dex2oatTest : public Dex2oatEnvironmentTest {
                                                        /*low_4gb=*/false,
                                                        dex_location,
                                                        &error_msg));
+
+      if (expect_status == Status::kFailOpenOat) {
+        return (odex_file == nullptr) ?
+                   AssertionSuccess() :
+                   AssertionFailure() << "Unexpectedly was able to open odex file";
+      }
+
       if (odex_file == nullptr) {
         return AssertionFailure() << "Could not open odex file: " << error_msg;
       }
@@ -649,7 +658,7 @@ class Dex2oatLayoutTest : public Dex2oatTest {
                           bool use_fd,
                           const std::vector<std::string>& profile_locations,
                           const std::vector<std::string>& extra_args = {},
-                          bool expect_success = true) {
+                          Status expect_status = Status::kSuccess) {
     std::vector<std::string> copy(extra_args);
     for (const std::string& profile_location : profile_locations) {
       copy.push_back("--profile-file=" + profile_location);
@@ -664,7 +673,7 @@ class Dex2oatLayoutTest : public Dex2oatTest {
       }
     }
     ASSERT_TRUE(GenerateOdexForTest(
-        dex_location, odex_location, CompilerFilter::kSpeedProfile, copy, expect_success, use_fd));
+        dex_location, odex_location, CompilerFilter::kSpeedProfile, copy, expect_status, use_fd));
     if (app_image_file != nullptr) {
       ASSERT_EQ(app_image_file->FlushCloseOrErase(), 0) << "Could not flush and close art file";
     }
@@ -678,7 +687,7 @@ class Dex2oatLayoutTest : public Dex2oatTest {
                           bool use_fd,
                           size_t num_profile_classes,
                           const std::vector<std::string>& extra_args = {},
-                          bool expect_success = true) {
+                          Status expect_status = Status::kSuccess) {
     const std::string profile_location = GetScratchDir() + "/primary.prof";
     GenerateProfile(profile_location, dex_location, num_profile_classes);
     CompileProfileOdex(dex_location,
@@ -687,7 +696,7 @@ class Dex2oatLayoutTest : public Dex2oatTest {
                        use_fd,
                        {profile_location},
                        extra_args,
-                       expect_success);
+                       expect_status);
   }
 
   uint32_t GetImageObjectSectionSize(const std::string& image_file_name) {
@@ -784,7 +793,7 @@ class Dex2oatLayoutTest : public Dex2oatTest {
                          /*use_fd=*/true,
                          /*num_profile_classes=*/1,
                          {input_vdex, output_vdex},
-                         /*expect_success=*/true);
+                         /*expect_status=*/Status::kSuccess);
       EXPECT_GT(vdex_file2.GetFile()->GetLength(), 0u);
     }
     ASSERT_EQ(vdex_file1->FlushCloseOrErase(), 0) << "Could not flush and close vdex file";
@@ -877,7 +886,7 @@ TEST_F(Dex2oatLayoutTest, TestLayoutAppImageMissingBootImage) {
                      /*use_fd=*/false,
                      /*num_profile_classes=*/1,
                      /*extra_args=*/{"--boot-image=/nonx/boot.art"},
-                     /*expect_success=*/true);
+                     /*expect_status=*/Status::kSuccess);
 
   // Verify the odex file does not require an image.
   std::string error_msg;
@@ -987,7 +996,7 @@ TEST_F(Dex2oatLayoutTest, TestVdexLayout) { RunTestVDex(); }
 
 class Dex2oatWatchdogTest : public Dex2oatTest {
  protected:
-  void RunTest(bool expect_success, const std::vector<std::string>& extra_args = {}) {
+  void RunTest(Status expect_status, const std::vector<std::string>& extra_args = {}) {
     std::string dex_location = GetScratchDir() + "/Dex2OatSwapTest.jar";
     std::string odex_location = GetOdexDir() + "/Dex2OatSwapTest.odex";
 
@@ -999,7 +1008,7 @@ class Dex2oatWatchdogTest : public Dex2oatTest {
     copy.push_back("--swap-file=" + swap_location);
     copy.push_back("-j512");  // Excessive idle threads just slow down dex2oat.
     ASSERT_TRUE(GenerateOdexForTest(
-        dex_location, odex_location, CompilerFilter::kSpeed, copy, expect_success));
+        dex_location, odex_location, CompilerFilter::kSpeed, copy, expect_status));
   }
 
   std::string GetTestDexFileName() { return GetDexSrc1(); }
@@ -1007,10 +1016,10 @@ class Dex2oatWatchdogTest : public Dex2oatTest {
 
 TEST_F(Dex2oatWatchdogTest, TestWatchdogOK) {
   // Check with default.
-  RunTest(/*expect_success=*/true);
+  RunTest(/*expect_status=*/Status::kSuccess);
 
   // Check with ten minutes.
-  RunTest(/*expect_success=*/true, {"--watchdog-timeout=600000"});
+  RunTest(/*expect_status=*/Status::kSuccess, {"--watchdog-timeout=600000"});
 }
 
 TEST_F(Dex2oatWatchdogTest, TestWatchdogTrigger) {
@@ -1024,14 +1033,14 @@ TEST_F(Dex2oatWatchdogTest, TestWatchdogTrigger) {
   test_accepts_odex_file_on_failure = true;
 
   // Check with ten milliseconds.
-  RunTest(/*expect_success=*/false, {"--watchdog-timeout=10"});
+  RunTest(/*expect_status=*/Status::kFailCompile, {"--watchdog-timeout=10"});
 }
 
 class Dex2oatClassLoaderContextTest : public Dex2oatTest {
  protected:
   void RunTest(const char* class_loader_context,
                const char* expected_classpath_key,
-               bool expect_success,
+               Status expect_status,
                bool use_second_source = false,
                bool generate_image = false) {
     std::string dex_location = GetUsedDexLocation();
@@ -1057,7 +1066,7 @@ class Dex2oatClassLoaderContextTest : public Dex2oatTest {
                                     odex_location,
                                     CompilerFilter::kVerify,
                                     extra_args,
-                                    expect_success,
+                                    expect_status,
                                     /*use_fd=*/false,
                                     /*use_zip_fd=*/false,
                                     check_oat));
@@ -1073,16 +1082,16 @@ class Dex2oatClassLoaderContextTest : public Dex2oatTest {
 };
 
 TEST_F(Dex2oatClassLoaderContextTest, InvalidContext) {
-  RunTest("Invalid[]", /*expected_classpath_key=*/nullptr, /*expect_success=*/false);
+  RunTest("Invalid[]", /*expected_classpath_key=*/nullptr, /*expect_status=*/Status::kFailCompile);
 }
 
 TEST_F(Dex2oatClassLoaderContextTest, EmptyContext) {
-  RunTest("PCL[]", kEmptyClassPathKey, /*expect_success=*/true);
+  RunTest("PCL[]", kEmptyClassPathKey, /*expect_status=*/Status::kSuccess);
 }
 
 TEST_F(Dex2oatClassLoaderContextTest, ContextWithTheSourceDexFiles) {
   std::string context = "PCL[" + GetUsedDexLocation() + "]";
-  RunTest(context.c_str(), kEmptyClassPathKey, /*expect_success=*/true);
+  RunTest(context.c_str(), kEmptyClassPathKey, /*expect_status=*/Status::kSuccess);
 }
 
 TEST_F(Dex2oatClassLoaderContextTest, ContextWithOtherDexFiles) {
@@ -1093,7 +1102,7 @@ TEST_F(Dex2oatClassLoaderContextTest, ContextWithOtherDexFiles) {
   std::string context = "PCL[" + dex_files[0]->GetLocation() + "]";
   std::string expected_classpath_key =
       "PCL[" + dex_files[0]->GetLocation() + "*" + std::to_string(expected_checksum) + "]";
-  RunTest(context.c_str(), expected_classpath_key.c_str(), /*expect_success=*/true);
+  RunTest(context.c_str(), expected_classpath_key.c_str(), /*expect_status=*/Status::kSuccess);
 }
 
 TEST_F(Dex2oatClassLoaderContextTest, ContextWithResourceOnlyDexFiles) {
@@ -1102,13 +1111,13 @@ TEST_F(Dex2oatClassLoaderContextTest, ContextWithResourceOnlyDexFiles) {
 
   std::string context = "PCL[" + resource_only_classpath + "]";
   // Expect an empty context because resource only dex files cannot be open.
-  RunTest(context.c_str(), kEmptyClassPathKey, /*expect_success=*/true);
+  RunTest(context.c_str(), kEmptyClassPathKey, /*expect_status=*/Status::kSuccess);
 }
 
 TEST_F(Dex2oatClassLoaderContextTest, ContextWithNotExistentDexFiles) {
   std::string context = "PCL[does_not_exists.dex]";
   // Expect an empty context because stripped dex files cannot be open.
-  RunTest(context.c_str(), kEmptyClassPathKey, /*expect_success=*/true);
+  RunTest(context.c_str(), kEmptyClassPathKey, /*expect_status=*/Status::kSuccess);
 }
 
 TEST_F(Dex2oatClassLoaderContextTest, ChainContext) {
@@ -1120,7 +1129,7 @@ TEST_F(Dex2oatClassLoaderContextTest, ChainContext) {
   std::string expected_classpath_key = "PCL[" + CreateClassPathWithChecksums(dex_files1) + "];" +
                                        "DLC[" + CreateClassPathWithChecksums(dex_files2) + "]";
 
-  RunTest(context.c_str(), expected_classpath_key.c_str(), /*expect_success=*/true);
+  RunTest(context.c_str(), expected_classpath_key.c_str(), /*expect_status=*/Status::kSuccess);
 }
 
 TEST_F(Dex2oatClassLoaderContextTest, ContextWithSharedLibrary) {
@@ -1131,7 +1140,7 @@ TEST_F(Dex2oatClassLoaderContextTest, ContextWithSharedLibrary) {
       "PCL[" + GetTestDexFileName("Nested") + "]" + "{PCL[" + GetTestDexFileName("MultiDex") + "]}";
   std::string expected_classpath_key = "PCL[" + CreateClassPathWithChecksums(dex_files1) + "]" +
                                        "{PCL[" + CreateClassPathWithChecksums(dex_files2) + "]}";
-  RunTest(context.c_str(), expected_classpath_key.c_str(), /*expect_success=*/true);
+  RunTest(context.c_str(), expected_classpath_key.c_str(), /*expect_status=*/Status::kSuccess);
 }
 
 TEST_F(Dex2oatClassLoaderContextTest, ContextWithSharedLibraryAndImage) {
@@ -1144,7 +1153,7 @@ TEST_F(Dex2oatClassLoaderContextTest, ContextWithSharedLibraryAndImage) {
                                        "{PCL[" + CreateClassPathWithChecksums(dex_files2) + "]}";
   RunTest(context.c_str(),
           expected_classpath_key.c_str(),
-          /*expect_success=*/true,
+          /*expect_status=*/Status::kSuccess,
           /*use_second_source=*/false,
           /*generate_image=*/true);
 }
@@ -1161,7 +1170,7 @@ TEST_F(Dex2oatClassLoaderContextTest, ContextWithSameSharedLibrariesAndImage) {
                                        "#PCL[" + CreateClassPathWithChecksums(dex_files2) + "]}";
   RunTest(context.c_str(),
           expected_classpath_key.c_str(),
-          /*expect_success=*/true,
+          /*expect_status=*/Status::kSuccess,
           /*use_second_source=*/false,
           /*generate_image=*/true);
 }
@@ -1178,7 +1187,7 @@ TEST_F(Dex2oatClassLoaderContextTest, ContextWithSharedLibrariesDependenciesAndI
                                        "{PCL[" + CreateClassPathWithChecksums(dex_files1) + "]}}";
   RunTest(context.c_str(),
           expected_classpath_key.c_str(),
-          /*expect_success=*/true,
+          /*expect_status=*/Status::kSuccess,
           /*use_second_source=*/false,
           /*generate_image=*/true);
 }
@@ -1270,7 +1279,7 @@ TEST_F(Dex2oatDedupeCode, DedupeTest) {
                           base_oat_name,
                           CompilerFilter::Filter::kSpeed,
                           {"--deduplicate-code=false"},
-                          /*expect_success=*/true,
+                          /*expect_status=*/Status::kSuccess,
                           /*use_fd=*/false,
                           /*use_zip_fd=*/false,
                           [&no_dedupe_size](const OatFile& o) { no_dedupe_size = o.Size(); }));
@@ -1280,7 +1289,7 @@ TEST_F(Dex2oatDedupeCode, DedupeTest) {
                                   base_oat_name,
                                   CompilerFilter::Filter::kSpeed,
                                   {"--deduplicate-code=true"},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false,
                                   [&dedupe_size](const OatFile& o) { dedupe_size = o.Size(); }));
@@ -1296,7 +1305,7 @@ TEST_F(Dex2oatTest, UncompressedTest) {
                                   base_oat_name,
                                   CompilerFilter::Filter::kVerify,
                                   {},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false,
                                   [](const OatFile& o) { CHECK(!o.ContainsDexCode()); }));
@@ -1349,7 +1358,7 @@ TEST_F(Dex2oatTest, StderrLoggerOutput) {
                                   odex_location,
                                   CompilerFilter::kVerify,
                                   {"--runtime-arg", "-Xuse-stderr-logger"},
-                                  /*expect_success=*/true));
+                                  /*expect_status=*/Status::kSuccess));
   // Look for some random part of dex2oat logging. With the stderr logger this should be captured,
   // even on device.
   EXPECT_NE(std::string::npos, output_.find("dex2oat took"));
@@ -1366,7 +1375,7 @@ TEST_F(Dex2oatTest, VerifyCompilationReason) {
                                   odex_location,
                                   CompilerFilter::kVerify,
                                   {"--compilation-reason=install"},
-                                  /*expect_success=*/true));
+                                  /*expect_status=*/Status::kSuccess));
   std::string error_msg;
   std::unique_ptr<OatFile> odex_file(OatFile::Open(/*zip_fd=*/-1,
                                                    odex_location,
@@ -1390,7 +1399,7 @@ TEST_F(Dex2oatTest, VerifyNoCompilationReason) {
                                   odex_location,
                                   CompilerFilter::kVerify,
                                   /*extra_args=*/{},
-                                  /*expect_success=*/true));
+                                  /*expect_status=*/Status::kSuccess));
   std::string error_msg;
   std::unique_ptr<OatFile> odex_file(OatFile::Open(/*zip_fd=*/-1,
                                                    odex_location,
@@ -1414,7 +1423,7 @@ TEST_F(Dex2oatTest, DontExtract) {
                                   odex_location,
                                   CompilerFilter::Filter::kVerify,
                                   {"--copy-dex-files=false"},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false,
                                   [](const OatFile&) {}));
@@ -1475,7 +1484,7 @@ TEST_F(Dex2oatTest, DontExtract) {
                                      // target.
                                      "--runtime-arg",
                                      "-Xuse-stderr-logger"},
-                                    /*expect_success=*/true,
+                                    /*expect_status=*/Status::kSuccess,
                                     /*use_fd=*/false,
                                     /*use_zip_fd=*/false,
                                     [](const OatFile& o) { CHECK(o.ContainsDexCode()); }));
@@ -1591,7 +1600,7 @@ TEST_F(Dex2oatWithExpectedFilterTest, AppImageNoProfile) {
                                   odex_location,
                                   CompilerFilter::Filter::kSpeedProfile,
                                   {"--app-image-fd=" + std::to_string(app_image_file.GetFd())},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false,
                                   [](const OatFile&) {}));
@@ -1627,7 +1636,7 @@ TEST_F(Dex2oatTest, ZipFd) {
                                   base_oat_name,
                                   CompilerFilter::Filter::kVerify,
                                   extra_args,
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/true));
 }
@@ -1685,7 +1694,7 @@ TEST_F(Dex2oatWithExpectedFilterTest, AppImageEmptyDex) {
                                   {"--app-image-file=" + app_image_location,
                                    "--resolve-startup-const-strings=true",
                                    "--profile-file=" + profile_file.GetFilename()},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false,
                                   [](const OatFile&) {}));
@@ -1698,6 +1707,20 @@ TEST_F(Dex2oatWithExpectedFilterTest, AppImageEmptyDex) {
                                                    /*low_4gb=*/false,
                                                    &error_msg));
   ASSERT_TRUE(odex_file != nullptr);
+}
+
+TEST_F(Dex2oatWithExpectedFilterTest, AppImageNonexistentDex) {
+  const std::string out_dir = GetScratchDir();
+  // Test that dex2oat does not crash trying to compile app image with zero DEX files.
+  ASSERT_TRUE(GenerateOdexForTest(
+      out_dir + "/base.apk",
+      out_dir + "/base.odex",
+      CompilerFilter::Filter::kSpeedProfile,
+      {"--dex-file=nonexistent.apk", "--app-image-file=" + out_dir + "/base.art"},
+      /*expect_status=*/Status::kFailOpenOat,
+      /*use_fd=*/false,
+      /*use_zip_fd=*/false,
+      [](const OatFile&) {}));
 }
 
 TEST_F(Dex2oatTest, DexFileFd) {
@@ -1730,7 +1753,7 @@ TEST_F(Dex2oatTest, DexFileFd) {
                                   base_oat_name,
                                   CompilerFilter::Filter::kVerify,
                                   extra_args,
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/true));
 }
@@ -1746,7 +1769,7 @@ TEST_F(Dex2oatTest, DontCopyPlainDex) {
                                   odex_location,
                                   CompilerFilter::Filter::kVerify,
                                   /*extra_args=*/{},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false,
                                   [](const OatFile&) {}));
@@ -1831,7 +1854,7 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
                                   {"--app-image-file=" + app_image_location,
                                    "--resolve-startup-const-strings=true",
                                    "--profile-file=" + profile_file.GetFilename()},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false,
                                   [](const OatFile&) {}));
@@ -1846,10 +1869,10 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
   ASSERT_TRUE(odex_file != nullptr);
   // Check the strings in the app image intern table only contain the "startup" strigs.
   {
-    ScopedObjectAccess soa(Thread::Current());
     std::unique_ptr<gc::space::ImageSpace> space = gc::space::ImageSpace::CreateFromAppImage(
         app_image_location.c_str(), odex_file.get(), &error_msg);
     ASSERT_TRUE(space != nullptr) << error_msg;
+    ScopedObjectAccess soa(Thread::Current());
     std::set<std::string> seen;
     InternTable intern_table;
     intern_table.AddImageStringsToTable(
@@ -1906,7 +1929,7 @@ TEST_F(Dex2oatClassLoaderContextTest, StoredClassLoaderContext) {
                                   odex_location,
                                   CompilerFilter::Filter::kVerify,
                                   {"--class-loader-context=" + stored_context},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false,
                                   [&](const OatFile& oat_file) {
@@ -1922,7 +1945,7 @@ TEST_F(Dex2oatClassLoaderContextTest, StoredClassLoaderContext) {
       CompilerFilter::Filter::kVerify,
       {"--class-loader-context=" + valid_context,
        "--stored-class-loader-context=" + stored_context},
-      /*expect_success=*/true,
+      /*expect_status=*/Status::kSuccess,
       /*use_fd=*/false,
       /*use_zip_fd=*/false,
       [&](const OatFile& oat_file) {
@@ -1990,7 +2013,7 @@ TEST_F(Dex2oatTest, LoadOutOfDateOatFile) {
                                   base_oat_name,
                                   CompilerFilter::Filter::kSpeed,
                                   {"--deduplicate-code=false"},
-                                  /*expect_success=*/true,
+                                  /*expect_status=*/Status::kSuccess,
                                   /*use_fd=*/false,
                                   /*use_zip_fd=*/false));
 

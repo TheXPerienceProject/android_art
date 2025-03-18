@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-121-simple-suspend-check-expected-stdout",
         ":art-run-test-121-simple-suspend-check-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

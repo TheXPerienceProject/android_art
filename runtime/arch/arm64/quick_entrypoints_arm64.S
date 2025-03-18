@@ -32,20 +32,6 @@
     .cfi_adjust_cfa_offset -(\frame_adjustment)
 .endm
 
-.macro SAVE_TWO_REGS_INCREASE_FRAME reg1, reg2, frame_adjustment
-    stp \reg1, \reg2, [sp, #-(\frame_adjustment)]!
-    .cfi_adjust_cfa_offset (\frame_adjustment)
-    .cfi_rel_offset \reg1, 0
-    .cfi_rel_offset \reg2, 8
-.endm
-
-.macro RESTORE_TWO_REGS_DECREASE_FRAME reg1, reg2, frame_adjustment
-    ldp \reg1, \reg2, [sp], #(\frame_adjustment)
-    .cfi_restore \reg1
-    .cfi_restore \reg2
-    .cfi_adjust_cfa_offset -(\frame_adjustment)
-.endm
-
 .macro POP_SAVE_REFS_ONLY_FRAME
     DECREASE_FRAME 96
 .endm
@@ -2452,7 +2438,27 @@ ENTRY art_quick_invoke_polymorphic
     REFRESH_MARKING_REGISTER
     fmov    d0, x0                      // Result is in x0. Copy to floating return register.
     RETURN_OR_DELIVER_PENDING_EXCEPTION
-END  art_quick_invoke_polymorphic
+END art_quick_invoke_polymorphic
+
+    /*
+     * Slow path for MethodHandle.invokeExact intrinsic.
+     * That intrinsic has a custom calling convention: the argument allocation doesn't start from
+     * the receiver (MethodHandle) object, but from the argument following it. That's done to match
+     * expectation of the underlying method when MethodHandle targets a method. That also affects
+     * the way arguments are spilled onto the stack.
+     */
+.extern artInvokePolymorphicWithHiddenReceiver
+ENTRY art_quick_invoke_polymorphic_with_hidden_receiver
+                                        // On entry: w0 := receiver
+    SETUP_SAVE_REFS_AND_ARGS_FRAME      // Save callee saves in case allocation triggers GC.
+    mov     x1, xSELF                   // x1 := Thread::Current()
+    mov     x2, sp                      // x2 := SP
+    bl      artInvokePolymorphicWithHiddenReceiver // invoke with (receiver, thread, save_area)
+    RESTORE_SAVE_REFS_AND_ARGS_FRAME
+    REFRESH_MARKING_REGISTER
+    fmov    d0, x0                      // Result is in x0. Copy to floating return register.
+    RETURN_OR_DELIVER_PENDING_EXCEPTION
+END art_quick_invoke_polymorphic_with_hidden_receiver
 
 .extern artInvokeCustom
 ENTRY art_quick_invoke_custom
@@ -2466,19 +2472,6 @@ ENTRY art_quick_invoke_custom
     fmov    d0, x0                    // Copy result to double result register.
     RETURN_OR_DELIVER_PENDING_EXCEPTION
 END  art_quick_invoke_custom
-
-// Wrap ExecuteSwitchImpl in assembly method which specifies DEX PC for unwinding.
-//  Argument 0: x0: The context pointer for ExecuteSwitchImpl.
-//  Argument 1: x1: Pointer to the templated ExecuteSwitchImpl to call.
-//  Argument 2: x2: The value of DEX PC (memory address of the methods bytecode).
-ENTRY ExecuteSwitchImplAsm
-    SAVE_TWO_REGS_INCREASE_FRAME x19, xLR, 16
-    mov x19, x2                                   // x19 = DEX PC
-    CFI_DEFINE_DEX_PC_WITH_OFFSET(0 /* x0 */, 19 /* x19 */, 0)
-    blr x1                                        // Call the wrapped method.
-    RESTORE_TWO_REGS_DECREASE_FRAME x19, xLR, 16
-    ret
-END ExecuteSwitchImplAsm
 
 // x0 contains the class, x8 contains the inline cache. x9-x15 can be used.
 ENTRY art_quick_update_inline_cache

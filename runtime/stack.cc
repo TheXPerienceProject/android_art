@@ -136,7 +136,7 @@ uint32_t StackVisitor::GetDexPc(bool abort_on_failure) const {
         CodeInfo code_info(cur_oat_quick_method_header_);
         std::stringstream os;
         VariableIndentationOutputStream vios(&os);
-        code_info.Dump(&vios, /* code_offset= */ 0u, /* verbose= */ true, kRuntimeISA);
+        code_info.Dump(&vios, /* code_offset= */ 0u, /* verbose= */ true, kRuntimeQuickCodeISA);
         LOG(FATAL) << os.str() << '\n'
                    << "StackMap not found for "
                    << std::hex << cur_quick_frame_pc_ << " in "
@@ -407,7 +407,7 @@ bool StackVisitor::GetRegisterIfAccessible(uint32_t reg,
   const bool is_float = (location_kind == DexRegisterLocation::Kind::kInFpuRegister) ||
                         (location_kind == DexRegisterLocation::Kind::kInFpuRegisterHigh);
 
-  if (kRuntimeISA == InstructionSet::kX86 && is_float) {
+  if (kRuntimeQuickCodeISA == InstructionSet::kX86 && is_float) {
     // X86 float registers are 64-bit and each XMM register is provided as two separate
     // 32-bit registers by the context.
     reg = (location_kind == DexRegisterLocation::Kind::kInFpuRegisterHigh)
@@ -419,7 +419,7 @@ bool StackVisitor::GetRegisterIfAccessible(uint32_t reg,
     return false;
   }
   uintptr_t ptr_val = GetRegister(reg, is_float);
-  const bool target64 = Is64BitInstructionSet(kRuntimeISA);
+  const bool target64 = Is64BitInstructionSet(kRuntimeQuickCodeISA);
   if (target64) {
     const bool is_high = (location_kind == DexRegisterLocation::Kind::kInRegisterHigh) ||
                          (location_kind == DexRegisterLocation::Kind::kInFpuRegisterHigh);
@@ -803,9 +803,9 @@ uint8_t* StackVisitor::GetShouldDeoptimizeFlagAddr() const REQUIRES_SHARED(Locks
   size_t frame_size = frame_info.FrameSizeInBytes();
   uint8_t* sp = reinterpret_cast<uint8_t*>(GetCurrentQuickFrame());
   size_t core_spill_size =
-      POPCOUNT(frame_info.CoreSpillMask()) * GetBytesPerGprSpillLocation(kRuntimeISA);
+      POPCOUNT(frame_info.CoreSpillMask()) * GetBytesPerGprSpillLocation(kRuntimeQuickCodeISA);
   size_t fpu_spill_size =
-      POPCOUNT(frame_info.FpSpillMask()) * GetBytesPerFprSpillLocation(kRuntimeISA);
+      POPCOUNT(frame_info.FpSpillMask()) * GetBytesPerFprSpillLocation(kRuntimeQuickCodeISA);
   size_t offset = frame_size - core_spill_size - fpu_spill_size - kShouldDeoptimizeFlagSize;
   uint8_t* should_deoptimize_addr = sp + offset;
   DCHECK_EQ(*should_deoptimize_addr & ~static_cast<uint8_t>(DeoptimizeFlagValue::kAll), 0);

@@ -23,10 +23,11 @@
 
 #include <android-base/logging.h>
 
+#include "base/arena_containers.h"
 #include "base/locks.h"
 #include "base/macros.h"
 #include "base/safe_map.h"
-#include "base/scoped_arena_containers.h"
+#include "reg_type.h"
 
 namespace art HIDDEN {
 
@@ -67,7 +68,7 @@ class RegisterLine {
  public:
   using RegisterStackMask = uint32_t;
   // A map from register to a bit vector of indices into the monitors_ stack.
-  using RegToLockDepthsMap = ScopedArenaSafeMap<uint32_t, RegisterStackMask>;
+  using RegToLockDepthsMap = ArenaSafeMap<uint32_t, RegisterStackMask>;
 
   // Maximum number of nested monitors to track before giving up and
   // taking the slow path.
@@ -75,9 +76,7 @@ class RegisterLine {
       std::numeric_limits<RegisterStackMask>::digits;
 
   // Create a register line of num_regs registers.
-  static RegisterLine* Create(size_t num_regs,
-                              ScopedArenaAllocator& allocator,
-                              RegTypeCache* reg_types);
+  static RegisterLine* Create(size_t num_regs, ArenaAllocator& allocator, RegTypeCache* reg_types);
 
   // Implement category-1 "move" instructions. Copy a 32-bit value from "vsrc" to "vdst".
   void CopyRegister1(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc, TypeCategory cat)
@@ -112,13 +111,15 @@ class RegisterLine {
   // is typical when the underlying value did not change, but we have "different" type information
   // available now. An example is sharpening types after a check-cast. Note that when given kKeep,
   // the new_type is dchecked to be a reference type.
+  ALWAYS_INLINE void SetRegisterType(uint32_t vdst, RegType::Kind new_kind)
+      REQUIRES_SHARED(Locks::mutator_lock_);
   template <LockOp kLockOp>
   ALWAYS_INLINE void SetRegisterType(uint32_t vdst, const RegType& new_type)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  void SetRegisterTypeWide(uint32_t vdst,
-                           const RegType& new_type1,
-                           const RegType& new_type2)
+  void SetRegisterTypeWide(uint32_t vdst, RegType::Kind new_kind1, RegType::Kind new_kind2)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  void SetRegisterTypeWide(uint32_t vdst, const RegType& new_type1, const RegType& new_type2)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   /* Set the type of the "result" register. */
@@ -128,27 +129,22 @@ class RegisterLine {
   void SetResultRegisterTypeWide(const RegType& new_type1, const RegType& new_type2)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  /*
+   * Set register type for a `new-instance` instruction.
+   * For `new-instance`, we additionally record the allocation dex pc for vreg `vdst`.
+   * This is used to keep track of registers that hold the same uninitialized reference,
+   * so that we can update them all when a constructor is called on any of them.
+   */
+  void SetRegisterTypeForNewInstance(uint32_t vdst, const RegType& uninit_type, uint32_t dex_pc)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Get the id of the register tyoe of register vsrc.
+  uint16_t GetRegisterTypeId(uint32_t vsrc) const;
+
   // Get the type of register vsrc.
   const RegType& GetRegisterType(MethodVerifier* verifier, uint32_t vsrc) const;
 
-  ALWAYS_INLINE bool VerifyRegisterType(MethodVerifier* verifier,
-                                        uint32_t vsrc,
-                                        const RegType& check_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  bool VerifyRegisterTypeWide(MethodVerifier* verifier,
-                              uint32_t vsrc,
-                              const RegType& check_type1,
-                              const RegType& check_type2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CopyFromLine(const RegisterLine* src) {
-    DCHECK_EQ(num_regs_, src->num_regs_);
-    memcpy(&line_, &src->line_, num_regs_ * sizeof(uint16_t));
-    monitors_ = src->monitors_;
-    reg_to_lock_depths_ = src->reg_to_lock_depths_;
-    this_initialized_ = src->this_initialized_;
-  }
+  void CopyFromLine(const RegisterLine* src);
 
   std::string Dump(MethodVerifier* verifier) const REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -159,20 +155,19 @@ class RegisterLine {
   }
 
   /*
-   * We're creating a new instance of class C at address A. Any registers holding instances
-   * previously created at address A must be initialized by now. If not, we mark them as "conflict"
-   * to prevent them from being used (otherwise, MarkRefsAsInitialized would mark the old ones and
-   * the new ones at the same time).
+   * In debug mode, assert that the register line does not contain an uninitialized register
+   * type for a `new-instance` allocation at a specific dex pc. We do this check before recording
+   * the uninitialized register type and dex pc for a `new-instance` instruction.
    */
-  void MarkUninitRefsAsInvalid(MethodVerifier* verifier, const RegType& uninit_type)
+  void DCheckUniqueNewInstanceDexPc(MethodVerifier* verifier, uint32_t dex_pc)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   /*
-   * Update all registers holding "uninit_type" to instead hold the corresponding initialized
-   * reference type. This is called when an appropriate constructor is invoked -- all copies of
-   * the reference must be marked as initialized.
+   * Update all registers holding the uninitialized type currently recorded for vreg `vsrc` to
+   * instead hold the corresponding initialized reference type. This is called when an appropriate
+   * constructor is invoked -- all copies of the reference must be marked as initialized.
    */
-  void MarkRefsAsInitialized(MethodVerifier* verifier, const RegType& uninit_type)
+  void MarkRefsAsInitialized(MethodVerifier* verifier, uint32_t vsrc)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   /*
@@ -215,126 +210,6 @@ class RegisterLine {
 
   // Return how many bytes of memory a register line uses.
   ALWAYS_INLINE static size_t ComputeSize(size_t num_regs);
-
-  /*
-   * Get the "this" pointer from a non-static method invocation. This returns the RegType so the
-   * caller can decide whether it needs the reference to be initialized or not. (Can also return
-   * kRegTypeZero if the reference can only be zero at this point.)
-   *
-   * The argument count is in vA, and the first argument is in vC, for both "simple" and "range"
-   * versions. We just need to make sure vA is >= 1 and then return vC.
-   * allow_failure will return Conflict() instead of causing a verification failure if there is an
-   * error.
-   */
-  const RegType& GetInvocationThis(MethodVerifier* verifier,
-                                   const Instruction* inst,
-                                   bool allow_failure = false)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Verify types for a simple two-register instruction (e.g. "neg-int").
-   * "dst_type" is stored into vA, and "src_type" is verified against vB.
-   */
-  void CheckUnaryOp(MethodVerifier* verifier,
-                    const Instruction* inst,
-                    const RegType& dst_type,
-                    const RegType& src_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckUnaryOpWide(MethodVerifier* verifier,
-                        const Instruction* inst,
-                        const RegType& dst_type1,
-                        const RegType& dst_type2,
-                        const RegType& src_type1,
-                        const RegType& src_type2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckUnaryOpToWide(MethodVerifier* verifier,
-                          const Instruction* inst,
-                          const RegType& dst_type1,
-                          const RegType& dst_type2,
-                          const RegType& src_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckUnaryOpFromWide(MethodVerifier* verifier,
-                            const Instruction* inst,
-                            const RegType& dst_type,
-                            const RegType& src_type1,
-                            const RegType& src_type2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Verify types for a simple three-register instruction (e.g. "add-int").
-   * "dst_type" is stored into vA, and "src_type1"/"src_type2" are verified
-   * against vB/vC.
-   */
-  void CheckBinaryOp(MethodVerifier* verifier,
-                     const Instruction* inst,
-                     const RegType& dst_type,
-                     const RegType& src_type1,
-                     const RegType& src_type2,
-                     bool check_boolean_op)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckBinaryOpWide(MethodVerifier* verifier,
-                         const Instruction* inst,
-                         const RegType& dst_type1,
-                         const RegType& dst_type2,
-                         const RegType& src_type1_1,
-                         const RegType& src_type1_2,
-                         const RegType& src_type2_1,
-                         const RegType& src_type2_2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckBinaryOpWideShift(MethodVerifier* verifier,
-                              const Instruction* inst,
-                              const RegType& long_lo_type,
-                              const RegType& long_hi_type,
-                              const RegType& int_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Verify types for a binary "2addr" operation. "src_type1"/"src_type2"
-   * are verified against vA/vB, then "dst_type" is stored into vA.
-   */
-  void CheckBinaryOp2addr(MethodVerifier* verifier,
-                          const Instruction* inst,
-                          const RegType& dst_type,
-                          const RegType& src_type1,
-                          const RegType& src_type2,
-                          bool check_boolean_op)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckBinaryOp2addrWide(MethodVerifier* verifier,
-                              const Instruction* inst,
-                              const RegType& dst_type1,
-                              const RegType& dst_type2,
-                              const RegType& src_type1_1,
-                              const RegType& src_type1_2,
-                              const RegType& src_type2_1,
-                              const RegType& src_type2_2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckBinaryOp2addrWideShift(MethodVerifier* verifier,
-                                   const Instruction* inst,
-                                   const RegType& long_lo_type,
-                                   const RegType& long_hi_type,
-                                   const RegType& int_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Verify types for A two-register instruction with a literal constant (e.g. "add-int/lit8").
-   * "dst_type" is stored into vA, and "src_type" is verified against vB.
-   *
-   * If "check_boolean_op" is set, we use the constant value in vC.
-   */
-  void CheckLiteralOp(MethodVerifier* verifier,
-                      const Instruction* inst,
-                      const RegType& dst_type,
-                      const RegType& src_type,
-                      bool check_boolean_op,
-                      bool is_lit16)
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Verify/push monitor onto the monitor stack, locking the value in reg_idx at location insn_idx.
   void PushMonitor(MethodVerifier* verifier, uint32_t reg_idx, int32_t insn_idx)
@@ -382,6 +257,18 @@ class RegisterLine {
   }
 
  private:
+  // For uninitialized types we need to check for allocation dex pc mismatch when merging.
+  // This does not apply to uninitialized "this" reference types.
+  static bool NeedsAllocationDexPc(const RegType& reg_type);
+
+  void EnsureAllocationDexPcsAvailable();
+
+  template <LockOp kLockOp>
+  ALWAYS_INLINE void SetRegisterTypeImpl(uint32_t vdst, uint16_t new_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  void SetRegisterTypeWideImpl(uint32_t vdst, uint16_t new_id1, uint16_t new_id2)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   void CopyRegToLockDepth(size_t dst, size_t src) {
     auto it = reg_to_lock_depths_.find(src);
     if (it != reg_to_lock_depths_.end()) {
@@ -418,16 +305,21 @@ class RegisterLine {
     reg_to_lock_depths_.erase(reg);
   }
 
-  RegisterLine(size_t num_regs, ScopedArenaAllocator& allocator, RegTypeCache* reg_types);
+  RegisterLine(size_t num_regs, ArenaAllocator& allocator, RegTypeCache* reg_types);
 
-  // Storage for the result register's type, valid after an invocation.
-  uint16_t result_[2];
+  static constexpr uint32_t kNoDexPc = static_cast<uint32_t>(-1);
 
   // Length of reg_types_
   const uint32_t num_regs_;
 
+  // Storage for the result register's type, valid after an invocation.
+  uint16_t result_[2];
+
+  // Track allocation dex pcs for `new-instance` results moved to other registers.
+  uint32_t* allocation_dex_pcs_;
+
   // A stack of monitor enter locations.
-  ScopedArenaVector<uint32_t> monitors_;
+  ArenaVector<uint32_t> monitors_;
 
   // A map from register to a bit vector of indices into the monitors_ stack. As we pop the monitor
   // stack we verify that monitor-enter/exit are correctly nested. That is, if there was a
@@ -440,6 +332,8 @@ class RegisterLine {
   // An array of RegType Ids associated with each dex register.
   uint16_t line_[1];
 
+  friend class RegisterLineArenaDelete;
+
   DISALLOW_COPY_AND_ASSIGN(RegisterLine);
 };
 
@@ -447,6 +341,8 @@ class RegisterLineArenaDelete : public ArenaDelete<RegisterLine> {
  public:
   void operator()(RegisterLine* ptr) const;
 };
+
+using RegisterLineArenaUniquePtr = std::unique_ptr<RegisterLine, RegisterLineArenaDelete>;
 
 }  // namespace verifier
 }  // namespace art

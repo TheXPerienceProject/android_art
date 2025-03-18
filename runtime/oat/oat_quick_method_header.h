@@ -56,8 +56,8 @@ class PACKED(4) OatQuickMethodHeader {
   static OatQuickMethodHeader* FromCodePointer(const void* code_ptr) {
     uintptr_t code = reinterpret_cast<uintptr_t>(code_ptr);
     uintptr_t header = code - OFFSETOF_MEMBER(OatQuickMethodHeader, code_);
-    DCHECK(IsAlignedParam(code, GetInstructionSetCodeAlignment(kRuntimeISA)) ||
-           IsAlignedParam(header, GetInstructionSetCodeAlignment(kRuntimeISA)))
+    DCHECK(IsAlignedParam(code, GetInstructionSetCodeAlignment(kRuntimeQuickCodeISA)) ||
+           IsAlignedParam(header, GetInstructionSetCodeAlignment(kRuntimeQuickCodeISA)))
         << std::hex << code << " " << std::hex << header;
     return reinterpret_cast<OatQuickMethodHeader*>(header);
   }
@@ -67,7 +67,8 @@ class PACKED(4) OatQuickMethodHeader {
   }
 
   static size_t InstructionAlignedSize() {
-    return RoundUp(sizeof(OatQuickMethodHeader), GetInstructionSetCodeAlignment(kRuntimeISA));
+    return RoundUp(sizeof(OatQuickMethodHeader),
+                   GetInstructionSetCodeAlignment(kRuntimeQuickCodeISA));
   }
 
   OatQuickMethodHeader(const OatQuickMethodHeader&) = default;
@@ -131,8 +132,9 @@ class PACKED(4) OatQuickMethodHeader {
     // mspace_memalign or memory mapped from a file, neither of which is tagged by MTE/HWASan.
     DCHECK_EQ(code_start, reinterpret_cast<uintptr_t>(code_start) & ((UINT64_C(1) << 56) - 1));
 #endif
-    static_assert(kRuntimeISA != InstructionSet::kThumb2, "kThumb2 cannot be a runtime ISA");
-    if (kRuntimeISA == InstructionSet::kArm) {
+    static_assert(kRuntimeQuickCodeISA != InstructionSet::kThumb2,
+                  "kThumb2 cannot be a runtime ISA");
+    if (kRuntimeQuickCodeISA == InstructionSet::kArm) {
       // On Thumb-2, the pc is offset by one.
       code_start++;
     }
@@ -140,12 +142,13 @@ class PACKED(4) OatQuickMethodHeader {
   }
 
   const uint8_t* GetEntryPoint() const {
-    // When the runtime architecture is ARM, `kRuntimeISA` is set to `kArm`
+    // When the runtime architecture is ARM, `kRuntimeQuickCodeISA` is set to `kArm`
     // (not `kThumb2`), *but* we always generate code for the Thumb-2
     // instruction set anyway. Thumb-2 requires the entrypoint to be of
     // offset 1.
-    static_assert(kRuntimeISA != InstructionSet::kThumb2, "kThumb2 cannot be a runtime ISA");
-    return (kRuntimeISA == InstructionSet::kArm)
+    static_assert(kRuntimeQuickCodeISA != InstructionSet::kThumb2,
+                  "kThumb2 cannot be a runtime ISA");
+    return (kRuntimeQuickCodeISA == InstructionSet::kArm)
         ? reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(code_) | 1)
         : code_;
   }
@@ -169,9 +172,9 @@ class PACKED(4) OatQuickMethodHeader {
     QuickMethodFrameInfo frame_info = GetFrameInfo();
     size_t frame_size = frame_info.FrameSizeInBytes();
     size_t core_spill_size =
-        POPCOUNT(frame_info.CoreSpillMask()) * GetBytesPerGprSpillLocation(kRuntimeISA);
+        POPCOUNT(frame_info.CoreSpillMask()) * GetBytesPerGprSpillLocation(kRuntimeQuickCodeISA);
     size_t fpu_spill_size =
-        POPCOUNT(frame_info.FpSpillMask()) * GetBytesPerFprSpillLocation(kRuntimeISA);
+        POPCOUNT(frame_info.FpSpillMask()) * GetBytesPerFprSpillLocation(kRuntimeQuickCodeISA);
     return frame_size - core_spill_size - fpu_spill_size - kShouldDeoptimizeFlagSize;
   }
 

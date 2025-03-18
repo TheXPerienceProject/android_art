@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-815-invokeinterface-default-expected-stdout",
         ":art-run-test-815-invokeinterface-default-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

@@ -24,6 +24,7 @@ java_test {
     test_suites: [
         "cts",
         "mcts-art",
+        "mts-art",
     ],
     sdk_version: "test_current",
 }

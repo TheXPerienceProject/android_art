@@ -1207,14 +1207,56 @@ void InstructionCodeGeneratorARM64Sve::VisitVecPredSetAll(HVecPredSetAll* instru
   }
 }
 
-void LocationsBuilderARM64Sve::VisitVecCondition(HVecCondition* instruction) {
+void InstructionCodeGeneratorARM64Sve::GenerateIntegerVecComparison(
+    const PRegisterWithLaneSize& pd,
+    const PRegisterZ& pg,
+    const ZRegister& zn,
+    const ZRegister& zm,
+    IfCondition cond) {
+  switch (cond) {
+    case kCondEQ:
+      __ Cmpeq(pd, pg, zn, zm);
+      return;
+    case kCondNE:
+      __ Cmpne(pd, pg, zn, zm);
+      return;
+    case kCondLT:
+      __ Cmplt(pd, pg, zn, zm);
+      return;
+    case kCondLE:
+      __ Cmple(pd, pg, zn, zm);
+      return;
+    case kCondGT:
+      __ Cmpgt(pd, pg, zn, zm);
+      return;
+    case kCondGE:
+      __ Cmpge(pd, pg, zn, zm);
+      return;
+    case kCondB:
+      __ Cmplo(pd, pg, zn, zm);
+      return;
+    case kCondBE:
+      __ Cmpls(pd, pg, zn, zm);
+      return;
+    case kCondA:
+      __ Cmphi(pd, pg, zn, zm);
+      return;
+    case kCondAE:
+      __ Cmphs(pd, pg, zn, zm);
+      return;
+  }
+  LOG(FATAL) << "Condition '" << enum_cast<uint32_t>(cond) << "' not supported: ";
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Sve::HandleVecCondition(HVecCondition* instruction) {
   LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
   locations->SetInAt(0, Location::RequiresFpuRegister());
   locations->SetInAt(1, Location::RequiresFpuRegister());
   locations->SetOut(Location::RequiresRegister());
 }
 
-void InstructionCodeGeneratorARM64Sve::VisitVecCondition(HVecCondition* instruction) {
+void InstructionCodeGeneratorARM64Sve::HandleVecCondition(HVecCondition* instruction) {
   DCHECK(instruction->IsPredicated());
   LocationSummary* locations = instruction->GetLocations();
   const ZRegister left = ZRegisterFrom(locations->InAt(0));
@@ -1228,27 +1270,61 @@ void InstructionCodeGeneratorARM64Sve::VisitVecCondition(HVecCondition* instruct
             HVecOperation::ToSignedType(b->GetPackedType()));
   ValidateVectorLength(instruction);
 
-  // TODO: Support other condition OPs and types.
+  // TODO: Support other types, e.g: boolean, float and double.
   switch (instruction->GetPackedType()) {
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
-      __ Cmpeq(output_p_reg.VnB(), p_reg, left.VnB(), right.VnB());
+      GenerateIntegerVecComparison(output_p_reg.VnB(),
+                                   p_reg,
+                                   left.VnB(),
+                                   right.VnB(),
+                                   instruction->GetCondition());
       break;
     case DataType::Type::kUint16:
     case DataType::Type::kInt16:
-      __ Cmpeq(output_p_reg.VnH(), p_reg, left.VnH(), right.VnH());
+      GenerateIntegerVecComparison(output_p_reg.VnH(),
+                                   p_reg,
+                                   left.VnH(),
+                                   right.VnH(),
+                                   instruction->GetCondition());
       break;
     case DataType::Type::kInt32:
-      __ Cmpeq(output_p_reg.VnS(), p_reg, left.VnS(), right.VnS());
+      GenerateIntegerVecComparison(output_p_reg.VnS(),
+                                   p_reg,
+                                   left.VnS(),
+                                   right.VnS(),
+                                   instruction->GetCondition());
       break;
     case DataType::Type::kInt64:
-      __ Cmpeq(output_p_reg.VnD(), p_reg, left.VnD(), right.VnD());
+      GenerateIntegerVecComparison(output_p_reg.VnD(),
+                                   p_reg,
+                                   left.VnD(),
+                                   right.VnD(),
+                                   instruction->GetCondition());
       break;
     default:
       LOG(FATAL) << "Unsupported SIMD type: " << instruction->GetPackedType();
       UNREACHABLE();
   }
 }
+
+#define FOR_EACH_VEC_CONDITION_INSTRUCTION(M) \
+  M(VecEqual)                                 \
+  M(VecNotEqual)                              \
+  M(VecLessThan)                              \
+  M(VecLessThanOrEqual)                       \
+  M(VecGreaterThan)                           \
+  M(VecGreaterThanOrEqual)                    \
+  M(VecBelow)                                 \
+  M(VecBelowOrEqual)                          \
+  M(VecAbove)                                 \
+  M(VecAboveOrEqual)
+#define DEFINE_VEC_CONDITION_VISITORS(Name)                                                     \
+void LocationsBuilderARM64Sve::Visit##Name(H##Name* comp) { HandleVecCondition(comp); }         \
+void InstructionCodeGeneratorARM64Sve::Visit##Name(H##Name* comp) { HandleVecCondition(comp); }
+FOR_EACH_VEC_CONDITION_INSTRUCTION(DEFINE_VEC_CONDITION_VISITORS)
+#undef DEFINE_VEC_CONDITION_VISITORS
+#undef FOR_EACH_VEC_CONDITION_INSTRUCTION
 
 void LocationsBuilderARM64Sve::VisitVecPredNot(HVecPredNot* instruction) {
   LocationSummary* locations = new (GetGraph()->GetAllocator()) LocationSummary(instruction);
@@ -1335,10 +1411,10 @@ void InstructionCodeGeneratorARM64Sve::VisitVecPredToBoolean(HVecPredToBoolean* 
   // Instruction is not predicated, see nodes_vector.h
   DCHECK(!instruction->IsPredicated());
   Register reg = OutputRegister(instruction);
-  // Currently VecPredToBoolean is only used as part of vectorized loop check condition
-  // evaluation.
-  DCHECK(instruction->GetPCondKind() == HVecPredToBoolean::PCondKind::kNFirst);
-  __ Cset(reg, pl);
+  HInstruction *input = instruction->InputAt(0);
+  const PRegister output_p_reg = GetVecPredSetFixedOutPReg(input->AsVecPredSetOperation());
+  __ Ptest(output_p_reg, output_p_reg.VnB());
+  __ Cset(reg, ARM64PCondition(instruction->GetPCondKind()));
 }
 
 Location InstructionCodeGeneratorARM64Sve::AllocateSIMDScratchLocation(

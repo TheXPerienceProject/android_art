@@ -601,6 +601,12 @@ void CommonRuntimeTestImpl::GenerateProfile(ArrayRef<const std::string> dexes,
   EXPECT_EQ(out_file->Flush(), 0);
 }
 
+ObjPtr<mirror::Class> CommonRuntimeTestImpl::FindClass(
+    const char* descriptor,
+    Handle<mirror::ClassLoader> class_loader) const {
+  return class_linker_->FindClass(Thread::Current(), descriptor, strlen(descriptor), class_loader);
+}
+
 CheckJniAbortCatcher::CheckJniAbortCatcher() : vm_(Runtime::Current()->GetJavaVM()) {
   vm_->SetCheckJniAbortHook(Hook, &actual_);
 }

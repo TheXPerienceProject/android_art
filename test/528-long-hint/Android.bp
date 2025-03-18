@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-528-long-hint-expected-stdout",
         ":art-run-test-528-long-hint-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

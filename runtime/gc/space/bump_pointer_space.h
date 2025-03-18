@@ -193,6 +193,9 @@ class EXPORT BumpPointerSpace final : public ContinuousMemMapAllocSpace {
   // The compaction algorithm should ideally compact all objects into the main
   // block, thereby enabling erasing corresponding entries from here.
   std::deque<size_t> block_sizes_ GUARDED_BY(lock_);
+  // Size of the black-dense region that is to be walked using mark-bitmap and
+  // not object-by-object.
+  size_t black_dense_region_size_ GUARDED_BY(lock_) = 0;
 
  private:
   // Return the object which comes after obj, while ensuring alignment.
@@ -215,6 +218,8 @@ class EXPORT BumpPointerSpace final : public ContinuousMemMapAllocSpace {
   // mutators are suspended so that upcoming TLAB allocations start with a new
   // page. Adjust's heap's bytes_allocated accordingly. Returns the aligned end.
   uint8_t* AlignEnd(Thread* self, size_t alignment, Heap* heap) REQUIRES(Locks::mutator_lock_);
+  // Called only by CMC GC at the end of GC.
+  void SetBlackDenseRegionSize(size_t size) REQUIRES(!lock_);
 
   friend class collector::MarkSweep;
   friend class collector::MarkCompact;

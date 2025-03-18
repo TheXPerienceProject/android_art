@@ -18,11 +18,9 @@
 
 #include "entrypoints/quick/quick_default_init_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints.h"
+#include "entrypoints/quick/runtime_entrypoints_list.h"
 
 namespace art HIDDEN {
-
-// Cast entrypoints.
-extern "C" size_t artInstanceOfFromCode(mirror::Object* obj, mirror::Class* ref_class);
 
 // Read barrier entrypoints.
 // art_quick_read_barrier_mark_regX uses an non-standard calling convention: it
@@ -150,6 +148,11 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   UpdateReadBarrierEntrypoints(qpoints, /*is_active=*/ false);
   qpoints->SetReadBarrierSlow(artReadBarrierSlow);
   qpoints->SetReadBarrierForRootSlow(artReadBarrierForRootSlow);
+}
+
+void UpdateLowOverheadTraceEntrypoints([[maybe_unused]] QuickEntryPoints* qpoints,
+                                       [[maybe_unused]] bool enable) {
+  // This is a nop on this architecture. Low overhead tracing is only implemented for ARM64.
 }
 
 }  // namespace art

@@ -1715,20 +1715,22 @@ class ImageWriter::LayoutHelper::CollectClassesVisitor {
       auto app_class_loader = DecodeGlobalWithoutRB<mirror::ClassLoader>(
           vm, image_writer->app_class_loader_);
       ClassTable* app_class_table = app_class_loader->GetClassTable();
-      ReaderMutexLock lock(self, app_class_table->lock_);
-      DCHECK_EQ(app_class_table->classes_.size(), 1u);
-      const ClassTable::ClassSet& app_class_set = app_class_table->classes_[0];
-      DCHECK_GE(app_class_set.size(), image_info.class_table_size_);
-      boot_image_classes.reserve(app_class_set.size() - image_info.class_table_size_);
-      for (const ClassTable::TableSlot& slot : app_class_set) {
-        mirror::Class* klass = slot.Read<kWithoutReadBarrier>().Ptr();
-        if (image_writer->IsInBootImage(klass)) {
-          boot_image_classes.push_back(klass);
+      if (app_class_table != nullptr) {
+        ReaderMutexLock lock(self, app_class_table->lock_);
+        DCHECK_EQ(app_class_table->classes_.size(), 1u);
+        const ClassTable::ClassSet& app_class_set = app_class_table->classes_[0];
+        DCHECK_GE(app_class_set.size(), image_info.class_table_size_);
+        boot_image_classes.reserve(app_class_set.size() - image_info.class_table_size_);
+        for (const ClassTable::TableSlot& slot : app_class_set) {
+          mirror::Class* klass = slot.Read<kWithoutReadBarrier>().Ptr();
+          if (image_writer->IsInBootImage(klass)) {
+            boot_image_classes.push_back(klass);
+          }
         }
+        DCHECK_EQ(app_class_set.size() - image_info.class_table_size_, boot_image_classes.size());
+        // Increase the app class table size to include referenced boot image classes.
+        image_info.class_table_size_ = app_class_set.size();
       }
-      DCHECK_EQ(app_class_set.size() - image_info.class_table_size_, boot_image_classes.size());
-      // Increase the app class table size to include referenced boot image classes.
-      image_info.class_table_size_ = app_class_set.size();
     }
     for (ImageInfo& image_info : image_writer->image_infos_) {
       if (image_info.class_table_size_ != 0u) {
@@ -2871,7 +2873,7 @@ void ImageWriter::CreateHeader(size_t oat_index, size_t component_count) {
       target_ptr_size_);
 }
 
-ArtMethod* ImageWriter::GetImageMethodAddress(ArtMethod* method) {
+ArtMethod* ImageWriter::GetImageMethodAddress(ArtMethod* method) const {
   NativeObjectRelocation relocation = GetNativeRelocation(method);
   const ImageInfo& image_info = GetImageInfo(relocation.oat_index);
   CHECK_GE(relocation.offset, image_info.image_end_) << "ArtMethods should be after Objects";
@@ -3297,7 +3299,7 @@ class ImageWriter::FixupClassVisitor final : public FixupVisitor {
   }
 };
 
-ImageWriter::NativeObjectRelocation ImageWriter::GetNativeRelocation(void* obj) {
+ImageWriter::NativeObjectRelocation ImageWriter::GetNativeRelocation(void* obj) const {
   DCHECK(obj != nullptr);
   DCHECK(!IsInBootImage(obj));
   auto it = native_object_relocations_.find(obj);

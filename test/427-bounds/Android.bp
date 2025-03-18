@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-427-bounds-expected-stdout",
         ":art-run-test-427-bounds-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

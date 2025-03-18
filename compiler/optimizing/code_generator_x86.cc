@@ -1171,6 +1171,7 @@ CodeGeneratorX86::CodeGeneratorX86(HGraph* graph,
       assembler_(graph->GetAllocator(),
                  compiler_options.GetInstructionSetFeatures()->AsX86InstructionSetFeatures()),
       boot_image_method_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
+      app_image_method_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       method_bss_entry_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       boot_image_type_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       app_image_type_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
@@ -5124,13 +5125,14 @@ void InstructionCodeGeneratorX86::HandleRotate(HBinaryOperation* rotate) {
     Register second_reg = second.AsRegister<Register>();
     DCHECK_EQ(second_reg, ECX);
 
-    if (rotate->IsRol()) {
-      __ negl(second_reg);
-    }
-
     __ movl(temp_reg, first_reg_hi);
-    __ shrd(first_reg_hi, first_reg_lo, second_reg);
-    __ shrd(first_reg_lo, temp_reg, second_reg);
+    if (rotate->IsRol()) {
+      __ shld(first_reg_hi, first_reg_lo, second_reg);
+      __ shld(first_reg_lo, temp_reg, second_reg);
+    } else {
+      __ shrd(first_reg_hi, first_reg_lo, second_reg);
+      __ shrd(first_reg_lo, temp_reg, second_reg);
+    }
     __ movl(temp_reg, first_reg_hi);
     __ testl(second_reg, Immediate(32));
     __ cmovl(kNotEqual, first_reg_hi, first_reg_lo);
@@ -5550,6 +5552,13 @@ void CodeGeneratorX86::LoadMethod(MethodLoadKind load_kind, Location temp, HInvo
           GetBootImageOffset(invoke));
       break;
     }
+    case MethodLoadKind::kAppImageRelRo: {
+      DCHECK(GetCompilerOptions().IsAppImage());
+      Register base_reg = GetInvokeExtraParameter(invoke, temp.AsRegister<Register>());
+      __ movl(temp.AsRegister<Register>(), Address(base_reg, kPlaceholder32BitOffset));
+      RecordAppImageMethodPatch(invoke);
+      break;
+    }
     case MethodLoadKind::kBssEntry: {
       Register base_reg = GetInvokeExtraParameter(invoke, temp.AsRegister<Register>());
       __ movl(temp.AsRegister<Register>(), Address(base_reg, kPlaceholder32BitOffset));
@@ -5739,6 +5748,19 @@ void CodeGeneratorX86::RecordBootImageMethodPatch(HInvoke* invoke) {
   __ Bind(&boot_image_method_patches_.back().label);
 }
 
+void CodeGeneratorX86::RecordAppImageMethodPatch(HInvoke* invoke) {
+  size_t index = invoke->IsInvokeInterface()
+      ? invoke->AsInvokeInterface()->GetSpecialInputIndex()
+      : invoke->AsInvokeStaticOrDirect()->GetSpecialInputIndex();
+  HX86ComputeBaseMethodAddress* method_address =
+      invoke->InputAt(index)->AsX86ComputeBaseMethodAddress();
+  app_image_method_patches_.emplace_back(
+      method_address,
+      invoke->GetResolvedMethodReference().dex_file,
+      invoke->GetResolvedMethodReference().index);
+  __ Bind(&app_image_method_patches_.back().label);
+}
+
 void CodeGeneratorX86::RecordMethodBssEntryPatch(HInvoke* invoke) {
   size_t index = invoke->IsInvokeInterface()
       ? invoke->AsInvokeInterface()->GetSpecialInputIndex()
@@ -5900,6 +5922,7 @@ void CodeGeneratorX86::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* linke
   DCHECK(linker_patches->empty());
   size_t size =
       boot_image_method_patches_.size() +
+      app_image_method_patches_.size() +
       method_bss_entry_patches_.size() +
       boot_image_type_patches_.size() +
       app_image_type_patches_.size() +
@@ -5923,6 +5946,7 @@ void CodeGeneratorX86::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* linke
     DCHECK(boot_image_type_patches_.empty());
     DCHECK(boot_image_string_patches_.empty());
   }
+  DCHECK_IMPLIES(!GetCompilerOptions().IsAppImage(), app_image_method_patches_.empty());
   DCHECK_IMPLIES(!GetCompilerOptions().IsAppImage(), app_image_type_patches_.empty());
   if (GetCompilerOptions().IsBootImage()) {
     EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::IntrinsicReferencePatch>>(
@@ -5930,6 +5954,8 @@ void CodeGeneratorX86::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* linke
   } else {
     EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::BootImageRelRoPatch>>(
         boot_image_other_patches_, linker_patches);
+    EmitPcRelativeLinkerPatches<linker::LinkerPatch::MethodAppImageRelRoPatch>(
+        app_image_method_patches_, linker_patches);
     EmitPcRelativeLinkerPatches<linker::LinkerPatch::TypeAppImageRelRoPatch>(
         app_image_type_patches_, linker_patches);
   }

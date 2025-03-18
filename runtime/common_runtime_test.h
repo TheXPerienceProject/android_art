@@ -32,7 +32,6 @@
 #include "base/os.h"
 #include "base/unix_file/fd_file.h"
 #include "dex/art_dex_file_loader.h"
-#include "dex/compact_dex_level.h"
 // TODO: Add inl file and avoid including inl.
 #include "obj_ptr-inl.h"
 #include "runtime_globals.h"
@@ -191,6 +190,10 @@ class CommonRuntimeTestImpl : public CommonArtTestImpl {
         dexes, out_file, method_frequency, type_frequency, /*for_boot_image=*/ true);
   }
 
+  ObjPtr<mirror::Class> FindClass(const char* descriptor,
+                                  Handle<mirror::ClassLoader> class_loader) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   std::unique_ptr<Runtime> runtime_;
 
   // The class_linker_, java_lang_dex_file_, and boot_class_path_ are all
@@ -203,7 +206,7 @@ class CommonRuntimeTestImpl : public CommonArtTestImpl {
   // This only looks into the current class loader and does not recurse into the parents.
   std::vector<const DexFile*> GetDexFiles(jobject jclass_loader);
   std::vector<const DexFile*> GetDexFiles(Thread* self, Handle<mirror::ClassLoader> class_loader)
-    REQUIRES_SHARED(Locks::mutator_lock_);
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Get the first dex file from a PathClassLoader. Will abort if it is null.
   const DexFile* GetFirstDexFile(jobject jclass_loader);
@@ -307,6 +310,11 @@ class CheckJniAbortCatcher {
 #define TEST_DISABLED_FOR_KERNELS_WITH_CACHE_SEGFAULT()                                   \
   if (CacheOperationsMaySegFault()) {                                                     \
     GTEST_SKIP() << "WARNING: TEST DISABLED ON KERNEL THAT SEGFAULT ON CACHE OPERATIONS"; \
+  }
+
+#define TEST_DISABLED_ON_VM() \
+  if (RunningOnVM()) {        \
+    GTEST_SKIP();             \
   }
 
 }  // namespace art

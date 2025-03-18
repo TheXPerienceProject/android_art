@@ -37,6 +37,7 @@
 #include "thread.h"
 #include "utils/atomic_dex_ref_map-inl.h"
 #include "verifier/method_verifier-inl.h"
+#include "verifier/reg_type_cache.h"
 
 namespace art {
 namespace verifier {
@@ -79,7 +80,7 @@ class VerifierDepsTest : public CommonCompilerDriverTest {
     Handle<mirror::ClassLoader> class_loader_handle(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader_)));
     ObjPtr<mirror::Class> klass =
-        class_linker_->FindClass(soa.Self(), name.c_str(), class_loader_handle);
+        class_linker_->FindClass(soa.Self(), name.c_str(), name.length(), class_loader_handle);
     if (klass == nullptr) {
       DCHECK(soa.Self()->IsExceptionPending());
       soa.Self()->ClearException();
@@ -153,27 +154,25 @@ class VerifierDepsTest : public CommonCompilerDriverTest {
 
     for (const ClassAccessor::Method& method : accessor.GetMethods()) {
       ArtMethod* resolved_method =
-          class_linker_->ResolveMethod<ClassLinker::ResolveMode::kNoChecks>(
+          class_linker_->ResolveMethodId(
               method.GetIndex(),
               dex_cache_handle,
-              class_loader_handle,
-              /* referrer= */ nullptr,
-              method.GetInvokeType(class_def->access_flags_));
+              class_loader_handle);
       CHECK(resolved_method != nullptr);
       if (method_name == resolved_method->GetName()) {
+        ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
+        RegTypeCache reg_types(
+            soa.Self(), class_linker_, arena_pool, class_loader_handle, primary_dex_file_);
         std::unique_ptr<MethodVerifier> verifier(
             MethodVerifier::CreateVerifier(soa.Self(),
+                                           &reg_types,
                                            callbacks_->GetVerifierDeps(),
-                                           primary_dex_file_,
                                            dex_cache_handle,
-                                           class_loader_handle,
                                            *class_def,
                                            method.GetCodeItem(),
                                            method.GetIndex(),
                                            method.GetAccessFlags(),
-                                           /* can_load_classes= */ true,
-                                           /* verify to dump */ false,
-                                           /* allow_thread_suspension= */ true,
+                                           /* verify_to_dump= */ false,
                                            /* api_level= */ 0));
         verifier->Verify();
         soa.Self()->SetVerifierDeps(nullptr);
@@ -221,9 +220,8 @@ class VerifierDepsTest : public CommonCompilerDriverTest {
       const std::vector<bool>& verified_classes = deps.GetVerifiedClasses(*dex_file);
       ASSERT_EQ(verified_classes.size(), dex_file->NumClassDefs());
       for (uint32_t i = 0; i < dex_file->NumClassDefs(); ++i) {
-        const dex::ClassDef& class_def = dex_file->GetClassDef(i);
-        const char* descriptor = dex_file->GetClassDescriptor(class_def);
-        cls.Assign(class_linker_->FindClass(soa.Self(), descriptor, class_loader_handle));
+        cls.Assign(class_linker_->FindClass(
+            soa.Self(), *dex_file, dex_file->GetClassDef(i).class_idx_, class_loader_handle));
         if (cls == nullptr) {
           CHECK(soa.Self()->IsExceptionPending());
           soa.Self()->ClearException();
@@ -274,8 +272,9 @@ class VerifierDepsTest : public CommonCompilerDriverTest {
       for (auto& set : storage) {
         for (auto& entry : set) {
           std::string actual_destination =
-              verifier_deps_->GetStringFromId(dex_file, entry.GetDestination());
-          std::string actual_source = verifier_deps_->GetStringFromId(dex_file, entry.GetSource());
+              verifier_deps_->GetStringFromIndex(dex_file, entry.GetDestination());
+          std::string actual_source =
+              verifier_deps_->GetStringFromIndex(dex_file, entry.GetSource());
           if ((expected_destination == actual_destination) && (expected_source == actual_source)) {
             return true;
           }
@@ -352,19 +351,19 @@ TEST_F(VerifierDepsTest, StringToId) {
 
   dex::StringIndex id_Main1 = verifier_deps_->GetIdFromString(*primary_dex_file_, "LMain;");
   ASSERT_LT(id_Main1.index_, primary_dex_file_->NumStringIds());
-  ASSERT_EQ("LMain;", verifier_deps_->GetStringFromId(*primary_dex_file_, id_Main1));
+  ASSERT_STREQ("LMain;", verifier_deps_->GetStringFromIndex(*primary_dex_file_, id_Main1));
 
   dex::StringIndex id_Main2 = verifier_deps_->GetIdFromString(*primary_dex_file_, "LMain;");
   ASSERT_LT(id_Main2.index_, primary_dex_file_->NumStringIds());
-  ASSERT_EQ("LMain;", verifier_deps_->GetStringFromId(*primary_dex_file_, id_Main2));
+  ASSERT_STREQ("LMain;", verifier_deps_->GetStringFromIndex(*primary_dex_file_, id_Main2));
 
   dex::StringIndex id_Lorem1 = verifier_deps_->GetIdFromString(*primary_dex_file_, "Lorem ipsum");
   ASSERT_GE(id_Lorem1.index_, primary_dex_file_->NumStringIds());
-  ASSERT_EQ("Lorem ipsum", verifier_deps_->GetStringFromId(*primary_dex_file_, id_Lorem1));
+  ASSERT_STREQ("Lorem ipsum", verifier_deps_->GetStringFromIndex(*primary_dex_file_, id_Lorem1));
 
   dex::StringIndex id_Lorem2 = verifier_deps_->GetIdFromString(*primary_dex_file_, "Lorem ipsum");
   ASSERT_GE(id_Lorem2.index_, primary_dex_file_->NumStringIds());
-  ASSERT_EQ("Lorem ipsum", verifier_deps_->GetStringFromId(*primary_dex_file_, id_Lorem2));
+  ASSERT_STREQ("Lorem ipsum", verifier_deps_->GetStringFromIndex(*primary_dex_file_, id_Lorem2));
 
   ASSERT_EQ(id_Main1, id_Main2);
   ASSERT_EQ(id_Lorem1, id_Lorem2);

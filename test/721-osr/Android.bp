@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-721-osr-expected-stdout",
         ":art-run-test-721-osr-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

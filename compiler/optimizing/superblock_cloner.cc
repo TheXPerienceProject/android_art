@@ -134,7 +134,7 @@ void SuperblockCloner::DeepCloneEnvironmentWithRemapping(HInstruction* copy_inst
   if (orig_env->GetParent() != nullptr) {
     DeepCloneEnvironmentWithRemapping(copy_instr, orig_env->GetParent());
   }
-  HEnvironment* copy_env = new (arena_) HEnvironment(arena_, *orig_env, copy_instr);
+  HEnvironment* copy_env = HEnvironment::Create(arena_, *orig_env, copy_instr);
 
   for (size_t i = 0; i < orig_env->Size(); i++) {
     HInstruction* env_input = orig_env->GetInstructionAt(i);
@@ -882,6 +882,18 @@ bool SuperblockCloner::IsSubgraphClonable() const {
     return false;
   }
 
+  // The values in live_outs should be defined in a block that dominates exit_block.
+  for (const auto& live_out : live_outs) {
+    DCHECK_EQ(exits.size(), 1u);
+    HInstruction* value = live_out.first;
+    if (!value->GetBlock()->Dominates(exits[0])) {
+      // This case can only happen when `value` is used in a catch phi, so the graph must contain a
+      // catch block.
+      DCHECK(graph_->HasTryCatch());
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -959,7 +971,8 @@ void SuperblockCloner::Run() {
     DumpInputSets();
   }
 
-  CollectLiveOutsAndCheckClonable(&live_outs_);
+  bool result = CollectLiveOutsAndCheckClonable(&live_outs_);
+  DCHECK(result);
   // Find an area in the graph for which control flow information should be adjusted.
   FindAndSetLocalAreaForAdjustments();
   ConstructSubgraphClosedSSA();
@@ -997,21 +1010,13 @@ void SuperblockCloner::CleanUp() {
   // transformation it could happen that there is such block with a phi with a single input.
   // As this is needed to be processed we also simplify phis with multiple same inputs here.
   for (auto entry : *bb_map_) {
-    HBasicBlock* orig_block = entry.first;
-    for (HInstructionIterator inst_it(orig_block->GetPhis()); !inst_it.Done(); inst_it.Advance()) {
-      HPhi* phi = inst_it.Current()->AsPhi();
-      if (ArePhiInputsTheSame(phi)) {
-        phi->ReplaceWith(phi->InputAt(0));
-        orig_block->RemovePhi(phi);
-      }
-    }
-
-    HBasicBlock* copy_block = GetBlockCopy(orig_block);
-    for (HInstructionIterator inst_it(copy_block->GetPhis()); !inst_it.Done(); inst_it.Advance()) {
-      HPhi* phi = inst_it.Current()->AsPhi();
-      if (ArePhiInputsTheSame(phi)) {
-        phi->ReplaceWith(phi->InputAt(0));
-        copy_block->RemovePhi(phi);
+    for (HBasicBlock* block : {entry.first, entry.second}) {
+      for (HInstructionIterator inst_it(block->GetPhis()); !inst_it.Done(); inst_it.Advance()) {
+        HPhi* phi = inst_it.Current()->AsPhi();
+        if (ArePhiInputsTheSame(phi)) {
+          phi->ReplaceWith(phi->InputAt(0));
+          block->RemovePhi(phi);
+        }
       }
     }
   }

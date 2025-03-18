@@ -47,8 +47,8 @@ license {
     ],
 }
 
-cc_defaults {
-    name: "dt_fd_forward-defaults",
+art_cc_library {
+    name: "libdt_fd_forward",
     host_supported: true,
     srcs: ["dt_fd_forward.cc"],
     defaults: ["art_defaults"],
@@ -74,21 +74,9 @@ cc_defaults {
         "dt_fd_forward_export",
         "art_libartbase_headers", // For strlcpy emulation.
     ],
-}
 
-art_cc_library {
-    name: "libdt_fd_forward",
-    defaults: ["dt_fd_forward-defaults"],
     apex_available: [
         "com.android.art",
         "com.android.art.debug",
-    ],
-}
-
-art_cc_library {
-    name: "libdt_fd_forwardd",
-    defaults: [
-        "art_debug_defaults",
-        "dt_fd_forward-defaults",
     ],
 }

@@ -61,7 +61,7 @@ class ExceptionTest : public CommonRuntimeTest {
     StackHandleScope<2> hs(soa.Self());
     Handle<mirror::ClassLoader> class_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("ExceptionHandle"))));
-    my_klass_ = class_linker_->FindClass(soa.Self(), "LExceptionHandle;", class_loader);
+    my_klass_ = FindClass("LExceptionHandle;", class_loader);
     ASSERT_TRUE(my_klass_ != nullptr);
     Handle<mirror::Class> klass(hs.NewHandle(my_klass_));
     class_linker_->EnsureInitialized(soa.Self(), klass, true, true);

@@ -85,8 +85,8 @@ class UnstartedRuntimeTestBase : public CommonRuntimeTest {
     StackHandleScope<2> hs(self);
 
     // Create the fake boot classloader. Any instance is fine, they are technically interchangeable.
-    Handle<mirror::Class> boot_cp_class = hs.NewHandle(class_linker_->FindClass(
-        self, "Ljava/lang/BootClassLoader;", ScopedNullHandle<mirror::ClassLoader>()));
+    Handle<mirror::Class> boot_cp_class = hs.NewHandle(
+        FindClass("Ljava/lang/BootClassLoader;", ScopedNullHandle<mirror::ClassLoader>()));
     CHECK(boot_cp_class != nullptr);
     CHECK(class_linker_->EnsureInitialized(
         self, boot_cp_class, /*can_init_fields=*/ true, /*can_init_parents=*/ true));

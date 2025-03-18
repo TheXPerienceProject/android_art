@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-666-dex-cache-itf-expected-stdout",
         ":art-run-test-666-dex-cache-itf-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

@@ -25,6 +25,7 @@ public class Exceptions {
       Class<?> exceptionClass,
       Method exceptionEventMethod,
       Method exceptionCaughtEventMethod);
+  public static native void disableExceptionTracing(Thread thr);
 
   public static native void enableExceptionCatchEvent(Thread thr);
   public static native void enableExceptionEvent(Thread thr);

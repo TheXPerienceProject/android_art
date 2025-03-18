@@ -413,7 +413,7 @@ public class DexUseManagerLocal {
 
         // TODO(jiakaiz): Investigate whether it should also be considered as isolated process if
         // `Process.isSdkSandboxUid` returns true.
-        boolean isolatedProcess = Process.isIsolatedUid(Binder.getCallingUid());
+        boolean isolatedProcess = Process.isIsolatedUid(mInjector.getCallingUid());
         long lastUsedAtMs = mInjector.getCurrentTimeMillis();
 
         for (var entry : classLoaderContextByDexContainerFile.entrySet()) {
@@ -588,7 +588,7 @@ public class DexUseManagerLocal {
     @GuardedBy("mLock")
     private boolean isOwningPackageForSecondaryDexLocked(
             @NonNull PackageState pkgState, @NonNull String dexPath) {
-        UserHandle userHandle = Binder.getCallingUserHandle();
+        UserHandle userHandle = mInjector.getCallingUserHandle();
         List<String> locations = mSecondaryDexLocationManager.getLocations(pkgState, userHandle);
         for (int i = 0; i < locations.size(); i++) {
             if (Utils.pathStartsWith(dexPath, locations.get(i))) {
@@ -663,7 +663,7 @@ public class DexUseManagerLocal {
                             .computeIfAbsent(owningPackageName, k -> new PackageDexUse())
                             .mSecondaryDexUseByDexFile.computeIfAbsent(
                                     dexPath, k -> new SecondaryDexUse());
-            secondaryDexUse.mUserHandle = Binder.getCallingUserHandle();
+            secondaryDexUse.mUserHandle = mInjector.getCallingUserHandle();
             SecondaryDexUseRecord record = secondaryDexUse.mRecordByLoader.computeIfAbsent(
                     DexLoader.create(loadingPackageName, isolatedProcess),
                     k -> new SecondaryDexUseRecord());
@@ -1390,6 +1390,15 @@ public class DexUseManagerLocal {
         @NonNull
         public ArtManagerLocal getArtManagerLocal() {
             return Objects.requireNonNull(LocalManagerRegistry.getManager(ArtManagerLocal.class));
+        }
+
+        @NonNull
+        public UserHandle getCallingUserHandle() {
+            return Binder.getCallingUserHandle();
+        }
+
+        public int getCallingUid() {
+            return Binder.getCallingUid();
         }
     }
 }

@@ -191,7 +191,7 @@ java_test_host {
         "compatibility-tradefed",
         "tradefed",
     ],
-    data: [
+    device_common_data: [
         ":library_container_app",
         ":libnativeloader_system_shared_lib",
         ":libnativeloader_system_ext_shared_lib",

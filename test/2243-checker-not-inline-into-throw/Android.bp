@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-2243-checker-not-inline-into-throw-expected-stdout",
         ":art-run-test-2243-checker-not-inline-into-throw-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
     // Include the Java source files in the test's artifacts, to make Checker assertions
     // available to the TradeFed test runner.
     include_srcs: true,

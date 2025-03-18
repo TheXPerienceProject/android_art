@@ -35,7 +35,7 @@ TEST_F(CompilerReflectionTest, StaticMainMethod) {
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
 
-  ObjPtr<mirror::Class> klass = class_linker_->FindClass(soa.Self(), "LMain;", class_loader);
+  ObjPtr<mirror::Class> klass = FindClass("LMain;", class_loader);
   ASSERT_TRUE(klass != nullptr);
 
   ArtMethod* method = klass->FindClassMethod("main",

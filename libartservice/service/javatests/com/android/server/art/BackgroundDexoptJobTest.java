@@ -79,7 +79,7 @@ public class BackgroundDexoptJobTest {
     @Mock private BackgroundDexoptJob.Injector mInjector;
     @Mock private ArtManagerLocal mArtManagerLocal;
     @Mock private PackageManagerLocal mPackageManagerLocal;
-    @Mock private PackageManagerLocal.FilteredSnapshot mSnapshot;
+    @Mock private PackageManagerLocal.FilteredSnapshot mSnapshot1, mSnapshot2;
     @Mock private JobScheduler mJobScheduler;
     @Mock private BackgroundDexoptJobService mJobService;
     @Mock private JobParameters mJobParameters;
@@ -93,8 +93,6 @@ public class BackgroundDexoptJobTest {
         lenient()
                 .when(SystemProperties.getBoolean(eq("pm.dexopt.disable_bg_dexopt"), anyBoolean()))
                 .thenReturn(false);
-
-        lenient().when(mPackageManagerLocal.withFilteredSnapshot()).thenReturn(mSnapshot);
 
         mConfig = new Config();
 
@@ -123,15 +121,19 @@ public class BackgroundDexoptJobTest {
 
     @Test
     public void testStart() {
+        when(mPackageManagerLocal.withFilteredSnapshot())
+                .thenReturn(mSnapshot1)
+                .thenReturn(mSnapshot2);
+
         when(mArtManagerLocal.dexoptPackages(
-                     same(mSnapshot), eq(ReasonMapping.REASON_BG_DEXOPT), any(), any(), any()))
+                     same(mSnapshot1), eq(ReasonMapping.REASON_BG_DEXOPT), any(), any(), any()))
                 .thenReturn(mDexoptResultByPass);
 
         Result result = Utils.getFuture(mBackgroundDexoptJob.start());
         assertThat(result).isInstanceOf(CompletedResult.class);
         assertThat(((CompletedResult) result).dexoptResultByPass()).isEqualTo(mDexoptResultByPass);
 
-        verify(mArtManagerLocal).cleanup(same(mSnapshot));
+        verify(mArtManagerLocal).cleanup(same(mSnapshot2));
     }
 
     @Test

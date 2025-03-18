@@ -58,10 +58,17 @@ def main():
               defaults: ["art-run-test-{mode}-data-defaults"],
           }}
 
+          // This filegroup is so that the host prebuilt etc can depend on a device genrule,
+          // as prebuilt_etc doesn't have the equivalent of device_common_srcs.
+          filegroup {{
+              name: "{name}-fg",
+              device_common_srcs: [":{name}-tmp"],
+          }}
+
           // Install in the output directory to make it accessible for tests.
           prebuilt_etc_host {{
               name: "{name}",
-              src: ":{name}-tmp",
+              src: ":{name}-fg",
               sub_dir: "art",
               filename: "{name}.zip",
           }}
@@ -85,10 +92,17 @@ def main():
             cmd: TEST_BUILD_COMMON_ARGS + "--hiddenapi $(location hiddenapi) --mode {mode} --test-dir-regex 'art/test/....?-[^/]*hiddenapi' $(in)",
         }}
 
+        // This filegroup is so that the host prebuilt etc can depend on a device genrule,
+        // as prebuilt_etc doesn't have the equivalent of device_common_srcs.
+        filegroup {{
+            name: "{name}-fg",
+            device_common_srcs: [":{name}-tmp"],
+        }}
+
         // Install in the output directory to make it accessible for tests.
         prebuilt_etc_host {{
             name: "{name}",
-            src: ":{name}-tmp",
+            src: ":{name}-fg",
             sub_dir: "art",
             filename: "{name}.zip",
         }}
@@ -97,16 +111,13 @@ def main():
       f.write(textwrap.dedent(f"""
         genrule_defaults {{
             name: "art-run-test-{mode}-data-defaults",
-            tool_files: [
-                "run_test_build.py",
-                ":art-run-test-bootclasspath",
-            ],
             srcs: [
                 // Since genrules are sandboxed, all the sources they use must be listed in
                 // the Android.bp file. Some tests have symlinks to files from other tests, and
                 // those must also be listed to avoid a dangling symlink in the sandbox.
                 "jvmti-common/*.java",
                 "utils/python/**/*.py",
+                ":art-run-test-bootclasspath",
                 ":development_docs",
                 ":asm-9.6-filegroup",
                 ":ojluni-AbstractCollection",
@@ -117,6 +128,13 @@ def main():
                 "988-method-trace/trace_fib.cc",
                 "1953-pop-frame/src/art/Test1953.java",
                 "1953-pop-frame/src/art/SuspendEvents.java",
+                // Files needed to generate runner scripts.
+                "testrunner/*.py",
+                "knownfailures.json",
+                "default_run.py",
+                "globals.py",
+                "run-test",
+                "run_test_build.py",
             ],
             tools: [
                 "android-smali",
@@ -135,23 +153,30 @@ def main():
       f.write(textwrap.dedent(f"""
         java_genrule {{
             name: "{name}-tmp",
-            out: ["{name}.zip"],
+            out: ["{name}.tgz"],
             srcs: [
                 {srcs}
             ],
-            tools: ["merge_zips"],
-            cmd: "$(location merge_zips) $(out) $(in)",
+            tool_files: ["merge_zips_to_tgz.py"],
+            cmd: "$(location merge_zips_to_tgz.py) $(out) $(in)",
+        }}
+
+        // This filegroup is so that the host prebuilt etc can depend on a device genrule,
+        // as prebuilt_etc doesn't have the equivalent of device_common_srcs.
+        filegroup {{
+            name: "{name}-fg",
+            device_common_srcs: [":{name}-tmp"],
         }}
 
         // Install in the output directory to make it accessible for tests.
         prebuilt_etc_host {{
             name: "{name}",
-            src: ":{name}-tmp",
+            src: ":{name}-fg",
             required: [
                 {deps}
             ],
             sub_dir: "art",
-            filename: "{name}.zip",
+            filename: "{name}.tgz",
         }}
         """))
 
@@ -169,10 +194,17 @@ def main():
             cmd: "echo $(in) > $(out)",
         }}
 
+        // This filegroup is so that the host prebuilt etc can depend on a device genrule,
+        // as prebuilt_etc doesn't have the equivalent of device_common_srcs.
+        filegroup {{
+            name: "{name}-fg",
+            device_common_srcs: [":{name}-tmp"],
+        }}
+
         // Phony target used to install all shards
         prebuilt_etc_host {{
             name: "{name}",
-            src: ":{name}-tmp",
+            src: ":{name}-fg",
             required: [
                 {deps}
             ],

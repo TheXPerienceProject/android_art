@@ -88,35 +88,6 @@ END_FUNCTION \name
 END_MACRO
 
     /*
-     * Jni dlsym lookup stub.
-     */
-DEFINE_FUNCTION art_jni_dlsym_lookup_stub
-    INCREASE_FRAME 8              // Align stack.
-    pushl %fs:THREAD_SELF_OFFSET  // Pass Thread::Current().
-    CFI_ADJUST_CFA_OFFSET(4)
-    // Call artFindNativeMethod() for normal native and artFindNativeMethodRunnable()
-    // for @FastNative or @CriticalNative.
-    movl (%esp), %eax                                // Thread* self
-    movl THREAD_TOP_QUICK_FRAME_OFFSET(%eax), %eax   // uintptr_t tagged_quick_frame
-    andl LITERAL(TAGGED_JNI_SP_MASK_TOGGLED32), %eax // ArtMethod** sp
-    movl (%eax), %eax                                // ArtMethod* method
-    testl LITERAL(ACCESS_FLAGS_METHOD_IS_FAST_NATIVE | ACCESS_FLAGS_METHOD_IS_CRITICAL_NATIVE), \
-          ART_METHOD_ACCESS_FLAGS_OFFSET(%eax)
-    jne .Llookup_stub_fast_or_critical_native
-    call SYMBOL(artFindNativeMethod)  // (Thread*)
-    jmp .Llookup_stub_continue
-.Llookup_stub_fast_or_critical_native:
-    call SYMBOL(artFindNativeMethodRunnable)  // (Thread*)
-.Llookup_stub_continue:
-    DECREASE_FRAME 12             // Remove argument & padding.
-    testl %eax, %eax              // Check if returned method code is null.
-    jz .Lno_native_code_found     // If null, jump to return to handle.
-    jmp *%eax                     // Otherwise, tail call to intended method.
-.Lno_native_code_found:
-    ret
-END_FUNCTION art_jni_dlsym_lookup_stub
-
-    /*
      * Jni dlsym lookup stub for @CriticalNative.
      */
 DEFINE_FUNCTION art_jni_dlsym_lookup_critical_stub

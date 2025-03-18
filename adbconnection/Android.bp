@@ -43,18 +43,11 @@ cc_defaults {
         "libbase",
         "libadbconnection_client",
     ],
-    target: {
-        host: {
-        },
-        darwin: {
-            enabled: false,
-        },
-    },
     header_libs: [
         "libnativehelper_header_only",
         "dt_fd_forward_export",
     ],
-    required: [
+    runtime_libs: [
         "libjdwp",
         "libdt_fd_forward",
     ],

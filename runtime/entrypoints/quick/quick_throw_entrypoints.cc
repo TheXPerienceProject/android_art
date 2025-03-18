@@ -123,7 +123,10 @@ extern "C" Context* artThrowStringBoundsFromCode(int index, int length, Thread* 
 extern "C" Context* artThrowStackOverflowFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
-  ThrowStackOverflowError(self);
+  // Throw a stack overflow error for the quick stack. This is needed to throw stack overflow
+  // errors on the simulated stack, which is used for quick code when building for the simulator.
+  // See kQuickStackType for more details.
+  ThrowStackOverflowError<kQuickStackType>(self);
   std::unique_ptr<Context> context = self->QuickDeliverException();
   DCHECK(context != nullptr);
   return context.release();

@@ -414,52 +414,46 @@ void* OpenNativeLibrary(JNIEnv* env,
     }
   }
 
-  std::lock_guard<std::mutex> guard(g_namespaces_mutex);
-
+  NativeLoaderNamespace* ns;
+  const char* ns_descr;
   {
-    NativeLoaderNamespace* ns = g_namespaces->FindNamespaceByClassLoader(env, class_loader);
-    if (ns != nullptr) {
-      *needs_native_bridge = ns->IsBridged();
-      Result<void*> handle = ns->Load(path);
-      ALOGD("Load %s using ns %s from class loader (caller=%s): %s",
-            path,
-            ns->name().c_str(),
-            caller_location == nullptr ? "<unknown>" : caller_location,
-            handle.ok() ? "ok" : handle.error().message().c_str());
-      if (!handle.ok()) {
-        *error_msg = strdup(handle.error().message().c_str());
+    std::lock_guard<std::mutex> guard(g_namespaces_mutex);
+
+    ns = g_namespaces->FindNamespaceByClassLoader(env, class_loader);
+    ns_descr = "class loader";
+
+    if (ns == nullptr) {
+      // This is the case where the classloader was not created by ApplicationLoaders
+      // In this case we create an isolated not-shared namespace for it.
+      const std::string empty_dex_path;
+      Result<NativeLoaderNamespace*> res =
+          CreateClassLoaderNamespaceLocked(env,
+                                           target_sdk_version,
+                                           class_loader,
+                                           nativeloader::API_DOMAIN_DEFAULT,
+                                           /*is_shared=*/false,
+                                           empty_dex_path,
+                                           library_path_j,
+                                           /*permitted_path_j=*/nullptr,
+                                           /*uses_library_list_j=*/nullptr);
+      if (!res.ok()) {
+        ALOGD("Failed to create isolated ns for %s (caller=%s)",
+              path,
+              caller_location == nullptr ? "<unknown>" : caller_location);
+        *error_msg = strdup(res.error().message().c_str());
         return nullptr;
       }
-      return handle.value();
+      ns = res.value();
+      ns_descr = "isolated";
     }
   }
 
-  // This is the case where the classloader was not created by ApplicationLoaders
-  // In this case we create an isolated not-shared namespace for it.
-  const std::string empty_dex_path;
-  Result<NativeLoaderNamespace*> isolated_ns =
-      CreateClassLoaderNamespaceLocked(env,
-                                       target_sdk_version,
-                                       class_loader,
-                                       nativeloader::API_DOMAIN_DEFAULT,
-                                       /*is_shared=*/false,
-                                       empty_dex_path,
-                                       library_path_j,
-                                       /*permitted_path_j=*/nullptr,
-                                       /*uses_library_list_j=*/nullptr);
-  if (!isolated_ns.ok()) {
-    ALOGD("Failed to create isolated ns for %s (caller=%s)",
-          path,
-          caller_location == nullptr ? "<unknown>" : caller_location);
-    *error_msg = strdup(isolated_ns.error().message().c_str());
-    return nullptr;
-  }
-
-  *needs_native_bridge = isolated_ns.value()->IsBridged();
-  Result<void*> handle = isolated_ns.value()->Load(path);
-  ALOGD("Load %s using isolated ns %s (caller=%s): %s",
+  *needs_native_bridge = ns->IsBridged();
+  Result<void*> handle = ns->Load(path);
+  ALOGD("Load %s using %s ns %s (caller=%s): %s",
         path,
-        isolated_ns.value()->name().c_str(),
+        ns_descr,
+        ns->name().c_str(),
         caller_location == nullptr ? "<unknown>" : caller_location,
         handle.ok() ? "ok" : handle.error().message().c_str());
   if (!handle.ok()) {

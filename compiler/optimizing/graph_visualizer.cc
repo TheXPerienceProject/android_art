@@ -374,7 +374,11 @@ class HGraphVisualizerPrinter final : public HGraphDelegateVisitor {
       str << "->";
       DumpLocation(str, move->GetDestination());
     }
-    StartAttributeStream("moves") <<  moves;
+    StartAttributeStream("moves") << moves;
+  }
+
+  void VisitParameterValue(HParameterValue* instruction) override {
+    StartAttributeStream("is_this") << std::boolalpha << instruction->IsThis() << std::noboolalpha;
   }
 
   void VisitIntConstant(HIntConstant* instruction) override {
@@ -396,6 +400,7 @@ class HGraphVisualizerPrinter final : public HGraphDelegateVisitor {
   void VisitPhi(HPhi* phi) override {
     StartAttributeStream("reg") << phi->GetRegNumber();
     StartAttributeStream("is_catch_phi") << std::boolalpha << phi->IsCatchPhi() << std::noboolalpha;
+    StartAttributeStream("is_live") << std::boolalpha << phi->IsLive() << std::noboolalpha;
   }
 
   void VisitMemoryBarrier(HMemoryBarrier* barrier) override {
@@ -470,20 +475,34 @@ class HGraphVisualizerPrinter final : public HGraphDelegateVisitor {
         << bounds_check->IsStringCharAt() << std::noboolalpha;
   }
 
+  void VisitSuspendCheck(HSuspendCheck* suspend_check) override {
+    StartAttributeStream("is_no_op")
+        << std::boolalpha << suspend_check->IsNoOp() << std::noboolalpha;
+  }
+
   void VisitArrayGet(HArrayGet* array_get) override {
     StartAttributeStream("is_string_char_at") << std::boolalpha
         << array_get->IsStringCharAt() << std::noboolalpha;
   }
 
   void VisitArraySet(HArraySet* array_set) override {
-    StartAttributeStream("value_can_be_null") << std::boolalpha
-        << array_set->GetValueCanBeNull() << std::noboolalpha;
-    StartAttributeStream("needs_type_check") << std::boolalpha
-        << array_set->NeedsTypeCheck() << std::noboolalpha;
+    StartAttributeStream("value_can_be_null")
+        << std::boolalpha << array_set->GetValueCanBeNull() << std::noboolalpha;
+    StartAttributeStream("needs_type_check")
+        << std::boolalpha << array_set->NeedsTypeCheck() << std::noboolalpha;
+    StartAttributeStream("static_type_of_array_is_object_array")
+        << std::boolalpha << array_set->StaticTypeOfArrayIsObjectArray() << std::noboolalpha;
     StartAttributeStream("can_trigger_gc")
         << std::boolalpha << array_set->GetSideEffects().Includes(SideEffects::CanTriggerGC())
         << std::noboolalpha;
     StartAttributeStream("write_barrier_kind") << array_set->GetWriteBarrierKind();
+  }
+
+  void VisitNewInstance(HNewInstance* new_instance) override {
+    StartAttributeStream("is_finalizable")
+        << std::boolalpha << new_instance->IsFinalizable() << std::noboolalpha;
+    StartAttributeStream("is_partial_materialization")
+        << std::boolalpha << new_instance->IsPartialMaterialization() << std::noboolalpha;
   }
 
   void VisitCompare(HCompare* compare) override {
@@ -556,6 +575,8 @@ class HGraphVisualizerPrinter final : public HGraphDelegateVisitor {
                                                       /* with type */ false);
     StartAttributeStream("field_type") << iset->GetFieldType();
     StartAttributeStream("write_barrier_kind") << iset->GetWriteBarrierKind();
+    StartAttributeStream("value_can_be_null")
+        << std::boolalpha << iset->GetValueCanBeNull() << std::noboolalpha;
   }
 
   void VisitStaticFieldGet(HStaticFieldGet* sget) override {
@@ -571,6 +592,8 @@ class HGraphVisualizerPrinter final : public HGraphDelegateVisitor {
                                                       /* with type */ false);
     StartAttributeStream("field_type") << sset->GetFieldType();
     StartAttributeStream("write_barrier_kind") << sset->GetWriteBarrierKind();
+    StartAttributeStream("value_can_be_null")
+        << std::boolalpha << sset->GetValueCanBeNull() << std::noboolalpha;
   }
 
   void VisitUnresolvedInstanceFieldGet(HUnresolvedInstanceFieldGet* field_access) override {

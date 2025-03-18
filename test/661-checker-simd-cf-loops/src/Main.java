@@ -59,7 +59,7 @@ public class Main {
   ///     CHECK-DAG: <<LoopP:j\d+>>   VecPredWhile [<<Phi>>,{{i\d+}}]                       loop:<<Loop>>      outer_loop:none
   //
   ///     CHECK-DAG: <<Load1:d\d+>>   VecLoad [<<Arr:l\d+>>,<<Phi>>,<<LoopP>>]              loop:<<Loop>>      outer_loop:none
-  ///     CHECK-DAG: <<Cond:j\d+>>    VecCondition [<<Load1>>,<<Vec100>>,<<LoopP>>]         loop:<<Loop>>      outer_loop:none
+  ///     CHECK-DAG: <<Cond:j\d+>>    VecEqual [<<Load1>>,<<Vec100>>,<<LoopP>>]             loop:<<Loop>>      outer_loop:none
   ///     CHECK-DAG: <<CondR:j\d+>>   VecPredNot [<<Cond>>,<<LoopP>>]                       loop:<<Loop>>      outer_loop:none
   ///     CHECK-DAG: <<AddT:d\d+>>    VecAdd [<<Load1>>,<<Vec99>>,<<CondR>>]                loop:<<Loop>>      outer_loop:none
   ///     CHECK-DAG: <<StT:d\d+>>     VecStore [<<Arr>>,<<Phi>>,<<AddT>>,<<CondR>>]         loop:<<Loop>>      outer_loop:none
@@ -289,18 +289,45 @@ public class Main {
   // Test condition types.
   //
 
-  /// CHECK-START-ARM64: void Main.$compile$noinline$SimpleBelow(int[]) loop_optimization (after)
+  /// CHECK-START-ARM64: void Main.$compile$noinline$SimpleCondition(int[]) loop_optimization (before)
+  //
+  ///     CHECK-DAG: <<C0:i\d+>>      IntConstant 0                                                           loop:none
+  ///     CHECK-DAG: <<C100:i\d+>>    IntConstant 100                                                         loop:none
+  ///     CHECK-DAG: <<C199:i\d+>>    IntConstant 199                                                         loop:none
+  //
+  ///     CHECK-DAG: <<Phi:i\d+>>     Phi [<<C0>>,{{i\d+}}]                                                   loop:<<Loop:B\d+>>
+  ///     CHECK-DAG: <<Load:i\d+>>    ArrayGet [<<Arr:l\d+>>,<<Phi>>]                                         loop:<<Loop>>
+  ///     CHECK-DAG: <<Cond:z\d+>>    NotEqual [<<Load>>,<<C100>>]                                            loop:<<Loop>>
+  ///     CHECK-DAG:                  If [<<Cond>>]                                                           loop:<<Loop>>
+  //
+  ///     CHECK-DAG:                  ArraySet [<<Arr>>,<<Phi>>,<<C199>>]                                     loop:<<Loop>>
+  //
+  /// CHECK-START-ARM64: void Main.$compile$noinline$SimpleCondition(int[]) loop_optimization (after)
   /// CHECK-IF:     hasIsaFeature("sve") and os.environ.get('ART_FORCE_TRY_PREDICATED_SIMD') == 'true'
   //
-  ///     CHECK-NOT: VecLoad
+  ///     CHECK-DAG: <<C0:i\d+>>      IntConstant 0                                                           loop:none
+  ///     CHECK-DAG: <<C100:i\d+>>    IntConstant 100                                                         loop:none
+  ///     CHECK-DAG: <<C199:i\d+>>    IntConstant 199                                                         loop:none
+  //
+  ///     CHECK-DAG: <<Vec100:d\d+>>  VecReplicateScalar [<<C100>>,{{j\d+}}]           packed_type:Int32      loop:none
+  ///     CHECK-DAG: <<Vec199:d\d+>>  VecReplicateScalar [<<C199>>,{{j\d+}}]           packed_type:Int32      loop:none
+  //
+  ///     CHECK-DAG: <<Phi:i\d+>>     Phi [<<C0>>,{{i\d+}}]                                                   loop:<<Loop:B\d+>>
+  ///     CHECK-DAG: <<LoopP:j\d+>>   VecPredWhile [<<Phi>>,{{i\d+}}]                                         loop:<<Loop>>
+  //
+  ///     CHECK-DAG: <<Load:d\d+>>    VecLoad [<<Arr:l\d+>>,<<Phi>>,<<LoopP>>]         packed_type:Int32      loop:<<Loop>>
+  ///     CHECK-DAG: <<Cond:j\d+>>    VecNotEqual [<<Load>>,<<Vec100>>,<<LoopP>>]      packed_type:Int32      loop:<<Loop>>
+  ///     CHECK-DAG: <<CondR:j\d+>>   VecPredNot [<<Cond>>,<<LoopP>>]                  packed_type:Int32      loop:<<Loop>>
+  ///     CHECK-DAG:                  VecStore [<<Arr>>,<<Phi>>,<<Vec199>>,<<CondR>>]  packed_type:Int32      loop:<<Loop>>
   //
   /// CHECK-FI:
   //
-  // TODO: Support other conditions.
-  public static void $compile$noinline$SimpleBelow(int[] x) {
+  // Example of a condition being vectorized. See loop_optimization_test.cc and codegen_test.cc for
+  // full testing of vector conditions.
+  public static void $compile$noinline$SimpleCondition(int[] x) {
     for (int i = 0; i < USED_ARRAY_LENGTH; i++) {
       int val = x[i];
-      if (val < MAGIC_VALUE_C) {
+      if (val == MAGIC_VALUE_C) {
         x[i] += MAGIC_ADD_CONST;
       }
     }
@@ -451,6 +478,44 @@ public class Main {
   }
 
   //
+  // Non-condition if statements.
+  //
+
+  /// CHECK-START-ARM64: void Main.$compile$noinline$SingleBoolean(int[], boolean) loop_optimization (after)
+  /// CHECK-IF:     hasIsaFeature("sve") and os.environ.get('ART_FORCE_TRY_PREDICATED_SIMD') == 'true'
+  //
+  ///     CHECK-NOT: VecLoad
+  //
+  /// CHECK-FI:
+  //
+  // Check that single boolean if statements are not vectorized because only binary condition if
+  // statements are supported.
+  public static void $compile$noinline$SingleBoolean(int[] x, boolean y) {
+    for (int i = 0; i < USED_ARRAY_LENGTH; i++) {
+      if (y) {
+        x[i] += MAGIC_ADD_CONST;
+      }
+    }
+  }
+
+  /// CHECK-START-ARM64: void Main.$compile$noinline$InstanceOf(int[], java.lang.Object) loop_optimization (after)
+  /// CHECK-IF:     hasIsaFeature("sve") and os.environ.get('ART_FORCE_TRY_PREDICATED_SIMD') == 'true'
+  //
+  ///     CHECK-NOT: VecLoad
+  //
+  /// CHECK-FI:
+  //
+  // Check that control flow without a condition is not vectorized because only binary condition if
+  // statements are supported.
+  public static void $compile$noinline$InstanceOf(int[] x, Object y) {
+    for (int i = 0; i < USED_ARRAY_LENGTH; i++) {
+      if (y instanceof Main) {
+        x[i] += MAGIC_ADD_CONST;
+      }
+    }
+  }
+
+  //
   // Main driver.
   //
 
@@ -513,8 +578,8 @@ public class Main {
 
     // Conditions.
     initIntArray(intArray);
-    $compile$noinline$SimpleBelow(intArray);
-    expectIntEquals(23121, IntArraySum(intArray));
+    $compile$noinline$SimpleCondition(intArray);
+    expectIntEquals(18864, IntArraySum(intArray));
 
     // Idioms.
     initIntArray(intArray);
@@ -551,6 +616,16 @@ public class Main {
     initIntArray(intArray);
     $compile$noinline$BrokenInduction(intArray);
     expectIntEquals(18963, IntArraySum(intArray));
+
+    // Non-condition if statements.
+    initIntArray(intArray);
+    $compile$noinline$SingleBoolean(intArray, true);
+    expectIntEquals(27279, IntArraySum(intArray));
+
+    initIntArray(intArray);
+    Main instance = new Main();
+    $compile$noinline$InstanceOf(intArray, instance);
+    expectIntEquals(27279, IntArraySum(intArray));
 
     System.out.println("passed");
   }

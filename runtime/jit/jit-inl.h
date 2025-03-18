@@ -17,6 +17,7 @@
 #ifndef ART_RUNTIME_JIT_JIT_INL_H_
 #define ART_RUNTIME_JIT_JIT_INL_H_
 
+#include "android-base/macros.h"
 #include "jit/jit.h"
 
 #include "art_method.h"
@@ -28,12 +29,20 @@ namespace art HIDDEN {
 namespace jit {
 
 inline void Jit::AddSamples(Thread* self, ArtMethod* method) {
+  // `hotness_count_` should always be 0 for intrinsics (which are considered hot from the first
+  // call), and for memory shared methods which use `shared_method_hotness`.
+  DCHECK_IMPLIES(method->IsIntrinsic(), method->CounterIsHot());
+  DCHECK_IMPLIES(method->IsMemorySharedMethod(), method->CounterIsHot());
+
   if (method->CounterIsHot()) {
     if (method->IsMemorySharedMethod()) {
-      if (self->DecrementSharedMethodHotness() == 0) {
-        self->ResetSharedMethodHotness();
-      } else {
-        return;
+      // Intrinsics do not use `shared_method_hotness`.
+      if (!method->IsIntrinsic()) {
+        if (self->DecrementSharedMethodHotness() == 0) {
+          self->ResetSharedMethodHotness();
+        } else {
+          return;
+        }
       }
     } else {
       method->ResetCounter(Runtime::Current()->GetJITOptions()->GetWarmupThreshold());

@@ -4265,6 +4265,7 @@ void X86_64Assembler::andl(CpuRegister reg, const Address& address) {
 
 void X86_64Assembler::andl(CpuRegister dst, const Immediate& imm) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  CHECK(imm.is_int32());  // andl only supports 32b immediate.
   EmitOptionalRex32(dst);
   EmitComplex(4, Operand(dst), imm);
 }

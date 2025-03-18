@@ -46,15 +46,14 @@ class ProfileCompilationInfoTest : public CommonRuntimeTest {
   }
 
  protected:
-  std::vector<ArtMethod*> GetVirtualMethods(jobject class_loader,
-                                            const std::string& clazz) {
+  std::vector<ArtMethod*> GetVirtualMethods(jobject class_loader, const char* clazz) {
     ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
     Thread* self = Thread::Current();
     ScopedObjectAccess soa(self);
     StackHandleScope<1> hs(self);
     Handle<mirror::ClassLoader> h_loader(
         hs.NewHandle(self->DecodeJObject(class_loader)->AsClassLoader()));
-    ObjPtr<mirror::Class> klass = class_linker->FindClass(self, clazz.c_str(), h_loader);
+    ObjPtr<mirror::Class> klass = FindClass(clazz, h_loader);
 
     const auto pointer_size = class_linker->GetImagePointerSize();
     std::vector<ArtMethod*> methods;

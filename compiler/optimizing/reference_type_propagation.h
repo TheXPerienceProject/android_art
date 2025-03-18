@@ -26,6 +26,8 @@
 
 namespace art HIDDEN {
 
+class HandleCache;
+
 /**
  * Propagates reference types to instructions.
  */
@@ -58,10 +60,10 @@ class ReferenceTypePropagation : public HOptimization {
 
   static constexpr const char* kReferenceTypePropagationPassName = "reference_type_propagation";
 
-  // Fix the reference type for an instruction whose inputs have changed.
-  // For a select instruction, the reference types of the inputs are merged
-  // and the resulting reference type is set on the select instruction.
-  static void FixUpInstructionType(HInstruction* instruction, HandleCache* handle_cache);
+  // Fix the reference type for an HSelect instruction whose inputs have changed. The reference
+  // types of the inputs are merged and the resulting reference type is set on the HSelect
+  // instruction.
+  static void FixUpSelectType(HSelect* select, HandleCache* handle_cache);
 
  private:
   class RTPVisitor;

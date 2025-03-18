@@ -45,19 +45,20 @@ void Riscv64Context::Reset() {
 void Riscv64Context::FillCalleeSaves(uint8_t* frame, const QuickMethodFrameInfo& frame_info) {
   // RA is at top of the frame
   DCHECK_NE(frame_info.CoreSpillMask() & (1u << RA), 0u);
-  gprs_[RA] = CalleeSaveAddress(frame, 0, frame_info.FrameSizeInBytes());
+  const size_t frame_size = frame_info.FrameSizeInBytes();
+  gprs_[RA] = CalleeSaveAddress<InstructionSet::kRiscv64>(frame, 0, frame_size);
 
   // Core registers come first, from the highest down to the lowest, with the exception of RA/X1.
   int spill_pos = 1;
   for (uint32_t core_reg : HighToLowBits(frame_info.CoreSpillMask() & ~(1u << RA))) {
-    gprs_[core_reg] = CalleeSaveAddress(frame, spill_pos, frame_info.FrameSizeInBytes());
+    gprs_[core_reg] = CalleeSaveAddress<InstructionSet::kRiscv64>(frame, spill_pos, frame_size);
     ++spill_pos;
   }
   DCHECK_EQ(spill_pos, POPCOUNT(frame_info.CoreSpillMask()));
 
   // FP registers come second, from the highest down to the lowest.
   for (uint32_t fp_reg : HighToLowBits(frame_info.FpSpillMask())) {
-    fprs_[fp_reg] = CalleeSaveAddress(frame, spill_pos, frame_info.FrameSizeInBytes());
+    fprs_[fp_reg] = CalleeSaveAddress<InstructionSet::kRiscv64>(frame, spill_pos, frame_size);
     ++spill_pos;
   }
   DCHECK_EQ(spill_pos, POPCOUNT(frame_info.CoreSpillMask()) + POPCOUNT(frame_info.FpSpillMask()));

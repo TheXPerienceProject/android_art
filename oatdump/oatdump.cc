@@ -1180,14 +1180,14 @@ class OatDumper {
       hs.reset(new StackHandleScope<1>(Thread::Current()));
       vios->Stream() << "VERIFIER TYPE ANALYSIS:\n";
       ScopedIndentation indent2(vios);
-      verifier.reset(DumpVerifier(vios,
-                                  soa,
-                                  hs.get(),
-                                  dex_method_idx,
-                                  &dex_file,
-                                  class_def,
-                                  code_item,
-                                  method_access_flags));
+      DumpVerifier(vios,
+                   soa,
+                   hs.get(),
+                   dex_method_idx,
+                   &dex_file,
+                   class_def,
+                   code_item,
+                   method_access_flags);
     }
     {
       vios->Stream() << "OatMethodOffsets ";
@@ -1493,14 +1493,14 @@ class OatDumper {
            code_item_accessor.HasCodeItem();
   }
 
-  verifier::MethodVerifier* DumpVerifier(VariableIndentationOutputStream* vios,
-                                         ScopedObjectAccess& soa,
-                                         StackHandleScope<1>* hs,
-                                         uint32_t dex_method_idx,
-                                         const DexFile* dex_file,
-                                         const dex::ClassDef& class_def,
-                                         const dex::CodeItem* code_item,
-                                         uint32_t method_access_flags)
+  void DumpVerifier(VariableIndentationOutputStream* vios,
+                    ScopedObjectAccess& soa,
+                    StackHandleScope<1>* hs,
+                    uint32_t dex_method_idx,
+                    const DexFile* dex_file,
+                    const dex::ClassDef& class_def,
+                    const dex::CodeItem* code_item,
+                    uint32_t method_access_flags)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     if ((method_access_flags & kAccNative) == 0) {
       Runtime* const runtime = Runtime::Current();
@@ -1508,13 +1508,13 @@ class OatDumper {
       Handle<mirror::DexCache> dex_cache = hs->NewHandle(
           runtime->GetClassLinker()->RegisterDexFile(*dex_file, options_.class_loader_->Get()));
       CHECK(dex_cache != nullptr);
-      ArtMethod* method = runtime->GetClassLinker()->ResolveMethodWithoutInvokeType(
+      ArtMethod* method = runtime->GetClassLinker()->ResolveMethodId(
           dex_method_idx, dex_cache, *options_.class_loader_);
       if (method == nullptr) {
         soa.Self()->ClearException();
-        return nullptr;
+        return;
       }
-      return verifier::MethodVerifier::VerifyMethodAndDump(
+      verifier::MethodVerifier::VerifyMethodAndDump(
           soa.Self(),
           vios,
           dex_method_idx,
@@ -1526,8 +1526,6 @@ class OatDumper {
           method_access_flags,
           /* api_level= */ 0);
     }
-
-    return nullptr;
   }
 
   void DumpCode(VariableIndentationOutputStream* vios,
@@ -2544,7 +2542,6 @@ static int DumpImages(Runtime* runtime, OatDumperOptions* options, std::ostream*
   ScopedNullHandle<mirror::ClassLoader> null_class_loader;
   options->class_loader_ = &null_class_loader;
 
-  ScopedObjectAccess soa(Thread::Current());
   if (options->app_image_ != nullptr) {
     if (!options->oat_filename_.has_value()) {
       LOG(ERROR) << "Can not dump app image without app oat file";
@@ -2569,6 +2566,7 @@ static int DumpImages(Runtime* runtime, OatDumperOptions* options, std::ostream*
       return EXIT_FAILURE;
     }
     // Open dex files for the image.
+    ScopedObjectAccess soa(Thread::Current());
     std::vector<std::unique_ptr<const DexFile>> dex_files;
     if (!runtime->GetClassLinker()->OpenImageDexFiles(space.get(), &dex_files, &error_msg)) {
       LOG(ERROR) << "Failed to open app image dex files " << options->app_image_ << " with error "
@@ -2584,6 +2582,7 @@ static int DumpImages(Runtime* runtime, OatDumperOptions* options, std::ostream*
     LOG(ERROR) << "No image spaces";
     return EXIT_FAILURE;
   }
+  ScopedObjectAccess soa(Thread::Current());
   for (gc::space::ImageSpace* image_space : heap->GetBootImageSpaces()) {
     int result = DumpImage(image_space, options, os);
     if (result != EXIT_SUCCESS) {
@@ -2804,10 +2803,11 @@ class IMTDumper {
            class_def_index != dex_file->NumClassDefs();
            ++class_def_index) {
         const dex::ClassDef& class_def = dex_file->GetClassDef(class_def_index);
-        const char* descriptor = dex_file->GetClassDescriptor(class_def);
-        h_klass.Assign(class_linker->FindClass(self, descriptor, h_class_loader));
+        h_klass.Assign(
+            class_linker->FindClass(self, *dex_file, class_def.class_idx_, h_class_loader));
         if (h_klass == nullptr) {
-          std::cerr << "Warning: could not load " << descriptor << std::endl;
+          std::cerr << "Warning: could not load "
+                    << dex_file->GetTypeDescriptor(class_def.class_idx_) << std::endl;
           continue;
         }
 
@@ -2930,8 +2930,8 @@ class IMTDumper {
       descriptor = DotToDescriptor(class_name.c_str());
     }
 
-    ObjPtr<mirror::Class> klass =
-        runtime->GetClassLinker()->FindClass(self, descriptor.c_str(), h_loader);
+    ObjPtr<mirror::Class> klass = runtime->GetClassLinker()->FindClass(
+        self, descriptor.c_str(), descriptor.length(), h_loader);
 
     if (klass == nullptr) {
       self->ClearException();

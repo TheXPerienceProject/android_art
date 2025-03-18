@@ -111,8 +111,8 @@ static jclass Class_classForName(JNIEnv* env, jclass, jstring javaName, jboolean
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(javaLoader)));
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  Handle<mirror::Class> c(
-      hs.NewHandle(class_linker->FindClass(soa.Self(), descriptor.c_str(), class_loader)));
+  Handle<mirror::Class> c = hs.NewHandle(
+      class_linker->FindClass(soa.Self(), descriptor.c_str(), descriptor.length(), class_loader));
   if (UNLIKELY(c == nullptr)) {
     StackHandleScope<2> hs2(soa.Self());
     Handle<mirror::Object> cause = hs2.NewHandle(soa.Self()->GetException());

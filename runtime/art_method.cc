@@ -364,8 +364,8 @@ uint32_t ArtMethod::FindCatchBlock(Handle<mirror::Class> exception_type,
 NO_STACK_PROTECTOR
 void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue* result,
                        const char* shorty) {
-  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEnd())) {
-    ThrowStackOverflowError(self);
+  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEnd<kNativeStackType>())) {
+    ThrowStackOverflowError<kNativeStackType>(self);
     return;
   }
 
@@ -723,49 +723,55 @@ void ArtMethod::SetIntrinsic(Intrinsics intrinsic) {
   // classes. We don't set kHasSingleImplementation for those methods.
   DCHECK(IsStatic() || IsFinal() || GetDeclaringClass()->IsFinal()) <<
       "Potential conflict with kAccSingleImplementation";
-  static const int kAccFlagsShift = CTZ(kAccIntrinsicBits);
+  static constexpr int kAccFlagsShift = CTZ(kAccIntrinsicBits);
   uint32_t intrinsic_u32 = enum_cast<uint32_t>(intrinsic);
   DCHECK_LE(intrinsic_u32, kAccIntrinsicBits >> kAccFlagsShift);
   uint32_t intrinsic_bits = intrinsic_u32 << kAccFlagsShift;
   uint32_t new_value = (GetAccessFlags() & ~kAccIntrinsicBits) | kAccIntrinsic | intrinsic_bits;
-  if (kIsDebugBuild) {
-    uint32_t java_flags = (GetAccessFlags() & kAccJavaFlagsMask);
-    bool is_constructor = IsConstructor();
-    bool is_synchronized = IsSynchronized();
-    bool skip_access_checks = SkipAccessChecks();
-    bool is_fast_native = IsFastNative();
-    bool is_critical_native = IsCriticalNative();
-    bool is_copied = IsCopied();
-    bool is_miranda = IsMiranda();
-    bool is_default = IsDefault();
-    bool is_default_conflict = IsDefaultConflicting();
-    bool is_compilable = IsCompilable();
-    bool must_count_locks = MustCountLocks();
-    // Recompute flags instead of getting them from the current access flags because
-    // access flags may have been changed to deduplicate warning messages (b/129063331).
-    uint32_t hiddenapi_flags = hiddenapi::CreateRuntimeFlags(this);
-    SetAccessFlags(new_value);
-    DCHECK_EQ(java_flags, (GetAccessFlags() & kAccJavaFlagsMask));
-    DCHECK_EQ(is_constructor, IsConstructor());
-    DCHECK_EQ(is_synchronized, IsSynchronized());
-    DCHECK_EQ(skip_access_checks, SkipAccessChecks());
-    DCHECK_EQ(is_fast_native, IsFastNative());
-    DCHECK_EQ(is_critical_native, IsCriticalNative());
-    DCHECK_EQ(is_copied, IsCopied());
-    DCHECK_EQ(is_miranda, IsMiranda());
-    DCHECK_EQ(is_default, IsDefault());
-    DCHECK_EQ(is_default_conflict, IsDefaultConflicting());
-    DCHECK_EQ(is_compilable, IsCompilable());
-    DCHECK_EQ(must_count_locks, MustCountLocks());
-    // Only DCHECK that we have preserved the hidden API access flags if the
-    // original method was not in the SDK list. This is because the core image
-    // does not have the access flags set (b/77733081).
-    if ((hiddenapi_flags & kAccHiddenapiBits) != kAccPublicApi) {
-      DCHECK_EQ(hiddenapi_flags, hiddenapi::GetRuntimeFlags(this)) << PrettyMethod();
-    }
-  } else {
-    SetAccessFlags(new_value);
-  }
+
+  // These flags shouldn't be overridden by setting the intrinsic.
+  uint32_t java_flags = (GetAccessFlags() & kAccJavaFlagsMask);
+  bool is_constructor = IsConstructor();
+  bool is_synchronized = IsSynchronized();
+  bool skip_access_checks = SkipAccessChecks();
+  bool is_fast_native = IsFastNative();
+  bool is_critical_native = IsCriticalNative();
+  bool is_copied = IsCopied();
+  bool is_miranda = IsMiranda();
+  bool is_default = IsDefault();
+  bool is_default_conflict = IsDefaultConflicting();
+  bool is_compilable = IsCompilable();
+  bool must_count_locks = MustCountLocks();
+
+#ifdef ART_TARGET_ANDROID
+  // Recompute flags instead of getting them from the current access flags because
+  // access flags may have been changed to deduplicate warning messages (b/129063331).
+  // For host builds, the flags from the api list (i.e. hiddenapi::CreateRuntimeFlags) might not
+  // have the right value.
+  uint32_t hiddenapi_flags = hiddenapi::CreateRuntimeFlags(this);
+#endif
+
+  SetAccessFlags(new_value);
+  // Intrinsics are considered hot from the first call.
+  SetHotCounter();
+
+  // DCHECK that the flags weren't overridden.
+  DCHECK_EQ(java_flags, (GetAccessFlags() & kAccJavaFlagsMask));
+  DCHECK_EQ(is_constructor, IsConstructor());
+  DCHECK_EQ(is_synchronized, IsSynchronized());
+  DCHECK_EQ(skip_access_checks, SkipAccessChecks());
+  DCHECK_EQ(is_fast_native, IsFastNative());
+  DCHECK_EQ(is_critical_native, IsCriticalNative());
+  DCHECK_EQ(is_copied, IsCopied());
+  DCHECK_EQ(is_miranda, IsMiranda());
+  DCHECK_EQ(is_default, IsDefault());
+  DCHECK_EQ(is_default_conflict, IsDefaultConflicting());
+  DCHECK_EQ(is_compilable, IsCompilable());
+  DCHECK_EQ(must_count_locks, MustCountLocks());
+
+#ifdef ART_TARGET_ANDROID
+  DCHECK_EQ(hiddenapi_flags, hiddenapi::GetRuntimeFlags(this)) << PrettyMethod();
+#endif
 }
 
 void ArtMethod::SetNotIntrinsic() {

@@ -274,6 +274,20 @@ interface IArtd {
     long getProfileSize(in com.android.server.art.ProfilePath profile);
 
     /**
+     * Returns a notification handle to wait for a process to finish profile save
+     * ({@code ProfileCompilationInfo::Save}).
+     *
+     * A forced profile save can be triggered by sending {@code SIGUSR1} to the process.
+     *
+     * Throws fatal and non-fatal errors.
+     *
+     * Not supported in Pre-reboot Dexopt mode.
+     */
+    @PropagateAllowBlocking
+    com.android.server.art.IArtdNotification initProfileSaveNotification(
+            in com.android.server.art.ProfilePath.PrimaryCurProfilePath profilePath, int pid);
+
+    /**
      * Moves the staged files of the given artifacts and profiles to the permanent locations,
      * replacing old files if they exist. Removes the staged files and restores the old files at
      * best effort if any error occurs.

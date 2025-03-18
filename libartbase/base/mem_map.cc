@@ -531,10 +531,9 @@ MemMap MemMap::MapFileAtAddress(uint8_t* expected_ptr,
 
   // Note that we do not allow MAP_FIXED unless reuse == true or we have an existing
   // reservation, i.e we expect this mapping to be contained within an existing map.
-  if (reuse) {
+  if (reuse && expected_ptr != nullptr) {
     // reuse means it is okay that it overlaps an existing page mapping.
     // Only use this if you actually made the page reservation yourself.
-    CHECK(expected_ptr != nullptr);
     DCHECK(reservation == nullptr);
     DCHECK(error_msg != nullptr);
     DCHECK(ContainedWithinExistingMap(expected_ptr, byte_count, error_msg))

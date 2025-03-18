@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "math_entrypoints.h"
+#include "entrypoints/quick/runtime_entrypoints_list.h"
 
 #include <limits>
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,15 @@
  * limitations under the License.
  */
 
-#ifndef ART_LIBDEXFILE_DEX_COMPACT_DEX_LEVEL_H_
-#define ART_LIBDEXFILE_DEX_COMPACT_DEX_LEVEL_H_
+public class Impl2 implements Interface1, Interface2 {
 
-namespace art {
+  @Override
+  public String methodOne() {
+    return "Impl2.methodOne";
+  }
 
-// Optimization level for compact dex generation.
-// TODO(b/256664509): Clean this up.
-enum class CompactDexLevel {
-  // Level none means not generated.
-  kCompactDexLevelNone,
-  // Level fast means optimizations that don't take many resources to perform.
-  kCompactDexLevelFast,
-};
-
-}  // namespace art
-
-#endif  // ART_LIBDEXFILE_DEX_COMPACT_DEX_LEVEL_H_
+  @Override
+  public String methodTwo() {
+    return "Impl2.methodTwo";
+  }
+}

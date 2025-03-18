@@ -43,10 +43,8 @@ TEST_F(ProxyTest, ProxyClassHelper) {
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
 
-  Handle<mirror::Class> I(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LInterfaces$I;", class_loader)));
-  Handle<mirror::Class> J(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LInterfaces$J;", class_loader)));
+  Handle<mirror::Class> I = hs.NewHandle(FindClass("LInterfaces$I;", class_loader));
+  Handle<mirror::Class> J = hs.NewHandle(FindClass("LInterfaces$J;", class_loader));
   ASSERT_TRUE(I != nullptr);
   ASSERT_TRUE(J != nullptr);
 
@@ -77,10 +75,8 @@ TEST_F(ProxyTest, ProxyFieldHelper) {
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
 
-  Handle<mirror::Class> I(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LInterfaces$I;", class_loader)));
-  Handle<mirror::Class> J(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LInterfaces$J;", class_loader)));
+  Handle<mirror::Class> I = hs.NewHandle(FindClass("LInterfaces$I;", class_loader));
+  Handle<mirror::Class> J = hs.NewHandle(FindClass("LInterfaces$J;", class_loader));
   ASSERT_TRUE(I != nullptr);
   ASSERT_TRUE(J != nullptr);
 

@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-411-optimizing-arith-expected-stdout",
         ":art-run-test-411-optimizing-arith-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

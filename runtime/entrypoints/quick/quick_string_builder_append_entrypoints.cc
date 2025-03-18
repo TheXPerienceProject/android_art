@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "quick_entrypoints.h"
+#include "runtime_entrypoints_list.h"
 
 #include "string_builder_append.h"
 #include "obj_ptr-inl.h"
@@ -23,7 +23,8 @@ namespace art HIDDEN {
 
 extern "C" mirror::String* artStringBuilderAppend(uint32_t format,
                                                   const uint32_t* args,
-                                                  Thread* self) {
+                                                  Thread* self)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
   return StringBuilderAppend::AppendF(format, args, self).Ptr();
 }
 

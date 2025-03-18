@@ -20,7 +20,12 @@ import static com.android.server.art.DexUseManagerLocal.CheckedSecondaryDexInfo;
 import static com.android.server.art.DexUseManagerLocal.DexLoader;
 import static com.android.server.art.model.DexoptStatus.DexContainerFileDexoptStatus;
 
+import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
+import android.annotation.SuppressLint;
+import android.content.pm.PackageManager;
+import android.content.pm.SigningInfo;
+import android.content.pm.SigningInfoException;
 import android.os.Build;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
@@ -34,6 +39,7 @@ import com.android.server.pm.pkg.PackageState;
 
 import dalvik.system.VMRuntime;
 
+import java.io.File;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -65,13 +71,13 @@ public class DumpHelper {
     }
 
     /** Handles {@link ArtManagerLocal#dump(PrintWriter, PackageManagerLocal.FilteredSnapshot)}. */
-    public void dump(
-            @NonNull PrintWriter pw, @NonNull PackageManagerLocal.FilteredSnapshot snapshot) {
+    public void dump(@NonNull PrintWriter pw,
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, boolean verifySdmSignatures) {
         snapshot.getPackageStates()
                 .values()
                 .stream()
                 .sorted(Comparator.comparing(PackageState::getPackageName))
-                .forEach(pkgState -> dumpPackage(pw, snapshot, pkgState));
+                .forEach(pkgState -> dumpPackage(pw, snapshot, pkgState, verifySdmSignatures));
         pw.printf("\nCurrent GC: %s\n", ArtJni.getGarbageCollector());
     }
 
@@ -80,8 +86,8 @@ public class DumpHelper {
      * ArtManagerLocal#dumpPackage(PrintWriter, PackageManagerLocal.FilteredSnapshot, String)}.
      */
     public void dumpPackage(@NonNull PrintWriter pw,
-            @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
-            @NonNull PackageState pkgState) {
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull PackageState pkgState,
+            boolean verifySdmSignatures) {
         if (pkgState.isApex() || pkgState.getAndroidPackage() == null) {
             return;
         }
@@ -124,7 +130,7 @@ public class DumpHelper {
 
         ipw.increaseIndent();
         for (List<DexContainerFileDexoptStatus> fileStatuses : primaryStatusesByDexPath.values()) {
-            dumpPrimaryDex(ipw, snapshot, fileStatuses, packageName);
+            dumpPrimaryDex(ipw, snapshot, fileStatuses, packageName, verifySdmSignatures);
         }
         if (!secondaryStatusesByDexPath.isEmpty()) {
             ipw.println("known secondary dex files:");
@@ -141,7 +147,8 @@ public class DumpHelper {
 
     private void dumpPrimaryDex(@NonNull IndentingPrintWriter ipw,
             @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
-            List<DexContainerFileDexoptStatus> fileStatuses, @NonNull String packageName) {
+            List<DexContainerFileDexoptStatus> fileStatuses, @NonNull String packageName,
+            boolean verifySdmSignatures) {
         String dexPath = fileStatuses.get(0).getDexContainerFile();
         ipw.printf("path: %s\n", dexPath);
         ipw.increaseIndent();
@@ -149,6 +156,7 @@ public class DumpHelper {
         dumpUsedByOtherApps(ipw, snapshot,
                 mInjector.getDexUseManager().getPrimaryDexLoaders(packageName, dexPath),
                 packageName);
+        dumpSdmStatus(ipw, dexPath, verifySdmSignatures);
         ipw.decreaseIndent();
     }
 
@@ -217,6 +225,68 @@ public class DumpHelper {
         }
     }
 
+    private void dumpSdmStatus(@NonNull IndentingPrintWriter ipw, @NonNull String dexPath,
+            boolean verifySdmSignatures) {
+        if (!android.content.pm.Flags.cloudCompilationPm()) {
+            return;
+        }
+
+        String sdmPath = getSdmPath(dexPath);
+        String status = "";
+        String signature = "skipped";
+        if (mInjector.fileExists(sdmPath)) {
+            // "Pending" means yet to be picked up by dexopt. For now, "pending" is the only status
+            // because SDM files are not supported yet.
+            status = "pending";
+            // This operation is expensive, so hide it behind a flag.
+            if (verifySdmSignatures) {
+                signature = getSdmSignatureStatus(dexPath, sdmPath);
+            }
+        }
+        if (!status.isEmpty()) {
+            ipw.printf("sdm: [sdm-status=%s] [sdm-signature=%s]\n", status, signature);
+        }
+    }
+
+    // The new API usage is safe because it's guarded by a flag. The "NewApi" lint is wrong because
+    // it's meaningless (b/380891026). We have to work around the lint error because there is no
+    // `isAtLeastB` to check yet.
+    // TODO(jiakaiz): Remove this workaround, change @FlaggedApi to @RequiresApi here, and check
+    // `isAtLeastB` at the call site after B SDK is finalized.
+    @FlaggedApi(android.content.pm.Flags.FLAG_CLOUD_COMPILATION_PM)
+    @SuppressLint("NewApi")
+    @NonNull
+    private String getSdmSignatureStatus(@NonNull String dexPath, @NonNull String sdmPath) {
+        SigningInfo sdmSigningInfo;
+        try {
+            sdmSigningInfo =
+                    mInjector.getVerifiedSigningInfo(sdmPath, SigningInfo.VERSION_SIGNING_BLOCK_V3);
+        } catch (SigningInfoException e) {
+            AsLog.w("Failed to verify SDM signature", e);
+            return "invalid-sdm-signature";
+        }
+
+        SigningInfo apkSigningInfo;
+        try {
+            apkSigningInfo =
+                    mInjector.getVerifiedSigningInfo(dexPath, SigningInfo.VERSION_SIGNING_BLOCK_V3);
+        } catch (SigningInfoException e) {
+            AsLog.w("Failed to verify SDM signature", e);
+            return "invalid-apk-signature";
+        }
+
+        if (!sdmSigningInfo.signersMatchExactly(apkSigningInfo)) {
+            return "mismatched-signers";
+        }
+
+        return "verified";
+    }
+
+    @NonNull
+    private static String getSdmPath(@NonNull String dexPath) {
+        return Utils.replaceFileExtension(dexPath, ArtConstants.SECURE_DEX_METADATA_FILE_EXT);
+    }
+
     @NonNull
     private String getLoaderState(
             @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull DexLoader loader) {
@@ -251,6 +321,19 @@ public class DumpHelper {
         @NonNull
         public DexUseManagerLocal getDexUseManager() {
             return GlobalInjector.getInstance().getDexUseManager();
+        }
+
+        public boolean fileExists(@NonNull String path) {
+            return new File(path).exists();
+        }
+
+        // TODO(jiakaiz): See another comment about "NewApi" above.
+        @FlaggedApi(android.content.pm.Flags.FLAG_CLOUD_COMPILATION_PM)
+        @SuppressLint("NewApi")
+        @NonNull
+        public SigningInfo getVerifiedSigningInfo(
+                @NonNull String path, int minAppSigningSchemeVersion) throws SigningInfoException {
+            return PackageManager.getVerifiedSigningInfo(path, minAppSigningSchemeVersion);
         }
     }
 }

@@ -48,8 +48,10 @@ static bool IsInBootImage(ArtMethod* method) {
   return heap->IsBootImageAddress(method);
 }
 
-static bool BootImageAOTCanEmbedMethod(ArtMethod* method, const CompilerOptions& compiler_options) {
-  DCHECK(compiler_options.IsBootImage() || compiler_options.IsBootImageExtension());
+static bool ImageAOTCanEmbedMethod(ArtMethod* method, const CompilerOptions& compiler_options) {
+  DCHECK(compiler_options.IsBootImage() ||
+         compiler_options.IsBootImageExtension() ||
+         compiler_options.IsAppImage());
   ScopedObjectAccess soa(Thread::Current());
   ObjPtr<mirror::Class> klass = method->GetDeclaringClass();
   DCHECK(klass != nullptr);
@@ -103,7 +105,7 @@ HInvokeStaticOrDirect::DispatchInfo HSharpening::SharpenLoadMethod(
     } else if (IsInBootImage(callee)) {
       DCHECK(compiler_options.IsBootImageExtension());
       method_load_kind = MethodLoadKind::kBootImageRelRo;
-    } else if (BootImageAOTCanEmbedMethod(callee, compiler_options)) {
+    } else if (ImageAOTCanEmbedMethod(callee, compiler_options)) {
       method_load_kind = MethodLoadKind::kBootImageLinkTimePcRelative;
     } else if (!has_method_id) {
       method_load_kind = MethodLoadKind::kRuntimeCall;
@@ -135,8 +137,13 @@ HInvokeStaticOrDirect::DispatchInfo HSharpening::SharpenLoadMethod(
     code_ptr_location = CodePtrLocation::kCallArtMethod;
   } else {
     DCHECK(!callee->IsCopied());
-    // Use PC-relative access to the .bss methods array.
-    method_load_kind = MethodLoadKind::kBssEntry;
+    if (compiler_options.IsAppImage() && ImageAOTCanEmbedMethod(callee, compiler_options)) {
+      // Use PC-relative access to the .data.img.rel.ro app image methods array.
+      method_load_kind = MethodLoadKind::kAppImageRelRo;
+    } else {
+      // Use PC-relative access to the .bss methods array.
+      method_load_kind = MethodLoadKind::kBssEntry;
+    }
     code_ptr_location = CodePtrLocation::kCallArtMethod;
   }
 

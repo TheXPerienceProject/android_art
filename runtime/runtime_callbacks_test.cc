@@ -303,8 +303,7 @@ TEST_F(ClassLoadCallbackRuntimeCallbacksTest, ClassLoadCallback) {
       soa.Decode<mirror::ClassLoader>(jclass_loader)));
 
   const char* descriptor_y = "LY;";
-  Handle<mirror::Class> h_Y(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), descriptor_y, class_loader)));
+  Handle<mirror::Class> h_Y = hs.NewHandle(FindClass(descriptor_y, class_loader));
   ASSERT_TRUE(h_Y != nullptr);
 
   bool expect1 = Expect({ "PreDefine:LY; <art-gtest-jars-XandY.jar>",

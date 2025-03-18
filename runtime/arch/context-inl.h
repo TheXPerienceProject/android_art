@@ -17,36 +17,42 @@
 // This file is special-purpose for cases where you want a stack context. Most users should use
 // Context::Create().
 
+#include "arch/instruction_set.h"
 #include "context.h"
 
 #ifndef ART_RUNTIME_ARCH_CONTEXT_INL_H_
 #define ART_RUNTIME_ARCH_CONTEXT_INL_H_
 
-#if defined(__arm__)
 #include "arm/context_arm.h"
-#define RUNTIME_CONTEXT_TYPE arm::ArmContext
-#elif defined(__aarch64__)
 #include "arm64/context_arm64.h"
-#define RUNTIME_CONTEXT_TYPE arm64::Arm64Context
-#elif defined(__riscv)
 #include "riscv64/context_riscv64.h"
-#define RUNTIME_CONTEXT_TYPE riscv64::Riscv64Context
-#elif defined(__i386__)
 #include "x86/context_x86.h"
-#define RUNTIME_CONTEXT_TYPE x86::X86Context
-#elif defined(__x86_64__)
 #include "x86_64/context_x86_64.h"
-#define RUNTIME_CONTEXT_TYPE x86_64::X86_64Context
-#else
-#error unimplemented
-#endif
 
 namespace art {
 
-using RuntimeContextType = RUNTIME_CONTEXT_TYPE;
+namespace detail {
+
+template <InstructionSet>
+struct ContextSelector;
+
+template <>
+struct ContextSelector<InstructionSet::kArm> { using type = arm::ArmContext; };
+template <>
+struct ContextSelector<InstructionSet::kArm64> { using type = arm64::Arm64Context; };
+template <>
+struct ContextSelector<InstructionSet::kRiscv64> { using type = riscv64::Riscv64Context; };
+template <>
+struct ContextSelector<InstructionSet::kX86> { using type = x86::X86Context; };
+template <>
+struct ContextSelector<InstructionSet::kX86_64> { using type = x86_64::X86_64Context; };
+
+}  // namespace detail
+
+template <InstructionSet Isa>
+using RuntimeContextTypeArch = typename detail::ContextSelector<Isa>::type;
+using RuntimeContextType = RuntimeContextTypeArch<kRuntimeQuickCodeISA>;
 
 }  // namespace art
-
-#undef RUNTIME_CONTEXT_TYPE
 
 #endif  // ART_RUNTIME_ARCH_CONTEXT_INL_H_

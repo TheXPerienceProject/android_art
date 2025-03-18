@@ -1467,19 +1467,16 @@ class HVecPredToBoolean final : public HVecOperation {
 //
 // viz. [ p1, .. , pn ]  = [ x1 OP y1 , x2 OP y2, .. , xn OP yn] where OP is CondKind
 // condition.
-//
-// Currently only kEqual is supported by this vector instruction - we don't even define
-// the kCondType here.
-// TODO: support other condition ops.
-class HVecCondition final : public HVecPredSetOperation {
+class HVecCondition : public HVecPredSetOperation {
  public:
-  HVecCondition(ArenaAllocator* allocator,
+  HVecCondition(InstructionKind kind,
+                ArenaAllocator* allocator,
                 HInstruction* left,
                 HInstruction* right,
                 DataType::Type packed_type,
                 size_t vector_length,
-                uint32_t dex_pc) :
-      HVecPredSetOperation(kVecCondition,
+                uint32_t dex_pc = kNoDexPc) :
+      HVecPredSetOperation(kind,
                            allocator,
                            packed_type,
                            SideEffects::None(),
@@ -1494,10 +1491,264 @@ class HVecCondition final : public HVecPredSetOperation {
     SetRawInputAt(1, right);
   }
 
-  DECLARE_INSTRUCTION(VecCondition);
+  DECLARE_ABSTRACT_INSTRUCTION(VecCondition);
+
+  virtual IfCondition GetCondition() const = 0;
+
+  static HVecCondition* Create(HGraph* graph,
+                               IfCondition cond,
+                               HInstruction* lhs,
+                               HInstruction* rhs,
+                               DataType::Type packed_type,
+                               size_t vector_length,
+                               uint32_t dex_pc = kNoDexPc);
 
  protected:
   DEFAULT_COPY_CONSTRUCTOR(VecCondition);
+};
+
+// Instruction to check if two vector inputs are equal to each other.
+class HVecEqual final : public HVecCondition {
+ public:
+  HVecEqual(ArenaAllocator* allocator,
+            HInstruction* left,
+            HInstruction* right,
+            DataType::Type packed_type,
+            size_t vector_length,
+            uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecEqual, allocator, left, right, packed_type, vector_length, dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecEqual);
+
+  IfCondition GetCondition() const override {
+    return kCondEQ;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecEqual);
+};
+
+// Instruction to check if two vector inputs are not equal to each other.
+class HVecNotEqual final : public HVecCondition {
+ public:
+  HVecNotEqual(ArenaAllocator* allocator,
+               HInstruction* left,
+               HInstruction* right,
+               DataType::Type packed_type,
+               size_t vector_length,
+               uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecNotEqual, allocator, left, right, packed_type, vector_length, dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecNotEqual);
+
+  IfCondition GetCondition() const override {
+    return kCondNE;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecNotEqual);
+};
+
+// Instruction to check if one vector input is less than the other.
+class HVecLessThan final : public HVecCondition {
+ public:
+  HVecLessThan(ArenaAllocator* allocator,
+               HInstruction* left,
+               HInstruction* right,
+               DataType::Type packed_type,
+               size_t vector_length,
+               uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecLessThan, allocator, left, right, packed_type, vector_length, dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecLessThan);
+
+  IfCondition GetCondition() const override {
+    return kCondLT;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecLessThan);
+};
+
+// Instruction to check if one vector input is less than or equal to the other.
+class HVecLessThanOrEqual final : public HVecCondition {
+ public:
+  HVecLessThanOrEqual(ArenaAllocator* allocator,
+                      HInstruction* left,
+                      HInstruction* right,
+                      DataType::Type packed_type,
+                      size_t vector_length,
+                      uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecLessThanOrEqual,
+                      allocator,
+                      left,
+                      right,
+                      packed_type,
+                      vector_length,
+                      dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecLessThanOrEqual);
+
+  IfCondition GetCondition() const override {
+    return kCondLE;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecLessThanOrEqual);
+};
+
+// Instruction to check if one vector input is greater than the other.
+class HVecGreaterThan final : public HVecCondition {
+ public:
+  HVecGreaterThan(ArenaAllocator* allocator,
+                  HInstruction* left,
+                  HInstruction* right,
+                  DataType::Type packed_type,
+                  size_t vector_length,
+                  uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecGreaterThan,
+                      allocator,
+                      left,
+                      right,
+                      packed_type,
+                      vector_length,
+                      dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecGreaterThan);
+
+  IfCondition GetCondition() const override {
+    return kCondGT;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecGreaterThan);
+};
+
+// Instruction to check if one vector input is greater than or equal to the other.
+class HVecGreaterThanOrEqual final : public HVecCondition {
+ public:
+  HVecGreaterThanOrEqual(ArenaAllocator* allocator,
+                         HInstruction* left,
+                         HInstruction* right,
+                         DataType::Type packed_type,
+                         size_t vector_length,
+                         uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecGreaterThanOrEqual,
+                      allocator,
+                      left,
+                      right,
+                      packed_type,
+                      vector_length,
+                      dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecGreaterThanOrEqual);
+
+  IfCondition GetCondition() const override {
+    return kCondGE;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecGreaterThanOrEqual);
+};
+
+// Instruction to check if one unsigned vector input is less than the other, using unsigned
+// comparison.
+class HVecBelow final : public HVecCondition {
+ public:
+  HVecBelow(ArenaAllocator* allocator,
+            HInstruction* left,
+            HInstruction* right,
+            DataType::Type packed_type,
+            size_t vector_length,
+            uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecBelow, allocator, left, right, packed_type, vector_length, dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecBelow);
+
+  IfCondition GetCondition() const override {
+    return kCondB;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecBelow);
+};
+
+// Instruction to check if one unsigned vector input is less than or equal to the other, using
+// unsigned comparison.
+class HVecBelowOrEqual final : public HVecCondition {
+ public:
+  HVecBelowOrEqual(ArenaAllocator* allocator,
+                   HInstruction* left,
+                   HInstruction* right,
+                   DataType::Type packed_type,
+                   size_t vector_length,
+                   uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecBelowOrEqual,
+                      allocator,
+                      left,
+                      right,
+                      packed_type,
+                      vector_length,
+                      dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecBelowOrEqual);
+
+  IfCondition GetCondition() const override {
+    return kCondBE;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecBelowOrEqual);
+};
+
+// Instruction to check if one unsigned vector input is greater than the other, using unsigned
+// comparison.
+class HVecAbove final : public HVecCondition {
+ public:
+  HVecAbove(ArenaAllocator* allocator,
+            HInstruction* left,
+            HInstruction* right,
+            DataType::Type packed_type,
+            size_t vector_length,
+            uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecAbove, allocator, left, right, packed_type, vector_length, dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecAbove);
+
+  IfCondition GetCondition() const override {
+    return kCondA;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecAbove);
+};
+
+// Instruction to check if one unsigned vector input is greater than or equal to the other, using
+// unsigned comparison.
+class HVecAboveOrEqual final : public HVecCondition {
+ public:
+  HVecAboveOrEqual(ArenaAllocator* allocator,
+                   HInstruction* left,
+                   HInstruction* right,
+                   DataType::Type packed_type,
+                   size_t vector_length,
+                   uint32_t dex_pc = kNoDexPc)
+      : HVecCondition(kVecAboveOrEqual,
+                      allocator,
+                      left,
+                      right,
+                      packed_type,
+                      vector_length,
+                      dex_pc) {}
+
+  DECLARE_INSTRUCTION(VecAboveOrEqual);
+
+  IfCondition GetCondition() const override {
+    return kCondAE;
+  }
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(VecAboveOrEqual);
 };
 
 // Inverts every component in the predicate vector.
@@ -1506,10 +1757,10 @@ class HVecCondition final : public HVecPredSetOperation {
 class HVecPredNot final : public HVecPredSetOperation {
  public:
   HVecPredNot(ArenaAllocator* allocator,
-                HInstruction* input,
-                DataType::Type packed_type,
-                size_t vector_length,
-                uint32_t dex_pc) :
+              HInstruction* input,
+              DataType::Type packed_type,
+              size_t vector_length,
+              uint32_t dex_pc) :
       HVecPredSetOperation(kVecPredNot,
                            allocator,
                            packed_type,
@@ -1528,6 +1779,11 @@ class HVecPredNot final : public HVecPredSetOperation {
  protected:
   DEFAULT_COPY_CONSTRUCTOR(VecPredNot);
 };
+
+// Return the number of elements of the given type that will fit into a vector of given size.
+inline size_t GetNumberOfElementsInVector(size_t vector_size_in_bytes, DataType::Type type) {
+  return vector_size_in_bytes / DataType::Size(type);
+}
 
 }  // namespace art
 

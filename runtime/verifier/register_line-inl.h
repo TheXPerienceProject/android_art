@@ -30,42 +30,71 @@ namespace verifier {
 // developers that their code will be slow.
 static constexpr bool kDumpLockFailures = true;
 
-inline const RegType& RegisterLine::GetRegisterType(MethodVerifier* verifier, uint32_t vsrc) const {
+inline uint16_t RegisterLine::GetRegisterTypeId(uint32_t vsrc) const {
   // The register index was validated during the static pass, so we don't need to check it here.
   DCHECK_LT(vsrc, num_regs_);
-  return verifier->GetRegTypeCache()->GetFromId(line_[vsrc]);
+  return line_[vsrc];
+}
+
+inline const RegType& RegisterLine::GetRegisterType(MethodVerifier* verifier, uint32_t vsrc) const {
+  return verifier->GetRegTypeCache()->GetFromId(GetRegisterTypeId(vsrc));
 }
 
 template <LockOp kLockOp>
-inline void RegisterLine::SetRegisterType(uint32_t vdst, const RegType& new_type) {
+inline void RegisterLine::SetRegisterTypeImpl(uint32_t vdst, uint16_t new_id) {
   DCHECK_LT(vdst, num_regs_);
-  DCHECK(!new_type.IsLowHalf());
-  DCHECK(!new_type.IsHighHalf());
   // Note: previously we failed when asked to set a conflict. However, conflicts are OK as long
   //       as they are not accessed, and our backends can handle this nowadays.
-  line_[vdst] = new_type.GetId();
+  line_[vdst] = new_id;
   switch (kLockOp) {
     case LockOp::kClear:
       // Clear the monitor entry bits for this register.
       ClearAllRegToLockDepths(vdst);
       break;
     case LockOp::kKeep:
-      // Should only be doing this with reference types.
-      DCHECK(new_type.IsReferenceTypes());
       break;
   }
+}
+
+inline void RegisterLine::SetRegisterType(uint32_t vdst, RegType::Kind new_kind) {
+  DCHECK(!RegType::IsLowHalf(new_kind));
+  DCHECK(!RegType::IsHighHalf(new_kind));
+  SetRegisterTypeImpl<LockOp::kClear>(vdst, RegTypeCache::IdForRegKind(new_kind));
+}
+
+template <LockOp kLockOp>
+inline void RegisterLine::SetRegisterType(uint32_t vdst, const RegType& new_type) {
+  DCHECK(!new_type.IsLowHalf());
+  DCHECK(!new_type.IsHighHalf());
+  // Should only keep locks for reference types.
+  DCHECK_IMPLIES(kLockOp == LockOp::kKeep, new_type.IsReferenceTypes());
+  SetRegisterTypeImpl<kLockOp>(vdst, new_type.GetId());
+}
+
+inline void RegisterLine::SetRegisterTypeWideImpl(uint32_t vdst,
+                                                  uint16_t new_id1,
+                                                  uint16_t new_id2) {
+  DCHECK_LT(vdst + 1, num_regs_);
+  line_[vdst] = new_id1;
+  line_[vdst + 1] = new_id2;
+  // Clear the monitor entry bits for this register.
+  ClearAllRegToLockDepths(vdst);
+  ClearAllRegToLockDepths(vdst + 1);
+}
+
+inline void RegisterLine::SetRegisterTypeWide(uint32_t vdst,
+                                              RegType::Kind new_kind1,
+                                              RegType::Kind new_kind2) {
+  DCHECK(RegType::CheckWidePair(new_kind1, new_kind2));
+  SetRegisterTypeWideImpl(
+      vdst, RegTypeCache::IdForRegKind(new_kind1), RegTypeCache::IdForRegKind(new_kind2));
 }
 
 inline void RegisterLine::SetRegisterTypeWide(uint32_t vdst,
                                               const RegType& new_type1,
                                               const RegType& new_type2) {
-  DCHECK_LT(vdst + 1, num_regs_);
   DCHECK(new_type1.CheckWidePair(new_type2));
-  line_[vdst] = new_type1.GetId();
-  line_[vdst + 1] = new_type2.GetId();
-  // Clear the monitor entry bits for this register.
-  ClearAllRegToLockDepths(vdst);
-  ClearAllRegToLockDepths(vdst + 1);
+  SetRegisterTypeWideImpl(vdst, new_type1.GetId(), new_type2.GetId());
 }
 
 inline void RegisterLine::SetResultTypeToUnknown(RegTypeCache* reg_types) {
@@ -87,6 +116,16 @@ inline void RegisterLine::SetResultRegisterTypeWide(const RegType& new_type1,
   result_[1] = new_type2.GetId();
 }
 
+inline void RegisterLine::SetRegisterTypeForNewInstance(uint32_t vdst,
+                                                        const RegType& uninit_type,
+                                                        uint32_t dex_pc) {
+  DCHECK_LT(vdst, num_regs_);
+  DCHECK(NeedsAllocationDexPc(uninit_type));
+  SetRegisterType<LockOp::kClear>(vdst, uninit_type);
+  EnsureAllocationDexPcsAvailable();
+  allocation_dex_pcs_[vdst] = dex_pc;
+}
+
 inline void RegisterLine::CopyRegister1(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc,
                                  TypeCategory cat) {
   DCHECK(cat == kTypeCategory1nr || cat == kTypeCategoryRef);
@@ -96,6 +135,8 @@ inline void RegisterLine::CopyRegister1(MethodVerifier* verifier, uint32_t vdst,
         << type << "'";
     return;
   }
+  // FIXME: If `vdst == vsrc`, we clear locking information before we try to copy it below. Adding
+  // `move-object v1, v1` to the middle of `OK.runStraightLine()` in run-test 088 makes it fail.
   SetRegisterType<LockOp::kClear>(vdst, type);
   if (!type.IsConflict() &&                                  // Allow conflicts to be copied around.
       ((cat == kTypeCategory1nr && !type.IsCategory1Types()) ||
@@ -104,6 +145,10 @@ inline void RegisterLine::CopyRegister1(MethodVerifier* verifier, uint32_t vdst,
                                                  << " cat=" << static_cast<int>(cat);
   } else if (cat == kTypeCategoryRef) {
     CopyRegToLockDepth(vdst, vsrc);
+    if (allocation_dex_pcs_ != nullptr) {
+      // Copy allocation dex pc for uninitialized types. (Copy unused value for other types.)
+      allocation_dex_pcs_[vdst] = allocation_dex_pcs_[vsrc];
+    }
   }
 }
 
@@ -119,40 +164,32 @@ inline void RegisterLine::CopyRegister2(MethodVerifier* verifier, uint32_t vdst,
   }
 }
 
-inline bool RegisterLine::VerifyRegisterType(MethodVerifier* verifier, uint32_t vsrc,
-                                             const RegType& check_type) {
-  // Verify the src register type against the check type refining the type of the register
-  const RegType& src_type = GetRegisterType(verifier, vsrc);
-  if (UNLIKELY(!check_type.IsAssignableFrom(src_type, verifier))) {
-    enum VerifyError fail_type;
-    if (!check_type.IsNonZeroReferenceTypes() || !src_type.IsNonZeroReferenceTypes()) {
-      // Hard fail if one of the types is primitive, since they are concretely known.
-      fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
-    } else if (check_type.IsUninitializedTypes() || src_type.IsUninitializedTypes()) {
-      // Hard fail for uninitialized types, which don't match anything but themselves.
-      fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
-    } else if (check_type.IsUnresolvedTypes() || src_type.IsUnresolvedTypes()) {
-      fail_type = VERIFY_ERROR_UNRESOLVED_TYPE_CHECK;
-    } else {
-      fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
-    }
-    verifier->Fail(fail_type) << "register v" << vsrc << " has type "
-                               << src_type << " but expected " << check_type;
-    return false;
-  }
-  if (check_type.IsLowHalf()) {
-    const RegType& src_type_h = GetRegisterType(verifier, vsrc + 1);
-    if (UNLIKELY(!src_type.CheckWidePair(src_type_h))) {
-      verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "wide register v" << vsrc << " has type "
-                                                   << src_type << "/" << src_type_h;
-      return false;
+inline bool RegisterLine::NeedsAllocationDexPc(const RegType& reg_type) {
+  return reg_type.IsUninitializedReference() || reg_type.IsUnresolvedUninitializedReference();
+}
+
+inline void RegisterLine::DCheckUniqueNewInstanceDexPc(MethodVerifier* verifier, uint32_t dex_pc) {
+  if (kIsDebugBuild && allocation_dex_pcs_ != nullptr) {
+    // Note: We do not clear the `allocation_dex_pcs_` entries when copying data from
+    // a register line without `allocation_dex_pcs_`, or when we merge types and find
+    // a conflict, so the same dex pc can remain in the `allocation_dex_pcs_` array
+    // but it cannot be recorded for a `new-instance` uninitialized type.
+    RegTypeCache* reg_types = verifier->GetRegTypeCache();
+    for (uint32_t i = 0; i != num_regs_; ++i) {
+      if (NeedsAllocationDexPc(reg_types->GetFromId(line_[i]))) {
+        CHECK_NE(allocation_dex_pcs_[i], dex_pc) << i << " " << reg_types->GetFromId(line_[i]);
+      }
     }
   }
-  // The register at vsrc has a defined type, we know the lower-upper-bound, but this is less
-  // precise than the subtype in vsrc so leave it for reference types. For primitive types
-  // if they are a defined type then they are as precise as we can get, however, for constant
-  // types we may wish to refine them. Unfortunately constant propagation has rendered this useless.
-  return true;
+}
+
+inline void RegisterLine::EnsureAllocationDexPcsAvailable() {
+  DCHECK_NE(num_regs_, 0u);
+  if (allocation_dex_pcs_ == nullptr) {
+    ArenaAllocatorAdapter<uint32_t> allocator(monitors_.get_allocator());
+    allocation_dex_pcs_ = allocator.allocate(num_regs_);
+    std::fill_n(allocation_dex_pcs_, num_regs_, kNoDexPc);
+  }
 }
 
 inline void RegisterLine::VerifyMonitorStackEmpty(MethodVerifier* verifier) const {
@@ -170,21 +207,26 @@ inline size_t RegisterLine::ComputeSize(size_t num_regs) {
 }
 
 inline RegisterLine* RegisterLine::Create(size_t num_regs,
-                                          ScopedArenaAllocator& allocator,
+                                          ArenaAllocator& allocator,
                                           RegTypeCache* reg_types) {
   void* memory = allocator.Alloc(ComputeSize(num_regs));
   return new (memory) RegisterLine(num_regs, allocator, reg_types);
 }
 
 inline RegisterLine::RegisterLine(size_t num_regs,
-                                  ScopedArenaAllocator& allocator,
+                                  ArenaAllocator& allocator,
                                   RegTypeCache* reg_types)
     : num_regs_(num_regs),
+      allocation_dex_pcs_(nullptr),
       monitors_(allocator.Adapter(kArenaAllocVerifier)),
       reg_to_lock_depths_(std::less<uint32_t>(),
                           allocator.Adapter(kArenaAllocVerifier)),
       this_initialized_(false) {
-  std::uninitialized_fill_n(line_, num_regs_, RegTypeCache::kUndefinedCacheId);
+  // `ArenaAllocator` guarantees zero-initialization.
+  static_assert(RegTypeCache::kUndefinedCacheId == 0u);
+  DCHECK(std::all_of(line_,
+                     line_ + num_regs_,
+                     [](auto id) { return id == RegTypeCache::kUndefinedCacheId;}));
   SetResultTypeToUnknown(reg_types);
 }
 
@@ -211,8 +253,18 @@ inline void RegisterLine::ClearRegToLockDepth(size_t reg, size_t depth) {
 
 inline void RegisterLineArenaDelete::operator()(RegisterLine* ptr) const {
   if (ptr != nullptr) {
+    uint32_t num_regs = ptr->NumRegs();
+    uint32_t* allocation_dex_pcs = ptr->allocation_dex_pcs_;
     ptr->~RegisterLine();
-    ProtectMemory(ptr, RegisterLine::ComputeSize(ptr->NumRegs()));
+    ProtectMemory(ptr, RegisterLine::ComputeSize(num_regs));
+    if (allocation_dex_pcs != nullptr) {
+      struct AllocationDexPcsDelete : ArenaDelete<uint32_t> {
+        void operator()(uint32_t* ptr, size_t size) {
+          ProtectMemory(ptr, size);
+        }
+      };
+      AllocationDexPcsDelete()(allocation_dex_pcs, num_regs * sizeof(*allocation_dex_pcs));
+    }
   }
 }
 

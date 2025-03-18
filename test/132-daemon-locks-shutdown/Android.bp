@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-132-daemon-locks-shutdown-expected-stdout",
         ":art-run-test-132-daemon-locks-shutdown-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

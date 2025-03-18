@@ -84,6 +84,15 @@ static jboolean Unsafe_compareAndSetLong(JNIEnv* env, jobject, jobject javaObj, 
   return success ? JNI_TRUE : JNI_FALSE;
 }
 
+static jlong Unsafe_compareAndExchangeLong(
+    JNIEnv* env, jobject, jobject javaObj, jlong offset, jlong expectedValue, jlong newValue) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  // JNI must use non transactional mode.
+  return obj->CaeFieldStrongSequentiallyConsistent64<false>(
+      MemberOffset(offset), expectedValue, newValue);
+}
+
 static jboolean Unsafe_compareAndSwapLong(JNIEnv* env, jobject obj, jobject javaObj, jlong offset,
                                           jlong expectedValue, jlong newValue) {
   // compareAndSetLong has the same semantics as compareAndSwapLong, except for
@@ -386,17 +395,38 @@ static jboolean Unsafe_getBoolean(JNIEnv* env, jobject, jobject javaObj, jlong o
   return obj->GetFieldBoolean(MemberOffset(offset));
 }
 
-static void Unsafe_putBoolean(JNIEnv* env, jobject, jobject javaObj, jlong offset, jboolean newValue) {
+static jboolean Unsafe_getBooleanVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  return obj->GetFieldBooleanVolatile(MemberOffset(offset));
+}
+
+static void Unsafe_putBoolean(JNIEnv* env, jobject, jobject javaObj, jlong offset,
+                              jboolean newValue) {
   ScopedFastNativeObjectAccess soa(env);
   ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
   // JNI must use non transactional mode (SetField8 is non-transactional).
   obj->SetFieldBoolean<false>(MemberOffset(offset), newValue);
 }
 
+static void Unsafe_putBooleanVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset,
+                                      jboolean newValue) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  // JNI must use non transactional mode (SetField8 is non-transactional).
+  obj->SetFieldBooleanVolatile<false>(MemberOffset(offset), newValue);
+}
+
 static jbyte Unsafe_getByte(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
   ScopedFastNativeObjectAccess soa(env);
   ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
   return obj->GetFieldByte(MemberOffset(offset));
+}
+
+static jbyte Unsafe_getByteVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  return obj->GetFieldByteVolatile(MemberOffset(offset));
 }
 
 static void Unsafe_putByte(JNIEnv* env, jobject, jobject javaObj, jlong offset, jbyte newValue) {
@@ -406,10 +436,24 @@ static void Unsafe_putByte(JNIEnv* env, jobject, jobject javaObj, jlong offset, 
   obj->SetFieldByte<false>(MemberOffset(offset), newValue);
 }
 
+static void Unsafe_putByteVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset,
+                                   jbyte newValue) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  // JNI must use non transactional mode.
+  obj->SetFieldByteVolatile<false>(MemberOffset(offset), newValue);
+}
+
 static jchar Unsafe_getChar(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
   ScopedFastNativeObjectAccess soa(env);
   ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
   return obj->GetFieldChar(MemberOffset(offset));
+}
+
+static jchar Unsafe_getCharVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  return obj->GetFieldCharVolatile(MemberOffset(offset));
 }
 
 static void Unsafe_putChar(JNIEnv* env, jobject, jobject javaObj, jlong offset, jchar newValue) {
@@ -419,10 +463,23 @@ static void Unsafe_putChar(JNIEnv* env, jobject, jobject javaObj, jlong offset, 
   obj->SetFieldChar<false>(MemberOffset(offset), newValue);
 }
 
+static void Unsafe_putCharVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset, jchar newValue) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  // JNI must use non transactional mode.
+  obj->SetFieldCharVolatile<false>(MemberOffset(offset), newValue);
+}
+
 static jshort Unsafe_getShort(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
   ScopedFastNativeObjectAccess soa(env);
   ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
   return obj->GetFieldShort(MemberOffset(offset));
+}
+
+static jshort Unsafe_getShortVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  return obj->GetFieldShortVolatile(MemberOffset(offset));
 }
 
 static void Unsafe_putShort(JNIEnv* env, jobject, jobject javaObj, jlong offset, jshort newValue) {
@@ -432,11 +489,27 @@ static void Unsafe_putShort(JNIEnv* env, jobject, jobject javaObj, jlong offset,
   obj->SetFieldShort<false>(MemberOffset(offset), newValue);
 }
 
+static void Unsafe_putShortVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset,
+                                    jshort newValue) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  // JNI must use non transactional mode.
+  obj->SetFieldShortVolatile<false>(MemberOffset(offset), newValue);
+}
+
 static jfloat Unsafe_getFloat(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
   ScopedFastNativeObjectAccess soa(env);
   ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
   union {int32_t val; jfloat converted;} conv;
   conv.val = obj->GetField32(MemberOffset(offset));
+  return conv.converted;
+}
+
+static jfloat Unsafe_getFloatVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  union {int32_t val; jfloat converted;} conv;
+  conv.val = obj->GetField32Volatile(MemberOffset(offset));
   return conv.converted;
 }
 
@@ -449,11 +522,29 @@ static void Unsafe_putFloat(JNIEnv* env, jobject, jobject javaObj, jlong offset,
   obj->SetField32<false>(MemberOffset(offset), conv.converted);
 }
 
+static void Unsafe_putFloatVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset,
+                                    jfloat newValue) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  union {int32_t converted; jfloat val;} conv;
+  conv.val = newValue;
+  // JNI must use non transactional mode.
+  obj->SetField32Volatile<false>(MemberOffset(offset), conv.converted);
+}
+
 static jdouble Unsafe_getDouble(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
   ScopedFastNativeObjectAccess soa(env);
   ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
   union {int64_t val; jdouble converted;} conv;
   conv.val = obj->GetField64(MemberOffset(offset));
+  return conv.converted;
+}
+
+static jdouble Unsafe_getDoubleVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  union {int64_t val; jdouble converted;} conv;
+  conv.val = obj->GetField64Volatile(MemberOffset(offset));
   return conv.converted;
 }
 
@@ -464,6 +555,15 @@ static void Unsafe_putDouble(JNIEnv* env, jobject, jobject javaObj, jlong offset
   conv.val = newValue;
   // JNI must use non transactional mode.
   obj->SetField64<false>(MemberOffset(offset), conv.converted);
+}
+
+static void Unsafe_putDoubleVolatile(JNIEnv* env, jobject, jobject javaObj, jlong offset, jdouble newValue) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  union {int64_t converted; jdouble val;} conv;
+  conv.val = newValue;
+  // JNI must use non transactional mode.
+  obj->SetField64Volatile<false>(MemberOffset(offset), conv.converted);
 }
 
 static void Unsafe_loadFence(JNIEnv*, jobject) {
@@ -514,13 +614,26 @@ static JNINativeMethod gMethods[] = {
         Unsafe, compareAndSwapObject, "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z"),
     FAST_NATIVE_METHOD(Unsafe, compareAndSetInt, "(Ljava/lang/Object;JII)Z"),
     FAST_NATIVE_METHOD(Unsafe, compareAndSetLong, "(Ljava/lang/Object;JJJ)Z"),
+    FAST_NATIVE_METHOD(Unsafe, compareAndExchangeLong, "(Ljava/lang/Object;JJJ)J"),
     FAST_NATIVE_METHOD(Unsafe,
                        compareAndSetReference,
                        "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z"),
     FAST_NATIVE_METHOD(Unsafe, getIntVolatile, "(Ljava/lang/Object;J)I"),
     FAST_NATIVE_METHOD(Unsafe, putIntVolatile, "(Ljava/lang/Object;JI)V"),
+    FAST_NATIVE_METHOD(Unsafe, getBooleanVolatile, "(Ljava/lang/Object;J)Z"),
+    FAST_NATIVE_METHOD(Unsafe, putBooleanVolatile, "(Ljava/lang/Object;JZ)V"),
+    FAST_NATIVE_METHOD(Unsafe, getByteVolatile, "(Ljava/lang/Object;J)B"),
+    FAST_NATIVE_METHOD(Unsafe, putByteVolatile, "(Ljava/lang/Object;JB)V"),
+    FAST_NATIVE_METHOD(Unsafe, getShortVolatile, "(Ljava/lang/Object;J)S"),
+    FAST_NATIVE_METHOD(Unsafe, putShortVolatile, "(Ljava/lang/Object;JS)V"),
+    FAST_NATIVE_METHOD(Unsafe, getCharVolatile, "(Ljava/lang/Object;J)C"),
+    FAST_NATIVE_METHOD(Unsafe, putCharVolatile, "(Ljava/lang/Object;JC)V"),
     FAST_NATIVE_METHOD(Unsafe, getLongVolatile, "(Ljava/lang/Object;J)J"),
     FAST_NATIVE_METHOD(Unsafe, putLongVolatile, "(Ljava/lang/Object;JJ)V"),
+    FAST_NATIVE_METHOD(Unsafe, getFloatVolatile, "(Ljava/lang/Object;J)F"),
+    FAST_NATIVE_METHOD(Unsafe, putFloatVolatile, "(Ljava/lang/Object;JF)V"),
+    FAST_NATIVE_METHOD(Unsafe, getDoubleVolatile, "(Ljava/lang/Object;J)D"),
+    FAST_NATIVE_METHOD(Unsafe, putDoubleVolatile, "(Ljava/lang/Object;JD)V"),
     FAST_NATIVE_METHOD(Unsafe, getReferenceVolatile, "(Ljava/lang/Object;J)Ljava/lang/Object;"),
     FAST_NATIVE_METHOD(Unsafe, putReferenceVolatile, "(Ljava/lang/Object;JLjava/lang/Object;)V"),
     FAST_NATIVE_METHOD(Unsafe, getInt, "(Ljava/lang/Object;J)I"),

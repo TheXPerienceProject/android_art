@@ -101,6 +101,7 @@ java_defaults {
         "sdk_module-lib_current_framework-connectivity",
     ],
     static_libs: [
+        "android.content.pm.flags-aconfig-java-export",
         "art-statslog-art-java",
         "artd-aidl-java",
         "dexopt_chroot_setup-aidl-java",

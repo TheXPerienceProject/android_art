@@ -270,11 +270,6 @@ art_cc_library {
     },
     apex_available: [
         "com.android.art.debug",
-        // TODO(b/183882457): This lib doesn't go into the following APEXes, but
-        // apex_available lists need to be the same for internal libs to avoid
-        // stubs, and libartd and libprofiled depend on this.
-        "com.android.art",
-        "test_broken_com.android.art",
     ],
 
     // libdexfiled.so implements the libdexfile.so API in com.android.art.debug.
@@ -309,7 +304,7 @@ art_cc_defaults {
         "dex/type_lookup_table_test.cc",
         "dex/utf_test.cc",
     ],
-    data: [
+    device_common_data: [
         ":art-gtest-jars-GetMethodSignature",
         ":art-gtest-jars-Lookup",
         ":art-gtest-jars-Main",
@@ -418,7 +413,6 @@ art_cc_test {
     // For backed-by API coverage.
     test_suites: [
         "cts",
-        "mcts-art",
     ],
 }
 

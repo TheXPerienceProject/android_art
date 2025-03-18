@@ -64,7 +64,7 @@ art_cc_binary {
                 "libart-disassembler",
                 "libartbase",
                 "libbase",
-                "libdexfile",
+                "libdexfile#impl",
                 "libprofile",
             ],
             static_libs: [
@@ -118,7 +118,7 @@ art_cc_binary {
                 "libartd",
                 "libartd-disassembler",
                 "libbase",
-                "libdexfiled",
+                "libdexfiled#impl",
                 "libprofiled",
             ],
             static_libs: [
@@ -193,7 +193,7 @@ art_cc_binary {
 
 art_cc_defaults {
     name: "art_oatdump_tests_defaults",
-    data: [
+    device_common_data: [
         ":art-gtest-jars-ProfileTestMultiDex",
     ],
     srcs: [
@@ -207,6 +207,7 @@ art_cc_defaults {
                 "dex2oatd",
                 "dex2oatds",
                 "dexdump",
+                "art_boot_images",
                 "oatdumpd",
                 "oatdumpds",
             ],

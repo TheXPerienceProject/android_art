@@ -305,4 +305,3 @@
   V(k51l)
 
 #endif  // ART_LIBDEXFILE_DEX_DEX_INSTRUCTION_LIST_H_
-#undef ART_LIBDEXFILE_DEX_DEX_INSTRUCTION_LIST_H_  // the guard in this file is just for cpplint

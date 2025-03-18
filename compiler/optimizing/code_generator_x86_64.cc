@@ -1142,6 +1142,13 @@ void CodeGeneratorX86_64::LoadMethod(MethodLoadKind load_kind, Location temp, HI
       RecordBootImageRelRoPatch(GetBootImageOffset(invoke));
       break;
     }
+    case MethodLoadKind::kAppImageRelRo: {
+      DCHECK(GetCompilerOptions().IsAppImage());
+      __ movl(temp.AsRegister<CpuRegister>(),
+              Address::Absolute(CodeGeneratorX86_64::kPlaceholder32BitOffset, /* no_rip= */ false));
+      RecordAppImageMethodPatch(invoke);
+      break;
+    }
     case MethodLoadKind::kBssEntry: {
       __ movq(temp.AsRegister<CpuRegister>(),
               Address::Absolute(kPlaceholder32BitOffset, /* no_rip= */ false));
@@ -1312,6 +1319,12 @@ void CodeGeneratorX86_64::RecordBootImageMethodPatch(HInvoke* invoke) {
   __ Bind(&boot_image_method_patches_.back().label);
 }
 
+void CodeGeneratorX86_64::RecordAppImageMethodPatch(HInvoke* invoke) {
+  app_image_method_patches_.emplace_back(invoke->GetResolvedMethodReference().dex_file,
+                                         invoke->GetResolvedMethodReference().index);
+  __ Bind(&app_image_method_patches_.back().label);
+}
+
 void CodeGeneratorX86_64::RecordMethodBssEntryPatch(HInvoke* invoke) {
   DCHECK(IsSameDexFile(GetGraph()->GetDexFile(), *invoke->GetMethodReference().dex_file) ||
          GetCompilerOptions().WithinOatFile(invoke->GetMethodReference().dex_file) ||
@@ -1452,6 +1465,7 @@ void CodeGeneratorX86_64::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* li
   DCHECK(linker_patches->empty());
   size_t size =
       boot_image_method_patches_.size() +
+      app_image_method_patches_.size() +
       method_bss_entry_patches_.size() +
       boot_image_type_patches_.size() +
       app_image_type_patches_.size() +
@@ -1476,6 +1490,7 @@ void CodeGeneratorX86_64::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* li
     DCHECK(boot_image_type_patches_.empty());
     DCHECK(boot_image_string_patches_.empty());
   }
+  DCHECK_IMPLIES(!GetCompilerOptions().IsAppImage(), app_image_method_patches_.empty());
   DCHECK_IMPLIES(!GetCompilerOptions().IsAppImage(), app_image_type_patches_.empty());
   if (GetCompilerOptions().IsBootImage()) {
     EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::IntrinsicReferencePatch>>(
@@ -1483,6 +1498,8 @@ void CodeGeneratorX86_64::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* li
   } else {
     EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::BootImageRelRoPatch>>(
         boot_image_other_patches_, linker_patches);
+    EmitPcRelativeLinkerPatches<linker::LinkerPatch::MethodAppImageRelRoPatch>(
+        app_image_method_patches_, linker_patches);
     EmitPcRelativeLinkerPatches<linker::LinkerPatch::TypeAppImageRelRoPatch>(
         app_image_type_patches_, linker_patches);
   }
@@ -1615,6 +1632,7 @@ CodeGeneratorX86_64::CodeGeneratorX86_64(HGraph* graph,
                  compiler_options.GetInstructionSetFeatures()->AsX86_64InstructionSetFeatures()),
       constant_area_start_(0),
       boot_image_method_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
+      app_image_method_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       method_bss_entry_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       boot_image_type_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       app_image_type_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
@@ -5104,11 +5122,11 @@ void InstructionCodeGeneratorX86_64::HandleRotate(HBinaryOperation* rotate) {
   }
 }
 
-void InstructionCodeGeneratorX86_64::VisitRor(HRor* ror) {
-  HandleRotate(ror);
+void LocationsBuilderX86_64::VisitRol(HRol* rol) {
+  HandleRotate(rol);
 }
 
-void LocationsBuilderX86_64::VisitRol(HRol* rol) {
+void InstructionCodeGeneratorX86_64::VisitRol(HRol* rol) {
   HandleRotate(rol);
 }
 
@@ -5116,8 +5134,8 @@ void LocationsBuilderX86_64::VisitRor(HRor* ror) {
   HandleRotate(ror);
 }
 
-void InstructionCodeGeneratorX86_64::VisitRol(HRol* rol) {
-  HandleRotate(rol);
+void InstructionCodeGeneratorX86_64::VisitRor(HRor* ror) {
+  HandleRotate(ror);
 }
 
 void LocationsBuilderX86_64::VisitShl(HShl* shl) {

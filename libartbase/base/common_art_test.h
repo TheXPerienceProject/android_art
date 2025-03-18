@@ -35,7 +35,6 @@
 #include "base/unix_file/fd_file.h"
 #include "dex/art_dex_file_loader.h"
 #include "dex/compact_dex_file.h"
-#include "dex/compact_dex_level.h"
 #include "gtest/gtest.h"
 
 namespace art {

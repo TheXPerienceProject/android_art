@@ -35,7 +35,7 @@ namespace art HIDDEN {
 namespace interpreter {
 
 bool IsNterpSupported() {
-  switch (kRuntimeISA) {
+  switch (kRuntimeQuickCodeISA) {
     case InstructionSet::kArm:
     case InstructionSet::kThumb2:
     case InstructionSet::kArm64:
@@ -106,10 +106,11 @@ void CheckNterpAsmConstants() {
    * which one did, but if any one is too big the total size will
    * overflow.
    */
-  const int width = kNterpHandlerSize;
+  constexpr size_t width = kNterpHandlerSize;
   ptrdiff_t interp_size = reinterpret_cast<uintptr_t>(artNterpAsmInstructionEnd) -
                           reinterpret_cast<uintptr_t>(artNterpAsmInstructionStart);
-  if ((interp_size == 0) || (interp_size != (art::kNumPackedOpcodes * width))) {
+  static_assert(kNumPackedOpcodes * width != 0);
+  if (interp_size != kNumPackedOpcodes * width) {
     LOG(FATAL) << "ERROR: unexpected asm interp size " << interp_size
                << "(did an instruction handler exceed " << width << " bytes?)";
   }
@@ -118,11 +119,7 @@ void CheckNterpAsmConstants() {
 inline void UpdateHotness(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_) {
   // The hotness we will add to a method when we perform a
   // field/method/class/string lookup.
-  Runtime* runtime = Runtime::Current();
-  bool increase_hotness_for_ui = runtime->GetStartupCompleted() &&
-      runtime->InJankPerceptibleProcessState() &&
-      Thread::Current()->IsJitSensitiveThread();
-  method->UpdateCounter(increase_hotness_for_ui ? 0x6ff : 0xf);
+  method->UpdateCounter(0xf);
 }
 
 template<typename T>
@@ -334,10 +331,8 @@ extern "C" size_t NterpGetMethod(Thread* self, ArtMethod* caller, const uint16_t
 
   ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
   ArtMethod* resolved_method = caller->SkipAccessChecks()
-      ? class_linker->ResolveMethod<ClassLinker::ResolveMode::kNoChecks>(
-            self, method_index, caller, invoke_type)
-      : class_linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
-            self, method_index, caller, invoke_type);
+      ? class_linker->ResolveMethodId(method_index, caller)
+      : class_linker->ResolveMethodWithChecks(method_index, caller, invoke_type);
   if (resolved_method == nullptr) {
     DCHECK(self->IsExceptionPending());
     return 0;
@@ -694,8 +689,11 @@ extern "C" jit::OsrData* NterpHotMethod(ArtMethod* method, uint16_t* dex_pc_ptr,
   ScopedAssertNoThreadSuspension sants("In nterp");
   Runtime* runtime = Runtime::Current();
   if (method->IsMemorySharedMethod()) {
-    DCHECK_EQ(Thread::Current()->GetSharedMethodHotness(), 0u);
-    Thread::Current()->ResetSharedMethodHotness();
+    if (!method->IsIntrinsic()) {
+      // Intrinsics are special and will be considered hot from the first call.
+      DCHECK_EQ(Thread::Current()->GetSharedMethodHotness(), 0u);
+      Thread::Current()->ResetSharedMethodHotness();
+    }
   } else {
     // Move the counter to the initial threshold in case we have to re-JIT it.
     method->ResetCounter(runtime->GetJITOptions()->GetWarmupThreshold());

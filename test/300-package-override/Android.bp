@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-300-package-override-expected-stdout",
         ":art-run-test-300-package-override-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

@@ -1541,12 +1541,103 @@ void InstructionCodeGeneratorARM64Neon::VisitVecPredToBoolean(HVecPredToBoolean*
   UNREACHABLE();
 }
 
-void LocationsBuilderARM64Neon::VisitVecCondition(HVecCondition* instruction) {
+void LocationsBuilderARM64Neon::VisitVecEqual(HVecEqual* instruction) {
   LOG(FATAL) << "No SIMD for " << instruction->GetId();
   UNREACHABLE();
 }
 
-void InstructionCodeGeneratorARM64Neon::VisitVecCondition(HVecCondition* instruction) {
+void InstructionCodeGeneratorARM64Neon::VisitVecEqual(HVecEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecNotEqual(HVecNotEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecNotEqual(HVecNotEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecLessThan(HVecLessThan* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecLessThan(HVecLessThan* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecLessThanOrEqual(HVecLessThanOrEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecLessThanOrEqual(HVecLessThanOrEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecGreaterThan(HVecGreaterThan* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecGreaterThan(HVecGreaterThan* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecGreaterThanOrEqual(HVecGreaterThanOrEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecGreaterThanOrEqual(
+    HVecGreaterThanOrEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecBelow(HVecBelow* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecBelow(HVecBelow* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecBelowOrEqual(HVecBelowOrEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecBelowOrEqual(HVecBelowOrEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecAbove(HVecAbove* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecAbove(HVecAbove* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void LocationsBuilderARM64Neon::VisitVecAboveOrEqual(HVecAboveOrEqual* instruction) {
+  LOG(FATAL) << "No SIMD for " << instruction->GetId();
+  UNREACHABLE();
+}
+
+void InstructionCodeGeneratorARM64Neon::VisitVecAboveOrEqual(HVecAboveOrEqual* instruction) {
   LOG(FATAL) << "No SIMD for " << instruction->GetId();
   UNREACHABLE();
 }

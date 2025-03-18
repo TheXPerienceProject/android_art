@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-174-escaping-instance-of-bad-class-expected-stdout",
         ":art-run-test-174-escaping-instance-of-bad-class-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

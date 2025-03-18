@@ -1,6 +1,12 @@
 // Signature format: 2.0
 package com.android.server.art {
 
+  @FlaggedApi("com.android.art.flags.art_service_v3") public final class ArtManagedInstallFileHelper {
+    method @FlaggedApi("com.android.art.flags.art_service_v3") @NonNull public static java.util.List<java.lang.String> filterPathsForApk(@NonNull java.util.List<java.lang.String>, @NonNull String);
+    method @FlaggedApi("com.android.art.flags.art_service_v3") @NonNull public static String getTargetPathForApk(@NonNull String, @NonNull String);
+    method @FlaggedApi("com.android.art.flags.art_service_v3") public static boolean isArtManaged(@NonNull String);
+  }
+
   public final class ArtManagerLocal {
     ctor @Deprecated public ArtManagerLocal();
     ctor public ArtManagerLocal(@NonNull android.content.Context);
@@ -76,6 +82,7 @@ package com.android.server.art {
     field public static final String REASON_INSTALL_BULK_SECONDARY = "install-bulk-secondary";
     field public static final String REASON_INSTALL_BULK_SECONDARY_DOWNGRADED = "install-bulk-secondary-downgraded";
     field public static final String REASON_INSTALL_FAST = "install-fast";
+    field @FlaggedApi("com.android.art.flags.art_service_v3") public static final String REASON_PRE_REBOOT_DEXOPT = "ab-ota";
   }
 
 }

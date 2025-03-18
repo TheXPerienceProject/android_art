@@ -37,8 +37,6 @@ get_stable_binary() {
     cd .. && rm -rf tmp
 }
 
-qemu_path="$ANDROID_BUILD_TOP/device/google/cuttlefish_vmm/qemu/x86_64-linux-gnu/bin"
-
 if [[ $action = create ]]; then
 (
     rm -rf "$ART_TEST_VM_DIR"
@@ -53,18 +51,13 @@ if [[ $action = create ]]; then
     if [[ "$TARGET_ARCH" = "riscv64" ]]; then
         # Get U-Boot for Ubuntu 22.04 (Jammy)
         get_stable_binary \
-            u/u-boot/u-boot-qemu_2023.07+dfsg-1ubuntu2_all.deb \
+            u/u-boot/u-boot-qemu_2024.01+dfsg-5ubuntu2_all.deb \
             usr/lib/u-boot/qemu-riscv64_smode/uboot.elf
-
-        # Get OpenSBI for Ubuntu 22.04 (Jammy)
-        get_stable_binary \
-            o/opensbi/opensbi_1.3-1ubuntu0.23.04.2_all.deb \
-            usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.elf
 
     elif [[ "$TARGET_ARCH" = "arm64" ]]; then
         # Get EFI (ARM64)
         get_stable_binary \
-            e/edk2/qemu-efi-aarch64_2023.05-2ubuntu0.1_all.deb \
+            e/edk2/qemu-efi-aarch64_2024.05-2ubuntu0.1_all.deb \
             usr/share/qemu-efi-aarch64/QEMU_EFI.fd
 
         dd if=/dev/zero of=flash0.img bs=1M count=64
@@ -106,13 +99,12 @@ elif [[ $action = boot ]]; then
     cp "$(dirname $0)/user-data.img" "$ART_TEST_VM_DIR/user-data.img"
     cd "$ART_TEST_VM_DIR"
     if [[ "$TARGET_ARCH" = "riscv64" ]]; then
-        ("$qemu_path/qemu-system-riscv64" \
+        ($ANDROID_BUILD_TOP/device/google/cuttlefish_vmm/qemu/x86_64-linux-gnu/bin/qemu-system-riscv64 \
             -M virt \
             -nographic \
             -m 16G \
             -smp 8 \
             -cpu rv64,v=true,elen=64,vlen=128,zba=true,zbb=true,zbs=true \
-            -bios fw_jump.elf \
             -kernel uboot.elf \
             -drive file="$ART_TEST_VM_IMG",if=virtio \
             -drive file=user-data.img,format=raw,if=virtio \
@@ -134,7 +126,7 @@ elif [[ $action = boot ]]; then
         done < <(tail -f $SCRIPT_DIR/boot.out)
 
     elif [[ "$TARGET_ARCH" = "arm64" ]]; then
-        ("$qemu_path/qemu-system-aarch64" \
+        (qemu-system-aarch64 \
             -m 16G \
             -smp 8 \
             -cpu cortex-a710,sve=on \

@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-081-hot-exceptions-expected-stdout",
         ":art-run-test-081-hot-exceptions-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

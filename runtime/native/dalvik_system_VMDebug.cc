@@ -21,8 +21,6 @@
 
 #include <sstream>
 
-#include "nativehelper/jni_macros.h"
-
 #include "base/file_utils.h"
 #include "base/histogram-inl.h"
 #include "base/time_utils.h"
@@ -30,6 +28,8 @@
 #include "class_root-inl.h"
 #include "common_throws.h"
 #include "debugger.h"
+#include "dex/class_accessor-inl.h"
+#include "dex/descriptors_names.h"
 #include "gc/space/bump_pointer_space.h"
 #include "gc/space/dlmalloc_space.h"
 #include "gc/space/large_object_space.h"
@@ -42,10 +42,14 @@
 #include "mirror/array-alloc-inl.h"
 #include "mirror/array-inl.h"
 #include "mirror/class.h"
+#include "mirror/executable-inl.h"
 #include "mirror/object_array-alloc-inl.h"
 #include "native_util.h"
+#include "nativehelper/jni_macros.h"
 #include "nativehelper/scoped_local_ref.h"
 #include "nativehelper/scoped_utf_chars.h"
+#include "nativehelper/utils.h"
+#include "oat/oat_quick_method_header.h"
 #include "scoped_fast_native_object_access-inl.h"
 #include "string_array_utils.h"
 #include "thread-inl.h"
@@ -161,29 +165,23 @@ static void VMDebug_stopLowOverheadTraceImpl(JNIEnv*, jclass) {
 static void VMDebug_dumpLowOverheadTraceImpl(JNIEnv* env, jclass, jstring javaProfileFileName) {
   ScopedUtfChars profileFileName(env, javaProfileFileName);
   if (profileFileName.c_str() == nullptr) {
-    LOG(ERROR) << "Filename not provided, ignoring the request to dump profile";
+    LOG(ERROR) << "Filename not provided, ignoring the request to dump low-overhead trace";
     return;
   }
   TraceProfiler::Dump(profileFileName.c_str());
 }
 
-static void VMDebug_dumpLowOverheadTraceFdImpl(JNIEnv* env, jclass, jint originalFd) {
+static void VMDebug_dumpLowOverheadTraceFdImpl(JNIEnv*, jclass, jint originalFd) {
   if (originalFd < 0) {
-    ScopedObjectAccess soa(env);
-    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
-                                   "Trace fd is invalid: %d",
-                                   originalFd);
+    LOG(ERROR) << "Invalid file descriptor, ignoring the request to dump low-overhead trace";
     return;
   }
 
   // Set the O_CLOEXEC flag atomically here, so the file gets closed when a new process is forked.
   int fd = DupCloexec(originalFd);
   if (fd < 0) {
-    ScopedObjectAccess soa(env);
-    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
-                                   "dup(%d) failed: %s",
-                                   originalFd,
-                                   strerror(errno));
+    LOG(ERROR)
+        << "Unable to dup the file descriptor, ignoring the request to dump low-overhead trace";
     return;
   }
 
@@ -310,6 +308,72 @@ static jlong VMDebug_countInstancesOfClass(JNIEnv* env,
   uint64_t count = 0;
   heap->CountInstances(classes, countAssignable, &count);
   return count;
+}
+
+static jobject VMDebug_getExecutableMethodFileOffsetsNative(JNIEnv* env,
+                                                            jclass,
+                                                            jobject javaMethod) {
+  ScopedObjectAccess soa(env);
+  ObjPtr<mirror::Executable> m = soa.Decode<mirror::Executable>(javaMethod);
+  if (m == nullptr) {
+    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
+                                   "Could not find mirror::Executable for supplied jobject");
+    return nullptr;
+  }
+
+  ObjPtr<mirror::Class> c = m->GetDeclaringClass();
+  if (c == nullptr) {
+    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
+                                   "Could not find mirror::Class for supplied jobject");
+    return nullptr;
+  }
+
+  ArtMethod* art_method = m->GetArtMethod();
+  auto oat_method_quick_code =
+      reinterpret_cast<const uint8_t*>(art_method->GetOatMethodQuickCode(kRuntimePointerSize));
+
+  if (oat_method_quick_code == nullptr) {
+    LOG(ERROR) << "No OatMethodQuickCode for method " << art_method->PrettyMethod();
+    return nullptr;
+  }
+
+  const OatDexFile* oat_dex_file = c->GetDexFile().GetOatDexFile();
+  if (oat_dex_file == nullptr) {
+    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;", "Could not find oat_dex_file");
+    return nullptr;
+  }
+
+  const OatFile* oat_file = oat_dex_file->GetOatFile();
+  if (oat_file == nullptr) {
+    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;", "Could not find oat_file");
+    return nullptr;
+  }
+
+  std::string error_msg;
+  const uint8_t* elf_begin = oat_file->ComputeElfBegin(&error_msg);
+  if (elf_begin == nullptr) {
+    soa.Self()->ThrowNewExceptionF(
+        "Ljava/lang/RuntimeException;", "Could not find elf_begin: %s", error_msg.c_str());
+    return nullptr;
+  }
+
+  size_t adjusted_offset = oat_method_quick_code - elf_begin;
+
+  ScopedLocalRef<jstring> odex_path = CREATE_UTF_OR_RETURN(env, oat_file->GetLocation());
+  auto odex_offset = reinterpret_cast64<jlong>(elf_begin);
+  auto method_offset = static_cast<jlong>(adjusted_offset);
+
+  ScopedLocalRef<jclass> clazz(env,
+                               env->FindClass("dalvik/system/VMDebug$ExecutableMethodFileOffsets"));
+  if (clazz == nullptr) {
+    soa.Self()->ThrowNewExceptionF(
+        "Ljava/lang/RuntimeException;",
+        "Could not find dalvik/system/VMDebug$ExecutableMethodFileOffsets");
+    return nullptr;
+  }
+
+  jmethodID constructor_id = env->GetMethodID(clazz.get(), "<init>", "(Ljava/lang/String;JJ)V");
+  return env->NewObject(clazz.get(), constructor_id, odex_path.get(), odex_offset, method_offset);
 }
 
 static jlongArray VMDebug_countInstancesOfClasses(JNIEnv* env,
@@ -559,7 +623,7 @@ static void VMDebug_setAllocTrackerStackDepth(JNIEnv* env, jclass, jint stack_de
 }
 
 static void VMDebug_setCurrentProcessName(JNIEnv* env, jclass, jstring process_name) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
 
   // Android application ID naming convention states:
   // "The name can contain uppercase or lowercase letters, numbers, and underscores ('_')"
@@ -570,7 +634,7 @@ static void VMDebug_setCurrentProcessName(JNIEnv* env, jclass, jstring process_n
 }
 
 static void VMDebug_addApplication(JNIEnv* env, jclass, jstring package_name) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
 
   // Android application ID naming convention states:
   // "The name can contain uppercase or lowercase letters, numbers, and underscores ('_')"
@@ -581,7 +645,7 @@ static void VMDebug_addApplication(JNIEnv* env, jclass, jstring package_name) {
 }
 
 static void VMDebug_removeApplication(JNIEnv* env, jclass, jstring package_name) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
 
   // Android application ID naming convention states:
   // "The name can contain uppercase or lowercase letters, numbers, and underscores ('_')"
@@ -592,12 +656,12 @@ static void VMDebug_removeApplication(JNIEnv* env, jclass, jstring package_name)
 }
 
 static void VMDebug_setWaitingForDebugger(JNIEnv* env, jclass, jboolean waiting) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
   Runtime::Current()->GetRuntimeCallbacks()->SetWaitingForDebugger(waiting);
 }
 
 static void VMDebug_setUserId(JNIEnv* env, jclass, jint user_id) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
   Runtime::Current()->GetRuntimeCallbacks()->SetUserId(user_id);
 }
 
@@ -638,6 +702,10 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(VMDebug, stopLowOverheadTraceImpl, "()V"),
     NATIVE_METHOD(VMDebug, dumpLowOverheadTraceImpl, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(VMDebug, dumpLowOverheadTraceFdImpl, "(I)V"),
+    NATIVE_METHOD(
+        VMDebug,
+        getExecutableMethodFileOffsetsNative,
+        "(Ljava/lang/reflect/Method;)Ldalvik/system/VMDebug$ExecutableMethodFileOffsets;"),
 };
 
 void register_dalvik_system_VMDebug(JNIEnv* env) {

@@ -50,7 +50,7 @@ art_cc_defaults {
     shared_libs: [
         "libartbase",
         "libprofile",
-        "libdexfile",
+        "libdexfile#impl",
     ],
     static_libs: ["libelffile"],
     codegen: {
@@ -93,7 +93,7 @@ art_cc_defaults {
     shared_libs: [
         "libartbased",
         "libprofiled",
-        "libdexfiled",
+        "libdexfiled#impl",
     ],
     static_libs: ["libelffiled"],
     codegen: {
@@ -159,6 +159,7 @@ art_cc_defaults {
         "optimizing/graph_checker.cc",
         "optimizing/graph_visualizer.cc",
         "optimizing/gvn.cc",
+        "optimizing/handle_cache.cc",
         "optimizing/induction_var_analysis.cc",
         "optimizing/induction_var_range.cc",
         "optimizing/inliner.cc",
@@ -174,11 +175,13 @@ art_cc_defaults {
         "optimizing/loop_analysis.cc",
         "optimizing/loop_optimization.cc",
         "optimizing/nodes.cc",
+        "optimizing/nodes_vector.cc",
         "optimizing/optimization.cc",
         "optimizing/optimizing_compiler.cc",
         "optimizing/parallel_move_resolver.cc",
         "optimizing/prepare_for_register_allocation.cc",
         "optimizing/profiling_info_builder.cc",
+        "optimizing/reference_type_info.cc",
         "optimizing/reference_type_propagation.cc",
         "optimizing/register_allocation_resolver.cc",
         "optimizing/register_allocator.cc",
@@ -370,10 +373,6 @@ art_cc_library_static {
     ],
     apex_available: [
         "com.android.art.debug",
-        // TODO(b/183882457): This lib doesn't go into com.android.art, but
-        // apex_available lists need to be the same for internal libs to avoid
-        // stubs, and this depends on libdexfiled.
-        "com.android.art",
     ],
 }
 
@@ -436,7 +435,7 @@ art_cc_library_static {
 
 art_cc_defaults {
     name: "art_compiler_tests_defaults",
-    data: [
+    device_common_data: [
         ":art-gtest-jars-ExceptionHandle",
         ":art-gtest-jars-Interfaces",
         ":art-gtest-jars-Main",
@@ -542,6 +541,7 @@ art_cc_defaults {
             shared_libs: [
                 "libartd-simulator",
             ],
+            required: ["art_boot_images"],
         },
     },
 }

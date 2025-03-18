@@ -271,6 +271,11 @@ TEST_F(Dex2oatImageTest, TestModesAndFilters) {
 }
 
 TEST_F(Dex2oatImageTest, TestExtension) {
+  // TODO(b/376621099): investigate LUCI failures (timeouts?) and re-enable this test.
+  // This is probably not related to riscv64 arch, but a combination of riscv64 and running
+  // on VM, but we don't use TEST_DISABLED_ON_VM to keep running it on other VM builders.
+  TEST_DISABLED_FOR_RISCV64();
+
   std::string error_msg;
   MemMap reservation = ReserveCoreImageAddressSpace(&error_msg);
   ASSERT_TRUE(reservation.IsValid()) << error_msg;

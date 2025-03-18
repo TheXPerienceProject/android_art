@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-545-tracing-and-jit-expected-stdout",
         ":art-run-test-545-tracing-and-jit-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

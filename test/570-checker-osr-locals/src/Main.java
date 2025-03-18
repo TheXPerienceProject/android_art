@@ -69,6 +69,9 @@ public class Main {
   public static void runSmaliTest() {
     try {
       Class<?> c = Class.forName("WeirdLoop");
+      // Make sure `WeirdLoop` is visibly initialized to avoid waiting for OSR
+      // for the `--jit-on=first-use` configuration.
+      makeVisiblyInitialized();
       int result = (int) c.getDeclaredMethod("weirdLoop").invoke(null);
       if (result != 42) {
         throw new Error("Unexpected result: " + result);
@@ -120,4 +123,5 @@ public class Main {
 
   public static native boolean isInOsrCode(String methodName);
   public static native boolean isInInterpreter(String methodName);
+  public static native void makeVisiblyInitialized();
 }

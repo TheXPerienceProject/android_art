@@ -175,6 +175,8 @@ TEST_F(FileUtilsTest, ReplaceFileExtension) {
   EXPECT_EQ("/.directory/file.vdex", ReplaceFileExtension("/.directory/file.oat", "vdex"));
   EXPECT_EQ("/directory/file.vdex", ReplaceFileExtension("/directory/file", "vdex"));
   EXPECT_EQ("/.directory/file.vdex", ReplaceFileExtension("/.directory/file", "vdex"));
+  EXPECT_EQ("/directory/file.vdex", ReplaceFileExtension("/directory/file.oat", ".vdex"));
+  EXPECT_EQ("/directory/file.vdex", ReplaceFileExtension("/directory/file", ".vdex"));
 }
 
 TEST_F(FileUtilsTest, ArtApexDataPath) {
@@ -323,7 +325,7 @@ TEST_F(FileUtilsTest, GetSystemOdexFilenameForApex) {
 
   const std::string apex_jar = std::string {kAndroidArtApexDefaultPath} + "/javalib/some.jar";
   EXPECT_EQ(
-      GetAndroidRoot() + "/framework/oat/arm/apex@com.android.art@javalib@some.jar@classes.odex",
+      GetSystemExtRoot() + "/framework/oat/arm/apex@com.android.art@javalib@some.jar@classes.odex",
       GetSystemOdexFilenameForApex(apex_jar, InstructionSet::kArm));
 }
 

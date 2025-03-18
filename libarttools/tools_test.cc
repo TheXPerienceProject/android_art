@@ -30,7 +30,7 @@
 #include "base/time_utils.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "testing.h"
+#include "tools/testing.h"
 
 namespace art {
 namespace tools {

@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_LIBARTTOOLS_TESTING_H_
-#define ART_LIBARTTOOLS_TESTING_H_
+#ifndef ART_LIBARTTOOLS_INCLUDE_TESTING_TOOLS_TESTING_H_
+#define ART_LIBARTTOOLS_INCLUDE_TESTING_TOOLS_TESTING_H_
 
 #include <signal.h>
 #include <stdio.h>
@@ -24,12 +24,14 @@
 #include <unistd.h>
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "android-base/logging.h"
 #include "android-base/scopeguard.h"
+#include "android-base/strings.h"
 #include "base/file_utils.h"
 #include "base/globals.h"
 #include "base/macros.h"
@@ -39,6 +41,7 @@ namespace tools {
 
 using ::android::base::make_scope_guard;
 using ::android::base::ScopeGuard;
+using ::android::base::Split;
 
 [[maybe_unused]] static std::string GetArtBin(const std::string& name) {
   CHECK(kIsTargetAndroid);
@@ -46,15 +49,20 @@ using ::android::base::ScopeGuard;
 }
 
 [[maybe_unused]] static std::string GetBin(const std::string& name) {
-  CHECK(kIsTargetAndroid);
-  return ART_FORMAT("{}/bin/{}", GetAndroidRoot(), name);
+  for (const std::string& path : Split(getenv("PATH"), ":")) {
+    if (std::filesystem::exists(path + "/" + name)) {
+      return path + "/" + name;
+    }
+  }
+  LOG(FATAL) << ART_FORMAT("Binary '{}' not found", name);
+  UNREACHABLE();
 }
 
-// Executes the command. If the `wait` is true, waits for the process to finish and keeps it in a
+// Executes the command. If `wait` is true, waits for the process to finish and keeps it in a
 // waitable state; otherwise, returns immediately after fork. When the current scope exits, destroys
 // the process.
-[[maybe_unused]] static std::pair<pid_t, ScopeGuard<std::function<void()>>> ScopedExec(
-    std::vector<std::string>& args, bool wait) {
+[[maybe_unused]] static std::pair<pid_t, std::unique_ptr<ScopeGuard<std::function<void()>>>>
+ScopedExec(std::vector<std::string>& args, bool wait) {
   std::vector<char*> execv_args;
   execv_args.reserve(args.size() + 1);
   for (std::string& arg : args) {
@@ -65,6 +73,7 @@ using ::android::base::ScopeGuard;
   pid_t pid = fork();
   if (pid == 0) {
     execv(execv_args[0], execv_args.data());
+    PLOG(FATAL) << "Failed to call execv";
     UNREACHABLE();
   } else if (pid > 0) {
     if (wait) {
@@ -80,9 +89,11 @@ using ::android::base::ScopeGuard;
       }
       CHECK_EQ(TEMP_FAILURE_RETRY(waitid(P_PID, pid, &info, WEXITED)), 0);
     });
-    return std::make_pair(pid, make_scope_guard(std::move(cleanup)));
+    return std::make_pair(
+        pid,
+        std::make_unique<ScopeGuard<std::function<void()>>>(make_scope_guard(std::move(cleanup))));
   } else {
-    LOG(FATAL) << "Failed to call fork";
+    PLOG(FATAL) << "Failed to call fork";
     UNREACHABLE();
   }
 }
@@ -90,4 +101,4 @@ using ::android::base::ScopeGuard;
 }  // namespace tools
 }  // namespace art
 
-#endif  // ART_LIBARTTOOLS_TESTING_H_
+#endif  // ART_LIBARTTOOLS_INCLUDE_TESTING_TOOLS_TESTING_H_

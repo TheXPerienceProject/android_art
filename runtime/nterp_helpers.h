@@ -73,7 +73,7 @@ uint32_t NterpGetVRegReference(ArtMethod** frame, uint16_t vreg)
  * Returns whether the given method can run with nterp. The instruction set can
  * be passed for cross-compilation.
  */
-EXPORT bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa = kRuntimeISA)
+EXPORT bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa = kRuntimeQuickCodeISA)
     REQUIRES_SHARED(Locks::mutator_lock_);
 
 /**

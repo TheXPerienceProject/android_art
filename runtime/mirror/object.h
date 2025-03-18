@@ -550,12 +550,20 @@ class EXPORT MANAGED LOCKABLE Object {
                                             int64_t new_value)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  template<bool kTransactionActive,
-           bool kCheckTransaction = true,
-           VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
+  template <bool kTransactionActive,
+            bool kCheckTransaction = true,
+            VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
   bool CasFieldStrongSequentiallyConsistent64(MemberOffset field_offset,
                                               int64_t old_value,
                                               int64_t new_value)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  template <bool kTransactionActive,
+            bool kCheckTransaction = true,
+            VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
+  int64_t CaeFieldStrongSequentiallyConsistent64(MemberOffset field_offset,
+                                                 int64_t old_value,
+                                                 int64_t new_value)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   template<bool kTransactionActive,

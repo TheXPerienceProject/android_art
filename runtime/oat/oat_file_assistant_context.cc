@@ -62,7 +62,8 @@ OatFileAssistantContext::OatFileAssistantContext(Runtime* runtime)
               .deny_art_apex_data_files = runtime->DenyArtApexDataFiles(),
           })) {
   // Fetch boot image info from the runtime.
-  std::vector<BootImageInfo>& boot_image_info_list = boot_image_info_list_by_isa_[kRuntimeISA];
+  std::vector<BootImageInfo>& boot_image_info_list =
+      boot_image_info_list_by_isa_[kRuntimeQuickCodeISA];
   for (const ImageSpace* image_space : runtime->GetHeap()->GetBootImageSpaces()) {
     // We only need the checksum of the first component for each boot image. They are in image
     // spaces that have a non-zero component count.

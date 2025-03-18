@@ -219,7 +219,7 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat(
                  << "Are you using the deprecated DexFile APIs?";
   } else if (context != nullptr) {
     auto oat_file_assistant = std::make_unique<OatFileAssistant>(dex_location,
-                                                                 kRuntimeISA,
+                                                                 kRuntimeQuickCodeISA,
                                                                  context.get(),
                                                                  runtime->GetOatFilesExecutable(),
                                                                  only_use_system_oat_files_);
@@ -296,7 +296,6 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat(
         if (kEnableRuntimeAppImage && image_space == nullptr && !compilation_enabled) {
           std::string art_file = RuntimeImage::GetRuntimeImagePath(dex_location);
           std::string error_msg;
-          ScopedObjectAccess soa(self);
           image_space = gc::space::ImageSpace::CreateFromAppImage(
               art_file.c_str(), oat_file.get(), &error_msg);
           if (image_space == nullptr) {
@@ -369,7 +368,7 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat(
           // file as non-executable.
           auto nonexecutable_oat_file_assistant =
               std::make_unique<OatFileAssistant>(dex_location,
-                                                 kRuntimeISA,
+                                                 kRuntimeQuickCodeISA,
                                                  context.get(),
                                                  /*load_executable=*/false,
                                                  only_use_system_oat_files_);
@@ -548,7 +547,7 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat_
   std::string dex_location;
   std::string vdex_path;
   bool has_vdex = OatFileAssistant::AnonymousDexVdexLocation(dex_headers,
-                                                             kRuntimeISA,
+                                                             kRuntimeQuickCodeISA,
                                                              &dex_location,
                                                              &vdex_path);
 
@@ -725,10 +724,8 @@ class BackgroundVerificationTask final : public Task {
         StackHandleScope<2> hs(self);
         Handle<mirror::ClassLoader> h_loader(hs.NewHandle(
             soa.Decode<mirror::ClassLoader>(class_loader_)));
-        Handle<mirror::Class> h_class(hs.NewHandle<mirror::Class>(class_linker->FindClass(
-            self,
-            dex_file->GetClassDescriptor(class_def),
-            h_loader)));
+        Handle<mirror::Class> h_class =
+            hs.NewHandle(class_linker->FindClass(self, *dex_file, class_def.class_idx_, h_loader));
 
         if (h_class == nullptr) {
           DCHECK(self->IsExceptionPending());
@@ -839,7 +836,7 @@ void OatFileManager::RunBackgroundVerification(const std::vector<const DexFile*>
   std::string error_msg;
   std::string odex_filename;
   if (!OatFileAssistant::DexLocationToOdexFilename(dex_location,
-                                                   kRuntimeISA,
+                                                   kRuntimeQuickCodeISA,
                                                    &odex_filename,
                                                    &error_msg)) {
     LOG(WARNING) << "Could not get odex filename for " << dex_location << ": " << error_msg;

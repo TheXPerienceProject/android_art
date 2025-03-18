@@ -22,6 +22,8 @@ Context* Context::Create() {
   return new RuntimeContextType;
 }
 
+// Copy the GPRs and FPRs from the given thread's context to the given buffers. This function
+// expects that a long jump (art_quick_do_long_jump) is called afterwards.
 extern "C" void artContextCopyForLongJump(Context* context, uintptr_t* gprs, uintptr_t* fprs) {
   context->CopyContextTo(gprs, fprs);
   // Once the context has been copied, it is no longer needed.

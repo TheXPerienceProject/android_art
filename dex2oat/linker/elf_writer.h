@@ -18,6 +18,7 @@
 #define ART_DEX2OAT_LINKER_ELF_WRITER_H_
 
 #include <stdint.h>
+
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -27,6 +28,7 @@
 #include "base/mutex.h"
 #include "base/os.h"
 #include "debug/debug_info.h"
+#include "thread_pool.h"
 
 namespace art {
 
@@ -66,7 +68,7 @@ class ElfWriter {
                                      size_t bss_methods_offset,
                                      size_t bss_roots_offset,
                                      size_t dex_section_size) = 0;
-  virtual void PrepareDebugInfo(const debug::DebugInfo& debug_info) = 0;
+  virtual std::unique_ptr<ThreadPool> PrepareDebugInfo(const debug::DebugInfo& debug_info) = 0;
   virtual OutputStream* StartRoData() = 0;
   virtual void EndRoData(OutputStream* rodata) = 0;
   virtual OutputStream* StartText() = 0;

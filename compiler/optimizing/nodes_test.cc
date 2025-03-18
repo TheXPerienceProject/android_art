@@ -212,14 +212,22 @@ TEST_F(NodeTest, ParentEnvironment) {
   ASSERT_TRUE(parameter1->HasEnvironmentUses());
   ASSERT_TRUE(parameter1->GetEnvUses().HasExactlyOneElement());
 
-  HEnvironment* parent1 = new (GetAllocator()) HEnvironment(
-      GetAllocator(), 1, graph->GetArtMethod(), 0, nullptr);
+  HEnvironment* parent1 = HEnvironment::Create(
+      GetAllocator(),
+      /*number_of_vregs=*/ 1,
+      graph->GetArtMethod(),
+      /*dex_pc=*/ 0,
+      /*holder=*/ nullptr);
   parent1->CopyFrom(ArrayRef<HInstruction* const>(&parameter1, 1u));
 
   ASSERT_EQ(parameter1->GetEnvUses().SizeSlow(), 2u);
 
-  HEnvironment* parent2 = new (GetAllocator()) HEnvironment(
-      GetAllocator(), 1, graph->GetArtMethod(), 0, nullptr);
+  HEnvironment* parent2 = HEnvironment::Create(
+      GetAllocator(),
+      /*number_of_vregs=*/ 1,
+      graph->GetArtMethod(),
+      /*dex_pc=*/ 0,
+      /*holder=*/ nullptr);
   parent2->CopyFrom(ArrayRef<HInstruction* const>(&parameter1, 1u));
   parent1->SetAndCopyParentChain(GetAllocator(), parent2);
 

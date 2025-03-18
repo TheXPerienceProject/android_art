@@ -35,7 +35,6 @@
 #include "exec_utils.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "selinux/selinux.h"
 #include "tools/binder_utils.h"
 #include "tools/cmdline_builder.h"
 
@@ -57,24 +56,6 @@ class DexoptChrootSetupTest : public CommonArtTest {
   void SetUp() override {
     CommonArtTest::SetUp();
     dexopt_chroot_setup_ = ndk::SharedRefBase::make<DexoptChrootSetup>();
-
-    // TODO(jiakaiz): Delete this one the SDK version is bumped to 35.
-    char* con;
-    if (getfilecon(DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR, &con) < 0) {
-      ASSERT_EQ(errno, ENOENT) << ART_FORMAT("Failed to getfilecon '{}': {}",
-                                             DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR,
-                                             strerror(errno));
-      GTEST_SKIP() << ART_FORMAT("This platform is too old and doesn't have directory '{}'",
-                                 DexoptChrootSetup::PRE_REBOOT_DEXOPT_DIR);
-    }
-    {
-      auto cleanup = ScopeGuard([&]() { freecon(con); });
-      constexpr std::string_view kExpectedCon = "u:object_r:pre_reboot_dexopt_file:s0";
-      if (con != kExpectedCon) {
-        GTEST_SKIP() << ART_FORMAT("This platform is too old and doesn't have SELinux context '{}'",
-                                   kExpectedCon);
-      }
-    }
 
     // Note that if a real Pre-reboot Dexopt is kicked off after this check, the test will still
     // fail, but that should be very rare.

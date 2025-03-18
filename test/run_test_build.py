@@ -19,14 +19,11 @@ This scripts compiles Java files which are needed to execute run-tests.
 It is intended to be used only from soong genrule.
 """
 
-import argparse
 import functools
-import glob
+import json
 import os
 import pathlib
 import re
-import shlex
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -35,15 +32,17 @@ from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
 from fcntl import lockf, LOCK_EX, LOCK_NB
 from importlib.machinery import SourceFileLoader
-from os import environ, getcwd, chdir, cpu_count, chmod
+from os import environ, getcwd, cpu_count
 from os.path import relpath
 from pathlib import Path
 from pprint import pprint
-from re import match
 from shutil import copytree, rmtree
-from subprocess import run
+from subprocess import PIPE, run
 from tempfile import TemporaryDirectory, NamedTemporaryFile
 from typing import Dict, List, Union, Set, Optional
+from multiprocessing import cpu_count
+
+from globals import BOOTCLASSPATH
 
 USE_RBE = 100  # Percentage of tests that can use RBE (between 0 and 100)
 
@@ -513,6 +512,83 @@ class BuildTestContext:
       else:
         zip(Path(self.test_name + ".jar"), Path("classes.dex"))
 
+# Create bash script that compiles the boot image on device.
+# This is currently only used for eng-prod testing (which is different
+# to the local and LUCI code paths that use buildbot-sync.sh script).
+def create_setup_script(is64: bool):
+  out = "/data/local/tmp/art/apex/art_boot_images"
+  isa = 'arm64' if is64 else 'arm'
+  jar = BOOTCLASSPATH
+  cmd = [
+    f"/apex/com.android.art/bin/{'dex2oat64' if is64 else 'dex2oat32'}",
+    "--runtime-arg", f"-Xbootclasspath:{':'.join(jar)}",
+    "--runtime-arg", f"-Xbootclasspath-locations:{':'.join(jar)}",
+  ] + [f"--dex-file={j}" for j in jar] + [f"--dex-location={j}" for j in jar] + [
+    f"--instruction-set={isa}",
+    "--base=0x70000000",
+    "--compiler-filter=speed-profile",
+    "--profile-file=/apex/com.android.art/etc/boot-image.prof",
+    "--avoid-storing-invocation",
+    "--generate-debug-info",
+    "--generate-build-id",
+    "--image-format=lz4hc",
+    "--strip",
+    "--android-root=out/empty",
+    f"--image={out}/{isa}/boot.art",
+    f"--oat-file={out}/{isa}/boot.oat",
+  ]
+  return [
+    f"rm -rf {out}/{isa}",
+    f"mkdir -p {out}/{isa}",
+    " ".join(cmd),
+  ]
+
+# Create bash scripts that can fully execute the run tests.
+# This can be used in CI to execute the tests without running `testrunner.py`.
+# This takes into account any custom behaviour defined in per-test `run.py`.
+# We generate distinct scripts for all of the pre-defined variants.
+def create_ci_runner_scripts(out, mode, test_names):
+  out.mkdir(parents=True)
+  setup = out / "setup.sh"
+  setup_script = create_setup_script(False) + create_setup_script(True)
+  setup.write_text("\n".join(setup_script))
+
+  python = sys.executable
+  script = 'art/test/testrunner/testrunner.py'
+  envs = {
+    "ANDROID_BUILD_TOP": str(Path(getcwd()).absolute()),
+    "ART_TEST_RUN_FROM_SOONG": "true",
+    # TODO: Make the runner scripts target agnostic.
+    #       The only dependency is setting of "-Djava.library.path".
+    "TARGET_ARCH": "arm64",
+    "TARGET_2ND_ARCH": "arm",
+    "TMPDIR": Path(getcwd()) / "tmp",
+  }
+  args = [
+    f"--run-test-option=--create-runner={out}",
+    f"-j={cpu_count()}",
+    f"--{mode}",
+  ]
+  run([python, script] + args + test_names, env=envs, check=True)
+  tests = {
+    "setup": {
+      "adb push": [[str(setup.relative_to(out)), "/data/local/tmp/art/setup.sh"]],
+      "adb shell": [["sh", "/data/local/tmp/art/setup.sh"]],
+    },
+  }
+  for runner in Path(out).glob("*/*.sh"):
+    test_name = runner.parent.name
+    test_hash = runner.stem
+    target_dir = f"/data/local/tmp/art/test/{test_hash}"
+    tests[f"{test_name}-{test_hash}"] = {
+      "dependencies": ["setup"],
+      "adb push": [
+        [f"../{mode}/{test_name}/", f"{target_dir}/"],
+        [str(runner.relative_to(out)), f"{target_dir}/run.sh"]
+      ],
+      "adb shell": [["sh", f"{target_dir}/run.sh"]],
+    }
+  return tests
 
 # If we build just individual shard, we want to split the work among all the cores,
 # but if the build system builds all shards, we don't want to overload the machine.
@@ -550,11 +626,7 @@ def main() -> None:
   android_build_top = Path(getcwd()).absolute()
   ziproot = args.out.absolute().parent / "zip"
   test_dir_regex = re.compile(args.test_dir_regex) if args.test_dir_regex else re.compile(".*")
-  srcdirs = set(
-    s.parents[-4].absolute()
-    for s in args.srcs
-    if test_dir_regex.search(str(s))
-  )
+  srcdirs = set(s.parents[-4].absolute() for s in args.srcs if test_dir_regex.search(str(s)))
 
   # Special hidden-api shard: If the --hiddenapi flag is provided, build only
   # hiddenapi tests. Otherwise exclude all hiddenapi tests from normal shards.
@@ -575,19 +647,24 @@ def main() -> None:
     os.chdir(invalid_tmpdir)
     os.chmod(invalid_tmpdir, 0)
     with ThreadPoolExecutor(cpu_count() if use_multiprocessing(args.mode) else 1) as pool:
-      jobs = {}
-      for ctx in tests:
-        jobs[ctx.test_name] = pool.submit(ctx.build)
+      jobs = {ctx.test_name: pool.submit(ctx.build) for ctx in tests}
       for test_name, job in jobs.items():
         try:
           job.result()
         except Exception as e:
           raise Exception("Failed to build " + test_name) from e
 
-  # Create the final zip file which contains the content of the temporary directory.
-  proc = run([android_build_top / args.soong_zip, "-o", android_build_top / args.out,
-              "-C", ziproot, "-D", ziproot], check=True)
+  if args.mode == "target":
+    os.chdir(android_build_top)
+    test_names = [ctx.test_name for ctx in tests]
+    dst = ziproot / "runner" / args.out.with_suffix(".tests.json").name
+    tests = create_ci_runner_scripts(dst.parent, args.mode, test_names)
+    dst.write_text(json.dumps(tests, indent=2, sort_keys=True))
 
+  # Create the final zip file which contains the content of the temporary directory.
+  soong_zip = android_build_top / args.soong_zip
+  zip_file = android_build_top / args.out
+  run([soong_zip, "-L", "0", "-o", zip_file, "-C", ziproot, "-D", ziproot], check=True)
 
 if __name__ == "__main__":
   main()

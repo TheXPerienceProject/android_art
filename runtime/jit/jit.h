@@ -17,21 +17,22 @@
 #ifndef ART_RUNTIME_JIT_JIT_H_
 #define ART_RUNTIME_JIT_JIT_H_
 
-#include <unordered_set>
-
 #include <android-base/unique_fd.h>
 
+#include <unordered_set>
+
+#include "app_info.h"
 #include "base/histogram-inl.h"
 #include "base/macros.h"
 #include "base/mutex.h"
 #include "base/timing_logger.h"
 #include "compilation_kind.h"
 #include "handle.h"
-#include "offsets.h"
 #include "interpreter/mterp/nterp.h"
 #include "jit/debugger_interface.h"
 #include "jit_options.h"
 #include "obj_ptr.h"
+#include "offsets.h"
 #include "thread_pool.h"
 
 namespace art HIDDEN {
@@ -280,7 +281,8 @@ class Jit {
   // It can be empty indicating there is no reference profile.
   void StartProfileSaver(const std::string& profile_filename,
                          const std::vector<std::string>& code_paths,
-                         const std::string& ref_profile_filename);
+                         const std::string& ref_profile_filename,
+                         AppInfo::CodeType code_type);
   void StopProfileSaver();
 
   void DumpForSigQuit(std::ostream& os) REQUIRES(!lock_);

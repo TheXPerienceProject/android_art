@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-419-long-parameter-expected-stdout",
         ":art-run-test-419-long-parameter-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

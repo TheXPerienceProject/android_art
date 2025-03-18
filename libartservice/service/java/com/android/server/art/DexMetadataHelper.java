@@ -45,9 +45,6 @@ import java.util.zip.ZipFile;
 public class DexMetadataHelper {
     @NonNull private final Injector mInjector;
 
-    private static final String PROFILE_DEX_METADATA = "primary.prof";
-    private static final String VDEX_DEX_METADATA = "primary.vdex";
-
     public DexMetadataHelper() {
         this(new Injector());
     }
@@ -89,14 +86,12 @@ public class DexMetadataHelper {
 
     @NonNull
     public static String getDmPath(@NonNull DexMetadataPath dmPath) {
-        String dexPath = dmPath.dexPath;
-        int pos = dexPath.lastIndexOf(".");
-        return (pos != -1 ? dexPath.substring(0, pos) : dexPath) + ".dm";
+        return Utils.replaceFileExtension(dmPath.dexPath, ArtConstants.DEX_METADATA_FILE_EXT);
     }
 
     private static @DexMetadata.Type int getType(@NonNull ZipFile zipFile) {
-        var profile = zipFile.getEntry(PROFILE_DEX_METADATA);
-        var vdex = zipFile.getEntry(VDEX_DEX_METADATA);
+        var profile = zipFile.getEntry(ArtConstants.DEX_METADATA_PROFILE_ENTRY);
+        var vdex = zipFile.getEntry(ArtConstants.DEX_METADATA_VDEX_ENTRY);
 
         if (profile != null && vdex != null) {
             return DexMetadata.TYPE_PROFILE_AND_VDEX;

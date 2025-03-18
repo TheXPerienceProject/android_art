@@ -243,8 +243,7 @@ class JniCompilerTest : public CommonCompilerTest {
     Handle<mirror::ClassLoader> loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader)));
     // Compile the native method before starting the runtime
-    Handle<mirror::Class> c =
-        hs.NewHandle(class_linker_->FindClass(self, "LMyClassNatives;", loader));
+    Handle<mirror::Class> c = hs.NewHandle(FindClass("LMyClassNatives;", loader));
     const auto pointer_size = class_linker_->GetImagePointerSize();
     ArtMethod* method = c->FindClassMethod(method_name, method_sig, pointer_size);
     ASSERT_TRUE(method != nullptr) << method_name << " " << method_sig;

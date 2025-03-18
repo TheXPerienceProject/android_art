@@ -235,11 +235,6 @@ define define-art-gtest-rule-host
   #       * ART_HOST_ARCH := x86_64
   #       * 2ND_ART_HOST_ARCH := x86
   #       * 2ND_HOST_ARCH := x86
-  ifeq ($(HOST_PREFER_32_BIT),true)
-    gtest_deps += $$(2ND_HOST_BOOT_IMAGE) # Depend on the 32-bit boot image.
-  else
-    gtest_deps += $$($(3)HOST_BOOT_IMAGE)
-  endif
 
 .PHONY: $$(gtest_build_rule)
 $$(gtest_build_rule) : $$(gtest_exe) $$(gtest_deps)

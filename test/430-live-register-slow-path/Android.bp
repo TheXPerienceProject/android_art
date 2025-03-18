@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-430-live-register-slow-path-expected-stdout",
         ":art-run-test-430-live-register-slow-path-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

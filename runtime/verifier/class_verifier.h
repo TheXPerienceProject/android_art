@@ -27,7 +27,6 @@
 #include "handle.h"
 #include "obj_ptr.h"
 #include "verifier/method_verifier.h"
-#include "verifier/reg_type_cache.h"
 #include "verifier_enums.h"
 
 namespace art HIDDEN {

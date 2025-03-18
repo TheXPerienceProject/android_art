@@ -32,10 +32,8 @@ class UnstartedRuntimeTransactionTest : public CommonTransactionTestBase<Unstart
   // Prepare for aborts. Aborts assume that the exception class is already resolved, as the
   // loading code doesn't work under transactions.
   void PrepareForAborts() REQUIRES_SHARED(Locks::mutator_lock_) {
-    ObjPtr<mirror::Object> result = Runtime::Current()->GetClassLinker()->FindClass(
-        Thread::Current(),
-        kTransactionAbortErrorDescriptor,
-        ScopedNullHandle<mirror::ClassLoader>());
+    ObjPtr<mirror::Object> result =
+        FindClass(kTransactionAbortErrorDescriptor, ScopedNullHandle<mirror::ClassLoader>());
     CHECK(result != nullptr);
   }
 };
@@ -152,9 +150,7 @@ class UnstartedClassForNameTransactionTest : public UnstartedRuntimeTransactionT
     // For transaction mode, we cannot load any classes, as the pre-fence initialization of
     // classes isn't transactional. Load them ahead of time.
     for (const char* name : kTestCases) {
-      class_linker_->FindClass(self,
-                               DotToDescriptor(name).c_str(),
-                               ScopedNullHandle<mirror::ClassLoader>());
+      FindClass(DotToDescriptor(name).c_str(), ScopedNullHandle<mirror::ClassLoader>());
       CHECK(!self->IsExceptionPending()) << self->GetException()->Dump();
     }
 

@@ -320,18 +320,15 @@ void UnfoldRotateLeft(HRol* rol) {
   HBasicBlock* block = rol->GetBlock();
   HGraph* graph = block->GetGraph();
   ArenaAllocator* allocator = graph->GetAllocator();
-  HRor* ror;
-
+  HInstruction* neg;
   if (rol->GetRight()->IsConstant()) {
     int32_t value = rol->GetRight()->AsIntConstant()->GetValue();
-    HIntConstant* negated = graph->GetIntConstant(-value);
-    ror = new (allocator) HRor(rol->GetType(), rol->GetLeft(), negated);
+    neg = graph->GetIntConstant(-value);
   } else {
-    HNeg* neg = new (allocator) HNeg(DataType::Type::kInt32, rol->GetRight());
+    neg = new (allocator) HNeg(DataType::Type::kInt32, rol->GetRight());
     block->InsertInstructionBefore(neg, rol);
-    ror = new (allocator) HRor(rol->GetType(), rol->GetLeft(), neg);
   }
-
+  HInstruction* ror = new (allocator) HRor(rol->GetType(), rol->GetLeft(), neg);
   block->ReplaceAndRemoveInstructionWith(rol, ror);
 }
 

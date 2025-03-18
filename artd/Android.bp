@@ -64,7 +64,7 @@ art_cc_binary {
         "libartservice",
         "libarttools",
         "libbase",
-        "libdexfile",
+        "libdexfile#impl",
     ],
     apex_available: [
         "com.android.art",
@@ -75,6 +75,9 @@ art_cc_binary {
 art_cc_defaults {
     name: "art_artd_tests_defaults",
     defaults: ["artd_defaults"],
+    header_libs: [
+        "libarttools_testing",
+    ],
     static_libs: [
         "libgmock",
     ],
@@ -83,7 +86,7 @@ art_cc_defaults {
         "file_utils_test.cc",
         "path_utils_test.cc",
     ],
-    data: [
+    device_common_data: [
         ":art-gtest-jars-Main",
         ":art-gtest-jars-Nested",
     ],
@@ -107,6 +110,7 @@ art_cc_test {
         "libarttools",
         "libbase",
         "libdexfile",
+        "libprofile",
     ],
 }
 
@@ -123,6 +127,7 @@ art_cc_test {
         "libarttools",
         "libbase",
         "libdexfile",
+        "libprofile",
     ],
     test_config_template: "art_standalone_artd_tests.xml",
 }

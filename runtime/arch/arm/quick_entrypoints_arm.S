@@ -2354,21 +2354,6 @@ ENTRY art_quick_invoke_custom
     RETURN_OR_DELIVER_PENDING_EXCEPTION_REG r2
 END art_quick_invoke_custom
 
-// Wrap ExecuteSwitchImpl in assembly method which specifies DEX PC for unwinding.
-//  Argument 0: r0: The context pointer for ExecuteSwitchImpl.
-//  Argument 1: r1: Pointer to the templated ExecuteSwitchImpl to call.
-//  Argument 2: r2: The value of DEX PC (memory address of the methods bytecode).
-ENTRY ExecuteSwitchImplAsm
-    push {r4, lr}                                 // 2 words of callee saves.
-    .cfi_adjust_cfa_offset 8
-    .cfi_rel_offset r4, 0
-    .cfi_rel_offset lr, 4
-    mov r4, r2                                    // r4 = DEX PC
-    CFI_DEFINE_DEX_PC_WITH_OFFSET(0 /* r0 */, 4 /* r4 */, 0)
-    blx r1                                        // Call the wrapped method.
-    pop {r4, pc}
-END ExecuteSwitchImplAsm
-
 // r0 contains the class, r4 contains the inline cache. We can use ip as temporary.
 ENTRY art_quick_update_inline_cache
 #if (INLINE_CACHE_SIZE != 5)

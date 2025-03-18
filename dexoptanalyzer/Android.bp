@@ -87,7 +87,7 @@ art_cc_defaults {
     defaults: [
         "art_libunwindstack_static_defaults", // Must be statically linked in standalone tests
     ],
-    data: [
+    device_common_data: [
         ":art-gtest-jars-LinkageTest",
         ":art-gtest-jars-Main",
         ":art-gtest-jars-MainStripped",
@@ -104,6 +104,7 @@ art_cc_defaults {
             required: [
                 "dex2oatd",
                 "dexoptanalyzerd",
+                "art_boot_images",
             ],
         },
     },

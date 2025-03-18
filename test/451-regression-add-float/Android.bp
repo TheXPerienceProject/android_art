@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-451-regression-add-float-expected-stdout",
         ":art-run-test-451-regression-add-float-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

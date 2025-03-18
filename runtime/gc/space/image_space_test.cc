@@ -209,11 +209,15 @@ TEST_F(ImageSpaceTest, StringDeduplication) {
   ASSERT_TRUE(odex_file != nullptr) << error_msg;
   std::vector<ImageSpace*> non_owning_boot_image_spaces =
       MakeNonOwningPointerVector(boot_image_spaces);
-  std::unique_ptr<ImageSpace> app_image_space =
-      ImageSpace::CreateFromAppImage(app_image_name.c_str(),
-                                     odex_file.get(),
-                                     ArrayRef<ImageSpace* const>(non_owning_boot_image_spaces),
-                                     &error_msg);
+  std::unique_ptr<ImageSpace> app_image_space;
+  {
+    ScopedThreadSuspension sts(soa.Self(), ThreadState::kNative);
+    app_image_space = ImageSpace::CreateFromAppImage(
+        app_image_name.c_str(),
+        odex_file.get(),
+        ArrayRef<ImageSpace* const>(non_owning_boot_image_spaces),
+        &error_msg);
+  }
   ASSERT_TRUE(app_image_space != nullptr) << error_msg;
 
   // The string in the app image should be replaced and removed from interned string section.

@@ -1116,9 +1116,9 @@ bool ElfFileImpl<ElfTypes>::Load(File* file,
 
   if (executable) {
     InstructionSet elf_ISA = GetInstructionSetFromELF(GetHeader().e_machine, GetHeader().e_flags);
-    if (elf_ISA != kRuntimeISA) {
+    if (elf_ISA != kRuntimeQuickCodeISA) {
       std::ostringstream oss;
-      oss << "Expected ISA " << kRuntimeISA << " but found " << elf_ISA;
+      oss << "Expected ISA " << kRuntimeQuickCodeISA << " but found " << elf_ISA;
       *error_msg = oss.str();
       return false;
     }

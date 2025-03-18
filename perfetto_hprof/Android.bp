@@ -84,7 +84,7 @@ art_cc_library {
     shared_libs: [
         "libart",
         "libartbase",
-        "libdexfile",
+        "libdexfile#impl",
     ],
     apex_available: [
         "com.android.art",
@@ -102,7 +102,7 @@ art_cc_library {
     shared_libs: [
         "libartd",
         "libartbased",
-        "libdexfiled",
+        "libdexfiled#impl",
     ],
     apex_available: [
         "com.android.art.debug",

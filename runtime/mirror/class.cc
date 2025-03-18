@@ -480,17 +480,10 @@ void Class::SetReferenceInstanceOffsets(uint32_t new_reference_offsets) {
 }
 
 bool Class::IsInSamePackage(std::string_view descriptor1, std::string_view descriptor2) {
-  size_t i = 0;
-  size_t min_length = std::min(descriptor1.size(), descriptor2.size());
-  while (i < min_length && descriptor1[i] == descriptor2[i]) {
-    ++i;
-  }
-  if (descriptor1.find('/', i) != std::string_view::npos ||
-      descriptor2.find('/', i) != std::string_view::npos) {
-    return false;
-  } else {
-    return true;
-  }
+  static_assert(std::string_view::npos + 1u == 0u);
+  size_t d1_after_package = descriptor1.rfind('/') + 1u;
+  return descriptor2.starts_with(descriptor1.substr(0u, d1_after_package)) &&
+         descriptor2.find('/', d1_after_package) == std::string_view::npos;
 }
 
 bool Class::IsInSamePackage(ObjPtr<Class> that) {
@@ -515,8 +508,18 @@ bool Class::IsInSamePackage(ObjPtr<Class> that) {
     return true;
   }
   // Compare the package part of the descriptor string.
-  std::string temp1, temp2;
-  return IsInSamePackage(klass1->GetDescriptor(&temp1), klass2->GetDescriptor(&temp2));
+  if (UNLIKELY(klass1->IsProxyClass()) || UNLIKELY(klass2->IsProxyClass())) {
+    std::string temp1, temp2;
+    return IsInSamePackage(klass1->GetDescriptor(&temp1), klass2->GetDescriptor(&temp2));
+  }
+  if (UNLIKELY(klass1->IsPrimitive()) || UNLIKELY(klass2->IsPrimitive())) {
+    if (klass1->IsPrimitive() && klass2->IsPrimitive()) {
+      return true;
+    }
+    ObjPtr<Class> other_class = klass1->IsPrimitive() ? klass2 : klass1;
+    return other_class->GetDescriptorView().find('/') == std::string_view::npos;
+  }
+  return IsInSamePackage(klass1->GetDescriptorView(), klass2->GetDescriptorView());
 }
 
 bool Class::IsThrowableClass() {
@@ -1879,7 +1882,7 @@ bool Class::ProxyDescriptorEquals(ObjPtr<mirror::Class> match) {
   return descriptor == match_descriptor;
 }
 
-bool Class::ProxyDescriptorEquals(const char* match) {
+bool Class::ProxyDescriptorEquals(std::string_view match) {
   DCHECK(IsProxyClass());
   std::string storage;
   const char* descriptor = GetDescriptor(&storage);

@@ -16,7 +16,7 @@ AttributeMacros: ['__', 'NO_RETURN']
 BinPackArguments: false
 BinPackParameters: false
 BreakConstructorInitializers: BeforeColon
-BreakBeforeTernaryOperators: false
+BreakBeforeTernaryOperators: true
 ColumnLimit: 100
 CommentPragmas: NOLINT:.*
 ConstructorInitializerAllOnOneLineOrOnePerLine: true

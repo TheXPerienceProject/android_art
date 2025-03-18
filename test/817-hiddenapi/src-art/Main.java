@@ -73,6 +73,7 @@ public class Main {
     String tempFileName = System.mapLibraryName("hiddenapitest");
     File tempFile = new File(System.getenv("DEX_LOCATION"), tempFileName);
     Files.copy(new File(nativeLibFileName).toPath(), tempFile.toPath());
+    tempFile.setWritable(false);
     return tempFile.getAbsolutePath();
   }
 

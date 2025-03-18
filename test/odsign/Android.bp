@@ -32,14 +32,13 @@ java_test_host {
     defaults: ["odsign_e2e_tests_defaults"],
     // TODO(b/228838581): Do not add `data` to the defaults unless the bug is
     // fixed.
-    data: [
+    device_common_data: [
         ":odsign_e2e_test_app",
     ],
     test_config: "odsign-e2e-tests.xml",
     test_suites: [
         "general-tests",
         "cts",
-        "mcts-art",
     ],
 }
 
@@ -48,10 +47,10 @@ java_test_host {
     defaults: ["odsign_e2e_tests_defaults"],
     // TODO(b/228838581): Do not add `data` to the defaults unless the bug is
     // fixed.
-    data: [
+    device_common_data: [
         ":odsign_e2e_test_app",
     ],
-    java_resources: [
+    device_common_java_resources: [
         ":art-gtest-jars-Main",
     ],
     test_config: "odsign-e2e-tests-full.xml",

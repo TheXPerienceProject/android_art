@@ -34,6 +34,7 @@ import android.system.Os;
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.server.LocalManagerRegistry;
 import com.android.server.art.ArtJni;
 import com.android.server.art.ArtManagerLocal;
 import com.android.server.art.ArtModuleServiceInitializer;
@@ -43,7 +44,10 @@ import com.android.server.art.GlobalInjector;
 import com.android.server.art.IArtd;
 import com.android.server.art.IDexoptChrootSetup;
 import com.android.server.art.PreRebootDexoptJob;
+import com.android.server.art.ReasonMapping;
 import com.android.server.art.Utils;
+import com.android.server.art.model.BatchDexoptParams;
+import com.android.server.pm.PackageManagerLocal;
 
 import dalvik.system.DelegateLastClassLoader;
 
@@ -57,6 +61,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Objects;
 
 /**
  * Drives Pre-reboot Dexopt, through reflection.
@@ -71,8 +76,8 @@ import java.nio.file.Paths;
 public class PreRebootDriver {
     @NonNull private final Injector mInjector;
 
-    public PreRebootDriver(@NonNull Context context) {
-        this(new Injector(context));
+    public PreRebootDriver(@NonNull Context context, @NonNull ArtManagerLocal artManagerLocal) {
+        this(new Injector(context, artManagerLocal));
     }
 
     @VisibleForTesting
@@ -95,8 +100,14 @@ public class PreRebootDriver {
         boolean systemRequirementCheckFailed = false;
         try {
             statsReporter.recordJobStarted();
-            setUp(otaSlot, mapSnapshotsForOta);
-            runFromChroot(cancellationSignal);
+            try (var snapshot = mInjector.getPackageManagerLocal().withFilteredSnapshot()) {
+                BatchDexoptParams params = mInjector.getArtManagerLocal().getBatchDexoptParams(
+                        snapshot, ReasonMapping.REASON_PRE_REBOOT_DEXOPT, cancellationSignal);
+                if (!cancellationSignal.isCanceled()) {
+                    setUp(otaSlot, mapSnapshotsForOta);
+                    runFromChroot(cancellationSignal, snapshot, params);
+                }
+            }
             success = true;
             return true;
         } catch (RemoteException e) {
@@ -201,8 +212,19 @@ public class PreRebootDriver {
         mInjector.getDexoptChrootSetup().tearDown(false /* allowConcurrent */);
     }
 
-    private void runFromChroot(@NonNull CancellationSignal cancellationSignal)
+    private void runFromChroot(@NonNull CancellationSignal cancellationSignal,
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
+            @NonNull BatchDexoptParams params)
             throws ReflectiveOperationException, IOException, ErrnoException {
+        // Load the new `service-art.jar` on top of the current classloader, which has the old
+        // system server, framework, and Libcore.
+        // Note that the current classloader also includes the old `service-art.jar`, so this load
+        // inevitably introduces duplicate classes. We use `DelegateLastClassLoader` so that the
+        // classes in the new `service-art.jar` shadow the old ones, to make sure only new classes
+        // are used. Be careful not to pass an instance of a class between the old `service-art.jar`
+        // and the new `service-art.jar` (across the API boundary in `PreRebootManagerInterface`,
+        // either as a parameter or a return value).
+        // For this reason, a serialized protobuf is used for passing `BatchDexoptParams`.
         String chrootArtDir = CHROOT_DIR + "/apex/com.android.art";
         String dexPath = chrootArtDir + "/javalib/service-art.jar";
 
@@ -227,9 +249,11 @@ public class PreRebootDriver {
         Object preRebootManager = preRebootManagerClass.getConstructor().newInstance();
         preRebootManagerClass
                 .getMethod("run", ArtModuleServiceManager.class, Context.class,
-                        CancellationSignal.class)
+                        CancellationSignal.class, PackageManagerLocal.FilteredSnapshot.class,
+                        byte[].class)
                 .invoke(preRebootManager, ArtModuleServiceInitializer.getArtModuleServiceManager(),
-                        mInjector.getContext(), cancellationSignal);
+                        mInjector.getContext(), cancellationSignal, snapshot,
+                        params.toProto().toByteArray());
     }
 
     /**
@@ -240,9 +264,11 @@ public class PreRebootDriver {
     @VisibleForTesting
     public static class Injector {
         @NonNull private final Context mContext;
+        @NonNull private final ArtManagerLocal mArtManagerLocal;
 
-        Injector(@NonNull Context context) {
+        Injector(@NonNull Context context, @NonNull ArtManagerLocal artManagerLocal) {
             mContext = context;
+            mArtManagerLocal = artManagerLocal;
         }
 
         @NonNull
@@ -258,6 +284,17 @@ public class PreRebootDriver {
         @NonNull
         public IArtd getArtd() {
             return ArtdRefCache.getInstance().getArtd();
+        }
+
+        @NonNull
+        public ArtManagerLocal getArtManagerLocal() {
+            return mArtManagerLocal;
+        }
+
+        @NonNull
+        public PackageManagerLocal getPackageManagerLocal() {
+            return Objects.requireNonNull(
+                    LocalManagerRegistry.getManager(PackageManagerLocal.class));
         }
     }
 }

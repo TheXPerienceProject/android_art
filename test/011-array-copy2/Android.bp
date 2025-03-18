@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-011-array-copy2-expected-stdout",
         ":art-run-test-011-array-copy2-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

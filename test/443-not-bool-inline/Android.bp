@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-443-not-bool-inline-expected-stdout",
         ":art-run-test-443-not-bool-inline-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

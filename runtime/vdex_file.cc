@@ -392,10 +392,12 @@ bool VdexFile::HasOnlyStandardDexFiles() const {
 
 static ObjPtr<mirror::Class> FindClassAndClearException(ClassLinker* class_linker,
                                                         Thread* self,
-                                                        const char* name,
+                                                        const char* descriptor,
+                                                        size_t descriptor_length,
                                                         Handle<mirror::ClassLoader> class_loader)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  ObjPtr<mirror::Class> result = class_linker->FindClass(self, name, class_loader);
+  ObjPtr<mirror::Class> result =
+      class_linker->FindClass(self, descriptor, descriptor_length, class_loader);
   if (result == nullptr) {
     DCHECK(self->IsExceptionPending());
     self->ClearException();
@@ -403,18 +405,24 @@ static ObjPtr<mirror::Class> FindClassAndClearException(ClassLinker* class_linke
   return result;
 }
 
-static const char* GetStringFromId(const DexFile& dex_file,
-                                   dex::StringIndex string_id,
-                                   uint32_t number_of_extra_strings,
-                                   const uint32_t* extra_strings_offsets,
-                                   const uint8_t* verifier_deps) {
+static const char* GetStringFromIndex(const DexFile& dex_file,
+                                      dex::StringIndex string_id,
+                                      uint32_t number_of_extra_strings,
+                                      const uint32_t* extra_strings_offsets,
+                                      const uint8_t* verifier_deps,
+                                      /*out*/ size_t* utf8_length) {
   uint32_t num_ids_in_dex = dex_file.NumStringIds();
   if (string_id.index_ < num_ids_in_dex) {
-    return dex_file.GetStringData(string_id);
+    uint32_t utf16_length;
+    const char* str = dex_file.GetStringDataAndUtf16Length(string_id, &utf16_length);
+    *utf8_length = DexFile::Utf8Length(str, utf16_length);
+    return str;
   } else {
     CHECK_LT(string_id.index_ - num_ids_in_dex, number_of_extra_strings);
     uint32_t offset = extra_strings_offsets[string_id.index_ - num_ids_in_dex];
-    return reinterpret_cast<const char*>(verifier_deps) + offset;
+    const char* str = reinterpret_cast<const char*>(verifier_deps) + offset;
+    *utf8_length = strlen(str);
+    return str;
   }
 }
 
@@ -499,20 +507,25 @@ ClassStatus VdexFile::ComputeClassStatus(Thread* self, Handle<mirror::Class> cls
       // Error parsing the data, just return that we are not verified.
       return ClassStatus::kResolved;
     }
-    const char* destination_desc = GetStringFromId(dex_file,
-                                                   dex::StringIndex(destination_index),
-                                                   number_of_extra_strings,
-                                                   extra_strings_offsets,
-                                                   verifier_deps);
-    destination.Assign(
-        FindClassAndClearException(class_linker, self, destination_desc, class_loader));
+    size_t destination_desc_length;
+    const char* destination_desc = GetStringFromIndex(dex_file,
+                                                      dex::StringIndex(destination_index),
+                                                      number_of_extra_strings,
+                                                      extra_strings_offsets,
+                                                      verifier_deps,
+                                                      &destination_desc_length);
+    destination.Assign(FindClassAndClearException(
+        class_linker, self, destination_desc, destination_desc_length, class_loader));
 
-    const char* source_desc = GetStringFromId(dex_file,
-                                              dex::StringIndex(source_index),
-                                              number_of_extra_strings,
-                                              extra_strings_offsets,
-                                              verifier_deps);
-    source.Assign(FindClassAndClearException(class_linker, self, source_desc, class_loader));
+    size_t source_desc_length;
+    const char* source_desc = GetStringFromIndex(dex_file,
+                                                 dex::StringIndex(source_index),
+                                                 number_of_extra_strings,
+                                                 extra_strings_offsets,
+                                                 verifier_deps,
+                                                 &source_desc_length);
+    source.Assign(FindClassAndClearException(
+        class_linker, self, source_desc, source_desc_length, class_loader));
 
     if (destination == nullptr || source == nullptr) {
       // The interpreter / compiler can handle a missing class.

@@ -58,7 +58,7 @@ static ::std::vector<CodegenTargetConfig> GetTargetConfigs() {
   };
 
   for (const CodegenTargetConfig& test_config : test_config_candidates) {
-    if (CanExecute(test_config.GetInstructionSet())) {
+    if (CanExecuteISA(test_config.GetInstructionSet())) {
       v.push_back(test_config);
     }
   }
@@ -111,11 +111,11 @@ class SchedulerTest : public CommonCompilerTest, public OptimizingUnitTestHelper
 
     DCHECK(div_check->CanThrow());
 
-    HEnvironment* environment = new (GetAllocator()) HEnvironment(GetAllocator(),
-                                                                  2,
-                                                                  graph_->GetArtMethod(),
-                                                                  0,
-                                                                  div_check);
+    HEnvironment* environment = HEnvironment::Create(GetAllocator(),
+                                                     /*number_of_vregs=*/ 2,
+                                                     graph_->GetArtMethod(),
+                                                     /*dex_pc=*/ 0,
+                                                     div_check);
     div_check->SetRawEnvironment(environment);
     environment->SetRawEnvAt(0, add2);
     add2->AddEnvUseAt(div_check->GetEnvironment(), 0);

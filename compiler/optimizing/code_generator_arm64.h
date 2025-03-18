@@ -131,6 +131,8 @@ const vixl::aarch64::CPURegList callee_saved_fp_registers(vixl::aarch64::CPURegi
                                                           vixl::aarch64::d15.GetCode());
 Location ARM64ReturnLocation(DataType::Type return_type);
 
+vixl::aarch64::Condition ARM64PCondition(HVecPredToBoolean::PCondKind cond);
+
 #define UNIMPLEMENTED_INTRINSIC_LIST_ARM64(V) \
   V(MathSignumFloat)                          \
   V(MathSignumDouble)                         \
@@ -159,7 +161,6 @@ Location ARM64ReturnLocation(DataType::Type return_type);
   V(SystemArrayCopyInt)                       \
   V(UnsafeArrayBaseOffset)                    \
   /* 1.8 */                                   \
-  V(MethodHandleInvokeExact)                  \
   V(MethodHandleInvoke)                       \
   /* OpenJDK 11 */                            \
   V(JdkUnsafeArrayBaseOffset)
@@ -184,16 +185,34 @@ class SlowPathCodeARM64 : public SlowPathCode {
 
 class JumpTableARM64 : public DeletableArenaObject<kArenaAllocSwitchTable> {
  public:
+  using VIXLInt32Literal = vixl::aarch64::Literal<int32_t>;
+
   explicit JumpTableARM64(HPackedSwitch* switch_instr)
-    : switch_instr_(switch_instr), table_start_() {}
+      : switch_instr_(switch_instr),
+        table_start_(),
+        jump_targets_(switch_instr->GetAllocator()->Adapter(kArenaAllocCodeGenerator)) {
+      uint32_t num_entries = switch_instr_->GetNumEntries();
+      for (uint32_t i = 0; i < num_entries; i++) {
+        VIXLInt32Literal* lit = new VIXLInt32Literal(0);
+        jump_targets_.emplace_back(lit);
+      }
+    }
 
   vixl::aarch64::Label* GetTableStartLabel() { return &table_start_; }
 
+  // Emits the jump table into the code buffer; jump target offsets are not yet known.
   void EmitTable(CodeGeneratorARM64* codegen);
+
+  // Updates the offsets in the jump table, to be used when the jump targets basic blocks
+  // addresses are resolved.
+  void FixTable(CodeGeneratorARM64* codegen);
 
  private:
   HPackedSwitch* const switch_instr_;
   vixl::aarch64::Label table_start_;
+
+  // Contains literals for the switch's jump targets.
+  ArenaVector<std::unique_ptr<VIXLInt32Literal>> jump_targets_;
 
   DISALLOW_COPY_AND_ASSIGN(JumpTableARM64);
 };
@@ -583,6 +602,14 @@ class InstructionCodeGeneratorARM64Sve : public InstructionCodeGeneratorARM64 {
       return vixl::aarch64::p2;
     }
   }
+
+  // Generate a vector comparison instruction based on the IfCondition.
+  void GenerateIntegerVecComparison(const vixl::aarch64::PRegisterWithLaneSize& pd,
+                                    const vixl::aarch64::PRegisterZ& pg,
+                                    const vixl::aarch64::ZRegister& zn,
+                                    const vixl::aarch64::ZRegister& zm,
+                                    IfCondition cond);
+  void HandleVecCondition(HVecCondition* instruction);
 };
 
 class LocationsBuilderARM64Sve : public LocationsBuilderARM64 {
@@ -596,6 +623,8 @@ class LocationsBuilderARM64Sve : public LocationsBuilderARM64 {
   FOR_EACH_CONCRETE_INSTRUCTION_VECTOR_COMMON(DECLARE_VISIT_INSTRUCTION)
 
 #undef DECLARE_VISIT_INSTRUCTION
+ private:
+  void HandleVecCondition(HVecCondition* instruction);
 };
 
 class ParallelMoveResolverARM64 : public ParallelMoveResolverNoSwap {
@@ -832,6 +861,13 @@ class CodeGeneratorARM64 : public CodeGenerator {
   vixl::aarch64::Label* NewBootImageMethodPatch(MethodReference target_method,
                                                 vixl::aarch64::Label* adrp_label = nullptr);
 
+  // Add a new app image method patch for an instruction and return the label
+  // to be bound before the instruction. The instruction will be either the
+  // ADRP (pass `adrp_label = null`) or the LDR (pass `adrp_label` pointing
+  // to the associated ADRP patch label).
+  vixl::aarch64::Label* NewAppImageMethodPatch(MethodReference target_method,
+                                               vixl::aarch64::Label* adrp_label = nullptr);
+
   // Add a new .bss entry method patch for an instruction and return
   // the label to be bound before the instruction. The instruction will be
   // either the ADRP (pass `adrp_label = null`) or the LDR (pass `adrp_label`
@@ -878,6 +914,13 @@ class CodeGeneratorARM64 : public CodeGenerator {
                                                dex::StringIndex string_index,
                                                vixl::aarch64::Label* adrp_label = nullptr);
 
+  // Add a new .bss entry MethodType patch for an instruction and return the label
+  // to be bound before the instruction. The instruction will be either the
+  // ADRP (pass `adrp_label = null`) or the ADD (pass `adrp_label` pointing
+  // to the associated ADRP patch label).
+  vixl::aarch64::Label* NewMethodTypeBssEntryPatch(HLoadMethodType* load_method_type,
+                                                   vixl::aarch64::Label* adrp_label = nullptr);
+
   // Add a new boot image JNI entrypoint patch for an instruction and return the label
   // to be bound before the instruction. The instruction will be either the
   // ADRP (pass `adrp_label = null`) or the LDR (pass `adrp_label` pointing
@@ -906,6 +949,13 @@ class CodeGeneratorARM64 : public CodeGenerator {
                                                                Handle<mirror::Class> handle) {
     return jit_patches_.DeduplicateJitClassLiteral(
         dex_file, class_index, handle, GetCodeGenerationData());
+  }
+  vixl::aarch64::Literal<uint32_t>* DeduplicateJitMethodTypeLiteral(
+      const DexFile& dex_file,
+      dex::ProtoIndex proto_index,
+      Handle<mirror::MethodType> handle) {
+    return jit_patches_.DeduplicateJitMethodTypeLiteral(
+        dex_file, proto_index, handle, GetCodeGenerationData());
   }
 
   void EmitAdrpPlaceholder(vixl::aarch64::Label* fixup_label, vixl::aarch64::Register reg);
@@ -1158,7 +1208,7 @@ class CodeGeneratorARM64 : public CodeGenerator {
                                            vixl::aarch64::Label* adrp_label,
                                            ArenaDeque<PcRelativePatchInfo>* patches);
 
-  void EmitJumpTables();
+  void FixJumpTables();
 
   template <linker::LinkerPatch (*Factory)(size_t, const DexFile*, uint32_t, uint32_t)>
   static void EmitPcRelativeLinkerPatches(const ArenaDeque<PcRelativePatchInfo>& infos,
@@ -1186,6 +1236,8 @@ class CodeGeneratorARM64 : public CodeGenerator {
 
   // PC-relative method patch info for kBootImageLinkTimePcRelative.
   ArenaDeque<PcRelativePatchInfo> boot_image_method_patches_;
+  // PC-relative method patch info for kAppImageRelRo.
+  ArenaDeque<PcRelativePatchInfo> app_image_method_patches_;
   // PC-relative method patch info for kBssEntry.
   ArenaDeque<PcRelativePatchInfo> method_bss_entry_patches_;
   // PC-relative type patch info for kBootImageLinkTimePcRelative.
@@ -1202,6 +1254,8 @@ class CodeGeneratorARM64 : public CodeGenerator {
   ArenaDeque<PcRelativePatchInfo> boot_image_string_patches_;
   // PC-relative String patch info for kBssEntry.
   ArenaDeque<PcRelativePatchInfo> string_bss_entry_patches_;
+  // PC-relative MethodType patch info for kBssEntry.
+  ArenaDeque<PcRelativePatchInfo> method_type_bss_entry_patches_;
   // PC-relative method patch info for kBootImageLinkTimePcRelative+kCallCriticalNative.
   ArenaDeque<PcRelativePatchInfo> boot_image_jni_entrypoint_patches_;
   // PC-relative patch info for IntrinsicObjects for the boot image,

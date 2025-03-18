@@ -156,7 +156,7 @@ bool HSelectGenerator::TryGenerateSelectSimpleDiamondPattern(
   if (both_successors_return) {
     if (true_value->GetType() == DataType::Type::kReference) {
       DCHECK(false_value->GetType() == DataType::Type::kReference);
-      ReferenceTypePropagation::FixUpInstructionType(select, graph_->GetHandleCache());
+      ReferenceTypePropagation::FixUpSelectType(select, graph_->GetHandleCache());
     }
   } else if (phi->GetType() == DataType::Type::kReference) {
     select->SetReferenceTypeInfoIfValid(phi->GetReferenceTypeInfo());

@@ -111,65 +111,67 @@ FailureKind ClassVerifier::VerifyClass(Thread* self,
   MethodVerifier::FailureData failure_data;
   ClassLinker* const linker = Runtime::Current()->GetClassLinker();
 
-  for (const ClassAccessor::Method& method : accessor.GetMethods()) {
-    int64_t* previous_idx = &previous_method_idx[method.IsStaticOrDirect() ? 0u : 1u];
-    self->AllowThreadSuspension();
-    const uint32_t method_idx = method.GetIndex();
-    if (method_idx == *previous_idx) {
-      // smali can create dex files with two encoded_methods sharing the same method_idx
-      // http://code.google.com/p/smali/issues/detail?id=119
-      continue;
-    }
-    *previous_idx = method_idx;
-    std::string hard_failure_msg;
-    MethodVerifier::FailureData result =
-        MethodVerifier::VerifyMethod(self,
-                                     linker,
-                                     Runtime::Current()->GetArenaPool(),
-                                     verifier_deps,
-                                     method_idx,
-                                     dex_file,
-                                     dex_cache,
-                                     class_loader,
-                                     class_def,
-                                     method.GetCodeItem(),
-                                     method.GetAccessFlags(),
-                                     log_level,
-                                     api_level,
-                                     Runtime::Current()->IsAotCompiler(),
-                                     &hard_failure_msg);
-    if (result.kind == FailureKind::kHardFailure) {
-      if (failure_data.kind == FailureKind::kHardFailure) {
-        // If we logged an error before, we need a newline.
-        *error += "\n";
-      } else {
-        // If we didn't log a hard failure before, print the header of the message.
-        *error += "Verifier rejected class ";
-        *error += PrettyDescriptor(dex_file->GetClassDescriptor(class_def));
-        *error += ":";
+  if (accessor.NumMethods() != 0u) {
+    ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
+    RegTypeCache reg_types(self, linker, arena_pool, class_loader, dex_file);
+    for (const ClassAccessor::Method& method : accessor.GetMethods()) {
+      int64_t* previous_idx = &previous_method_idx[method.IsStaticOrDirect() ? 0u : 1u];
+      self->AllowThreadSuspension();
+      const uint32_t method_idx = method.GetIndex();
+      if (method_idx == *previous_idx) {
+        // smali can create dex files with two encoded_methods sharing the same method_idx
+        // http://code.google.com/p/smali/issues/detail?id=119
+        continue;
       }
-      *error += " ";
-      *error += hard_failure_msg;
-    } else if (result.kind != FailureKind::kNoFailure) {
-      UpdateMethodFlags(method.GetIndex(), klass, dex_cache, callbacks, result.types);
-      if ((result.types & VerifyError::VERIFY_ERROR_LOCKING) != 0) {
-        // Print a warning about expected slow-down.
-        // Use a string temporary to print one contiguous warning.
-        std::string tmp =
-            StringPrintf("Method %s failed lock verification and will run slower.",
-                         dex_file->PrettyMethod(method.GetIndex()).c_str());
-        if (!gPrintedDxMonitorText) {
-          tmp +=
-              "\nCommon causes for lock verification issues are non-optimized dex code\n"
-              "and incorrect proguard optimizations.";
-          gPrintedDxMonitorText = true;
+      *previous_idx = method_idx;
+      std::string hard_failure_msg;
+      MethodVerifier::FailureData result =
+          MethodVerifier::VerifyMethod(self,
+                                       arena_pool,
+                                       &reg_types,
+                                       verifier_deps,
+                                       method_idx,
+                                       dex_cache,
+                                       class_def,
+                                       method.GetCodeItem(),
+                                       method.GetAccessFlags(),
+                                       log_level,
+                                       api_level,
+                                       Runtime::Current()->IsAotCompiler(),
+                                       &hard_failure_msg);
+      if (result.kind == FailureKind::kHardFailure) {
+        if (failure_data.kind == FailureKind::kHardFailure) {
+          // If we logged an error before, we need a newline.
+          *error += "\n";
+        } else {
+          // If we didn't log a hard failure before, print the header of the message.
+          *error += "Verifier rejected class ";
+          *error += PrettyDescriptor(dex_file->GetClassDescriptor(class_def));
+          *error += ":";
         }
-        LOG(WARNING) << tmp;
+        *error += " ";
+        *error += hard_failure_msg;
+      } else if (result.kind != FailureKind::kNoFailure) {
+        UpdateMethodFlags(method.GetIndex(), klass, dex_cache, callbacks, result.types);
+        if ((result.types & VerifyError::VERIFY_ERROR_LOCKING) != 0) {
+          // Print a warning about expected slow-down.
+          // Use a string temporary to print one contiguous warning.
+          std::string tmp =
+              StringPrintf("Method %s failed lock verification and will run slower.",
+                           dex_file->PrettyMethod(method.GetIndex()).c_str());
+          if (!gPrintedDxMonitorText) {
+            tmp +=
+                "\nCommon causes for lock verification issues are non-optimized dex code\n"
+                "and incorrect proguard optimizations.";
+            gPrintedDxMonitorText = true;
+          }
+          LOG(WARNING) << tmp;
+        }
       }
-    }
 
-    // Merge the result for the method into the global state for the class.
-    failure_data.Merge(result);
+      // Merge the result for the method into the global state for the class.
+      failure_data.Merge(result);
+    }
   }
   uint64_t elapsed_time_microseconds = timer.Stop();
   VLOG(verifier) << "VerifyClass took " << PrettyDuration(UsToNs(elapsed_time_microseconds))

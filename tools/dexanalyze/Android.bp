@@ -42,7 +42,7 @@ art_cc_binary {
     name: "dexanalyze",
     defaults: ["dexanalyze-defaults"],
     shared_libs: [
-        "libdexfile",
+        "libdexfile#impl",
         "libartbase",
         "libbase",
     ],
@@ -58,7 +58,7 @@ art_cc_test {
     defaults: [
         "art_gtest_defaults",
     ],
-    data: [
+    device_common_data: [
         ":art-gtest-jars-MultiDex",
     ],
     srcs: [

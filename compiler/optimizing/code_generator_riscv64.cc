@@ -2666,8 +2666,10 @@ void InstructionCodeGeneratorRISCV64::GenerateMethodEntryExitHook(HInstruction* 
   __ Addi(tmp, tmp, -dchecked_integral_cast<int32_t>(kNumEntriesForWallClock * sizeof(void*)));
   __ Blt(tmp, tmp2, slow_path->GetEntryLabel());
 
-  // Update the index in the `Thread`.
-  __ Sd(tmp, TR, trace_buffer_curr_entry_offset);
+  // Update the index in the `Thread`. Temporarily free `tmp2` to be used by `Stored()`.
+  temps.FreeXRegister(tmp2);
+  __ Stored(tmp, TR, trace_buffer_curr_entry_offset);
+  tmp2 = temps.AllocateXRegister();
 
   // Record method pointer and trace action.
   __ Ld(tmp2, SP, 0);
@@ -5825,12 +5827,103 @@ void InstructionCodeGeneratorRISCV64::VisitVecPredToBoolean(HVecPredToBoolean* i
   LOG(FATAL) << "Unimplemented";
 }
 
-void LocationsBuilderRISCV64::VisitVecCondition(HVecCondition* instruction) {
+void LocationsBuilderRISCV64::VisitVecEqual(HVecEqual* instruction) {
   UNUSED(instruction);
   LOG(FATAL) << "Unimplemented";
 }
 
-void InstructionCodeGeneratorRISCV64::VisitVecCondition(HVecCondition* instruction) {
+void InstructionCodeGeneratorRISCV64::VisitVecEqual(HVecEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecNotEqual(HVecNotEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecNotEqual(HVecNotEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecLessThan(HVecLessThan* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecLessThan(HVecLessThan* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecLessThanOrEqual(HVecLessThanOrEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecLessThanOrEqual(HVecLessThanOrEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecGreaterThan(HVecGreaterThan* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecGreaterThan(HVecGreaterThan* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecGreaterThanOrEqual(HVecGreaterThanOrEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecGreaterThanOrEqual(
+    HVecGreaterThanOrEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecBelow(HVecBelow* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecBelow(HVecBelow* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecBelowOrEqual(HVecBelowOrEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecBelowOrEqual(HVecBelowOrEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecAbove(HVecAbove* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecAbove(HVecAbove* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void LocationsBuilderRISCV64::VisitVecAboveOrEqual(HVecAboveOrEqual* instruction) {
+  UNUSED(instruction);
+  LOG(FATAL) << "Unimplemented";
+}
+
+void InstructionCodeGeneratorRISCV64::VisitVecAboveOrEqual(HVecAboveOrEqual* instruction) {
   UNUSED(instruction);
   LOG(FATAL) << "Unimplemented";
 }
@@ -5894,6 +5987,7 @@ CodeGeneratorRISCV64::CodeGeneratorRISCV64(HGraph* graph,
       uint64_literals_(std::less<uint64_t>(),
                        graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       boot_image_method_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
+      app_image_method_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       method_bss_entry_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       boot_image_type_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
       app_image_type_patches_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)),
@@ -6546,6 +6640,12 @@ CodeGeneratorRISCV64::PcRelativePatchInfo* CodeGeneratorRISCV64::NewBootImageMet
       target_method.dex_file, target_method.index, info_high, &boot_image_method_patches_);
 }
 
+CodeGeneratorRISCV64::PcRelativePatchInfo* CodeGeneratorRISCV64::NewAppImageMethodPatch(
+    MethodReference target_method, const PcRelativePatchInfo* info_high) {
+  return NewPcRelativePatch(
+      target_method.dex_file, target_method.index, info_high, &app_image_method_patches_);
+}
+
 CodeGeneratorRISCV64::PcRelativePatchInfo* CodeGeneratorRISCV64::NewMethodBssEntryPatch(
     MethodReference target_method, const PcRelativePatchInfo* info_high) {
   return NewPcRelativePatch(
@@ -6723,6 +6823,7 @@ void CodeGeneratorRISCV64::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* l
   DCHECK(linker_patches->empty());
   size_t size =
       boot_image_method_patches_.size() +
+      app_image_method_patches_.size() +
       method_bss_entry_patches_.size() +
       boot_image_type_patches_.size() +
       app_image_type_patches_.size() +
@@ -6746,6 +6847,7 @@ void CodeGeneratorRISCV64::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* l
     DCHECK(boot_image_type_patches_.empty());
     DCHECK(boot_image_string_patches_.empty());
   }
+  DCHECK_IMPLIES(!GetCompilerOptions().IsAppImage(), app_image_method_patches_.empty());
   DCHECK_IMPLIES(!GetCompilerOptions().IsAppImage(), app_image_type_patches_.empty());
   if (GetCompilerOptions().IsBootImage()) {
     EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::IntrinsicReferencePatch>>(
@@ -6753,6 +6855,8 @@ void CodeGeneratorRISCV64::EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* l
   } else {
     EmitPcRelativeLinkerPatches<NoDexFileAdapter<linker::LinkerPatch::BootImageRelRoPatch>>(
         boot_image_other_patches_, linker_patches);
+    EmitPcRelativeLinkerPatches<linker::LinkerPatch::MethodAppImageRelRoPatch>(
+        app_image_method_patches_, linker_patches);
     EmitPcRelativeLinkerPatches<linker::LinkerPatch::TypeAppImageRelRoPatch>(
         app_image_type_patches_, linker_patches);
   }
@@ -6851,6 +6955,17 @@ void CodeGeneratorRISCV64::LoadMethod(MethodLoadKind load_kind, Location temp, H
     case MethodLoadKind::kBootImageRelRo: {
       uint32_t boot_image_offset = GetBootImageOffset(invoke);
       LoadBootImageRelRoEntry(temp.AsRegister<XRegister>(), boot_image_offset);
+      break;
+    }
+    case MethodLoadKind::kAppImageRelRo: {
+      DCHECK(GetCompilerOptions().IsAppImage());
+      PcRelativePatchInfo* info_high =
+          NewAppImageMethodPatch(invoke->GetResolvedMethodReference());
+      EmitPcRelativeAuipcPlaceholder(info_high, temp.AsRegister<XRegister>());
+      PcRelativePatchInfo* info_low =
+          NewAppImageMethodPatch(invoke->GetResolvedMethodReference(), info_high);
+      EmitPcRelativeLwuPlaceholder(
+          info_low, temp.AsRegister<XRegister>(), temp.AsRegister<XRegister>());
       break;
     }
     case MethodLoadKind::kBssEntry: {

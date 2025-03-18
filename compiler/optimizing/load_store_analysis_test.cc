@@ -226,6 +226,9 @@ TEST_F(LoadStoreAnalysisTest, ArrayIndexAliasingTest) {
 }
 
 TEST_F(LoadStoreAnalysisTest, ArrayAliasingTest) {
+  constexpr size_t vlen1 = kDefaultTestVectorSizeInBytes;
+  constexpr size_t vlen2 = vlen1 / 2;
+
   HBasicBlock* main = InitEntryMainExitGraphWithReturnVoid();
 
   HInstruction* array = MakeParam(DataType::Type::kReference);
@@ -242,26 +245,32 @@ TEST_F(LoadStoreAnalysisTest, ArrayAliasingTest) {
   HVecOperation* v1 = new (GetAllocator()) HVecReplicateScalar(GetAllocator(),
                                                                c1,
                                                                DataType::Type::kInt32,
-                                                               4,
+                                                               vlen1,
                                                                kNoDexPc);
   AddOrInsertInstruction(main, v1);
   HVecOperation* v2 = new (GetAllocator()) HVecReplicateScalar(GetAllocator(),
                                                                c1,
                                                                DataType::Type::kInt32,
-                                                               2,
+                                                               vlen2,
                                                                kNoDexPc);
   AddOrInsertInstruction(main, v2);
   HInstruction* i_add6 = MakeBinOp<HAdd>(main, DataType::Type::kInt32, index, c6);
   HInstruction* i_add8 = MakeBinOp<HAdd>(main, DataType::Type::kInt32, index, c8);
 
-  HInstruction* vstore_0 = MakeVecStore(main, array, c0, v1, DataType::Type::kInt32);
-  HInstruction* vstore_1 = MakeVecStore(main, array, c1, v1, DataType::Type::kInt32);
-  HInstruction* vstore_8 = MakeVecStore(main, array, c8, v1, DataType::Type::kInt32);
-  HInstruction* vstore_i = MakeVecStore(main, array, index, v1, DataType::Type::kInt32);
-  HInstruction* vstore_i_add6 = MakeVecStore(main, array, i_add6, v1, DataType::Type::kInt32);
-  HInstruction* vstore_i_add8 = MakeVecStore(main, array, i_add8, v1, DataType::Type::kInt32);
+  HInstruction* vstore_0 =
+      MakeVecStore(main, array, c0, v1, DataType::Type::kInt32, vlen1);
+  HInstruction* vstore_1 =
+      MakeVecStore(main, array, c1, v1, DataType::Type::kInt32, vlen1);
+  HInstruction* vstore_8 =
+      MakeVecStore(main, array, c8, v1, DataType::Type::kInt32, vlen1);
+  HInstruction* vstore_i =
+      MakeVecStore(main, array, index, v1, DataType::Type::kInt32, vlen1);
+  HInstruction* vstore_i_add6 =
+      MakeVecStore(main, array, i_add6, v1, DataType::Type::kInt32, vlen1);
+  HInstruction* vstore_i_add8 =
+      MakeVecStore(main, array, i_add8, v1, DataType::Type::kInt32, vlen1);
   HInstruction* vstore_i_add6_vlen2 =
-      MakeVecStore(main, array, i_add6, v2, DataType::Type::kInt32, /*vector_lengt=*/ 2);
+      MakeVecStore(main, array, i_add6, v2, DataType::Type::kInt32, vlen2);
 
   graph_->BuildDominatorTree();
   ScopedArenaAllocator allocator(graph_->GetArenaStack());

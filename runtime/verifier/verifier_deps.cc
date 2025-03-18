@@ -167,22 +167,32 @@ dex::StringIndex VerifierDeps::GetIdFromString(const DexFile& dex_file, const st
     deps->strings_.push_back(str);
     dex::StringIndex new_id(num_ids_in_dex + deps->strings_.size() - 1);
     CHECK_GE(new_id.index_, num_ids_in_dex);  // check for overflows
-    DCHECK_EQ(str, singleton->GetStringFromId(dex_file, new_id));
+    DCHECK_EQ(str, singleton->GetStringFromIndex(dex_file, new_id));
     return new_id;
   }
 }
 
-std::string VerifierDeps::GetStringFromId(const DexFile& dex_file,
-                                          dex::StringIndex string_id) const {
+const char* VerifierDeps::GetStringFromIndex(const DexFile& dex_file,
+                                             dex::StringIndex string_idx,
+                                             /*out*/ size_t* utf8_length) const {
   uint32_t num_ids_in_dex = dex_file.NumStringIds();
-  if (string_id.index_ < num_ids_in_dex) {
-    return std::string(dex_file.GetStringView(string_id));
+  if (string_idx.index_ < num_ids_in_dex) {
+    uint32_t utf16_length;
+    const char* str = dex_file.GetStringDataAndUtf16Length(string_idx, &utf16_length);
+    if (utf8_length != nullptr) {
+      *utf8_length = DexFile::Utf8Length(str, utf16_length);
+    }
+    return str;
   } else {
     const DexFileDeps* deps = GetDexFileDeps(dex_file);
     DCHECK(deps != nullptr);
-    string_id.index_ -= num_ids_in_dex;
-    CHECK_LT(string_id.index_, deps->strings_.size());
-    return deps->strings_[string_id.index_];
+    size_t index = string_idx.index_ - num_ids_in_dex;
+    CHECK_LT(index, deps->strings_.size());
+    const std::string& str = deps->strings_[index];
+    if (utf8_length != nullptr) {
+      *utf8_length = str.length();
+    }
+    return str.c_str();
   }
 }
 
@@ -253,7 +263,8 @@ void VerifierDeps::AddAssignability(const DexFile& dex_file,
   CHECK(destination.IsUnresolvedReference() || destination.HasClass());
   CHECK(!destination.IsUnresolvedMergedReference());
 
-  if (source.IsUnresolvedReference() || source.HasClass()) {
+  if (source.IsUnresolvedReference() || source.IsJavaLangObject() || source.HasClass()) {
+    DCHECK_IMPLIES(source.IsJavaLangObject(), destination.IsUnresolvedReference());
     // Get string IDs for both descriptors and store in the appropriate set.
     dex::StringIndex destination_id =
         GetIdFromString(dex_file, std::string(destination.GetDescriptor()));
@@ -264,7 +275,8 @@ void VerifierDeps::AddAssignability(const DexFile& dex_file,
     // Nothing to record, null is always assignable.
   } else {
     CHECK(source.IsUnresolvedMergedReference()) << source.Dump();
-    const UnresolvedMergedType& merge = *down_cast<const UnresolvedMergedType*>(&source);
+    const UnresolvedMergedReferenceType& merge =
+        *down_cast<const UnresolvedMergedReferenceType*>(&source);
     AddAssignability(dex_file, class_def, destination, merge.GetResolvedPart());
     for (uint32_t idx : merge.GetUnresolvedTypes().Indexes()) {
       AddAssignability(dex_file, class_def, destination, merge.GetRegTypeCache()->GetFromId(idx));
@@ -659,8 +671,9 @@ void VerifierDeps::Dump(VariableIndentationOutputStream* vios) const {
       vios->Stream() << "Dependencies of " << dex_file.GetClassDescriptor(dex_file.GetClassDef(idx))
                      << ":\n";
       for (const TypeAssignability& entry : dep.second->assignable_types_[idx]) {
-        vios->Stream() << GetStringFromId(dex_file, entry.GetSource()) << " must be assignable to "
-                       << GetStringFromId(dex_file, entry.GetDestination()) << "\n";
+        vios->Stream() << GetStringFromIndex(dex_file, entry.GetSource())
+                       << " must be assignable to "
+                       << GetStringFromIndex(dex_file, entry.GetDestination()) << "\n";
       }
     }
 
@@ -691,10 +704,12 @@ bool VerifierDeps::ValidateDependenciesAndUpdateStatus(
 // the same lookup pattern.
 static ObjPtr<mirror::Class> FindClassAndClearException(ClassLinker* class_linker,
                                                         Thread* self,
-                                                        const std::string& name,
+                                                        const char* descriptor,
+                                                        size_t descriptor_length,
                                                         Handle<mirror::ClassLoader> class_loader)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  ObjPtr<mirror::Class> result = class_linker->FindClass(self, name.c_str(), class_loader);
+  ObjPtr<mirror::Class> result =
+      class_linker->FindClass(self, descriptor, descriptor_length, class_loader);
   if (result == nullptr) {
     DCHECK(self->IsExceptionPending());
     self->ClearException();
@@ -719,11 +734,16 @@ bool VerifierDeps::VerifyDexFileAndUpdateStatus(
   static constexpr uint32_t kMaxWarnings = 5;
   for (const auto& vec : assignables) {
     for (const auto& entry : vec) {
-      const std::string& destination_desc = GetStringFromId(dex_file, entry.GetDestination());
-      destination.Assign(
-          FindClassAndClearException(class_linker, self, destination_desc, class_loader));
-      const std::string& source_desc = GetStringFromId(dex_file, entry.GetSource());
-      source.Assign(FindClassAndClearException(class_linker, self, source_desc, class_loader));
+      size_t destination_desc_length;
+      const char* destination_desc =
+          GetStringFromIndex(dex_file, entry.GetDestination(), &destination_desc_length);
+      destination.Assign(FindClassAndClearException(
+          class_linker, self, destination_desc, destination_desc_length, class_loader));
+      size_t source_desc_length;
+      const char* source_desc =
+          GetStringFromIndex(dex_file, entry.GetSource(), &source_desc_length);
+      source.Assign(FindClassAndClearException(
+          class_linker, self, source_desc, source_desc_length, class_loader));
 
       if (destination == nullptr || source == nullptr) {
         // We currently don't use assignability information for unresolved

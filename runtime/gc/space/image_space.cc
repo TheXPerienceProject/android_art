@@ -65,6 +65,7 @@
 #include "oat/oat_file.h"
 #include "profile/profile_compilation_info.h"
 #include "runtime.h"
+#include "runtime_globals.h"
 #include "space-inl.h"
 
 namespace art HIDDEN {
@@ -561,8 +562,13 @@ class ImageSpace::Loader {
                                                   const OatFile* oat_file,
                                                   ArrayRef<ImageSpace* const> boot_image_spaces,
                                                   /*out*/std::string* error_msg)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
+        REQUIRES(!Locks::mutator_lock_) {
     TimingLogger logger(__PRETTY_FUNCTION__, /*precise=*/ true, VLOG_IS_ON(image));
+
+    if (gPageSize != kMinPageSize) {
+      *error_msg = "Loading app image is only supported on devices with 4K page size";
+      return nullptr;
+    }
 
     std::unique_ptr<ImageSpace> space = Init(image_filename,
                                              image_location,
@@ -633,6 +639,7 @@ class ImageSpace::Loader {
         ArrayRef<ImageSpace* const> old_spaces =
             boot_image_spaces.SubArray(/*pos=*/ boot_image_space_dependencies);
         SafeMap<mirror::String*, mirror::String*> intern_remap;
+        ScopedObjectAccess soa(Thread::Current());
         RemoveInternTableDuplicates(old_spaces, space.get(), &intern_remap);
         if (!intern_remap.empty()) {
           RemapInternedStringDuplicates(intern_remap, space.get());
@@ -659,8 +666,7 @@ class ImageSpace::Loader {
                                           const char* image_location,
                                           TimingLogger* logger,
                                           /*inout*/MemMap* image_reservation,
-                                          /*out*/std::string* error_msg)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
+                                          /*out*/std::string* error_msg) {
     CHECK(image_filename != nullptr);
     CHECK(image_location != nullptr);
 
@@ -690,8 +696,7 @@ class ImageSpace::Loader {
                                           bool allow_direct_mapping,
                                           TimingLogger* logger,
                                           /*inout*/MemMap* image_reservation,
-                                          /*out*/std::string* error_msg)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
+                                          /*out*/std::string* error_msg) {
     CHECK(image_filename != nullptr);
     CHECK(image_location != nullptr);
 
@@ -990,8 +995,7 @@ class ImageSpace::Loader {
                               bool allow_direct_mapping,
                               TimingLogger* logger,
                               /*inout*/MemMap* image_reservation,
-                              /*out*/std::string* error_msg)
-        REQUIRES_SHARED(Locks::mutator_lock_) {
+                              /*out*/std::string* error_msg) {
     TimingLogger::ScopedTiming timing("MapImageFile", logger);
 
     // The runtime might not be available at this point if we're running dex2oat or oatdump, in
@@ -1085,8 +1089,6 @@ class ImageSpace::Loader {
         }
         if (use_parallel) {
           ScopedTrace trace("Waiting for workers");
-          // Go to native since we don't want to suspend while holding the mutator lock.
-          ScopedThreadSuspension sts(Thread::Current(), ThreadState::kNative);
           pool->Wait(self, true, false);
         }
         const uint64_t time = NanoTime() - start;
@@ -1285,7 +1287,7 @@ class ImageSpace::Loader {
       // Nothing to fix up.
       return true;
     }
-    ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
+
     // TODO: Assert that the app image does not contain any Method, Constructor,
     // FieldVarHandle or StaticFieldVarHandle. These require extra relocation
     // for the `ArtMethod*` and `ArtField*` pointers they contain.
@@ -1307,7 +1309,10 @@ class ImageSpace::Loader {
                                                         image_header->GetImageSize()));
       {
         TimingLogger::ScopedTiming timing("Fixup classes", &logger);
-        ObjPtr<mirror::Class> class_class = [&]() NO_THREAD_SAFETY_ANALYSIS {
+        const auto& class_table_section = image_header->GetClassTableSection();
+        if (class_table_section.Size() > 0u) {
+          ScopedObjectAccess soa(Thread::Current());
+          ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
           ObjPtr<mirror::ObjectArray<mirror::Object>> image_roots = app_image_objects.ToDest(
               image_header->GetImageRoots<kWithoutReadBarrier>().Ptr());
           int32_t class_roots_index = enum_cast<int32_t>(ImageHeader::kClassRoots);
@@ -1316,11 +1321,8 @@ class ImageSpace::Loader {
               ObjPtr<mirror::ObjectArray<mirror::Class>>::DownCast(boot_image.ToDest(
                   image_roots->GetWithoutChecks<kVerifyNone,
                                                 kWithoutReadBarrier>(class_roots_index).Ptr()));
-          return GetClassRoot<mirror::Class, kWithoutReadBarrier>(class_roots);
-        }();
-        const auto& class_table_section = image_header->GetClassTableSection();
-        if (class_table_section.Size() > 0u) {
-          ScopedObjectAccess soa(Thread::Current());
+          ObjPtr<mirror::Class> class_class =
+              GetClassRoot<mirror::Class, kWithoutReadBarrier>(class_roots);
           ClassTableVisitor class_table_visitor(forward_object);
           size_t read_count = 0u;
           const uint8_t* data = target_base + class_table_section.Offset();
@@ -1370,6 +1372,7 @@ class ImageSpace::Loader {
       // probably not required).
       TimingLogger::ScopedTiming timing("Fixup objects", &logger);
       ScopedObjectAccess soa(Thread::Current());
+      ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
       // Need to update the image to be at the target base.
       uintptr_t objects_begin = reinterpret_cast<uintptr_t>(target_base + objects_section.Offset());
       uintptr_t objects_end = reinterpret_cast<uintptr_t>(target_base + objects_section.End());
@@ -1395,6 +1398,7 @@ class ImageSpace::Loader {
     {
       // Only touches objects in the app image, no need for mutator lock.
       TimingLogger::ScopedTiming timing("Fixup methods", &logger);
+      ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
       image_header->VisitPackedArtMethods([&](ArtMethod& method) NO_THREAD_SAFETY_ANALYSIS {
         // TODO: Consider a separate visitor for runtime vs normal methods.
         if (UNLIKELY(method.IsRuntimeMethod())) {
@@ -1426,6 +1430,7 @@ class ImageSpace::Loader {
       {
         // Only touches objects in the app image, no need for mutator lock.
         TimingLogger::ScopedTiming timing("Fixup fields", &logger);
+        ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
         image_header->VisitPackedArtFields([&](ArtField& field) NO_THREAD_SAFETY_ANALYSIS {
           patch_object_visitor.template PatchGcRoot</*kMayBeNull=*/ false>(
               &field.DeclaringClassRoot());
@@ -1433,10 +1438,12 @@ class ImageSpace::Loader {
       }
       {
         TimingLogger::ScopedTiming timing("Fixup imt", &logger);
+        ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
         image_header->VisitPackedImTables(forward_metadata, target_base, kPointerSize);
       }
       {
         TimingLogger::ScopedTiming timing("Fixup conflict tables", &logger);
+        ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
         image_header->VisitPackedImtConflictTables(forward_metadata, target_base, kPointerSize);
       }
       // Fix up the intern table.
@@ -1444,6 +1451,7 @@ class ImageSpace::Loader {
       if (intern_table_section.Size() > 0u) {
         TimingLogger::ScopedTiming timing("Fixup intern table", &logger);
         ScopedObjectAccess soa(Thread::Current());
+        ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
         // Fixup the pointers in the newly written intern table to contain image addresses.
         InternTable temp_intern_table;
         // Note that we require that ReadFromMemory does not make an internal copy of the elements
@@ -3240,6 +3248,11 @@ bool ImageSpace::BootImageLoader::LoadFromSystem(
     /*out*/MemMap* extra_reservation,
     /*out*/std::string* error_msg) {
   TimingLogger logger(__PRETTY_FUNCTION__, /*precise=*/ true, VLOG_IS_ON(image));
+
+  if (gPageSize != kMinPageSize) {
+    *error_msg = "Loading boot image is only supported on devices with 4K page size";
+    return false;
+  }
 
   BootImageLayout layout(image_locations_,
                          boot_class_path_,

@@ -2000,21 +2000,6 @@ DEFINE_FUNCTION art_quick_invoke_custom
     RETURN_OR_DELIVER_PENDING_EXCEPTION
 END_FUNCTION art_quick_invoke_custom
 
-// Wrap ExecuteSwitchImpl in assembly method which specifies DEX PC for unwinding.
-//  Argument 0: RDI: The context pointer for ExecuteSwitchImpl.
-//  Argument 1: RSI: Pointer to the templated ExecuteSwitchImpl to call.
-//  Argument 2: RDX: The value of DEX PC (memory address of the methods bytecode).
-DEFINE_FUNCTION ExecuteSwitchImplAsm
-    PUSH rbx                 // Spill RBX
-    movq %rdx, %rbx          // RBX = DEX PC (callee save register)
-    CFI_DEFINE_DEX_PC_WITH_OFFSET(0 /* RAX */, 3 /* RBX */, 0)
-
-    call *%rsi               // Call the wrapped function
-
-    POP rbx                  // Restore RBX
-    ret
-END_FUNCTION ExecuteSwitchImplAsm
-
 // On entry: edi is the class, r11 is the inline cache. r10 and rax are available.
 DEFINE_FUNCTION art_quick_update_inline_cache
 #if (INLINE_CACHE_SIZE != 5)

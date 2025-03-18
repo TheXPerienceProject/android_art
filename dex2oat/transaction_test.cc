@@ -59,14 +59,13 @@ class TransactionTest : public CommonTransactionTest {
     ASSERT_TRUE(h_klass->IsInitialized());
 
     // Load and verify utility class.
-    h_klass.Assign(class_linker_->FindClass(soa.Self(), "LTransaction$AbortHelperClass;",
-                                            class_loader));
+    h_klass.Assign(FindClass("LTransaction$AbortHelperClass;", class_loader));
     ASSERT_TRUE(h_klass != nullptr);
     class_linker_->VerifyClass(soa.Self(), /* verifier_deps= */ nullptr, h_klass);
     ASSERT_TRUE(h_klass->IsVerified());
 
     // Load and verify tested class.
-    h_klass.Assign(class_linker_->FindClass(soa.Self(), tested_class_signature, class_loader));
+    h_klass.Assign(FindClass(tested_class_signature, class_loader));
     ASSERT_TRUE(h_klass != nullptr);
     class_linker_->VerifyClass(soa.Self(), /* verifier_deps= */ nullptr, h_klass);
     ASSERT_TRUE(h_klass->IsVerified());
@@ -171,8 +170,7 @@ TEST_F(TransactionTest, StaticFieldsTest) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Transaction"))));
   ASSERT_TRUE(class_loader != nullptr);
 
-  Handle<mirror::Class> h_klass(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LStaticFieldsTest;", class_loader)));
+  Handle<mirror::Class> h_klass = hs.NewHandle(FindClass("LStaticFieldsTest;", class_loader));
   ASSERT_TRUE(h_klass != nullptr);
   bool success = class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
   ASSERT_TRUE(success);
@@ -267,8 +265,7 @@ TEST_F(TransactionTest, InstanceFieldsTest) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Transaction"))));
   ASSERT_TRUE(class_loader != nullptr);
 
-  Handle<mirror::Class> h_klass(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LInstanceFieldsTest;", class_loader)));
+  Handle<mirror::Class> h_klass = hs.NewHandle(FindClass("LInstanceFieldsTest;", class_loader));
   ASSERT_TRUE(h_klass != nullptr);
   bool success = class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
   ASSERT_TRUE(success);
@@ -419,8 +416,7 @@ TEST_F(TransactionTest, StaticArrayFieldsTest) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Transaction"))));
   ASSERT_TRUE(class_loader != nullptr);
 
-  Handle<mirror::Class> h_klass(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LStaticArrayFieldsTest;", class_loader)));
+  Handle<mirror::Class> h_klass = hs.NewHandle(FindClass("LStaticArrayFieldsTest;", class_loader));
   ASSERT_TRUE(h_klass != nullptr);
   bool success = class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
   ASSERT_TRUE(success);
@@ -542,9 +538,8 @@ TEST_F(TransactionTest, ResolveString) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Transaction"))));
   ASSERT_TRUE(class_loader != nullptr);
 
-  Handle<mirror::Class> h_klass(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LTransaction$ResolveString;",
-                                            class_loader)));
+  Handle<mirror::Class> h_klass =
+      hs.NewHandle(FindClass("LTransaction$ResolveString;", class_loader));
   ASSERT_TRUE(h_klass != nullptr);
 
   Handle<mirror::DexCache> h_dex_cache(hs.NewHandle(h_klass->GetDexCache()));
@@ -608,7 +603,7 @@ TEST_F(MethodTypeTransactionTest, ResolveMethodType) {
   class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
   ASSERT_TRUE(h_klass->IsInitialized());
 
-  h_klass.Assign(class_linker_->FindClass(soa.Self(), "LTransaction;", class_loader));
+  h_klass.Assign(FindClass("LTransaction;", class_loader));
   ASSERT_TRUE(h_klass != nullptr);
 
   Handle<mirror::DexCache> h_dex_cache(hs.NewHandle(h_klass->GetDexCache()));
@@ -640,9 +635,8 @@ TEST_F(TransactionTest, EmptyClass) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Transaction"))));
   ASSERT_TRUE(class_loader != nullptr);
 
-  Handle<mirror::Class> h_klass(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LTransaction$EmptyStatic;",
-                                            class_loader)));
+  Handle<mirror::Class> h_klass =
+      hs.NewHandle(FindClass("LTransaction$EmptyStatic;", class_loader));
   ASSERT_TRUE(h_klass != nullptr);
   class_linker_->VerifyClass(soa.Self(), /* verifier_deps= */ nullptr, h_klass);
   ASSERT_TRUE(h_klass->IsVerified());
@@ -663,9 +657,8 @@ TEST_F(TransactionTest, StaticFieldClass) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Transaction"))));
   ASSERT_TRUE(class_loader != nullptr);
 
-  Handle<mirror::Class> h_klass(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LTransaction$StaticFieldClass;",
-                                            class_loader)));
+  Handle<mirror::Class> h_klass =
+      hs.NewHandle(FindClass("LTransaction$StaticFieldClass;", class_loader));
   ASSERT_TRUE(h_klass != nullptr);
   class_linker_->VerifyClass(soa.Self(), /* verifier_deps= */ nullptr, h_klass);
   ASSERT_TRUE(h_klass->IsVerified());
@@ -724,8 +717,8 @@ TEST_F(TransactionTest, Constraints) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Transaction"))));
 
   gc::Heap* heap = Runtime::Current()->GetHeap();
-  Handle<mirror::Class> boolean_class = hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "Ljava/lang/Boolean;", class_loader));
+  Handle<mirror::Class> boolean_class =
+      hs.NewHandle(FindClass("Ljava/lang/Boolean;", class_loader));
   ASSERT_TRUE(boolean_class != nullptr);
   ASSERT_TRUE(heap->ObjectIsInBootImageSpace(boolean_class.Get()));
   ArtField* true_field = boolean_class->FindDeclaredStaticField("TRUE", "Ljava/lang/Boolean;");
@@ -738,23 +731,23 @@ TEST_F(TransactionTest, Constraints) {
   ASSERT_TRUE(value_field != nullptr);
   ASSERT_FALSE(value_field->IsStatic());
 
-  Handle<mirror::Class> static_field_class(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LTransaction$StaticFieldClass;", class_loader)));
+  Handle<mirror::Class> static_field_class =
+      hs.NewHandle(FindClass("LTransaction$StaticFieldClass;", class_loader));
   ASSERT_TRUE(static_field_class != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(static_field_class.Get()));
   ArtField* int_field = static_field_class->FindDeclaredStaticField("intField", "I");
   ASSERT_TRUE(int_field != nullptr);
 
-  Handle<mirror::Class> static_fields_test_class(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LStaticFieldsTest;", class_loader)));
+  Handle<mirror::Class> static_fields_test_class =
+      hs.NewHandle(FindClass("LStaticFieldsTest;", class_loader));
   ASSERT_TRUE(static_fields_test_class != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(static_fields_test_class.Get()));
   ArtField* static_fields_test_int_field =
       static_fields_test_class->FindDeclaredStaticField("intField", "I");
   ASSERT_TRUE(static_fields_test_int_field != nullptr);
 
-  Handle<mirror::Class> instance_fields_test_class(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "LInstanceFieldsTest;", class_loader)));
+  Handle<mirror::Class> instance_fields_test_class =
+      hs.NewHandle(FindClass("LInstanceFieldsTest;", class_loader));
   ASSERT_TRUE(instance_fields_test_class != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(instance_fields_test_class.Get()));
   ArtField* instance_fields_test_int_field =
@@ -768,8 +761,7 @@ TEST_F(TransactionTest, Constraints) {
   // The `long[].class` should be in the boot image but `long[][][].class` should not.
   // (We have seen `long[][].class` both present and missing from the boot image,
   // depending on the libcore code, so we do not use it for this test.)
-  Handle<mirror::Class> long_array_dim3_class = hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "[[[J", class_loader));
+  Handle<mirror::Class> long_array_dim3_class = hs.NewHandle(FindClass("[[[J", class_loader));
   ASSERT_TRUE(long_array_dim3_class != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(long_array_dim3_class.Get()));
   ASSERT_TRUE(heap->ObjectIsInBootImageSpace(

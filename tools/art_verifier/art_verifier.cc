@@ -234,11 +234,11 @@ struct MethodVerifierMain : public CmdlineMain<MethodVerifierArgs> {
       }
       for (const DexFile* dex_file : dex_files) {
         for (ClassAccessor accessor : dex_file->GetClasses()) {
-          const char* descriptor = accessor.GetDescriptor();
-          h_klass.Assign(class_linker->FindClass(soa.Self(), descriptor, h_loader));
+          h_klass.Assign(
+              class_linker->FindClass(soa.Self(), *dex_file, accessor.GetClassIdx(), h_loader));
           if (h_klass == nullptr || h_klass->IsErroneous()) {
             if (args_->repetitions_ == 0) {
-              LOG(ERROR) << "Warning: could not load " << descriptor;
+              LOG(ERROR) << "Warning: could not load " << accessor.GetDescriptor();
             }
             soa.Self()->ClearException();
             continue;
@@ -258,7 +258,7 @@ struct MethodVerifierMain : public CmdlineMain<MethodVerifierArgs> {
                                                  args_->api_level_,
                                                  &error_msg);
           if (args_->repetitions_ == 0) {
-            LOG(INFO) << descriptor << ": " << res << " " << error_msg;
+            LOG(INFO) << accessor.GetDescriptor() << ": " << res << " " << error_msg;
           }
         }
       }

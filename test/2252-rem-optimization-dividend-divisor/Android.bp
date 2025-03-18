@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-2252-rem-optimization-dividend-divisor-expected-stdout",
         ":art-run-test-2252-rem-optimization-dividend-divisor-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

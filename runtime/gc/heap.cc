@@ -202,15 +202,13 @@ static constexpr bool kLogAllGCs = false;
 static constexpr size_t kPostForkMaxHeapDurationMS = 2000;
 
 #if defined(__LP64__) || !defined(ADDRESS_SANITIZER)
-// 320 MB (0x14000000) - (default non-moving space capacity).
-// The value is picked to ensure it is aligned to the largest supported PMD
+// 32 MB (0x2000000) is picked to ensure it is aligned to the largest supported PMD
 // size, which is 32mb with a 16k page size on AArch64.
 uint8_t* const Heap::kPreferredAllocSpaceBegin = reinterpret_cast<uint8_t*>(([]() constexpr {
-  constexpr size_t kBegin = 320 * MB - Heap::kDefaultNonMovingSpaceCapacity;
+  constexpr size_t kBegin = 32 * MB;
   constexpr int kMaxPMDSize = (kMaxPageSize / sizeof(uint64_t)) * kMaxPageSize;
   static_assert(IsAligned<kMaxPMDSize>(kBegin),
-                "kPreferredAllocSpaceBegin should be aligned to the maximum "
-                "supported PMD size.");
+                "Moving-space's begin should be aligned to the maximum supported PMD size.");
   return kBegin;
 })());
 #else
@@ -590,7 +588,9 @@ Heap::Heap(size_t initial_size,
     CHECK(non_moving_space_mem_map.IsValid()) << error_str;
     DCHECK(!heap_reservation.IsValid());
     // Try to reserve virtual memory at a lower address if we have a separate non moving space.
-    request_begin = kPreferredAllocSpaceBegin + non_moving_space_capacity;
+    request_begin = non_moving_space_mem_map.Begin() == kPreferredAllocSpaceBegin
+                        ? non_moving_space_mem_map.End()
+                        : kPreferredAllocSpaceBegin;
   }
   // Attempt to create 2 mem maps at or after the requested begin.
   if (foreground_collector_type_ != kCollectorTypeCC) {
@@ -1500,8 +1500,10 @@ std::string Heap::DumpSpaceNameFromAddress(const void* addr) const {
 
 void Heap::ThrowOutOfMemoryError(Thread* self, size_t byte_count, AllocatorType allocator_type) {
   // If we're in a stack overflow, do not create a new exception. It would require running the
-  // constructor, which will of course still be in a stack overflow.
-  if (self->IsHandlingStackOverflow()) {
+  // constructor, which will of course still be in a stack overflow. Note: we only care if the
+  // native stack has overflowed. If the simulated stack overflows, it is still possible that the
+  // native stack has room to create a new exception.
+  if (self->IsHandlingStackOverflow<kNativeStackType>()) {
     self->SetException(
         Runtime::Current()->GetPreAllocatedOutOfMemoryErrorWhenHandlingStackOverflow());
     return;
@@ -2794,9 +2796,12 @@ collector::GcType Heap::CollectGarbageInternal(collector::GcType gc_type,
     // This would likely cause a deadlock if we acted on a suspension request.
     // TODO: We really want to assert that we don't transition to kRunnable.
     ScopedAssertNoThreadSuspension scoped_assert("Performing GC");
-    if (self->IsHandlingStackOverflow()) {
+    if (self->IsHandlingStackOverflow<kNativeStackType>()) {
       // If we are throwing a stack overflow error we probably don't have enough remaining stack
-      // space to run the GC.
+      // space to run the GC. Note: we only care if the native stack has overflowed. If the
+      // simulated stack overflows it is still possible that the native stack has room to run the
+      // GC.
+
       // Count this as a GC in case someone is waiting for it to complete.
       gcs_completed_.fetch_add(1, std::memory_order_release);
       return collector::kGcTypeNone;
@@ -3975,8 +3980,10 @@ class Heap::ConcurrentGCTask : public HeapTask {
 
 static bool CanAddHeapTask(Thread* self) REQUIRES(!Locks::runtime_shutdown_lock_) {
   Runtime* runtime = Runtime::Current();
+  // We only care if the native stack has overflowed. If the simulated stack overflows, it is still
+  // possible that the native stack has room to add a heap task.
   return runtime != nullptr && runtime->IsFinishedStarting() && !runtime->IsShuttingDown(self) &&
-      !self->IsHandlingStackOverflow();
+      !self->IsHandlingStackOverflow<kNativeStackType>();
 }
 
 bool Heap::RequestConcurrentGC(Thread* self,

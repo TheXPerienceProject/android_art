@@ -394,7 +394,7 @@ class EXPORT SHARED_LOCKABLE ReaderWriterMutex : public BaseMutex {
 
   // Id associated with exclusive owner. No memory ordering semantics if called from a thread other
   // than the owner. Returns 0 if the lock is not held. Returns either 0 or -1 if it is held by
-  // one or more readers.
+  // one or more readers. Not reliable unless the mutex is held.
   pid_t GetExclusiveOwnerTid() const;
 
   void Dump(std::ostream& os) const override;

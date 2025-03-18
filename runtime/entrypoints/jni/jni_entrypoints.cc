@@ -60,8 +60,7 @@ extern "C" const void* artFindNativeMethodRunnable(Thread* self)
     // We're coming from compiled managed code and the `method` we see here is the caller.
     // Resolve target @CriticalNative method for a direct call from compiled managed code.
     uint32_t method_idx = GetInvokeStaticMethodIndex(method, dex_pc);
-    ArtMethod* target_method = class_linker->ResolveMethod<ClassLinker::ResolveMode::kNoChecks>(
-        self, method_idx, method, kStatic);
+    ArtMethod* target_method = class_linker->ResolveMethodId(method_idx, method);
     if (target_method == nullptr) {
       self->AssertPendingException();
       return nullptr;

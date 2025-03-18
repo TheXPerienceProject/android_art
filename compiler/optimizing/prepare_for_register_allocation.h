@@ -18,7 +18,7 @@
 #define ART_COMPILER_OPTIMIZING_PREPARE_FOR_REGISTER_ALLOCATION_H_
 
 #include "base/macros.h"
-#include "nodes.h"
+#include "optimization.h"
 
 namespace art HIDDEN {
 
@@ -30,37 +30,20 @@ class OptimizingCompilerStats;
  * For example it changes uses of null checks and bounds checks to the original
  * objects, to avoid creating a live range for these checks.
  */
-class PrepareForRegisterAllocation final : public HGraphDelegateVisitor {
+class PrepareForRegisterAllocation final : public HOptimization {
  public:
   PrepareForRegisterAllocation(HGraph* graph,
                                const CompilerOptions& compiler_options,
                                OptimizingCompilerStats* stats = nullptr)
-      : HGraphDelegateVisitor(graph, stats),
+      : HOptimization(graph, kPrepareForRegisterAllocationPassName, stats),
         compiler_options_(compiler_options) {}
 
-  void Run();
+  bool Run() override;
 
   static constexpr const char* kPrepareForRegisterAllocationPassName =
       "prepare_for_register_allocation";
 
  private:
-  void VisitCheckCast(HCheckCast* check_cast) override;
-  void VisitInstanceOf(HInstanceOf* instance_of) override;
-  void VisitNullCheck(HNullCheck* check) override;
-  void VisitDivZeroCheck(HDivZeroCheck* check) override;
-  void VisitBoundsCheck(HBoundsCheck* check) override;
-  void VisitBoundType(HBoundType* bound_type) override;
-  void VisitArraySet(HArraySet* instruction) override;
-  void VisitClinitCheck(HClinitCheck* check) override;
-  void VisitCondition(HCondition* condition) override;
-  void VisitConstructorFence(HConstructorFence* constructor_fence) override;
-  void VisitInvokeStaticOrDirect(HInvokeStaticOrDirect* invoke) override;
-  void VisitDeoptimize(HDeoptimize* deoptimize) override;
-  void VisitTypeConversion(HTypeConversion* instruction) override;
-
-  bool CanMoveClinitCheck(HInstruction* input, HInstruction* user) const;
-  bool CanEmitConditionAt(HCondition* condition, HInstruction* user) const;
-
   const CompilerOptions& compiler_options_;
 
   DISALLOW_COPY_AND_ASSIGN(PrepareForRegisterAllocation);

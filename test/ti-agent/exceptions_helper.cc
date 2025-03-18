@@ -157,6 +157,36 @@ extern "C" JNIEXPORT void JNICALL Java_art_Exceptions_setupExceptionTracing(
   }
 }
 
+extern "C" JNIEXPORT void JNICALL Java_art_Exceptions_disableExceptionTracing(
+    JNIEnv* env, [[maybe_unused]] jclass klass, jthread thr) {
+  ExceptionsData* data = nullptr;
+  if (JvmtiErrorToException(
+          env, jvmti_env, jvmti_env->GetEnvironmentLocalStorage(reinterpret_cast<void**>(&data)))) {
+    return;
+  }
+
+  if (data == nullptr) {
+    return;
+  }
+
+  // Disable Exception and Exception catch events.
+  JvmtiErrorToException(
+      env,
+      jvmti_env,
+      jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_EXCEPTION, thr));
+  JvmtiErrorToException(
+      env,
+      jvmti_env,
+      jvmti_env->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_EXCEPTION_CATCH, thr));
+
+  env->DeleteGlobalRef(data->test_klass);
+  env->DeleteGlobalRef(data->exception_klass);
+
+  if (JvmtiErrorToException(env, jvmti_env, jvmti_env->SetEnvironmentLocalStorage(nullptr))) {
+    return;
+  }
+}
+
 extern "C" JNIEXPORT void JNICALL Java_art_Exceptions_enableExceptionCatchEvent(
     JNIEnv* env, [[maybe_unused]] jclass klass, jthread thr) {
   JvmtiErrorToException(env,

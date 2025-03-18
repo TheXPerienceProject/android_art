@@ -32,7 +32,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "system/thread_defs.h"
-#include "testing.h"
+#include "tools/testing.h"
 
 #ifdef ART_TARGET_ANDROID
 #include "android-modules-utils/sdk_level.h"

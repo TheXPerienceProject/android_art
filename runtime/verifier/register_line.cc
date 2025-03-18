@@ -34,7 +34,7 @@ bool RegisterLine::CheckConstructorReturn(MethodVerifier* verifier) const {
     for (size_t i = 0; i < num_regs_; i++) {
       const RegType& type = GetRegisterType(verifier, i);
       CHECK(!type.IsUninitializedThisReference() &&
-            !type.IsUnresolvedAndUninitializedThisReference())
+            !type.IsUnresolvedUninitializedThisReference())
           << i << ": " << type.IsUninitializedThisReference() << " in "
           << verifier->GetMethodReference().PrettyMethod();
     }
@@ -46,68 +46,47 @@ bool RegisterLine::CheckConstructorReturn(MethodVerifier* verifier) const {
   return this_initialized_;
 }
 
-const RegType& RegisterLine::GetInvocationThis(MethodVerifier* verifier, const Instruction* inst,
-                                               bool allow_failure) {
-  DCHECK(inst->IsInvoke());
-  const size_t args_count = inst->VRegA();
-  if (args_count < 1) {
-    if (!allow_failure) {
-      verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invoke lacks 'this'";
-    }
-    return verifier->GetRegTypeCache()->Conflict();
+void RegisterLine::CopyFromLine(const RegisterLine* src) {
+  DCHECK_EQ(num_regs_, src->num_regs_);
+  memcpy(&line_, &src->line_, num_regs_ * sizeof(uint16_t));
+  // Copy `allocation_dex_pcs_`. Note that if the `src` does not have `allocation_dex_pcs_`
+  // allocated, we retain the array allocated for this register line to avoid wasting
+  // memory by allocating a new array later. This means that the `allocation_dex_pcs_` can
+  // be filled with bogus values not tied to a `new-instance` uninitialized type.
+  if (src->allocation_dex_pcs_ != nullptr) {
+    EnsureAllocationDexPcsAvailable();
+    memcpy(allocation_dex_pcs_, src->allocation_dex_pcs_, num_regs_ * sizeof(uint32_t));
   }
-  /* Get the element type of the array held in vsrc */
-  const uint32_t this_reg = inst->VRegC();
-  const RegType& this_type = GetRegisterType(verifier, this_reg);
-  if (!this_type.IsReferenceTypes()) {
-    if (!allow_failure) {
-      verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD)
-          << "tried to get class from non-reference register v" << this_reg
-          << " (type=" << this_type << ")";
-    }
-    return verifier->GetRegTypeCache()->Conflict();
-  }
-  return this_type;
+  monitors_ = src->monitors_;
+  reg_to_lock_depths_ = src->reg_to_lock_depths_;
+  this_initialized_ = src->this_initialized_;
 }
 
-bool RegisterLine::VerifyRegisterTypeWide(MethodVerifier* verifier, uint32_t vsrc,
-                                          const RegType& check_type1,
-                                          const RegType& check_type2) {
-  DCHECK(check_type1.CheckWidePair(check_type2));
-  // Verify the src register type against the check type refining the type of the register
-  const RegType& src_type = GetRegisterType(verifier, vsrc);
-  if (!check_type1.IsAssignableFrom(src_type, verifier)) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "register v" << vsrc << " has type " << src_type
-                               << " but expected " << check_type1;
-    return false;
-  }
-  const RegType& src_type_h = GetRegisterType(verifier, vsrc + 1);
-  if (!src_type.CheckWidePair(src_type_h)) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "wide register v" << vsrc << " has type "
-        << src_type << "/" << src_type_h;
-    return false;
-  }
-  // The register at vsrc has a defined type, we know the lower-upper-bound, but this is less
-  // precise than the subtype in vsrc so leave it for reference types. For primitive types
-  // if they are a defined type then they are as precise as we can get, however, for constant
-  // types we may wish to refine them. Unfortunately constant propagation has rendered this useless.
-  return true;
-}
-
-void RegisterLine::MarkRefsAsInitialized(MethodVerifier* verifier, const RegType& uninit_type) {
+void RegisterLine::MarkRefsAsInitialized(MethodVerifier* verifier, uint32_t vsrc) {
+  const RegType& uninit_type = GetRegisterType(verifier, vsrc);
   DCHECK(uninit_type.IsUninitializedTypes());
   const RegType& init_type = verifier->GetRegTypeCache()->FromUninitialized(uninit_type);
   size_t changed = 0;
-  for (uint32_t i = 0; i < num_regs_; i++) {
-    if (GetRegisterType(verifier, i).Equals(uninit_type)) {
-      line_[i] = init_type.GetId();
-      changed++;
-    }
-  }
   // Is this initializing "this"?
   if (uninit_type.IsUninitializedThisReference() ||
-      uninit_type.IsUnresolvedAndUninitializedThisReference()) {
+      uninit_type.IsUnresolvedUninitializedThisReference()) {
     this_initialized_ = true;
+    for (uint32_t i = 0; i < num_regs_; i++) {
+      if (GetRegisterType(verifier, i).Equals(uninit_type)) {
+        line_[i] = init_type.GetId();
+        changed++;
+      }
+    }
+  } else {
+    DCHECK(NeedsAllocationDexPc(uninit_type));
+    DCHECK(allocation_dex_pcs_ != nullptr);
+    uint32_t dex_pc = allocation_dex_pcs_[vsrc];
+    for (uint32_t i = 0; i < num_regs_; i++) {
+      if (GetRegisterType(verifier, i).Equals(uninit_type) && allocation_dex_pcs_[i] == dex_pc) {
+        line_[i] = init_type.GetId();
+        changed++;
+      }
+    }
   }
   DCHECK_GT(changed, 0u);
 }
@@ -155,15 +134,6 @@ std::string RegisterLine::Dump(MethodVerifier* verifier) const {
   return result;
 }
 
-void RegisterLine::MarkUninitRefsAsInvalid(MethodVerifier* verifier, const RegType& uninit_type) {
-  for (size_t i = 0; i < num_regs_; i++) {
-    if (GetRegisterType(verifier, i).Equals(uninit_type)) {
-      line_[i] = verifier->GetRegTypeCache()->Conflict().GetId();
-      ClearAllRegToLockDepths(i);
-    }
-  }
-}
-
 void RegisterLine::CopyResultRegister1(MethodVerifier* verifier, uint32_t vdst, bool is_reference) {
   const RegType& type = verifier->GetRegTypeCache()->GetFromId(result_[0]);
   if ((!is_reference && !type.IsCategory1Types()) ||
@@ -192,137 +162,6 @@ void RegisterLine::CopyResultRegister2(MethodVerifier* verifier, uint32_t vdst) 
     SetRegisterTypeWide(vdst, type_l, type_h);  // also sets the high
     result_[0] = verifier->GetRegTypeCache()->Undefined().GetId();
     result_[1] = verifier->GetRegTypeCache()->Undefined().GetId();
-  }
-}
-
-void RegisterLine::CheckUnaryOp(MethodVerifier* verifier, const Instruction* inst,
-                                const RegType& dst_type, const RegType& src_type) {
-  if (VerifyRegisterType(verifier, inst->VRegB_12x(), src_type)) {
-    SetRegisterType<LockOp::kClear>(inst->VRegA_12x(), dst_type);
-  }
-}
-
-void RegisterLine::CheckUnaryOpWide(MethodVerifier* verifier, const Instruction* inst,
-                                    const RegType& dst_type1, const RegType& dst_type2,
-                                    const RegType& src_type1, const RegType& src_type2) {
-  if (VerifyRegisterTypeWide(verifier, inst->VRegB_12x(), src_type1, src_type2)) {
-    SetRegisterTypeWide(inst->VRegA_12x(), dst_type1, dst_type2);
-  }
-}
-
-void RegisterLine::CheckUnaryOpToWide(MethodVerifier* verifier, const Instruction* inst,
-                                      const RegType& dst_type1, const RegType& dst_type2,
-                                      const RegType& src_type) {
-  if (VerifyRegisterType(verifier, inst->VRegB_12x(), src_type)) {
-    SetRegisterTypeWide(inst->VRegA_12x(), dst_type1, dst_type2);
-  }
-}
-
-void RegisterLine::CheckUnaryOpFromWide(MethodVerifier* verifier, const Instruction* inst,
-                                        const RegType& dst_type,
-                                        const RegType& src_type1, const RegType& src_type2) {
-  if (VerifyRegisterTypeWide(verifier, inst->VRegB_12x(), src_type1, src_type2)) {
-    SetRegisterType<LockOp::kClear>(inst->VRegA_12x(), dst_type);
-  }
-}
-
-void RegisterLine::CheckBinaryOp(MethodVerifier* verifier, const Instruction* inst,
-                                 const RegType& dst_type,
-                                 const RegType& src_type1, const RegType& src_type2,
-                                 bool check_boolean_op) {
-  const uint32_t vregB = inst->VRegB_23x();
-  const uint32_t vregC = inst->VRegC_23x();
-  if (VerifyRegisterType(verifier, vregB, src_type1) &&
-      VerifyRegisterType(verifier, vregC, src_type2)) {
-    if (check_boolean_op) {
-      DCHECK(dst_type.IsInteger());
-      if (GetRegisterType(verifier, vregB).IsBooleanTypes() &&
-          GetRegisterType(verifier, vregC).IsBooleanTypes()) {
-        SetRegisterType<LockOp::kClear>(inst->VRegA_23x(), verifier->GetRegTypeCache()->Boolean());
-        return;
-      }
-    }
-    SetRegisterType<LockOp::kClear>(inst->VRegA_23x(), dst_type);
-  }
-}
-
-void RegisterLine::CheckBinaryOpWide(MethodVerifier* verifier, const Instruction* inst,
-                                     const RegType& dst_type1, const RegType& dst_type2,
-                                     const RegType& src_type1_1, const RegType& src_type1_2,
-                                     const RegType& src_type2_1, const RegType& src_type2_2) {
-  if (VerifyRegisterTypeWide(verifier, inst->VRegB_23x(), src_type1_1, src_type1_2) &&
-      VerifyRegisterTypeWide(verifier, inst->VRegC_23x(), src_type2_1, src_type2_2)) {
-    SetRegisterTypeWide(inst->VRegA_23x(), dst_type1, dst_type2);
-  }
-}
-
-void RegisterLine::CheckBinaryOpWideShift(MethodVerifier* verifier, const Instruction* inst,
-                                          const RegType& long_lo_type, const RegType& long_hi_type,
-                                          const RegType& int_type) {
-  if (VerifyRegisterTypeWide(verifier, inst->VRegB_23x(), long_lo_type, long_hi_type) &&
-      VerifyRegisterType(verifier, inst->VRegC_23x(), int_type)) {
-    SetRegisterTypeWide(inst->VRegA_23x(), long_lo_type, long_hi_type);
-  }
-}
-
-void RegisterLine::CheckBinaryOp2addr(MethodVerifier* verifier, const Instruction* inst,
-                                      const RegType& dst_type, const RegType& src_type1,
-                                      const RegType& src_type2, bool check_boolean_op) {
-  const uint32_t vregA = inst->VRegA_12x();
-  const uint32_t vregB = inst->VRegB_12x();
-  if (VerifyRegisterType(verifier, vregA, src_type1) &&
-      VerifyRegisterType(verifier, vregB, src_type2)) {
-    if (check_boolean_op) {
-      DCHECK(dst_type.IsInteger());
-      if (GetRegisterType(verifier, vregA).IsBooleanTypes() &&
-          GetRegisterType(verifier, vregB).IsBooleanTypes()) {
-        SetRegisterType<LockOp::kClear>(vregA, verifier->GetRegTypeCache()->Boolean());
-        return;
-      }
-    }
-    SetRegisterType<LockOp::kClear>(vregA, dst_type);
-  }
-}
-
-void RegisterLine::CheckBinaryOp2addrWide(MethodVerifier* verifier, const Instruction* inst,
-                                          const RegType& dst_type1, const RegType& dst_type2,
-                                          const RegType& src_type1_1, const RegType& src_type1_2,
-                                          const RegType& src_type2_1, const RegType& src_type2_2) {
-  const uint32_t vregA = inst->VRegA_12x();
-  const uint32_t vregB = inst->VRegB_12x();
-  if (VerifyRegisterTypeWide(verifier, vregA, src_type1_1, src_type1_2) &&
-      VerifyRegisterTypeWide(verifier, vregB, src_type2_1, src_type2_2)) {
-    SetRegisterTypeWide(vregA, dst_type1, dst_type2);
-  }
-}
-
-void RegisterLine::CheckBinaryOp2addrWideShift(MethodVerifier* verifier, const Instruction* inst,
-                                               const RegType& long_lo_type, const RegType& long_hi_type,
-                                               const RegType& int_type) {
-  const uint32_t vregA = inst->VRegA_12x();
-  const uint32_t vregB = inst->VRegB_12x();
-  if (VerifyRegisterTypeWide(verifier, vregA, long_lo_type, long_hi_type) &&
-      VerifyRegisterType(verifier, vregB, int_type)) {
-    SetRegisterTypeWide(vregA, long_lo_type, long_hi_type);
-  }
-}
-
-void RegisterLine::CheckLiteralOp(MethodVerifier* verifier, const Instruction* inst,
-                                  const RegType& dst_type, const RegType& src_type,
-                                  bool check_boolean_op, bool is_lit16) {
-  const uint32_t vregA = is_lit16 ? inst->VRegA_22s() : inst->VRegA_22b();
-  const uint32_t vregB = is_lit16 ? inst->VRegB_22s() : inst->VRegB_22b();
-  if (VerifyRegisterType(verifier, vregB, src_type)) {
-    if (check_boolean_op) {
-      DCHECK(dst_type.IsInteger());
-      /* check vB with the call, then check the constant manually */
-      const uint32_t val = is_lit16 ? inst->VRegC_22s() : inst->VRegC_22b();
-      if (GetRegisterType(verifier, vregB).IsBooleanTypes() && (val == 0 || val == 1)) {
-        SetRegisterType<LockOp::kClear>(vregA, verifier->GetRegTypeCache()->Boolean());
-        return;
-      }
-    }
-    SetRegisterType<LockOp::kClear>(vregA, dst_type);
   }
 }
 
@@ -432,6 +271,20 @@ bool RegisterLine::MergeRegisters(MethodVerifier* verifier, const RegisterLine* 
           incoming_reg_type, verifier->GetRegTypeCache(), verifier);
       changed = changed || !cur_type.Equals(new_type);
       line_[idx] = new_type.GetId();
+    } else {
+      auto needs_allocation_dex_pc = [&]() {
+        return NeedsAllocationDexPc(verifier->GetRegTypeCache()->GetFromId(line_[idx]));
+      };
+      DCHECK_IMPLIES(needs_allocation_dex_pc(), allocation_dex_pcs_ != nullptr);
+      DCHECK_IMPLIES(needs_allocation_dex_pc(), incoming_line->allocation_dex_pcs_ != nullptr);
+      // Check for allocation dex pc mismatch first to try and avoid costly virtual calls.
+      // For methods without any `new-instance` instructions, the `allocation_dex_pcs_` is null.
+      if (allocation_dex_pcs_ != nullptr &&
+          incoming_line->allocation_dex_pcs_ != nullptr &&
+          allocation_dex_pcs_[idx] != incoming_line->allocation_dex_pcs_[idx] &&
+          needs_allocation_dex_pc()) {
+        line_[idx] = verifier->GetRegTypeCache()->Conflict().GetId();
+      }
     }
   }
   if (monitors_.size() > 0 || incoming_line->monitors_.size() > 0) {

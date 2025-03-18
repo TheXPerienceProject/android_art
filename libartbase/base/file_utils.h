@@ -33,7 +33,12 @@ static constexpr const char kArtApexDataDefaultPath[] = "/data/misc/apexdata/com
 static constexpr const char kAndroidConscryptApexDefaultPath[] = "/apex/com.android.conscrypt";
 static constexpr const char kAndroidI18nApexDefaultPath[] = "/apex/com.android.i18n";
 
-static constexpr const char kArtImageExtension[] = "art";
+static constexpr const char* kOatExtension = ".oat";
+static constexpr const char* kOdexExtension = ".odex";
+static constexpr const char* kVdexExtension = ".vdex";
+static constexpr const char* kArtExtension = ".art";
+static constexpr const char* kDmExtension = ".dm";
+static constexpr const char* kSdmExtension = ".sdm";
 
 // These methods return the Android Root, which is the historical location of
 // the Android "system" directory, containing the built Android artifacts. On
@@ -176,8 +181,11 @@ std::string GetSystemOdexFilenameForApex(std::string_view location, InstructionS
 // Returns `filename` with the text after the last occurrence of '.' replaced with
 // `extension`. If `filename` does not contain a period, returns a string containing `filename`,
 // a period, and `new_extension`.
+// A leading period in `new_extension`, if exists, is ignored.
 // Example: ReplaceFileExtension("foo.bar", "abc") == "foo.abc"
 //          ReplaceFileExtension("foo", "abc") == "foo.abc"
+//          ReplaceFileExtension("foo.bar", ".abc") == "foo.abc"
+//          ReplaceFileExtension("foo", ".abc") == "foo.abc"
 std::string ReplaceFileExtension(std::string_view filename, std::string_view new_extension);
 
 // Return whether the location is on /apex/com.android.art

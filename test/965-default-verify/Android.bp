@@ -31,6 +31,9 @@ java_test {
         ":art-run-test-965-default-verify-expected-stdout",
         ":art-run-test-965-default-verify-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

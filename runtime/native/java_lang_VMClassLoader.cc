@@ -45,7 +45,7 @@ class VMClassLoader {
  public:
   static ObjPtr<mirror::Class> LookupClass(ClassLinker* cl,
                                            Thread* self,
-                                           const char* descriptor,
+                                           std::string_view descriptor,
                                            size_t hash,
                                            ObjPtr<mirror::ClassLoader> class_loader)
       REQUIRES(!Locks::classlinker_classes_lock_)
@@ -56,11 +56,13 @@ class VMClassLoader {
   static ObjPtr<mirror::Class> FindClassInPathClassLoader(ClassLinker* cl,
                                                           Thread* self,
                                                           const char* descriptor,
+                                                          size_t descriptor_length,
                                                           size_t hash,
                                                           Handle<mirror::ClassLoader> class_loader)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     ObjPtr<mirror::Class> result;
-    if (cl->FindClassInBaseDexClassLoader(self, descriptor, hash, class_loader, &result)) {
+    if (cl->FindClassInBaseDexClassLoader(
+            self, descriptor, descriptor_length, hash, class_loader, &result)) {
       DCHECK(!self->IsExceptionPending());
       return result;
     }
@@ -83,11 +85,11 @@ static jclass VMClassLoader_findLoadedClass(JNIEnv* env, jclass, jobject javaLoa
 
   // Compute hash once.
   std::string descriptor(DotToDescriptor(name.c_str()));
-  const size_t descriptor_hash = ComputeModifiedUtf8Hash(descriptor.c_str());
+  const size_t descriptor_hash = ComputeModifiedUtf8Hash(descriptor);
 
   ObjPtr<mirror::Class> c = VMClassLoader::LookupClass(cl,
                                                        soa.Self(),
-                                                       descriptor.c_str(),
+                                                       descriptor,
                                                        descriptor_hash,
                                                        loader);
   if (c != nullptr && c->IsResolved()) {
@@ -115,6 +117,7 @@ static jclass VMClassLoader_findLoadedClass(JNIEnv* env, jclass, jobject javaLoa
     c = VMClassLoader::FindClassInPathClassLoader(cl,
                                                   soa.Self(),
                                                   descriptor.c_str(),
+                                                  descriptor.length(),
                                                   descriptor_hash,
                                                   hs.NewHandle(loader));
     if (c != nullptr) {

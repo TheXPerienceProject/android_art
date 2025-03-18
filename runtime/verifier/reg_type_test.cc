@@ -23,8 +23,10 @@
 #include "base/scoped_arena_allocator.h"
 #include "common_runtime_test.h"
 #include "compiler_callbacks.h"
+#include "dex/test_dex_file_builder.h"
 #include "reg_type-inl.h"
 #include "reg_type_cache-inl.h"
+#include "reg_type_test_utils.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread-current-inl.h"
 
@@ -37,94 +39,136 @@ class RegTypeTest : public CommonRuntimeTest {
     use_boot_image_ = true;  // Make the Runtime creation cheaper.
   }
 
-  static const RegType& PreciseJavaLangObjectFromDescriptor(RegTypeCache* cache,
-                                                            Handle<mirror::ClassLoader> loader)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    // To create a precise `java.lang.Object` reference from a descriptor, go through
-    // `Uninitialized()` and `FromUninitialized()` as we would for `new Object()`.
-    const RegType& imprecise_obj = cache->FromDescriptor(loader, "Ljava/lang/Object;");
-    CHECK(!imprecise_obj.IsPreciseReference());
-    const RegType& precise_obj =
-        cache->FromUninitialized(cache->Uninitialized(imprecise_obj, /* allocation_pc= */ 0u));
-    CHECK(precise_obj.IsPreciseReference());
-    return precise_obj;
+  void SetUp() override {
+    CommonRuntimeTest::SetUp();
+
+    // Build a fake `DexFile` with some descriptors.
+    static const char* const descriptors[] = {
+      // References.
+      "Ljava/lang/Object;", "Ljava/lang/String;", "LNonExistent;",
+      // Primitives and `void`.
+      "Z", "B", "C", "S", "I", "J", "F", "D", "V"
+    };
+    TestDexFileBuilder builder;
+    for (const char* descriptor : descriptors) {
+      builder.AddType(descriptor);
+    }
+    dex_file_ = builder.Build("arbitrary-location");
   }
+
+  static constexpr size_t kNumConstTypes = RegType::Kind::kNull - RegType::Kind::kZero + 1;
+
+  std::array<const RegType*, kNumConstTypes> GetConstRegTypes(const RegTypeCache& cache)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return {
+      &cache.Zero(),
+      &cache.BooleanConstant(),
+      &cache.PositiveByteConstant(),
+      &cache.PositiveShortConstant(),
+      &cache.CharConstant(),
+      &cache.ByteConstant(),
+      &cache.ShortConstant(),
+      &cache.IntegerConstant(),
+      &cache.ConstantLo(),
+      &cache.ConstantHi(),
+      &cache.Null(),
+    };
+  };
+
+  std::unique_ptr<const DexFile> dex_file_;
 };
 
-TEST_F(RegTypeTest, ConstLoHi) {
-  // Tests creating primitive types types.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+TEST_F(RegTypeTest, Constants) {
+  // Tests creating constant types.
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-  const RegType& ref_type_const_0 = cache.FromCat1Const(10, true);
-  const RegType& ref_type_const_1 = cache.FromCat1Const(10, true);
-  const RegType& ref_type_const_2 = cache.FromCat1Const(30, true);
-  const RegType& ref_type_const_3 = cache.FromCat1Const(30, false);
-  EXPECT_TRUE(ref_type_const_0.Equals(ref_type_const_1));
-  EXPECT_FALSE(ref_type_const_0.Equals(ref_type_const_2));
-  EXPECT_FALSE(ref_type_const_0.Equals(ref_type_const_3));
+  ScopedNullHandle<mirror::ClassLoader> loader;
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  std::array<const RegType*, kNumConstTypes> const_reg_types = GetConstRegTypes(cache);
 
-  const RegType& ref_type_const_wide_0 = cache.FromCat2ConstHi(50, true);
-  const RegType& ref_type_const_wide_1 = cache.FromCat2ConstHi(50, true);
-  EXPECT_TRUE(ref_type_const_wide_0.Equals(ref_type_const_wide_1));
+  for (size_t i = 0; i != kNumConstTypes; ++i) {
+    EXPECT_TRUE(const_reg_types[i]->IsConstantTypes());
+  }
 
-  const RegType& ref_type_const_wide_2 = cache.FromCat2ConstLo(50, true);
-  const RegType& ref_type_const_wide_3 = cache.FromCat2ConstLo(50, true);
-  const RegType& ref_type_const_wide_4 = cache.FromCat2ConstLo(55, true);
-  EXPECT_TRUE(ref_type_const_wide_2.Equals(ref_type_const_wide_3));
-  EXPECT_FALSE(ref_type_const_wide_2.Equals(ref_type_const_wide_4));
+  for (size_t i = 0; i != kNumConstTypes; ++i) {
+    for (size_t j = 0; j != kNumConstTypes; ++j) {
+      EXPECT_EQ(i == j, const_reg_types[i]->Equals(*(const_reg_types[j]))) << i << " " << j;
+    }
+  }
 }
 
 TEST_F(RegTypeTest, Pairs) {
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  ScopedNullHandle<mirror::ClassLoader> loader;
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
   int64_t val = static_cast<int32_t>(1234);
-  const RegType& precise_lo = cache.FromCat2ConstLo(static_cast<int32_t>(val), true);
-  const RegType& precise_hi = cache.FromCat2ConstHi(static_cast<int32_t>(val >> 32), true);
-  const RegType& precise_const = cache.FromCat1Const(static_cast<int32_t>(val >> 32), true);
+  const RegType& const_lo = cache.ConstantLo();
+  const RegType& const_hi = cache.ConstantHi();
   const RegType& long_lo = cache.LongLo();
   const RegType& long_hi = cache.LongHi();
+  const RegType& int_const = cache.IntegerConstant();
   // Check the expectations for types.
-  EXPECT_TRUE(precise_lo.IsLowHalf());
-  EXPECT_FALSE(precise_hi.IsLowHalf());
-  EXPECT_FALSE(precise_lo.IsHighHalf());
-  EXPECT_TRUE(precise_hi.IsHighHalf());
+  EXPECT_TRUE(const_lo.IsLowHalf());
+  EXPECT_FALSE(const_hi.IsLowHalf());
+  EXPECT_FALSE(const_lo.IsHighHalf());
+  EXPECT_TRUE(const_hi.IsHighHalf());
+  EXPECT_TRUE(const_lo.IsLongTypes());
+  EXPECT_FALSE(const_hi.IsLongTypes());
+  EXPECT_FALSE(const_lo.IsLongHighTypes());
+  EXPECT_TRUE(const_hi.IsLongHighTypes());
+  EXPECT_TRUE(long_lo.IsLowHalf());
+  EXPECT_FALSE(long_hi.IsLowHalf());
+  EXPECT_FALSE(long_lo.IsHighHalf());
+  EXPECT_TRUE(long_hi.IsHighHalf());
+  EXPECT_TRUE(long_lo.IsLongTypes());
+  EXPECT_FALSE(long_hi.IsLongTypes());
+  EXPECT_FALSE(long_lo.IsLongHighTypes());
   EXPECT_TRUE(long_hi.IsLongHighTypes());
-  EXPECT_TRUE(precise_hi.IsLongHighTypes());
   // Check Pairing.
-  EXPECT_FALSE(precise_lo.CheckWidePair(precise_const));
-  EXPECT_TRUE(precise_lo.CheckWidePair(precise_hi));
+  EXPECT_FALSE(const_lo.CheckWidePair(const_lo));
+  EXPECT_TRUE(const_lo.CheckWidePair(const_hi));
+  EXPECT_FALSE(const_lo.CheckWidePair(long_lo));
+  EXPECT_FALSE(const_lo.CheckWidePair(long_hi));
+  EXPECT_FALSE(const_lo.CheckWidePair(int_const));
+  EXPECT_FALSE(const_hi.CheckWidePair(const_lo));
+  EXPECT_FALSE(const_hi.CheckWidePair(const_hi));
+  EXPECT_FALSE(const_hi.CheckWidePair(long_lo));
+  EXPECT_FALSE(const_hi.CheckWidePair(long_hi));
+  EXPECT_FALSE(const_hi.CheckWidePair(int_const));
+  EXPECT_FALSE(long_lo.CheckWidePair(const_lo));
+  EXPECT_FALSE(long_lo.CheckWidePair(const_hi));
+  EXPECT_FALSE(long_lo.CheckWidePair(long_lo));
+  EXPECT_TRUE(long_lo.CheckWidePair(long_hi));
+  EXPECT_FALSE(long_lo.CheckWidePair(int_const));
+  EXPECT_FALSE(long_hi.CheckWidePair(const_lo));
+  EXPECT_FALSE(long_hi.CheckWidePair(const_hi));
+  EXPECT_FALSE(long_hi.CheckWidePair(long_lo));
+  EXPECT_FALSE(long_hi.CheckWidePair(long_hi));
+  EXPECT_FALSE(long_hi.CheckWidePair(int_const));
   // Test Merging.
-  EXPECT_TRUE((long_lo.Merge(precise_lo, &cache, /* verifier= */ nullptr)).IsLongTypes());
-  EXPECT_TRUE((long_hi.Merge(precise_hi, &cache, /* verifier= */ nullptr)).IsLongHighTypes());
+  EXPECT_TRUE((long_lo.Merge(const_lo, &cache, /* verifier= */ nullptr)).IsLongTypes());
+  EXPECT_TRUE((long_hi.Merge(const_hi, &cache, /* verifier= */ nullptr)).IsLongHighTypes());
 }
 
 TEST_F(RegTypeTest, Primitives) {
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  ScopedNullHandle<mirror::ClassLoader> loader;
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
 
   const RegType& bool_reg_type = cache.Boolean();
   EXPECT_FALSE(bool_reg_type.IsUndefined());
   EXPECT_FALSE(bool_reg_type.IsConflict());
-  EXPECT_FALSE(bool_reg_type.IsZero());
-  EXPECT_FALSE(bool_reg_type.IsOne());
-  EXPECT_FALSE(bool_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_TRUE(bool_reg_type.IsBoolean());
   EXPECT_FALSE(bool_reg_type.IsByte());
   EXPECT_FALSE(bool_reg_type.IsChar());
   EXPECT_FALSE(bool_reg_type.IsShort());
   EXPECT_FALSE(bool_reg_type.IsInteger());
-  EXPECT_FALSE(bool_reg_type.IsLong());
+  EXPECT_FALSE(bool_reg_type.IsLongLo());
   EXPECT_FALSE(bool_reg_type.IsFloat());
-  EXPECT_FALSE(bool_reg_type.IsDouble());
+  EXPECT_FALSE(bool_reg_type.IsDoubleLo());
   EXPECT_FALSE(bool_reg_type.IsReference());
   EXPECT_FALSE(bool_reg_type.IsLowHalf());
   EXPECT_FALSE(bool_reg_type.IsHighHalf());
@@ -142,22 +186,20 @@ TEST_F(RegTypeTest, Primitives) {
   EXPECT_FALSE(bool_reg_type.IsDoubleTypes());
   EXPECT_TRUE(bool_reg_type.IsArrayIndexTypes());
   EXPECT_FALSE(bool_reg_type.IsNonZeroReferenceTypes());
-  EXPECT_TRUE(bool_reg_type.HasClass());
+  EXPECT_FALSE(bool_reg_type.HasClass());
 
   const RegType& byte_reg_type = cache.Byte();
   EXPECT_FALSE(byte_reg_type.IsUndefined());
   EXPECT_FALSE(byte_reg_type.IsConflict());
-  EXPECT_FALSE(byte_reg_type.IsZero());
-  EXPECT_FALSE(byte_reg_type.IsOne());
-  EXPECT_FALSE(byte_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(byte_reg_type.IsBoolean());
   EXPECT_TRUE(byte_reg_type.IsByte());
   EXPECT_FALSE(byte_reg_type.IsChar());
   EXPECT_FALSE(byte_reg_type.IsShort());
   EXPECT_FALSE(byte_reg_type.IsInteger());
-  EXPECT_FALSE(byte_reg_type.IsLong());
+  EXPECT_FALSE(byte_reg_type.IsLongLo());
   EXPECT_FALSE(byte_reg_type.IsFloat());
-  EXPECT_FALSE(byte_reg_type.IsDouble());
+  EXPECT_FALSE(byte_reg_type.IsDoubleLo());
   EXPECT_FALSE(byte_reg_type.IsReference());
   EXPECT_FALSE(byte_reg_type.IsLowHalf());
   EXPECT_FALSE(byte_reg_type.IsHighHalf());
@@ -175,22 +217,20 @@ TEST_F(RegTypeTest, Primitives) {
   EXPECT_FALSE(byte_reg_type.IsDoubleTypes());
   EXPECT_TRUE(byte_reg_type.IsArrayIndexTypes());
   EXPECT_FALSE(byte_reg_type.IsNonZeroReferenceTypes());
-  EXPECT_TRUE(byte_reg_type.HasClass());
+  EXPECT_FALSE(byte_reg_type.HasClass());
 
   const RegType& char_reg_type = cache.Char();
   EXPECT_FALSE(char_reg_type.IsUndefined());
   EXPECT_FALSE(char_reg_type.IsConflict());
-  EXPECT_FALSE(char_reg_type.IsZero());
-  EXPECT_FALSE(char_reg_type.IsOne());
-  EXPECT_FALSE(char_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(char_reg_type.IsBoolean());
   EXPECT_FALSE(char_reg_type.IsByte());
   EXPECT_TRUE(char_reg_type.IsChar());
   EXPECT_FALSE(char_reg_type.IsShort());
   EXPECT_FALSE(char_reg_type.IsInteger());
-  EXPECT_FALSE(char_reg_type.IsLong());
+  EXPECT_FALSE(char_reg_type.IsLongLo());
   EXPECT_FALSE(char_reg_type.IsFloat());
-  EXPECT_FALSE(char_reg_type.IsDouble());
+  EXPECT_FALSE(char_reg_type.IsDoubleLo());
   EXPECT_FALSE(char_reg_type.IsReference());
   EXPECT_FALSE(char_reg_type.IsLowHalf());
   EXPECT_FALSE(char_reg_type.IsHighHalf());
@@ -208,22 +248,20 @@ TEST_F(RegTypeTest, Primitives) {
   EXPECT_FALSE(char_reg_type.IsDoubleTypes());
   EXPECT_TRUE(char_reg_type.IsArrayIndexTypes());
   EXPECT_FALSE(char_reg_type.IsNonZeroReferenceTypes());
-  EXPECT_TRUE(char_reg_type.HasClass());
+  EXPECT_FALSE(char_reg_type.HasClass());
 
   const RegType& short_reg_type = cache.Short();
   EXPECT_FALSE(short_reg_type.IsUndefined());
   EXPECT_FALSE(short_reg_type.IsConflict());
-  EXPECT_FALSE(short_reg_type.IsZero());
-  EXPECT_FALSE(short_reg_type.IsOne());
-  EXPECT_FALSE(short_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(short_reg_type.IsBoolean());
   EXPECT_FALSE(short_reg_type.IsByte());
   EXPECT_FALSE(short_reg_type.IsChar());
   EXPECT_TRUE(short_reg_type.IsShort());
   EXPECT_FALSE(short_reg_type.IsInteger());
-  EXPECT_FALSE(short_reg_type.IsLong());
+  EXPECT_FALSE(short_reg_type.IsLongLo());
   EXPECT_FALSE(short_reg_type.IsFloat());
-  EXPECT_FALSE(short_reg_type.IsDouble());
+  EXPECT_FALSE(short_reg_type.IsDoubleLo());
   EXPECT_FALSE(short_reg_type.IsReference());
   EXPECT_FALSE(short_reg_type.IsLowHalf());
   EXPECT_FALSE(short_reg_type.IsHighHalf());
@@ -241,22 +279,20 @@ TEST_F(RegTypeTest, Primitives) {
   EXPECT_FALSE(short_reg_type.IsDoubleTypes());
   EXPECT_TRUE(short_reg_type.IsArrayIndexTypes());
   EXPECT_FALSE(short_reg_type.IsNonZeroReferenceTypes());
-  EXPECT_TRUE(short_reg_type.HasClass());
+  EXPECT_FALSE(short_reg_type.HasClass());
 
   const RegType& int_reg_type = cache.Integer();
   EXPECT_FALSE(int_reg_type.IsUndefined());
   EXPECT_FALSE(int_reg_type.IsConflict());
-  EXPECT_FALSE(int_reg_type.IsZero());
-  EXPECT_FALSE(int_reg_type.IsOne());
-  EXPECT_FALSE(int_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(int_reg_type.IsBoolean());
   EXPECT_FALSE(int_reg_type.IsByte());
   EXPECT_FALSE(int_reg_type.IsChar());
   EXPECT_FALSE(int_reg_type.IsShort());
   EXPECT_TRUE(int_reg_type.IsInteger());
-  EXPECT_FALSE(int_reg_type.IsLong());
+  EXPECT_FALSE(int_reg_type.IsLongLo());
   EXPECT_FALSE(int_reg_type.IsFloat());
-  EXPECT_FALSE(int_reg_type.IsDouble());
+  EXPECT_FALSE(int_reg_type.IsDoubleLo());
   EXPECT_FALSE(int_reg_type.IsReference());
   EXPECT_FALSE(int_reg_type.IsLowHalf());
   EXPECT_FALSE(int_reg_type.IsHighHalf());
@@ -274,22 +310,20 @@ TEST_F(RegTypeTest, Primitives) {
   EXPECT_FALSE(int_reg_type.IsDoubleTypes());
   EXPECT_TRUE(int_reg_type.IsArrayIndexTypes());
   EXPECT_FALSE(int_reg_type.IsNonZeroReferenceTypes());
-  EXPECT_TRUE(int_reg_type.HasClass());
+  EXPECT_FALSE(int_reg_type.HasClass());
 
   const RegType& long_reg_type = cache.LongLo();
   EXPECT_FALSE(long_reg_type.IsUndefined());
   EXPECT_FALSE(long_reg_type.IsConflict());
-  EXPECT_FALSE(long_reg_type.IsZero());
-  EXPECT_FALSE(long_reg_type.IsOne());
-  EXPECT_FALSE(long_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(long_reg_type.IsBoolean());
   EXPECT_FALSE(long_reg_type.IsByte());
   EXPECT_FALSE(long_reg_type.IsChar());
   EXPECT_FALSE(long_reg_type.IsShort());
   EXPECT_FALSE(long_reg_type.IsInteger());
-  EXPECT_TRUE(long_reg_type.IsLong());
+  EXPECT_TRUE(long_reg_type.IsLongLo());
   EXPECT_FALSE(long_reg_type.IsFloat());
-  EXPECT_FALSE(long_reg_type.IsDouble());
+  EXPECT_FALSE(long_reg_type.IsDoubleLo());
   EXPECT_FALSE(long_reg_type.IsReference());
   EXPECT_TRUE(long_reg_type.IsLowHalf());
   EXPECT_FALSE(long_reg_type.IsHighHalf());
@@ -307,22 +341,20 @@ TEST_F(RegTypeTest, Primitives) {
   EXPECT_FALSE(long_reg_type.IsDoubleTypes());
   EXPECT_FALSE(long_reg_type.IsArrayIndexTypes());
   EXPECT_FALSE(long_reg_type.IsNonZeroReferenceTypes());
-  EXPECT_TRUE(long_reg_type.HasClass());
+  EXPECT_FALSE(long_reg_type.HasClass());
 
   const RegType& float_reg_type = cache.Float();
   EXPECT_FALSE(float_reg_type.IsUndefined());
   EXPECT_FALSE(float_reg_type.IsConflict());
-  EXPECT_FALSE(float_reg_type.IsZero());
-  EXPECT_FALSE(float_reg_type.IsOne());
-  EXPECT_FALSE(float_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(float_reg_type.IsBoolean());
   EXPECT_FALSE(float_reg_type.IsByte());
   EXPECT_FALSE(float_reg_type.IsChar());
   EXPECT_FALSE(float_reg_type.IsShort());
   EXPECT_FALSE(float_reg_type.IsInteger());
-  EXPECT_FALSE(float_reg_type.IsLong());
+  EXPECT_FALSE(float_reg_type.IsLongLo());
   EXPECT_TRUE(float_reg_type.IsFloat());
-  EXPECT_FALSE(float_reg_type.IsDouble());
+  EXPECT_FALSE(float_reg_type.IsDoubleLo());
   EXPECT_FALSE(float_reg_type.IsReference());
   EXPECT_FALSE(float_reg_type.IsLowHalf());
   EXPECT_FALSE(float_reg_type.IsHighHalf());
@@ -340,22 +372,20 @@ TEST_F(RegTypeTest, Primitives) {
   EXPECT_FALSE(float_reg_type.IsDoubleTypes());
   EXPECT_FALSE(float_reg_type.IsArrayIndexTypes());
   EXPECT_FALSE(float_reg_type.IsNonZeroReferenceTypes());
-  EXPECT_TRUE(float_reg_type.HasClass());
+  EXPECT_FALSE(float_reg_type.HasClass());
 
   const RegType& double_reg_type = cache.DoubleLo();
   EXPECT_FALSE(double_reg_type.IsUndefined());
   EXPECT_FALSE(double_reg_type.IsConflict());
-  EXPECT_FALSE(double_reg_type.IsZero());
-  EXPECT_FALSE(double_reg_type.IsOne());
-  EXPECT_FALSE(double_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(double_reg_type.IsBoolean());
   EXPECT_FALSE(double_reg_type.IsByte());
   EXPECT_FALSE(double_reg_type.IsChar());
   EXPECT_FALSE(double_reg_type.IsShort());
   EXPECT_FALSE(double_reg_type.IsInteger());
-  EXPECT_FALSE(double_reg_type.IsLong());
+  EXPECT_FALSE(double_reg_type.IsLongLo());
   EXPECT_FALSE(double_reg_type.IsFloat());
-  EXPECT_TRUE(double_reg_type.IsDouble());
+  EXPECT_TRUE(double_reg_type.IsDoubleLo());
   EXPECT_FALSE(double_reg_type.IsReference());
   EXPECT_TRUE(double_reg_type.IsLowHalf());
   EXPECT_FALSE(double_reg_type.IsHighHalf());
@@ -373,102 +403,68 @@ TEST_F(RegTypeTest, Primitives) {
   EXPECT_TRUE(double_reg_type.IsDoubleTypes());
   EXPECT_FALSE(double_reg_type.IsArrayIndexTypes());
   EXPECT_FALSE(double_reg_type.IsNonZeroReferenceTypes());
-  EXPECT_TRUE(double_reg_type.HasClass());
+  EXPECT_FALSE(double_reg_type.HasClass());
 }
 
 class RegTypeReferenceTest : public RegTypeTest {};
 
-TEST_F(RegTypeReferenceTest, JavaLangObjectImprecise) {
-  // Tests matching precisions. A reference type that was created precise doesn't
-  // match the one that is imprecise.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
-  ScopedObjectAccess soa(Thread::Current());
-  ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-  const RegType& imprecise_obj = cache.JavaLangObject(false);
-  const RegType& precise_obj = cache.JavaLangObject(true);
-  const RegType& precise_obj_2 = PreciseJavaLangObjectFromDescriptor(&cache, loader);
-
-  EXPECT_TRUE(precise_obj.Equals(precise_obj_2));
-  EXPECT_FALSE(imprecise_obj.Equals(precise_obj));
-  EXPECT_FALSE(imprecise_obj.Equals(precise_obj));
-  EXPECT_FALSE(imprecise_obj.Equals(precise_obj_2));
-}
-
 TEST_F(RegTypeReferenceTest, UnresolvedType) {
   // Tests creating unresolved types. Miss for the first time asking the cache and
   // a hit second time.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-  const RegType& ref_type_0 = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  const RegType& ref_type_0 = cache.FromDescriptor("Ljava/lang/DoesNotExist;");
   EXPECT_TRUE(ref_type_0.IsUnresolvedReference());
   EXPECT_TRUE(ref_type_0.IsNonZeroReferenceTypes());
 
-  const RegType& ref_type_1 = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
+  const RegType& ref_type_1 = cache.FromDescriptor("Ljava/lang/DoesNotExist;");
   EXPECT_TRUE(ref_type_0.Equals(ref_type_1));
-
-  const RegType& unresolved_super_class =  cache.FromUnresolvedSuperClass(ref_type_0);
-  EXPECT_TRUE(unresolved_super_class.IsUnresolvedSuperClass());
-  EXPECT_TRUE(unresolved_super_class.IsNonZeroReferenceTypes());
 }
 
 TEST_F(RegTypeReferenceTest, UnresolvedUnintializedType) {
   // Tests creating types uninitialized types from unresolved types.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-  const RegType& ref_type_0 = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  const RegType& ref_type_0 = cache.FromDescriptor("Ljava/lang/DoesNotExist;");
   EXPECT_TRUE(ref_type_0.IsUnresolvedReference());
-  const RegType& ref_type = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
+  const RegType& ref_type = cache.FromDescriptor("Ljava/lang/DoesNotExist;");
   EXPECT_TRUE(ref_type_0.Equals(ref_type));
-  // Create an uninitialized type of this unresolved type
-  const RegType& unresolved_unintialised = cache.Uninitialized(ref_type, 1101ull);
-  EXPECT_TRUE(unresolved_unintialised.IsUnresolvedAndUninitializedReference());
-  EXPECT_TRUE(unresolved_unintialised.IsUninitializedTypes());
-  EXPECT_TRUE(unresolved_unintialised.IsNonZeroReferenceTypes());
-  // Create an uninitialized type of this unresolved type with different  PC
-  const RegType& ref_type_unresolved_unintialised_1 =  cache.Uninitialized(ref_type, 1102ull);
-  EXPECT_TRUE(unresolved_unintialised.IsUnresolvedAndUninitializedReference());
-  EXPECT_FALSE(unresolved_unintialised.Equals(ref_type_unresolved_unintialised_1));
-  // Create an uninitialized type of this unresolved type with the same PC
-  const RegType& unresolved_unintialised_2 = cache.Uninitialized(ref_type, 1101ull);
-  EXPECT_TRUE(unresolved_unintialised.Equals(unresolved_unintialised_2));
+  // Create an uninitialized type of this unresolved type.
+  const RegType& unresolved_uninitialized = cache.Uninitialized(ref_type);
+  EXPECT_TRUE(unresolved_uninitialized.IsUnresolvedUninitializedReference());
+  EXPECT_TRUE(unresolved_uninitialized.IsUninitializedTypes());
+  EXPECT_TRUE(unresolved_uninitialized.IsNonZeroReferenceTypes());
+  // Create an another uninitialized type of this unresolved type.
+  const RegType& unresolved_uninitialized_2 = cache.Uninitialized(ref_type);
+  EXPECT_TRUE(unresolved_uninitialized.Equals(unresolved_uninitialized_2));
 }
 
 TEST_F(RegTypeReferenceTest, Dump) {
   // Tests types for proper Dump messages.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-  const RegType& unresolved_ref = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
-  const RegType& unresolved_ref_another =
-      cache.FromDescriptor(loader, "Ljava/lang/DoesNotExistEither;");
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  const RegType& unresolved_ref = cache.FromDescriptor("Ljava/lang/DoesNotExist;");
+  const RegType& unresolved_ref_another = cache.FromDescriptor("Ljava/lang/DoesNotExistEither;");
   const RegType& resolved_ref = cache.JavaLangString();
-  const RegType& resolved_unintialiesd = cache.Uninitialized(resolved_ref, 10);
-  const RegType& unresolved_unintialized = cache.Uninitialized(unresolved_ref, 12);
+  const RegType& resolved_uninitialized = cache.Uninitialized(resolved_ref);
+  const RegType& unresolved_uninitialized = cache.Uninitialized(unresolved_ref);
   const RegType& unresolved_merged = cache.FromUnresolvedMerge(
       unresolved_ref, unresolved_ref_another, /* verifier= */ nullptr);
 
   std::string expected = "Unresolved Reference: java.lang.DoesNotExist";
   EXPECT_EQ(expected, unresolved_ref.Dump());
-  expected = "Precise Reference: java.lang.String";
+  expected = "Reference: java.lang.String";
   EXPECT_EQ(expected, resolved_ref.Dump());
-  expected ="Uninitialized Reference: java.lang.String Allocation PC: 10";
-  EXPECT_EQ(expected, resolved_unintialiesd.Dump());
-  expected = "Unresolved And Uninitialized Reference: java.lang.DoesNotExist Allocation PC: 12";
-  EXPECT_EQ(expected, unresolved_unintialized.Dump());
+  expected ="Uninitialized Reference: java.lang.String";
+  EXPECT_EQ(expected, resolved_uninitialized .Dump());
+  expected = "Unresolved And Uninitialized Reference: java.lang.DoesNotExist";
+  EXPECT_EQ(expected, unresolved_uninitialized.Dump());
   expected = "UnresolvedMergedReferences(Zero/null | Unresolved Reference: java.lang.DoesNotExist, Unresolved Reference: java.lang.DoesNotExistEither)";
   EXPECT_EQ(expected, unresolved_merged.Dump());
 }
@@ -477,60 +473,55 @@ TEST_F(RegTypeReferenceTest, JavalangString) {
   // Add a class to the cache then look for the same class and make sure it is  a
   // Hit the second time. Then check for the same effect when using
   // The JavaLangObject method instead of FromDescriptor. String class is final.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
   const RegType& ref_type = cache.JavaLangString();
   const RegType& ref_type_2 = cache.JavaLangString();
-  const RegType& ref_type_3 = cache.FromDescriptor(loader, "Ljava/lang/String;");
+  const RegType& ref_type_3 = cache.FromDescriptor("Ljava/lang/String;");
 
   EXPECT_TRUE(ref_type.Equals(ref_type_2));
   EXPECT_TRUE(ref_type_2.Equals(ref_type_3));
-  EXPECT_TRUE(ref_type.IsPreciseReference());
+  EXPECT_TRUE(ref_type.IsReference());
 
   // Create an uninitialized type out of this:
-  const RegType& ref_type_unintialized = cache.Uninitialized(ref_type, 0110ull);
-  EXPECT_TRUE(ref_type_unintialized.IsUninitializedReference());
-  EXPECT_FALSE(ref_type_unintialized.IsUnresolvedAndUninitializedReference());
+  const RegType& ref_type_uninitialized = cache.Uninitialized(ref_type);
+  EXPECT_TRUE(ref_type_uninitialized.IsUninitializedReference());
+  EXPECT_FALSE(ref_type_uninitialized.IsUnresolvedUninitializedReference());
 }
 
 TEST_F(RegTypeReferenceTest, JavalangObject) {
   // Add a class to the cache then look for the same class and make sure it is  a
   // Hit the second time. Then I am checking for the same effect when using
   // The JavaLangObject method instead of FromDescriptor. Object Class in not final.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-  const RegType& ref_type = cache.JavaLangObject(true);
-  const RegType& ref_type_2 = cache.JavaLangObject(true);
-  const RegType& ref_type_3 = PreciseJavaLangObjectFromDescriptor(&cache, loader);
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  const RegType& ref_type = cache.JavaLangObject();
+  const RegType& ref_type_2 = cache.JavaLangObject();
+  const RegType& ref_type_3 = cache.FromDescriptor("Ljava/lang/Object;");
 
   EXPECT_TRUE(ref_type.Equals(ref_type_2));
   EXPECT_TRUE(ref_type_3.Equals(ref_type_2));
   EXPECT_EQ(ref_type.GetId(), ref_type_3.GetId());
 }
+
 TEST_F(RegTypeReferenceTest, Merging) {
   // Tests merging logic
   // String and object , LUB is object.
   ScopedObjectAccess soa(Thread::Current());
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache_new(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
   const RegType& string = cache_new.JavaLangString();
-  const RegType& Object = cache_new.JavaLangObject(true);
+  const RegType& Object = cache_new.JavaLangObject();
   EXPECT_TRUE(string.Merge(Object, &cache_new, /* verifier= */ nullptr).IsJavaLangObject());
   // Merge two unresolved types.
-  const RegType& ref_type_0 = cache_new.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
+  const RegType& ref_type_0 = cache_new.FromDescriptor("Ljava/lang/DoesNotExist;");
   EXPECT_TRUE(ref_type_0.IsUnresolvedReference());
-  const RegType& ref_type_1 = cache_new.FromDescriptor(loader, "Ljava/lang/DoesNotExistToo;");
+  const RegType& ref_type_1 = cache_new.FromDescriptor("Ljava/lang/DoesNotExistToo;");
   EXPECT_FALSE(ref_type_0.Equals(ref_type_1));
 
   const RegType& merged = ref_type_1.Merge(ref_type_0, &cache_new, /* verifier= */ nullptr);
@@ -538,168 +529,135 @@ TEST_F(RegTypeReferenceTest, Merging) {
   RegType& merged_nonconst = const_cast<RegType&>(merged);
 
   const BitVector& unresolved_parts =
-      down_cast<UnresolvedMergedType*>(&merged_nonconst)->GetUnresolvedTypes();
+      down_cast<UnresolvedMergedReferenceType*>(&merged_nonconst)->GetUnresolvedTypes();
   EXPECT_TRUE(unresolved_parts.IsBitSet(ref_type_0.GetId()));
   EXPECT_TRUE(unresolved_parts.IsBitSet(ref_type_1.GetId()));
 }
 
 TEST_F(RegTypeTest, MergingFloat) {
   // Testing merging logic with float and float constants.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  ScopedNullHandle<mirror::ClassLoader> loader;
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  std::array<const RegType*, kNumConstTypes> const_reg_types = GetConstRegTypes(cache);
 
-  constexpr int32_t kTestConstantValue = 10;
-  const RegType& float_type = cache_new.Float();
-  const RegType& precise_cst = cache_new.FromCat1Const(kTestConstantValue, true);
-  const RegType& imprecise_cst = cache_new.FromCat1Const(kTestConstantValue, false);
-  {
-    // float MERGE precise cst => float.
-    const RegType& merged = float_type.Merge(precise_cst, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsFloat());
+  const RegType& float_type = cache.Float();
+  for (const RegType* const_type : const_reg_types) {
+    // float MERGE cst => float.
+    const RegType& merged = float_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstant()) {
+      EXPECT_TRUE(merged.IsFloat()) << RegTypeWrapper(*const_type);
+    } else {
+      DCHECK(const_type->IsConstantLo() || const_type->IsConstantHi() || const_type->IsNull());
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // precise cst MERGE float => float.
-    const RegType& merged = precise_cst.Merge(float_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsFloat());
-  }
-  {
-    // float MERGE imprecise cst => float.
-    const RegType& merged = float_type.Merge(imprecise_cst, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsFloat());
-  }
-  {
-    // imprecise cst MERGE float => float.
-    const RegType& merged = imprecise_cst.Merge(float_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsFloat());
+  for (const RegType* const_type : const_reg_types) {
+    // cst MERGE float => float.
+    const RegType& merged = const_type->Merge(float_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstant()) {
+      EXPECT_TRUE(merged.IsFloat()) << RegTypeWrapper(*const_type);
+    } else {
+      DCHECK(const_type->IsConstantLo() || const_type->IsConstantHi() || const_type->IsNull());
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
 }
 
 TEST_F(RegTypeTest, MergingLong) {
   // Testing merging logic with long and long constants.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  ScopedNullHandle<mirror::ClassLoader> loader;
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  std::array<const RegType*, kNumConstTypes> const_reg_types = GetConstRegTypes(cache);
 
-  constexpr int32_t kTestConstantValue = 10;
-  const RegType& long_lo_type = cache_new.LongLo();
-  const RegType& long_hi_type = cache_new.LongHi();
-  const RegType& precise_cst_lo = cache_new.FromCat2ConstLo(kTestConstantValue, true);
-  const RegType& imprecise_cst_lo = cache_new.FromCat2ConstLo(kTestConstantValue, false);
-  const RegType& precise_cst_hi = cache_new.FromCat2ConstHi(kTestConstantValue, true);
-  const RegType& imprecise_cst_hi = cache_new.FromCat2ConstHi(kTestConstantValue, false);
-  {
-    // lo MERGE precise cst lo => lo.
-    const RegType& merged = long_lo_type.Merge(precise_cst_lo, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongLo());
+  const RegType& long_lo_type = cache.LongLo();
+  const RegType& long_hi_type = cache.LongHi();
+  for (const RegType* const_type : const_reg_types) {
+    // lo MERGE cst lo => lo.
+    const RegType& merged = long_lo_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantLo()) {
+      EXPECT_TRUE(merged.IsLongLo()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // precise cst lo MERGE lo => lo.
-    const RegType& merged = precise_cst_lo.Merge(long_lo_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongLo());
+  for (const RegType* const_type : const_reg_types) {
+    // cst lo MERGE lo => lo.
+    const RegType& merged = const_type->Merge(long_lo_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantLo()) {
+      EXPECT_TRUE(merged.IsLongLo()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // lo MERGE imprecise cst lo => lo.
-    const RegType& merged = long_lo_type.Merge(
-        imprecise_cst_lo, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongLo());
+  for (const RegType* const_type : const_reg_types) {
+    // hi MERGE cst hi => hi.
+    const RegType& merged = long_hi_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantHi()) {
+      EXPECT_TRUE(merged.IsLongHi()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // imprecise cst lo MERGE lo => lo.
-    const RegType& merged = imprecise_cst_lo.Merge(
-        long_lo_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongLo());
-  }
-  {
-    // hi MERGE precise cst hi => hi.
-    const RegType& merged = long_hi_type.Merge(precise_cst_hi, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongHi());
-  }
-  {
-    // precise cst hi MERGE hi => hi.
-    const RegType& merged = precise_cst_hi.Merge(long_hi_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongHi());
-  }
-  {
-    // hi MERGE imprecise cst hi => hi.
-    const RegType& merged = long_hi_type.Merge(
-        imprecise_cst_hi, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongHi());
-  }
-  {
-    // imprecise cst hi MERGE hi => hi.
-    const RegType& merged = imprecise_cst_hi.Merge(
-        long_hi_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongHi());
+  for (const RegType* const_type : const_reg_types) {
+    // cst hi MERGE hi => hi.
+    const RegType& merged = const_type->Merge(long_hi_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantHi()) {
+      EXPECT_TRUE(merged.IsLongHi()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
 }
 
 TEST_F(RegTypeTest, MergingDouble) {
   // Testing merging logic with double and double constants.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  ScopedNullHandle<mirror::ClassLoader> loader;
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  std::array<const RegType*, kNumConstTypes> const_reg_types = GetConstRegTypes(cache);
 
-  constexpr int32_t kTestConstantValue = 10;
-  const RegType& double_lo_type = cache_new.DoubleLo();
-  const RegType& double_hi_type = cache_new.DoubleHi();
-  const RegType& precise_cst_lo = cache_new.FromCat2ConstLo(kTestConstantValue, true);
-  const RegType& imprecise_cst_lo = cache_new.FromCat2ConstLo(kTestConstantValue, false);
-  const RegType& precise_cst_hi = cache_new.FromCat2ConstHi(kTestConstantValue, true);
-  const RegType& imprecise_cst_hi = cache_new.FromCat2ConstHi(kTestConstantValue, false);
-  {
-    // lo MERGE precise cst lo => lo.
-    const RegType& merged = double_lo_type.Merge(
-        precise_cst_lo, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleLo());
+  const RegType& double_lo_type = cache.DoubleLo();
+  const RegType& double_hi_type = cache.DoubleHi();
+  for (const RegType* const_type : const_reg_types) {
+    // lo MERGE cst lo => lo.
+    const RegType& merged = double_lo_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantLo()) {
+      EXPECT_TRUE(merged.IsDoubleLo()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // precise cst lo MERGE lo => lo.
-    const RegType& merged = precise_cst_lo.Merge(
-        double_lo_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleLo());
+  for (const RegType* const_type : const_reg_types) {
+    // cst lo MERGE lo => lo.
+    const RegType& merged = const_type->Merge(double_lo_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantLo()) {
+      EXPECT_TRUE(merged.IsDoubleLo()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // lo MERGE imprecise cst lo => lo.
-    const RegType& merged = double_lo_type.Merge(
-        imprecise_cst_lo, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleLo());
+  for (const RegType* const_type : const_reg_types) {
+    // hi MERGE cst hi => hi.
+    const RegType& merged = double_hi_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantHi()) {
+      EXPECT_TRUE(merged.IsDoubleHi()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // imprecise cst lo MERGE lo => lo.
-    const RegType& merged = imprecise_cst_lo.Merge(
-        double_lo_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleLo());
-  }
-  {
-    // hi MERGE precise cst hi => hi.
-    const RegType& merged = double_hi_type.Merge(
-        precise_cst_hi, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleHi());
-  }
-  {
-    // precise cst hi MERGE hi => hi.
-    const RegType& merged = precise_cst_hi.Merge(
-        double_hi_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleHi());
-  }
-  {
-    // hi MERGE imprecise cst hi => hi.
-    const RegType& merged = double_hi_type.Merge(
-        imprecise_cst_hi, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleHi());
-  }
-  {
-    // imprecise cst hi MERGE hi => hi.
-    const RegType& merged = imprecise_cst_hi.Merge(
-        double_hi_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleHi());
+  for (const RegType* const_type : const_reg_types) {
+    // cst hi MERGE hi => hi.
+    const RegType& merged = const_type->Merge(double_hi_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantHi()) {
+      EXPECT_TRUE(merged.IsDoubleHi()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
 }
 
@@ -752,59 +710,56 @@ TEST_F(RegTypeTest, MergeSemiLatticeRef) {
   //                                 |
   //                                 0
 
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
 
   ScopedDisableMovingGC no_gc(soa.Self());
 
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
 
   const RegType& conflict = cache.Conflict();
   const RegType& zero = cache.Zero();
   const RegType& null = cache.Null();
   const RegType& int_type = cache.Integer();
 
-  const RegType& obj = cache.JavaLangObject(false);
-  const RegType& obj_arr = cache.FromDescriptor(loader, "[Ljava/lang/Object;");
+  const RegType& obj = cache.JavaLangObject();
+  const RegType& obj_arr = cache.FromDescriptor("[Ljava/lang/Object;");
   ASSERT_FALSE(obj_arr.IsUnresolvedReference());
 
-  const RegType& unresolved_a = cache.FromDescriptor(loader, "Ldoes/not/resolve/A;");
+  const RegType& unresolved_a = cache.FromDescriptor("Ldoes/not/resolve/A;");
   ASSERT_TRUE(unresolved_a.IsUnresolvedReference());
-  const RegType& unresolved_b = cache.FromDescriptor(loader, "Ldoes/not/resolve/B;");
+  const RegType& unresolved_b = cache.FromDescriptor("Ldoes/not/resolve/B;");
   ASSERT_TRUE(unresolved_b.IsUnresolvedReference());
   const RegType& unresolved_ab = cache.FromUnresolvedMerge(unresolved_a, unresolved_b, nullptr);
   ASSERT_TRUE(unresolved_ab.IsUnresolvedMergedReference());
 
   const RegType& uninit_this = cache.UninitializedThisArgument(obj);
-  const RegType& uninit_obj_0 = cache.Uninitialized(obj, 0u);
-  const RegType& uninit_obj_1 = cache.Uninitialized(obj, 1u);
+  const RegType& uninit_obj = cache.Uninitialized(obj);
 
   const RegType& uninit_unres_this = cache.UninitializedThisArgument(unresolved_a);
-  const RegType& uninit_unres_a_0 = cache.Uninitialized(unresolved_a, 0);
-  const RegType& uninit_unres_b_0 = cache.Uninitialized(unresolved_b, 0);
+  const RegType& uninit_unres_a = cache.Uninitialized(unresolved_a);
+  const RegType& uninit_unres_b = cache.Uninitialized(unresolved_b);
 
-  const RegType& number = cache.FromDescriptor(loader, "Ljava/lang/Number;");
+  const RegType& number = cache.FromDescriptor("Ljava/lang/Number;");
   ASSERT_FALSE(number.IsUnresolvedReference());
-  const RegType& integer = cache.FromDescriptor(loader, "Ljava/lang/Integer;");
+  const RegType& integer = cache.FromDescriptor("Ljava/lang/Integer;");
   ASSERT_FALSE(integer.IsUnresolvedReference());
 
-  const RegType& uninit_number_0 = cache.Uninitialized(number, 0u);
-  const RegType& uninit_integer_0 = cache.Uninitialized(integer, 0u);
+  const RegType& uninit_number = cache.Uninitialized(number);
+  const RegType& uninit_integer = cache.Uninitialized(integer);
 
-  const RegType& number_arr = cache.FromDescriptor(loader, "[Ljava/lang/Number;");
+  const RegType& number_arr = cache.FromDescriptor("[Ljava/lang/Number;");
   ASSERT_FALSE(number_arr.IsUnresolvedReference());
-  const RegType& integer_arr = cache.FromDescriptor(loader, "[Ljava/lang/Integer;");
+  const RegType& integer_arr = cache.FromDescriptor("[Ljava/lang/Integer;");
   ASSERT_FALSE(integer_arr.IsUnresolvedReference());
 
-  const RegType& number_arr_arr = cache.FromDescriptor(loader, "[[Ljava/lang/Number;");
+  const RegType& number_arr_arr = cache.FromDescriptor("[[Ljava/lang/Number;");
   ASSERT_FALSE(number_arr_arr.IsUnresolvedReference());
 
-  const RegType& char_arr = cache.FromDescriptor(loader, "[C");
+  const RegType& char_arr = cache.FromDescriptor("[C");
   ASSERT_FALSE(char_arr.IsUnresolvedReference());
-  const RegType& byte_arr = cache.FromDescriptor(loader, "[B");
+  const RegType& byte_arr = cache.FromDescriptor("[B");
   ASSERT_FALSE(byte_arr.IsUnresolvedReference());
 
   const RegType& unresolved_a_num = cache.FromUnresolvedMerge(unresolved_a, number, nullptr);
@@ -821,7 +776,7 @@ TEST_F(RegTypeTest, MergeSemiLatticeRef) {
   const RegType& unresolved_ab_int = cache.FromUnresolvedMerge(unresolved_ab, integer, nullptr);
   ASSERT_TRUE(unresolved_ab_int.IsUnresolvedMergedReference());
   std::vector<const RegType*> uninitialized_types = {
-      &uninit_this, &uninit_obj_0, &uninit_obj_1, &uninit_number_0, &uninit_integer_0
+      &uninit_this, &uninit_obj, &uninit_number, &uninit_integer
   };
   std::vector<const RegType*> unresolved_types = {
       &unresolved_a,
@@ -835,7 +790,7 @@ TEST_F(RegTypeTest, MergeSemiLatticeRef) {
       &unresolved_ab_int
   };
   std::vector<const RegType*> uninit_unresolved_types = {
-      &uninit_unres_this, &uninit_unres_a_0, &uninit_unres_b_0
+      &uninit_unres_this, &uninit_unres_a, &uninit_unres_b
   };
   std::vector<const RegType*> plain_nonobj_classes = { &number, &integer };
   std::vector<const RegType*> plain_nonobj_arr_classes = {
@@ -1079,21 +1034,6 @@ TEST_F(RegTypeTest, MergeSemiLatticeRef) {
   }
 }
 
-TEST_F(RegTypeTest, ConstPrecision) {
-  // Tests creating primitive types types.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
-  ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-  const RegType& imprecise_const = cache_new.FromCat1Const(10, false);
-  const RegType& precise_const = cache_new.FromCat1Const(10, true);
-
-  EXPECT_TRUE(imprecise_const.IsImpreciseConstant());
-  EXPECT_TRUE(precise_const.IsPreciseConstant());
-  EXPECT_FALSE(imprecise_const.Equals(precise_const));
-}
-
 class RegTypeOOMTest : public RegTypeTest {
  protected:
   void SetUpRuntimeOptions(RuntimeOptions *options) override {
@@ -1110,8 +1050,7 @@ TEST_F(RegTypeOOMTest, ClassJoinOOM) {
 
   // Tests that we don't abort with OOMs.
 
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
 
   ScopedDisableMovingGC no_gc(soa.Self());
@@ -1125,21 +1064,19 @@ TEST_F(RegTypeOOMTest, ClassJoinOOM) {
   constexpr const char* kNumberArrayFive = "[[[[[Ljava/lang/Number;";
 
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-  const RegType& int_array_array = cache.FromDescriptor(loader, kIntArrayFive);
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  const RegType& int_array_array = cache.FromDescriptor(kIntArrayFive);
   ASSERT_TRUE(int_array_array.HasClass());
-  const RegType& float_array_array = cache.FromDescriptor(loader, kFloatArrayFive);
+  const RegType& float_array_array = cache.FromDescriptor(kFloatArrayFive);
   ASSERT_TRUE(float_array_array.HasClass());
 
   // Check assumptions: the joined classes don't exist, yet.
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  ASSERT_TRUE(class_linker->LookupClass(soa.Self(), kNumberArrayFour, nullptr) == nullptr);
-  ASSERT_TRUE(class_linker->LookupClass(soa.Self(), kNumberArrayFive, nullptr) == nullptr);
+  ASSERT_TRUE(class_linker_->LookupClass(soa.Self(), kNumberArrayFour, nullptr) == nullptr);
+  ASSERT_TRUE(class_linker_->LookupClass(soa.Self(), kNumberArrayFive, nullptr) == nullptr);
 
   // Fill the heap.
   VariableSizedHandleScope hs(soa.Self());
-  FillHeap(soa.Self(), class_linker, &hs);
+  FillHeap(soa.Self(), class_linker_, &hs);
 
   const RegType& join_type = int_array_array.Merge(float_array_array, &cache, nullptr);
   ASSERT_TRUE(join_type.IsUnresolvedReference());
@@ -1148,8 +1085,7 @@ TEST_F(RegTypeOOMTest, ClassJoinOOM) {
 class RegTypeClassJoinTest : public RegTypeTest {
  protected:
   void TestClassJoin(const char* in1, const char* in2, const char* out) {
-    ArenaStack stack(Runtime::Current()->GetArenaPool());
-    ScopedArenaAllocator allocator(&stack);
+    ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
 
     ScopedObjectAccess soa(Thread::Current());
     jobject jclass_loader = LoadDex("Interfaces");
@@ -1157,22 +1093,29 @@ class RegTypeClassJoinTest : public RegTypeTest {
     Handle<mirror::ClassLoader> class_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
 
-    Handle<mirror::Class> c1(hs.NewHandle(
-        class_linker_->FindClass(soa.Self(), in1, class_loader)));
-    Handle<mirror::Class> c2(hs.NewHandle(
-        class_linker_->FindClass(soa.Self(), in2, class_loader)));
+    Handle<mirror::Class> c1 = hs.NewHandle(FindClass(in1, class_loader));
+    Handle<mirror::Class> c2 = hs.NewHandle(FindClass(in2, class_loader));
     ASSERT_TRUE(c1 != nullptr);
     ASSERT_TRUE(c2 != nullptr);
+    const DexFile* dex_file = &c1->GetDexFile();
+    ASSERT_EQ(dex_file, &c2->GetDexFile());
 
     ScopedDisableMovingGC no_gc(soa.Self());
 
-    RegTypeCache cache(
-        soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
-    const RegType& c1_reg_type = *cache.InsertClass(in1, c1.Get(), false);
-    const RegType& c2_reg_type = *cache.InsertClass(in2, c2.Get(), false);
+    RegTypeCache cache(soa.Self(), class_linker_, arena_pool, class_loader, dex_file);
+    const RegType& c1_reg_type = cache.FromClass(c1.Get());
+    if (!c1_reg_type.IsJavaLangObject()) {
+      ASSERT_TRUE(c1_reg_type.HasClass());
+      ASSERT_TRUE(c1_reg_type.GetClass() == c1.Get());
+    }
+    const RegType& c2_reg_type = cache.FromClass(c2.Get());
+    if (!c2_reg_type.IsJavaLangObject()) {
+      ASSERT_TRUE(c2_reg_type.HasClass());
+      ASSERT_TRUE(c2_reg_type.GetClass() == c2.Get());
+    }
 
     const RegType& join_type = c1_reg_type.Merge(c2_reg_type, &cache, nullptr);
-    EXPECT_TRUE(join_type.HasClass());
+    EXPECT_TRUE(join_type.IsJavaLangObject() || join_type.HasClass());
     EXPECT_EQ(join_type.GetDescriptor(), std::string_view(out));
   }
 };
@@ -1189,6 +1132,29 @@ TEST_F(RegTypeClassJoinTest, ClassJoinClassClass) {
   // This test codifies that we prefer the class hierarchy over interfaces. It's a mostly
   // arbitrary choice, optimally we'd have set types and could handle multi-inheritance precisely.
   TestClassJoin("LInterfaces$A;", "LInterfaces$B;", "Ljava/lang/Object;");
+}
+
+TEST_F(RegTypeClassJoinTest, LookupByTypeIndex) {
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
+  ScopedObjectAccess soa(Thread::Current());
+  ScopedNullHandle<mirror::ClassLoader> loader;
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+
+  auto get_type_index = [&](std::string_view descriptor) {
+    const dex::TypeId* type_id = dex_file_->FindTypeId(descriptor);
+    CHECK(type_id != nullptr);
+    return dex_file_->GetIndexForTypeId(*type_id);
+  };
+
+  ASSERT_EQ(&cache.Boolean(), &cache.FromTypeIndex(get_type_index("Z")));
+  ASSERT_EQ(&cache.Byte(), &cache.FromTypeIndex(get_type_index("B")));
+  ASSERT_EQ(&cache.Char(), &cache.FromTypeIndex(get_type_index("C")));
+  ASSERT_EQ(&cache.Short(), &cache.FromTypeIndex(get_type_index("S")));
+  ASSERT_EQ(&cache.Integer(), &cache.FromTypeIndex(get_type_index("I")));
+  ASSERT_EQ(&cache.LongLo(), &cache.FromTypeIndex(get_type_index("J")));
+  ASSERT_EQ(&cache.Float(), &cache.FromTypeIndex(get_type_index("F")));
+  ASSERT_EQ(&cache.DoubleLo(), &cache.FromTypeIndex(get_type_index("D")));
+  ASSERT_EQ(&cache.Conflict(), &cache.FromTypeIndex(get_type_index("V")));
 }
 
 }  // namespace verifier

@@ -1283,9 +1283,9 @@ class Dex2Oat final {
         }
 
         DCHECK_EQ(output_vdex_fd_, -1);
-        std::string vdex_filename = output_vdex_.empty()
-            ? ReplaceFileExtension(oat_filename, "vdex")
-            : output_vdex_;
+        std::string vdex_filename = output_vdex_.empty() ?
+                                        ReplaceFileExtension(oat_filename, kVdexExtension) :
+                                        output_vdex_;
         if (vdex_filename == input_vdex_ && output_vdex_.empty()) {
           use_existing_vdex_ = true;
           std::unique_ptr<File> vdex_file(OS::OpenFileForReading(vdex_filename.c_str()));
@@ -1340,7 +1340,7 @@ class Dex2Oat final {
       }
 
       DCHECK_NE(output_vdex_fd_, -1);
-      std::string vdex_location = ReplaceFileExtension(oat_location_, "vdex");
+      std::string vdex_location = ReplaceFileExtension(oat_location_, kVdexExtension);
       if (input_vdex_file_ != nullptr && output_vdex_fd_ == input_vdex_fd_) {
         use_existing_vdex_ = true;
       }
@@ -2107,7 +2107,8 @@ class Dex2Oat final {
     for (size_t i = 0, size = oat_files_.size(); i != size; ++i) {
       std::unique_ptr<linker::OatWriter>& oat_writer = oat_writers_[i];
       std::vector<const DexFile*>& dex_files = dex_files_per_oat_file_[i];
-      oat_writer->Initialize(driver_.get(), image_writer_.get(), dex_files);
+      oat_writer->Initialize(
+          driver_.get(), verification_results_.get(), image_writer_.get(), dex_files);
     }
 
     if (!use_existing_vdex_) {
@@ -2160,7 +2161,10 @@ class Dex2Oat final {
         // We need to mirror the layout of the ELF file in the compressed debug-info.
         // Therefore PrepareDebugInfo() relies on the SetLoadedSectionSizes() call further above.
         debug::DebugInfo debug_info = oat_writer->GetDebugInfo();  // Keep the variable alive.
-        elf_writer->PrepareDebugInfo(debug_info);  // Processes the data on background thread.
+        // This will perform the compression on background thread while we do other I/O below.
+        // If we hit any ERROR path below, the destructor of this variable will wait for the
+        // task to finish (since it accesses the 'debug_info' above and other 'Dex2Oat' data).
+        std::unique_ptr<ThreadPool> compression_job = elf_writer->PrepareDebugInfo(debug_info);
 
         OutputStream* rodata = rodata_[i];
         DCHECK(rodata != nullptr);
@@ -2655,7 +2659,6 @@ class Dex2Oat final {
       bool do_oat_writer_layout = DoOatLayoutOptimizations();
       oat_writers_.emplace_back(new linker::OatWriter(
           *compiler_options_,
-          verification_results_.get(),
           timings_,
           do_oat_writer_layout ? profile_compilation_info_.get() : nullptr));
     }

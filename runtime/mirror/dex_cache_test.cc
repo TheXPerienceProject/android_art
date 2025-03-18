@@ -79,11 +79,9 @@ TEST_F(DexCacheTest, TestResolvedFieldAccess) {
   StackHandleScope<3> hs(soa.Self());
   Handle<mirror::ClassLoader> class_loader(hs.NewHandle(
       soa.Decode<mirror::ClassLoader>(jclass_loader)));
-  Handle<mirror::Class> klass1 =
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "Lpackage1/Package1;", class_loader));
+  Handle<mirror::Class> klass1 = hs.NewHandle(FindClass("Lpackage1/Package1;", class_loader));
   ASSERT_TRUE(klass1 != nullptr);
-  Handle<mirror::Class> klass2 =
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "Lpackage2/Package2;", class_loader));
+  Handle<mirror::Class> klass2 = hs.NewHandle(FindClass("Lpackage2/Package2;", class_loader));
   ASSERT_TRUE(klass2 != nullptr);
   EXPECT_OBJ_PTR_EQ(klass1->GetDexCache(), klass2->GetDexCache());
 
@@ -107,8 +105,7 @@ TEST_F(DexCacheMethodHandlesTest, TestResolvedMethodTypes) {
   Handle<mirror::ClassLoader> class_loader(hs.NewHandle(
       soa.Decode<mirror::ClassLoader>(jclass_loader)));
 
-  Handle<mirror::Class> method_types(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LMethodTypes;", class_loader)));
+  Handle<mirror::Class> method_types = hs.NewHandle(FindClass("LMethodTypes;", class_loader));
   class_linker_->EnsureInitialized(soa.Self(), method_types, true, true);
 
   ArtMethod* method1 = method_types->FindClassMethod(

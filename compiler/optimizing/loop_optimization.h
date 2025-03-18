@@ -31,6 +31,13 @@ namespace art HIDDEN {
 class CompilerOptions;
 class ArchNoOptsLoopHelper;
 
+// Determines whether predicated loop vectorization should be tried for ALL loops.
+#ifdef ART_FORCE_TRY_PREDICATED_SIMD
+  static constexpr bool kForceTryPredicatedSIMD = true;
+#else
+  static constexpr bool kForceTryPredicatedSIMD = false;
+#endif
+
 /**
  * Loop optimizations. Builds a loop hierarchy and applies optimizations to
  * the detected nested loops, such as removal of dead induction and empty loops
@@ -572,6 +579,7 @@ class HLoopOptimization : public HOptimization {
   ArchNoOptsLoopHelper* arch_loop_helper_;
 
   friend class LoopOptimizationTest;
+  friend class PredicatedSimdLoopOptimizationTest;
 
   DISALLOW_COPY_AND_ASSIGN(HLoopOptimization);
 };

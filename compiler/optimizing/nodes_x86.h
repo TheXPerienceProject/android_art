@@ -142,22 +142,10 @@ class HX86AndNot final : public HBinaryOperation {
   template <typename T> static T Compute(T x, T y) { return ~x & y; }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
-  }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
-                      [[maybe_unused]] HFloatConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x,
-                      [[maybe_unused]] HDoubleConstant* y) const override {
-    LOG(FATAL) << DebugName() << " is not defined for double values";
-    UNREACHABLE();
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(X86AndNot);
@@ -191,19 +179,12 @@ class HX86MaskOrResetLeastSetBit final : public HUnaryOperation {
   }
 
   HConstant* Evaluate(HIntConstant* x) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue()));
   }
-  HConstant* Evaluate([[maybe_unused]] HFloatConstant* x) const override {
-    LOG(FATAL) << DebugName() << "is not defined for float values";
-    UNREACHABLE();
-  }
-  HConstant* Evaluate([[maybe_unused]] HDoubleConstant* x) const override {
-    LOG(FATAL) << DebugName() << "is not defined for double values";
-    UNREACHABLE();
-  }
+
   InstructionKind GetOpKind() const { return op_kind_; }
 
   DECLARE_INSTRUCTION(X86MaskOrResetLeastSetBit);

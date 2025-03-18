@@ -1143,7 +1143,7 @@ class RuntimeImageHelper {
     std::unique_ptr<const InstructionSetFeatures> isa_features =
         InstructionSetFeatures::FromCppDefines();
     std::unique_ptr<OatHeader> oat_header(
-        OatHeader::Create(kRuntimeISA,
+        OatHeader::Create(kRuntimeQuickCodeISA,
                           isa_features.get(),
                           number_of_dex_files,
                           &key_value_store));
@@ -1848,7 +1848,7 @@ std::string RuntimeImage::GetRuntimeImagePath(const std::string& app_data_dir,
                                               const std::string& dex_location,
                                               const std::string& isa) {
   std::string basename = android::base::Basename(dex_location);
-  std::string filename = ReplaceFileExtension(basename, "art");
+  std::string filename = ReplaceFileExtension(basename, kArtExtension);
 
   return GetRuntimeImageDir(app_data_dir) + isa + "/" + filename;
 }
@@ -1856,7 +1856,7 @@ std::string RuntimeImage::GetRuntimeImagePath(const std::string& app_data_dir,
 std::string RuntimeImage::GetRuntimeImagePath(const std::string& dex_location) {
   return GetRuntimeImagePath(Runtime::Current()->GetProcessDataDirectory(),
                              dex_location,
-                             GetInstructionSetString(kRuntimeISA));
+                             GetInstructionSetString(kRuntimeQuickCodeISA));
 }
 
 static bool EnsureDirectoryExists(const std::string& directory, std::string* error_msg) {
@@ -1872,6 +1872,11 @@ static bool EnsureDirectoryExists(const std::string& directory, std::string* err
 }
 
 bool RuntimeImage::WriteImageToDisk(std::string* error_msg) {
+  if (gPageSize != kMinPageSize) {
+    *error_msg = "Writing runtime image is only supported on devices with 4K page size";
+    return false;
+  }
+
   gc::Heap* heap = Runtime::Current()->GetHeap();
   if (!heap->HasBootImageSpace()) {
     *error_msg = "Cannot generate an app image without a boot image";

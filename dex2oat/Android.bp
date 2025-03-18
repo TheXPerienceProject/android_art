@@ -261,7 +261,7 @@ art_cc_binary {
             shared_libs: [
                 "libart",
                 "libartbase",
-                "libdexfile",
+                "libdexfile#impl",
                 "libprofile",
             ],
             static_libs: [
@@ -327,7 +327,7 @@ art_cc_binary {
             shared_libs: [
                 "libartbased",
                 "libartd",
-                "libdexfiled",
+                "libdexfiled#impl",
                 "libprofiled",
             ],
             static_libs: [
@@ -426,7 +426,7 @@ art_cc_library_static {
 
 art_cc_defaults {
     name: "art_dex2oat_tests_defaults",
-    data: [
+    device_common_data: [
         ":art-gtest-jars-AbstractMethod",
         ":art-gtest-jars-ArrayClassWithUnresolvedComponent",
         ":art-gtest-jars-DefaultMethods",
@@ -483,7 +483,10 @@ art_cc_defaults {
     ],
     target: {
         host: {
-            required: ["dex2oatd"],
+            required: [
+                "dex2oatd",
+                "art_boot_images",
+            ],
         },
     },
 

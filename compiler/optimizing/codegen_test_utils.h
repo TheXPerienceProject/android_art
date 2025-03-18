@@ -167,15 +167,30 @@ class TestCodeGeneratorX86 : public x86::CodeGeneratorX86 {
 };
 #endif
 
-static bool CanExecuteOnHardware(InstructionSet target_isa) {
+// Check that the current runtime ISA matches the target ISA.
+static bool DoesHardwareSupportISA(InstructionSet target_isa) {
   return (target_isa == kRuntimeISA)
       // Handle the special case of ARM, with two instructions sets (ARM32 and Thumb-2).
       || (kRuntimeISA == InstructionSet::kArm && target_isa == InstructionSet::kThumb2);
 }
 
-static bool CanExecute(InstructionSet target_isa) {
+// Check that the current runtime ISA matches the target ISA and the ISA features requested are
+// available on the hardware.
+static bool CanExecuteOnHardware(const CodeGenerator& codegen) {
+  const InstructionSetFeatures* isa_features =
+      codegen.GetCompilerOptions().GetInstructionSetFeatures();
+  return DoesHardwareSupportISA(codegen.GetInstructionSet())
+      && InstructionSetFeatures::FromHwcap()->HasAtLeast(isa_features);
+}
+
+static bool CanExecuteISA(InstructionSet target_isa) {
   CodeSimulatorContainer simulator(target_isa);
-  return CanExecuteOnHardware(target_isa) || simulator.CanSimulate();
+  return DoesHardwareSupportISA(target_isa) || simulator.CanSimulate();
+}
+
+static bool CanExecute(const CodeGenerator& codegen) {
+  CodeSimulatorContainer simulator(codegen.GetInstructionSet());
+  return CanExecuteOnHardware(codegen) || simulator.CanSimulate();
 }
 
 template <typename Expected>
@@ -200,14 +215,14 @@ inline int64_t SimulatorExecute<int64_t>(CodeSimulator* simulator, int64_t (*f)(
 }
 
 template <typename Expected>
-static void VerifyGeneratedCode(InstructionSet target_isa,
+static void VerifyGeneratedCode(const CodeGenerator& codegen,
                                 Expected (*f)(),
                                 bool has_result,
                                 Expected expected) {
-  ASSERT_TRUE(CanExecute(target_isa)) << "Target isa is not executable.";
+  ASSERT_TRUE(CanExecute(codegen)) << "Target isa is not executable.";
 
   // Verify on simulator.
-  CodeSimulatorContainer simulator(target_isa);
+  CodeSimulatorContainer simulator(codegen.GetInstructionSet());
   if (simulator.CanSimulate()) {
     Expected result = SimulatorExecute<Expected>(simulator.Get(), f);
     if (has_result) {
@@ -216,7 +231,7 @@ static void VerifyGeneratedCode(InstructionSet target_isa,
   }
 
   // Verify on hardware.
-  if (CanExecuteOnHardware(target_isa)) {
+  if (CanExecuteOnHardware(codegen)) {
     Expected result = f();
     if (has_result) {
       ASSERT_EQ(expected, result);
@@ -241,7 +256,7 @@ static void Run(const CodeGenerator& codegen,
 
   using fptr = Expected (*)();
   fptr f = reinterpret_cast<fptr>(reinterpret_cast<uintptr_t>(method_code));
-  VerifyGeneratedCode(target_isa, f, has_result, expected);
+  VerifyGeneratedCode(codegen, f, has_result, expected);
 }
 
 static void ValidateGraph(HGraph* graph) {

@@ -585,6 +585,23 @@ inline bool Object::CasFieldStrongSequentiallyConsistent64(MemberOffset field_of
   return success;
 }
 
+template <bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
+inline int64_t Object::CaeFieldStrongSequentiallyConsistent64(MemberOffset field_offset,
+                                                              int64_t old_value,
+                                                              int64_t new_value) {
+  VerifyTransaction<kTransactionActive, kCheckTransaction>();
+  Verify<kVerifyFlags>();
+  uint8_t* raw_addr = reinterpret_cast<uint8_t*>(this) + field_offset.Int32Value();
+  Atomic<int64_t>* atomic_addr = reinterpret_cast<Atomic<int64_t>*>(raw_addr);
+  int64_t found_value =
+      atomic_addr->CompareAndExchangeStrongSequentiallyConsistent(old_value, new_value);
+  if (kTransactionActive && found_value == old_value) {
+    Runtime::Current()->GetClassLinker()->RecordWriteField64(
+        this, field_offset, old_value, /*is_volatile=*/true);
+  }
+  return found_value;
+}
+
 /*
  * Returns a pointer to an object representing what the field points to, not an
  * object representing the field.

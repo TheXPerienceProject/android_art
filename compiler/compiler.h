@@ -55,7 +55,6 @@ class Compiler {
 
   virtual CompiledMethod* Compile(const dex::CodeItem* code_item,
                                   uint32_t access_flags,
-                                  InvokeType invoke_type,
                                   uint16_t class_def_idx,
                                   uint32_t method_idx,
                                   Handle<mirror::ClassLoader> class_loader,

@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-661-checker-simd-reduc-expected-stdout",
         ":art-run-test-661-checker-simd-reduc-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
     // Include the Java source files in the test's artifacts, to make Checker assertions
     // available to the TradeFed test runner.
     include_srcs: true,

@@ -418,6 +418,16 @@ void ThrowNoSuchMethodError(InvokeType type,
   ThrowException("Ljava/lang/NoSuchMethodError;", c, msg.str().c_str());
 }
 
+void ThrowNoSuchMethodError(ObjPtr<mirror::Class> c,
+                            std::string_view name,
+                            const Signature& signature) {
+  std::ostringstream msg;
+  std::string temp;
+  msg << "No method " << name << signature
+      << " in class " << c->GetDescriptor(&temp) << " or its super classes";
+  ThrowException("Ljava/lang/NoSuchMethodError;", c, msg.str().c_str());
+}
+
 // NullPointerException
 
 void ThrowNullPointerExceptionForFieldAccess(ArtField* field, ArtMethod* method, bool is_read) {
@@ -696,13 +706,23 @@ void ThrowSecurityException(const char* fmt, ...) {
 
 // Stack overflow.
 
+template <StackType stack_type>
 void ThrowStackOverflowError(Thread* self) {
-  if (self->IsHandlingStackOverflow()) {
+  if (self->IsHandlingStackOverflow<stack_type>()) {
     LOG(ERROR) << "Recursive stack overflow.";
     // We don't fail here because SetStackEndForStackOverflow will print better diagnostics.
   }
 
-  self->SetStackEndForStackOverflow();  // Allow space on the stack for constructor to execute.
+  // Allow space on the stack for constructor to execute.
+  self->SetStackEndForStackOverflow<stack_type>();
+
+  // Remove the stack overflow protection if it is set up.
+  bool implicit_stack_check = Runtime::Current()->GetImplicitStackOverflowChecks();
+  if (implicit_stack_check) {
+    if (!self->UnprotectStack<stack_type>()) {
+      LOG(ERROR) << "Unable to remove stack protection for stack overflow";
+    }
+  }
 
   // Avoid running Java code for exception initialization.
   // TODO: Checks to make this a bit less brittle.
@@ -713,7 +733,7 @@ void ThrowStackOverflowError(Thread* self) {
   //       with larger stack sizes (e.g., ASAN).
   auto create_and_throw = [self]() REQUIRES_SHARED(Locks::mutator_lock_) NO_INLINE {
     std::string msg("stack size ");
-    msg += PrettySize(self->GetStackSize());
+    msg += PrettySize(self->GetUsableStackSize<stack_type>());
 
     ScopedObjectAccessUnchecked soa(self);
     StackHandleScope<1u> hs(self);
@@ -791,13 +811,16 @@ void ThrowStackOverflowError(Thread* self) {
   create_and_throw();
   CHECK(self->IsExceptionPending());
 
-  self->ResetDefaultStackEnd();  // Return to default stack size.
+  self->ResetDefaultStackEnd<stack_type>();  // Return to default stack size.
 
   // And restore protection if implicit checks are on.
-  if (Runtime::Current()->GetImplicitStackOverflowChecks()) {
-    self->ProtectStack();
+  if (implicit_stack_check) {
+    self->ProtectStack<stack_type>();
   }
 }
+
+// Explicit instantiations to keep this definition separate to the declaration.
+template void ThrowStackOverflowError<StackType::kHardware>(Thread* self);
 
 // StringIndexOutOfBoundsException
 

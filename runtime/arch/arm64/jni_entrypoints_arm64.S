@@ -16,33 +16,6 @@
 
 #include "asm_support_arm64.S"
 
-#define ALL_ARGS_SIZE (/*x0-x7*/ 8 * 8 + /*d0-d7*/ 8 * 8)
-
-.macro SAVE_ALL_ARGS_INCREASE_FRAME extra_space
-    // Save register args x0-x7, d0-d7 and return address.
-    stp    x0, x1, [sp, #-(ALL_ARGS_SIZE + \extra_space)]!
-    .cfi_adjust_cfa_offset (ALL_ARGS_SIZE + \extra_space)
-    stp    x2, x3, [sp, #16]
-    stp    x4, x5, [sp, #32]
-    stp    x6, x7, [sp, #48]
-    stp    d0, d1, [sp, #64]
-    stp    d2, d3, [sp, #80]
-    stp    d4, d5, [sp, #96]
-    stp    d6, d7, [sp, #112]
-.endm
-
-.macro RESTORE_ALL_ARGS_DECREASE_FRAME extra_space
-    ldp    x2, x3, [sp, #16]
-    ldp    x4, x5, [sp, #32]
-    ldp    x6, x7, [sp, #48]
-    ldp    d0, d1, [sp, #64]
-    ldp    d2, d3, [sp, #80]
-    ldp    d4, d5, [sp, #96]
-    ldp    d6, d7, [sp, #112]
-    ldp    x0, x1, [sp], #(ALL_ARGS_SIZE + \extra_space)
-    .cfi_adjust_cfa_offset -(ALL_ARGS_SIZE + \extra_space)
-.endm
-
 .macro JNI_SAVE_MANAGED_ARGS_TRAMPOLINE name, cxx_name, arg1 = "none"
     .extern \cxx_name
 ENTRY \name
@@ -87,56 +60,17 @@ END \name
 .endm
 
     /*
-     * Jni dlsym lookup stub.
-     */
-    .extern artFindNativeMethod
-    .extern artFindNativeMethodRunnable
-ENTRY art_jni_dlsym_lookup_stub
-    // spill regs.
-    SAVE_ALL_ARGS_INCREASE_FRAME 2 * 8
-    stp   x29, x30, [sp, ALL_ARGS_SIZE]
-    .cfi_rel_offset x29, ALL_ARGS_SIZE
-    .cfi_rel_offset x30, ALL_ARGS_SIZE + 8
-    add   x29, sp, ALL_ARGS_SIZE
-
-    mov x0, xSELF   // pass Thread::Current()
-    // Call artFindNativeMethod() for normal native and artFindNativeMethodRunnable()
-    // for @FastNative or @CriticalNative.
-    ldr   xIP0, [x0, #THREAD_TOP_QUICK_FRAME_OFFSET]      // uintptr_t tagged_quick_frame
-    bic   xIP0, xIP0, #TAGGED_JNI_SP_MASK                 // ArtMethod** sp
-    ldr   xIP0, [xIP0]                                    // ArtMethod* method
-    ldr   xIP0, [xIP0, #ART_METHOD_ACCESS_FLAGS_OFFSET]   // uint32_t access_flags
-    mov   xIP1, #(ACCESS_FLAGS_METHOD_IS_FAST_NATIVE | ACCESS_FLAGS_METHOD_IS_CRITICAL_NATIVE)
-    tst   xIP0, xIP1
-    b.ne  .Llookup_stub_fast_or_critical_native
-    bl    artFindNativeMethod
-    b     .Llookup_stub_continue
-    .Llookup_stub_fast_or_critical_native:
-    bl    artFindNativeMethodRunnable
-.Llookup_stub_continue:
-    mov   x17, x0    // store result in scratch reg.
-
-    // load spill regs.
-    ldp   x29, x30, [sp, #ALL_ARGS_SIZE]
-    .cfi_restore x29
-    .cfi_restore x30
-    RESTORE_ALL_ARGS_DECREASE_FRAME 2 * 8
-
-    cbz   x17, 1f   // is method code null ?
-    br    x17       // if non-null, tail call to method's code.
-
-1:
-    ret             // restore regs and return to caller to handle exception.
-END art_jni_dlsym_lookup_stub
-
-    /*
      * Jni dlsym lookup stub for @CriticalNative.
      */
 ENTRY art_jni_dlsym_lookup_critical_stub
     // The hidden arg holding the tagged method (bit 0 set means GenericJNI) is x15.
     // For Generic JNI we already have a managed frame, so we reuse the art_jni_dlsym_lookup_stub.
-    tbnz  x15, #0, art_jni_dlsym_lookup_stub
+    // Note: 'tbnz' doesn't always have enough range (+/-32KB) to reach art_jni_dlsym_lookup_stub
+    // so 'b' (+/-128MB) is used instead.
+    tbz  x15, #0, .Lcritical_not_generic_jni
+    b art_jni_dlsym_lookup_stub
 
+.Lcritical_not_generic_jni:
     // Save args, the hidden arg and caller PC. No CFI needed for args and the hidden arg.
     SAVE_ALL_ARGS_INCREASE_FRAME 2 * 8
     stp   x15, lr, [sp, #ALL_ARGS_SIZE]

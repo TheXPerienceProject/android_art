@@ -82,6 +82,7 @@ from target_config import target_config
 from device_config import device_config
 from typing import Dict, Set, List
 from functools import lru_cache
+from pathlib import Path
 
 # TODO: make it adjustable per tests and for buildbots
 #
@@ -351,6 +352,8 @@ def get_device_name():
   """
   Gets the value of ro.product.name from remote device (unless running on a VM).
   """
+  if env.ART_TEST_RUN_FROM_SOONG:
+    return "target"  # We can't use adb during build.
   if env.ART_TEST_ON_VM:
     return subprocess.Popen(f"{env.ART_SSH_CMD} uname -a".split(),
                             stdout = subprocess.PIPE,
@@ -568,13 +571,11 @@ def run_tests(tests):
       if address_size == '64':
         args_test += ['--64']
 
-      # b/36039166: Note that the path lengths must kept reasonably short.
-      temp_path = tempfile.mkdtemp(dir=env.ART_HOST_TEST_DIR)
-      args_test = ['--temp-path', temp_path] + args_test
-
       # Run the run-test script using the prebuilt python.
       python3_bin = env.ANDROID_BUILD_TOP + "/prebuilts/build-tools/path/linux-x86/python3"
-      run_test_sh = env.ANDROID_BUILD_TOP + '/art/test/run-test'
+      run_test_sh = str(Path(__file__).parent.parent / 'run-test')
+      if not os.path.exists(python3_bin):
+        python3_bin = sys.executable  # Fallback to current python if we are in a sandbox.
       args_test = [python3_bin, run_test_sh] + args_test + extra_arguments[target] + [test]
       return executor.submit(run_test, args_test, test, variant_set, test_name)
 
@@ -819,7 +820,7 @@ def get_disabled_test_info(device_name):
     The method returns a dict of tests mapped to the variants list
     for which the test should not be run.
   """
-  known_failures_file = env.ANDROID_BUILD_TOP + '/art/test/knownfailures.json'
+  known_failures_file = Path(__file__).parent.parent / 'knownfailures.json'
   with open(known_failures_file) as known_failures_json:
     known_failures_info = json.loads(known_failures_json.read())
 
@@ -853,6 +854,8 @@ def get_disabled_test_info(device_name):
     if check_env_vars(env_vars):
       for test in tests:
         if test not in RUN_TEST_SET:
+          if env.ART_TEST_RUN_FROM_SOONG:
+            continue  # Soong can see only sub-set of the tests within the shard.
           raise ValueError('%s is not a valid run-test' % (
               test))
         if test in disabled_test_info:
@@ -935,7 +938,9 @@ def parse_variants(variants):
     variant_list.add(frozenset(variant))
   return variant_list
 
-def print_text(output):
+def print_text(output, error=False):
+  if env.ART_TEST_RUN_FROM_SOONG and not error:
+    return  # Be quiet during build.
   sys.stdout.write(output)
   sys.stdout.flush()
 
@@ -966,9 +971,9 @@ def print_analysis():
 
   # Prints the list of failed tests, if any.
   if failed_tests:
-    print_text(COLOR_ERROR + 'FAILED: ' + COLOR_NORMAL + '\n')
+    print_text(COLOR_ERROR + 'FAILED: ' + COLOR_NORMAL + '\n', error=True)
     for test_info in failed_tests:
-      print_text(('%s\n%s\n' % (test_info[0], test_info[1])))
+      print_text(('%s\n%s\n' % (test_info[0], test_info[1])), error=True)
     print_text(COLOR_ERROR + '----------' + COLOR_NORMAL + '\n')
     for failed_test in sorted([test_info[0] for test_info in failed_tests]):
       print_text(('%s\n' % (failed_test)))

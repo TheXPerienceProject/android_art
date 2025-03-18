@@ -1541,6 +1541,8 @@ END \name
 .macro CHECK_AND_UPDATE_SHARED_MEMORY_METHOD if_hot, if_not_hot
     ldr wip, [x0, #ART_METHOD_ACCESS_FLAGS_OFFSET]
     tbz wip, #ART_METHOD_IS_MEMORY_SHARED_FLAG_BIT, \if_hot
+    // Intrinsics are always in the boot image and considered hot.
+    tbnz wip, #ART_METHOD_IS_INTRINSIC_FLAG_BIT, \if_hot
     ldr wip, [xSELF, #THREAD_SHARED_METHOD_HOTNESS_OFFSET]
     cbz wip, \if_hot
     add wip, wip, #-1

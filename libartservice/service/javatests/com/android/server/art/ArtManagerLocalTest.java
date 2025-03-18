@@ -64,6 +64,7 @@ import androidx.test.filters.SmallTest;
 import com.android.modules.utils.pm.PackageStateModulesUtils;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.ArtManagedFileStats;
+import com.android.server.art.model.BatchDexoptParams;
 import com.android.server.art.model.Config;
 import com.android.server.art.model.DeleteResult;
 import com.android.server.art.model.DexoptParams;
@@ -872,6 +873,32 @@ public class ArtManagerLocalTest {
 
         mArtManagerLocal.dexoptPackages(mSnapshot, "bg-dexopt", cancellationSignal,
                 null /* processCallbackExecutor */, null /* processCallback */);
+    }
+
+    @Test
+    public void testDexoptPackagesWithParams() throws Exception {
+        var dexoptResult = DexoptResult.create();
+        var cancellationSignal = new CancellationSignal();
+
+        // It should only dexopt PKG_NAME_1 with "speed" as specified by the params.
+        doReturn(dexoptResult)
+                .when(mDexoptHelper)
+                .dexopt(any(), deepEq(List.of(PKG_NAME_1)),
+                        argThat(params
+                                -> params.getReason().equals("ab-ota")
+                                        && params.getCompilerFilter().equals("speed")),
+                        same(cancellationSignal), any(), any(), any());
+
+        BatchDexoptParams params = new BatchDexoptParams
+                                           .Builder(List.of(PKG_NAME_1),
+                                                   new DexoptParams.Builder("ab-ota")
+                                                           .setCompilerFilter("speed")
+                                                           .build())
+                                           .build();
+        assertThat(
+                mArtManagerLocal.dexoptPackagesWithParams(mSnapshot, "ab-ota", cancellationSignal,
+                        null /* processCallbackExecutor */, null /* processCallback */, params))
+                .isEqualTo(Map.of(ArtFlags.PASS_MAIN, dexoptResult));
     }
 
     @Test

@@ -49,7 +49,13 @@ class TraceProfiler {
   static void Dump(int fd);
   static void Dump(const char* trace_filename);
 
+  // Called when thread is exiting to release the allocated buffer.
+  static void ReleaseThreadBuffer(Thread* self) REQUIRES(Locks::trace_lock_);
+
   static bool IsTraceProfileInProgress() REQUIRES(Locks::trace_lock_);
+
+  // Allocates a buffer for the specified thread.
+  static void AllocateBuffer(Thread* thread);
 
  private:
   // Dumps the events from all threads into the trace_file.
@@ -64,6 +70,8 @@ class TraceProfiler {
                              uintptr_t* thread_buffer,
                              uint8_t* buffer /* out */,
                              std::unordered_set<ArtMethod*>& methods /* out */);
+
+  static std::string GetMethodInfoLine(ArtMethod* method) REQUIRES(Locks::mutator_lock_);
 
   static bool profile_in_progress_ GUARDED_BY(Locks::trace_lock_);
   DISALLOW_COPY_AND_ASSIGN(TraceProfiler);

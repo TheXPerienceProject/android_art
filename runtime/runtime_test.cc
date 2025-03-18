@@ -95,7 +95,8 @@ TEST_F(RuntimeTest, ElfAlignmentMismatch) {
   }
 #endif
   // Determine the alignment of the ART APEX by reading the alignment of boot.oat.
-  std::string core_oat_location = GetSystemImageFilename(GetCoreOatLocation().c_str(), kRuntimeISA);
+  std::string core_oat_location = GetSystemImageFilename(GetCoreOatLocation().c_str(),
+                                                         kRuntimeQuickCodeISA);
   std::unique_ptr<File> core_oat_file(OS::OpenFileForReading(core_oat_location.c_str()));
   ASSERT_TRUE(core_oat_file.get() != nullptr) << core_oat_location;
 

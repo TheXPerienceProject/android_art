@@ -177,11 +177,7 @@ const void* SmallPatternMatcher::TryMatch(ArtMethod* method) REQUIRES_SHARED(Loc
       REQUIRES_SHARED(Locks::mutator_lock_) {
     uint16_t method_idx = instruction.VRegB_35c();
     Thread* self = Thread::Current();
-    ArtMethod* target_method =
-        class_linker->ResolveMethod<ClassLinker::ResolveMode::kNoChecks>(self,
-                                                                         method_idx,
-                                                                         method,
-                                                                         kDirect);
+    ArtMethod* target_method = class_linker->ResolveMethodId(method_idx, method);
     if (target_method == nullptr) {
       self->ClearException();
       return false;

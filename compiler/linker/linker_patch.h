@@ -50,6 +50,7 @@ class LinkerPatch {
     kIntrinsicReference,      // Boot image reference for an intrinsic, see IntrinsicObjects.
     kBootImageRelRo,
     kMethodRelative,
+    kMethodAppImageRelRo,
     kMethodBssEntry,
     kJniEntrypointRelative,
     kCallRelative,
@@ -88,6 +89,16 @@ class LinkerPatch {
                                          uint32_t pc_insn_offset,
                                          uint32_t target_method_idx) {
     LinkerPatch patch(literal_offset, Type::kMethodRelative, target_dex_file);
+    patch.method_idx_ = target_method_idx;
+    patch.pc_insn_offset_ = pc_insn_offset;
+    return patch;
+  }
+
+  static LinkerPatch MethodAppImageRelRoPatch(size_t literal_offset,
+                                              const DexFile* target_dex_file,
+                                              uint32_t pc_insn_offset,
+                                              uint32_t target_method_idx) {
+    LinkerPatch patch(literal_offset, Type::kMethodAppImageRelRo, target_dex_file);
     patch.method_idx_ = target_method_idx;
     patch.pc_insn_offset_ = pc_insn_offset;
     return patch;
@@ -244,6 +255,7 @@ class LinkerPatch {
 
   MethodReference TargetMethod() const {
     DCHECK(patch_type_ == Type::kMethodRelative ||
+           patch_type_ == Type::kMethodAppImageRelRo ||
            patch_type_ == Type::kMethodBssEntry ||
            patch_type_ == Type::kJniEntrypointRelative ||
            patch_type_ == Type::kCallRelative);
@@ -274,6 +286,7 @@ class LinkerPatch {
     DCHECK(patch_type_ == Type::kIntrinsicReference ||
            patch_type_ == Type::kBootImageRelRo ||
            patch_type_ == Type::kMethodRelative ||
+           patch_type_ == Type::kMethodAppImageRelRo ||
            patch_type_ == Type::kMethodBssEntry ||
            patch_type_ == Type::kJniEntrypointRelative ||
            patch_type_ == Type::kTypeRelative ||
@@ -282,7 +295,8 @@ class LinkerPatch {
            patch_type_ == Type::kPublicTypeBssEntry ||
            patch_type_ == Type::kPackageTypeBssEntry ||
            patch_type_ == Type::kStringRelative ||
-           patch_type_ == Type::kStringBssEntry);
+           patch_type_ == Type::kStringBssEntry ||
+           patch_type_ == Type::kMethodTypeBssEntry);
     return pc_insn_offset_;
   }
 

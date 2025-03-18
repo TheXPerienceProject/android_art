@@ -220,4 +220,19 @@ public class UtilsTest {
         assertThat(Utils.pathStartsWith("/", "/")).isTrue();
         assertThat(Utils.pathStartsWith("/", "/a")).isFalse();
     }
+
+    @Test
+    public void testReplaceFileExtension() {
+        assertThat(Utils.replaceFileExtension("/directory/file.apk", ".dm"))
+                .isEqualTo("/directory/file.dm");
+        assertThat(Utils.replaceFileExtension("/directory/file", ".dm"))
+                .isEqualTo("/directory/file.dm");
+        assertThat(Utils.replaceFileExtension("/.directory/file.apk", ".dm"))
+                .isEqualTo("/.directory/file.dm");
+        assertThat(Utils.replaceFileExtension("/.directory/file", ".dm"))
+                .isEqualTo("/.directory/file.dm");
+        assertThat(Utils.replaceFileExtension("/directory/file.apk", ""))
+                .isEqualTo("/directory/file");
+        assertThat(Utils.replaceFileExtension("", ".dm")).isEqualTo(".dm");
+    }
 }

@@ -24,6 +24,7 @@
 #include "base/scoped_arena_containers.h"
 #include "class_linker-inl.h"
 #include "class_root-inl.h"
+#include "handle_cache-inl.h"
 #include "handle_scope-inl.h"
 #include "mirror/class-inl.h"
 #include "mirror/dex_cache.h"
@@ -501,8 +502,7 @@ void ReferenceTypePropagation::RTPVisitor::SetClassAsTypeInfo(HInstruction* inst
           hs.NewHandle(FindDexCacheWithHint(self, dex_file, hint_dex_cache_)));
       // Use a null loader, the target method is in a boot classpath dex file.
       Handle<mirror::ClassLoader> loader(hs.NewHandle<mirror::ClassLoader>(nullptr));
-      ArtMethod* method = cl->ResolveMethod<ClassLinker::ResolveMode::kNoChecks>(
-          dex_method_index, dex_cache, loader, /* referrer= */ nullptr, kDirect);
+      ArtMethod* method = cl->ResolveMethodId(dex_method_index, dex_cache, loader);
       DCHECK(method != nullptr);
       ObjPtr<mirror::Class> declaring_class = method->GetDeclaringClass();
       DCHECK(declaring_class != nullptr);
@@ -749,17 +749,12 @@ void ReferenceTypePropagation::RTPVisitor::VisitPhi(HPhi* phi) {
   }
 }
 
-void ReferenceTypePropagation::FixUpInstructionType(HInstruction* instruction,
-                                                    HandleCache* handle_cache) {
-  if (instruction->IsSelect()) {
-    ScopedObjectAccess soa(Thread::Current());
-    HSelect* select = instruction->AsSelect();
-    ReferenceTypeInfo false_rti = select->GetFalseValue()->GetReferenceTypeInfo();
-    ReferenceTypeInfo true_rti = select->GetTrueValue()->GetReferenceTypeInfo();
-    select->SetReferenceTypeInfo(MergeTypes(false_rti, true_rti, handle_cache));
-  } else {
-    LOG(FATAL) << "Invalid instruction in FixUpInstructionType";
-  }
+void ReferenceTypePropagation::FixUpSelectType(HSelect* select, HandleCache* handle_cache) {
+  ReferenceTypeInfo false_rti = select->GetFalseValue()->GetReferenceTypeInfo();
+  ReferenceTypeInfo true_rti = select->GetTrueValue()->GetReferenceTypeInfo();
+  ReferenceTypeInfo rti = ReferenceTypeInfo::CreateInvalid();
+  ScopedObjectAccess soa(Thread::Current());
+  select->SetReferenceTypeInfo(MergeTypes(false_rti, true_rti, handle_cache));
 }
 
 ReferenceTypeInfo ReferenceTypePropagation::MergeTypes(const ReferenceTypeInfo& a,

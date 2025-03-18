@@ -359,6 +359,7 @@ public class LibnativeloaderTest extends BaseHostJUnit4Test {
             try (InputStream inStream = libApk.getInputStream(entry)) {
                 libraryTempFile = writeStreamToTempFile(libName, inStream);
             }
+            libraryTempFile.setReadOnly();
 
             destPath = destPath.replace("${LIB}", libDirName());
 

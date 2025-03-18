@@ -80,10 +80,8 @@ TEST_F(ClassTableTest, ClassTable) {
   Handle<ClassLoader> class_loader(hs.NewHandle(soa.Decode<ClassLoader>(jclass_loader)));
   const char* descriptor_x = "LX;";
   const char* descriptor_y = "LY;";
-  Handle<mirror::Class> h_X(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), descriptor_x, class_loader)));
-  Handle<mirror::Class> h_Y(
-      hs.NewHandle(class_linker_->FindClass(soa.Self(), descriptor_y, class_loader)));
+  Handle<mirror::Class> h_X = hs.NewHandle(FindClass(descriptor_x, class_loader));
+  Handle<mirror::Class> h_Y = hs.NewHandle(FindClass(descriptor_y, class_loader));
   Handle<mirror::Object> obj_X = hs.NewHandle(h_X->AllocObject(soa.Self()));
   ASSERT_TRUE(obj_X != nullptr);
   ClassTable table;

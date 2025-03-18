@@ -276,7 +276,9 @@ static void ForceJitCompiled(Thread* self,
   if (jit->JitAtFirstUse()) {
     ScopedObjectAccess soa(self);
     jit->CompileMethod(method, self, kind, /*prejit=*/ false);
-  } else if (kind == CompilationKind::kBaseline || jit->GetJitCompiler()->IsBaselineCompiler()) {
+    return;
+  }
+  if (kind == CompilationKind::kBaseline || jit->GetJitCompiler()->IsBaselineCompiler()) {
     ScopedObjectAccess soa(self);
     if (jit->TryPatternMatch(method, CompilationKind::kBaseline)) {
       return;

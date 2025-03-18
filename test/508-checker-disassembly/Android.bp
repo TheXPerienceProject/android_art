@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-508-checker-disassembly-expected-stdout",
         ":art-run-test-508-checker-disassembly-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
     // Include the Java source files in the test's artifacts, to make Checker assertions
     // available to the TradeFed test runner.
     include_srcs: true,

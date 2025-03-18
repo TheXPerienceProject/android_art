@@ -46,7 +46,7 @@ cc_defaults {
     ],
     export_header_lib_headers: ["libnativeloader-headers"],
     shared_libs: [
-        "libnativebridge",
+        "libnativebridge#impl",
     ],
     target: {
         android: {
@@ -159,10 +159,6 @@ art_cc_test {
         "native_loader_test.cpp",
     ],
 
-    test_for: [
-        "com.android.art",
-        "com.android.art.debug",
-    ],
     test_suites: [
         "general-tests",
         "mts-art",

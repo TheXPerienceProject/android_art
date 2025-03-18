@@ -85,12 +85,6 @@ cc_defaults {
         android_x86_64: {
             relative_install_path: "art/x86_64",
         },
-        android: {
-            test_for: [
-                "com.android.art",
-                "com.android.art.debug",
-            ],
-        },
     },
     // Tests aren't generally included in any APEX, but this is necessary to
     // avoid duplicate install rules for them by making them unavailable to platform.
@@ -110,12 +104,6 @@ art_cc_defaults {
     name: "art_test_internal_library_defaults",
     defaults: ["art_test_defaults"],
     target: {
-        android: {
-            test_for: [
-                "com.android.art",
-                "com.android.art.debug",
-            ],
-        },
         android_arm: {
             relative_install_path: "com.android.art/lib",
         },
@@ -539,7 +527,6 @@ java_defaults {
     },
     test_suites: [
         "general-tests",
-        "mts-art",
     ],
     host_required: [
         "art-run-test-checker",
@@ -556,7 +543,7 @@ art_cc_test_library {
     defaults: ["libarttest-defaults"],
     shared_libs: [
         "libart",
-        "libdexfile",
+        "libdexfile#impl",
         "libprofile",
         "libartbase",
     ],
@@ -570,7 +557,7 @@ art_cc_test_library {
     ],
     shared_libs: [
         "libartd",
-        "libdexfiled",
+        "libdexfiled#impl",
         "libprofiled",
         "libartbased",
     ],
@@ -784,7 +771,7 @@ art_cc_test_library {
     defaults: ["libtiagent-defaults"],
     shared_libs: [
         "libart",
-        "libdexfile",
+        "libdexfile#impl",
         "libprofile",
         "libartbase",
     ],
@@ -798,7 +785,7 @@ art_cc_test_library {
     ],
     shared_libs: [
         "libartd",
-        "libdexfiled",
+        "libdexfiled#impl",
         "libprofiled",
         "libartbased",
     ],
@@ -1338,13 +1325,12 @@ art_cc_test {
     // It seems that only device-tests build can create a valid apex.
     test_suites: [
         "device-tests",
-        "mts-art",
     ],
     test_config: "art-gtests-target-install-apex.xml",
 
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
-    // build targets with secondary architectures, as the MTS test suite packaging logic flattens
-    // all test artifacts into a single `testcases` directory.
+    // build targets with secondary architectures, as the packaging logic for some test suites
+    // flattens all test artifacts into a single `testcases` directory.
     compile_multilib: "both",
     multilib: {
         lib32: {
@@ -1354,10 +1340,6 @@ art_cc_test {
             suffix: "64",
         },
     },
-    test_for: [
-        "com.android.art",
-        "com.android.art.debug",
-    ],
 }
 
 art_cc_test {
@@ -1370,10 +1352,6 @@ art_cc_test {
     ],
     test_suites: ["general-tests"],
     test_config: "art-gtests-target-chroot.xml",
-    test_for: [
-        "com.android.art",
-        "com.android.art.debug",
-    ],
 }
 
 csuite_test {
@@ -1383,7 +1361,7 @@ csuite_test {
 
 filegroup {
     name: "art-gtest-jars",
-    srcs: [
+    device_common_srcs: [
         ":art-gtest-jars-AbstractMethod",
         ":art-gtest-jars-AllFields",
         ":art-gtest-jars-ArrayClassWithUnresolvedComponent",
@@ -1722,7 +1700,7 @@ genrule_defaults {
 }
 
 // A copy of Main with the classes.dex stripped for the oat file assistant tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainStripped",
     srcs: [":art-gtest-jars-Main"],
     cmd: "$(location zip2zip) -i $(in) -o $(out) -x 'classes*.dex'",
@@ -1731,7 +1709,7 @@ genrule {
 }
 
 // An empty.dex that is empty and uncompressed for the dex2oat tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainEmptyUncompressed",
     srcs: ["Main/empty.dex"],
     cmd: "$(location soong_zip) -j -L 0 -o $(out) -f $(in)",
@@ -1740,7 +1718,7 @@ genrule {
 }
 
 // An empty.dex that is empty and uncompressed and aligned for the dex2oat tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainEmptyUncompressedAligned",
     defaults: ["art-gtest-jars-align-defaults"],
     srcs: [":art-gtest-jars-MainEmptyUncompressed"],
@@ -1748,7 +1726,7 @@ genrule {
 }
 
 // A copy of Main with the classes.dex uncompressed for the dex2oat tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainUncompressed",
     defaults: ["art-gtest-jars-uncompress-defaults"],
     srcs: [":art-gtest-jars-Main"],
@@ -1756,7 +1734,7 @@ genrule {
 }
 
 // A copy of Main with the classes.dex uncompressed and aligned for the dex2oat tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainUncompressedAligned",
     defaults: ["art-gtest-jars-align-defaults"],
     srcs: [":art-gtest-jars-MainUncompressed"],
@@ -1775,7 +1753,7 @@ java_library {
 }
 
 // A copy of MultiDex with the classes.dex uncompressed for the OatFile tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MultiDexUncompressed",
     defaults: ["art-gtest-jars-uncompress-defaults"],
     srcs: [":art-gtest-jars-MultiDex"],
@@ -1783,7 +1761,7 @@ genrule {
 }
 
 // A copy of MultiDex with the classes.dex uncompressed and aligned for the OatFile tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MultiDexUncompressedAligned",
     defaults: ["art-gtest-jars-align-defaults"],
     srcs: [":art-gtest-jars-MultiDexUncompressed"],

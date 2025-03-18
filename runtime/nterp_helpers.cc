@@ -181,7 +181,9 @@ QuickMethodFrameInfo NterpFrameInfo(ArtMethod** frame) {
       RuntimeCalleeSaveFrame::GetCoreSpills(CalleeSaveType::kSaveAllCalleeSaves);
   uint32_t fp_spills =
       RuntimeCalleeSaveFrame::GetFpSpills(CalleeSaveType::kSaveAllCalleeSaves);
-  return QuickMethodFrameInfo(NterpGetFrameSize(*frame, kRuntimeISA), core_spills, fp_spills);
+  return QuickMethodFrameInfo(NterpGetFrameSize(*frame, kRuntimeQuickCodeISA),
+                              core_spills,
+                              fp_spills);
 }
 
 uintptr_t NterpGetRegistersArray(ArtMethod** frame) {
@@ -192,7 +194,7 @@ uintptr_t NterpGetRegistersArray(ArtMethod** frame) {
 }
 
 uintptr_t NterpGetReferenceArray(ArtMethod** frame) {
-  const uint16_t out_regs = GetNumberOfOutRegs(*frame, kRuntimeISA);
+  const uint16_t out_regs = GetNumberOfOutRegs(*frame, kRuntimeQuickCodeISA);
   // The references array is just above the saved frame pointer.
   return reinterpret_cast<uintptr_t>(frame) +
       kPointerSize +  // method
@@ -202,7 +204,7 @@ uintptr_t NterpGetReferenceArray(ArtMethod** frame) {
 }
 
 uint32_t NterpGetDexPC(ArtMethod** frame) {
-  const uint16_t out_regs = GetNumberOfOutRegs(*frame, kRuntimeISA);
+  const uint16_t out_regs = GetNumberOfOutRegs(*frame, kRuntimeQuickCodeISA);
   uintptr_t dex_pc_ptr = reinterpret_cast<uintptr_t>(frame) +
       kPointerSize +  // method
       RoundUp(out_regs * kVRegSize, kPointerSize);  // out arguments and pointer alignment

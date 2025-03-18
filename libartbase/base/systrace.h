@@ -108,9 +108,12 @@ class ScopedTraceNoStart {
   };
 };
 
+// Avoid the name clash with the one in gtest/gtest.h.
+#ifndef SCOPED_TRACE
 #define SCOPED_TRACE \
   ::art::ScopedTraceNoStart APPEND_TOKENS_AFTER_EVAL(trace, __LINE__) ; \
   (ATraceEnabled()) && ::art::ScopedTraceNoStart::ScopedTraceMessageHelper().stream()
+#endif  // SCOPED_TRACE
 
 }  // namespace art
 

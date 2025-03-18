@@ -105,7 +105,7 @@ class CompilerDriverTest : public CommonCompilerDriverTest {
       StackHandleScope<1> hs(soa.Self());
       Handle<mirror::ClassLoader> loader(
           hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader)));
-      ObjPtr<mirror::Class> c = class_linker->FindClass(soa.Self(), descriptor, loader);
+      ObjPtr<mirror::Class> c = FindClass(descriptor, loader);
       CHECK(c != nullptr);
       const auto pointer_size = class_linker->GetImagePointerSize();
       for (auto& m : c->GetMethods(pointer_size)) {
@@ -237,7 +237,7 @@ class CompilerDriverProfileTest : public CompilerDriverTest {
     StackHandleScope<1> hs(self);
     Handle<mirror::ClassLoader> h_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader)));
-    ObjPtr<mirror::Class> klass = class_linker->FindClass(self, clazz.c_str(), h_loader);
+    ObjPtr<mirror::Class> klass = FindClass(clazz.c_str(), h_loader);
     ASSERT_NE(klass, nullptr);
 
     const auto pointer_size = class_linker->GetImagePointerSize();
@@ -298,7 +298,7 @@ class CompilerDriverVerifyTest : public CompilerDriverTest {
     StackHandleScope<1> hs(self);
     Handle<mirror::ClassLoader> h_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader)));
-    ObjPtr<mirror::Class> klass = class_linker->FindClass(self, clazz.c_str(), h_loader);
+    ObjPtr<mirror::Class> klass = FindClass(clazz.c_str(), h_loader);
     ASSERT_NE(klass, nullptr);
     EXPECT_TRUE(klass->IsVerified());
 

@@ -17,7 +17,9 @@
 #include "artd.h"
 
 #include <fcntl.h>
+#include <sys/inotify.h>
 #include <sys/mount.h>
+#include <sys/poll.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -34,6 +36,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <ostream>
 #include <regex>
@@ -45,9 +48,11 @@
 #include <utility>
 #include <vector>
 
+#include "aidl/com/android/server/art/ArtConstants.h"
 #include "aidl/com/android/server/art/BnArtd.h"
 #include "aidl/com/android/server/art/DexoptTrigger.h"
 #include "aidl/com/android/server/art/IArtdCancellationSignal.h"
+#include "aidl/com/android/server/art/IArtdNotification.h"
 #include "android-base/errors.h"
 #include "android-base/file.h"
 #include "android-base/logging.h"
@@ -55,6 +60,7 @@
 #include "android-base/result.h"
 #include "android-base/scopeguard.h"
 #include "android-base/strings.h"
+#include "android-base/unique_fd.h"
 #include "android/binder_auto_utils.h"
 #include "android/binder_interface_utils.h"
 #include "android/binder_manager.h"
@@ -68,6 +74,8 @@
 #include "base/mem_map.h"
 #include "base/memfd.h"
 #include "base/os.h"
+#include "base/pidfd.h"
+#include "base/time_utils.h"
 #include "base/zip_archive.h"
 #include "cmdline_types.h"
 #include "dex/dex_file_loader.h"
@@ -90,6 +98,7 @@ namespace artd {
 
 namespace {
 
+using ::aidl::com::android::server::art::ArtConstants;
 using ::aidl::com::android::server::art::ArtdDexoptResult;
 using ::aidl::com::android::server::art::ArtifactsLocation;
 using ::aidl::com::android::server::art::ArtifactsPath;
@@ -102,6 +111,7 @@ using ::aidl::com::android::server::art::FsPermission;
 using ::aidl::com::android::server::art::GetDexoptNeededResult;
 using ::aidl::com::android::server::art::GetDexoptStatusResult;
 using ::aidl::com::android::server::art::IArtdCancellationSignal;
+using ::aidl::com::android::server::art::IArtdNotification;
 using ::aidl::com::android::server::art::MergeProfileOptions;
 using ::aidl::com::android::server::art::OutputArtifacts;
 using ::aidl::com::android::server::art::OutputProfile;
@@ -109,6 +119,7 @@ using ::aidl::com::android::server::art::PriorityClass;
 using ::aidl::com::android::server::art::ProfilePath;
 using ::aidl::com::android::server::art::RuntimeArtifactsPath;
 using ::aidl::com::android::server::art::VdexPath;
+using ::android::base::Basename;
 using ::android::base::Dirname;
 using ::android::base::ErrnoError;
 using ::android::base::Error;
@@ -120,6 +131,7 @@ using ::android::base::Result;
 using ::android::base::Split;
 using ::android::base::Tokenize;
 using ::android::base::Trim;
+using ::android::base::unique_fd;
 using ::android::base::WriteStringToFd;
 using ::android::base::WriteStringToFile;
 using ::android::fs_mgr::FstabEntry;
@@ -131,6 +143,7 @@ using ::art::tools::GetProcMountsAncestorsOfPath;
 using ::art::tools::NonFatal;
 using ::ndk::ScopedAStatus;
 
+using PrimaryCurProfilePath = ProfilePath::PrimaryCurProfilePath;
 using TmpProfilePath = ProfilePath::TmpProfilePath;
 using WritableProfilePath = ProfilePath::WritableProfilePath;
 
@@ -372,7 +385,8 @@ CopyAndRewriteProfileResult AnalyzeCopyAndRewriteProfileFailure(
     if (zip_archive == nullptr) {
       return bad_profile(error_msg);
     }
-    std::unique_ptr<ZipEntry> zip_entry(zip_archive->Find("primary.prof", &error_msg));
+    std::unique_ptr<ZipEntry> zip_entry(
+        zip_archive->Find(ArtConstants::DEX_METADATA_PROFILE_ENTRY, &error_msg));
     if (zip_entry == nullptr || zip_entry->GetUncompressedLength() == 0) {
       return no_profile;
     }
@@ -1405,6 +1419,124 @@ ScopedAStatus Artd::getProfileSize(const ProfilePath& in_profile, int64_t* _aidl
   return ScopedAStatus::ok();
 }
 
+ScopedAStatus Artd::initProfileSaveNotification(const PrimaryCurProfilePath& in_profilePath,
+                                                int in_pid,
+                                                std::shared_ptr<IArtdNotification>* _aidl_return) {
+  RETURN_FATAL_IF_PRE_REBOOT(options_);
+
+  std::string path = OR_RETURN_FATAL(BuildPrimaryCurProfilePath(in_profilePath));
+
+  unique_fd inotify_fd(inotify_init1(IN_NONBLOCK | IN_CLOEXEC));
+  if (inotify_fd < 0) {
+    return NonFatal(ART_FORMAT("Failed to inotify_init1: {}", strerror(errno)));
+  }
+
+  // Watch the dir rather than the file itself because profiles are moved in rather than updated in
+  // place.
+  std::string dir = Dirname(path);
+  int wd = inotify_add_watch(inotify_fd, dir.c_str(), IN_MOVED_TO);
+  if (wd < 0) {
+    return NonFatal(ART_FORMAT("Failed to inotify_add_watch '{}': {}", dir, strerror(errno)));
+  }
+
+  unique_fd pidfd = PidfdOpen(in_pid, /*flags=*/0);
+  if (pidfd < 0) {
+    if (errno == ESRCH) {
+      // The process has gone now.
+      LOG(INFO) << ART_FORMAT("Process exited without sending notification '{}'", path);
+      *_aidl_return = ndk::SharedRefBase::make<ArtdNotification>();
+      return ScopedAStatus::ok();
+    }
+    return NonFatal(ART_FORMAT("Failed to pidfd_open {}: {}", in_pid, strerror(errno)));
+  }
+
+  *_aidl_return = ndk::SharedRefBase::make<ArtdNotification>(
+      poll_, path, std::move(inotify_fd), std::move(pidfd));
+  return ScopedAStatus::ok();
+}
+
+ScopedAStatus ArtdNotification::wait(int in_timeoutMs, bool* _aidl_return) {
+  auto cleanup = make_scope_guard([&, this] { CleanUp(); });
+
+  if (!mu_.try_lock()) {
+    return Fatal("`wait` can be called only once");
+  }
+  std::lock_guard<std::mutex> lock(mu_, std::adopt_lock);
+  LOG(INFO) << ART_FORMAT("Waiting for notification '{}'", path_);
+
+  if (is_called_) {
+    return Fatal("`wait` can be called only once");
+  }
+  is_called_ = true;
+
+  if (done_) {
+    *_aidl_return = true;
+    return ScopedAStatus::ok();
+  }
+
+  struct pollfd pollfds[2]{
+      {.fd = inotify_fd_.get(), .events = POLLIN},
+      {.fd = pidfd_.get(), .events = POLLIN},
+  };
+
+  constexpr size_t kBufSize = sizeof(struct inotify_event) + NAME_MAX + 1;
+  std::unique_ptr<uint8_t[]> buf(new (std::align_val_t(alignof(struct inotify_event)))
+                                     uint8_t[kBufSize]);
+  std::string basename = Basename(path_);
+
+  uint64_t start_time = MilliTime();
+  int64_t remaining_time_ms = in_timeoutMs;
+  while (remaining_time_ms > 0) {
+    int ret = TEMP_FAILURE_RETRY(poll_(pollfds, arraysize(pollfds), remaining_time_ms));
+    if (ret < 0) {
+      return NonFatal(
+          ART_FORMAT("Failed to poll to wait for notification '{}': {}", path_, strerror(errno)));
+    }
+    if (ret == 0) {
+      // Timeout.
+      break;
+    }
+    if ((pollfds[0].revents & POLLIN) != 0) {
+      ssize_t len = TEMP_FAILURE_RETRY(read(inotify_fd_, buf.get(), kBufSize));
+      if (len < 0) {
+        return NonFatal(ART_FORMAT(
+            "Failed to read inotify fd for notification '{}': {}", path_, strerror(errno)));
+      }
+      const struct inotify_event* event;
+      for (uint8_t* ptr = buf.get(); ptr < buf.get() + len;
+           ptr += sizeof(struct inotify_event) + event->len) {
+        event = (const struct inotify_event*)ptr;
+        if (event->len > 0 && event->name == basename) {
+          LOG(INFO) << ART_FORMAT("Received notification '{}'", path_);
+          *_aidl_return = true;
+          return ScopedAStatus::ok();
+        }
+      }
+      remaining_time_ms = in_timeoutMs - (MilliTime() - start_time);
+      continue;
+    }
+    if ((pollfds[1].revents & POLLIN) != 0) {
+      LOG(INFO) << ART_FORMAT("Process exited without sending notification '{}'", path_);
+      *_aidl_return = true;
+      return ScopedAStatus::ok();
+    }
+    LOG(FATAL) << "Unreachable code";
+    UNREACHABLE();
+  }
+
+  LOG(INFO) << ART_FORMAT("Timed out while waiting for notification '{}'", path_);
+  *_aidl_return = false;
+  return ScopedAStatus::ok();
+}
+
+ArtdNotification::~ArtdNotification() { CleanUp(); }
+
+void ArtdNotification::CleanUp() {
+  std::lock_guard<std::mutex> lock(mu_);
+  inotify_fd_.reset();
+  pidfd_.reset();
+}
+
 ScopedAStatus Artd::commitPreRebootStagedFiles(const std::vector<ArtifactsPath>& in_artifacts,
                                                const std::vector<WritableProfilePath>& in_profiles,
                                                bool* _aidl_return) {
@@ -1497,6 +1629,7 @@ ScopedAStatus Artd::checkPreRebootSystemRequirements(const std::string& in_chroo
 Result<void> Artd::Start() {
   OR_RETURN(SetLogVerbosity());
   MemMap::Init();
+  Runtime::AllowPageSizeAccess();
 
   ScopedAStatus status = ScopedAStatus::fromStatus(AServiceManager_registerLazyService(
       this->asBinder().get(), options_.is_pre_reboot ? kPreRebootServiceName : kServiceName));
@@ -1636,9 +1769,14 @@ bool Artd::ShouldUseDex2Oat64() {
          props_->GetBool("dalvik.vm.dex2oat64.enabled", /*default_value=*/false);
 }
 
+bool Artd::ShouldUseDebugBinaries() {
+  return props_->GetOrEmpty("persist.sys.dalvik.vm.lib.2") == "libartd.so";
+}
+
 Result<std::string> Artd::GetDex2Oat() {
-  std::string binary_name = ShouldUseDex2Oat64() ? "dex2oat64" : "dex2oat32";
-  // TODO(b/234351700): Should we use the "d" variant?
+  std::string binary_name = ShouldUseDebugBinaries() ?
+                                (ShouldUseDex2Oat64() ? "dex2oatd64" : "dex2oatd32") :
+                                (ShouldUseDex2Oat64() ? "dex2oat64" : "dex2oat32");
   return BuildArtBinPath(binary_name);
 }
 
@@ -1675,9 +1813,8 @@ void Artd::AddCompilerConfigFlags(const std::string& instruction_set,
                      props_->GetOrEmpty("dalvik.vm.dex2oat-max-image-block-size"))
       .AddIfNonEmpty("--very-large-app-threshold=%s",
                      props_->GetOrEmpty("dalvik.vm.dex2oat-very-large"))
-      .AddIfNonEmpty(
-          "--resolve-startup-const-strings=%s",
-          props_->GetOrEmpty("dalvik.vm.dex2oat-resolve-startup-strings"));
+      .AddIfNonEmpty("--resolve-startup-const-strings=%s",
+                     props_->GetOrEmpty("dalvik.vm.dex2oat-resolve-startup-strings"));
 
   args.AddIf(dexopt_options.debuggable, "--debuggable")
       .AddIf(props_->GetBool("debug.generate-debug-info", /*default_value=*/false),

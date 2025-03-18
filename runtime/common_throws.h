@@ -34,6 +34,7 @@ class ArtMethod;
 class DexFile;
 enum InvokeType : uint32_t;
 class Signature;
+enum class StackType;
 
 // The descriptor of the transaction abort exception.
 constexpr const char kTransactionAbortErrorDescriptor[] = "Ldalvik/system/TransactionAbortError;";
@@ -215,6 +216,11 @@ void ThrowNoSuchMethodError(InvokeType type,
                             const Signature& signature)
     REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
+void ThrowNoSuchMethodError(ObjPtr<mirror::Class> c,
+                            std::string_view name,
+                            const Signature& signature)
+    REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
+
 // NullPointerException
 EXPORT
 void ThrowNullPointerExceptionForFieldAccess(ArtField* field, ArtMethod* method, bool is_read)
@@ -253,6 +259,7 @@ void ThrowSecurityException(const char* fmt, ...)
 
 // Stack overflow.
 
+template <StackType stack_type>
 void ThrowStackOverflowError(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 // StringIndexOutOfBoundsException

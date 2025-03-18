@@ -51,6 +51,7 @@
 #include "oat.h"
 #include "oat_file_assistant_context.h"
 #include "runtime.h"
+#include "runtime_globals.h"
 #include "scoped_thread_state_change-inl.h"
 #include "vdex_file.h"
 #include "zlib.h"
@@ -61,8 +62,6 @@ using ::android::base::ConsumePrefix;
 using ::android::base::StringPrintf;
 
 static constexpr const char* kAnonymousDexPrefix = "Anonymous-DexFile@";
-static constexpr const char* kVdexExtension = ".vdex";
-static constexpr const char* kDmExtension = ".dm";
 
 std::ostream& operator<<(std::ostream& stream, const OatFileAssistant::OatStatus status) {
   switch (status) {
@@ -145,9 +144,9 @@ OatFileAssistant::OatFileAssistant(const char* dex_location,
     load_executable_ = false;
   }
 
-  if (load_executable_ && isa != kRuntimeISA) {
+  if (load_executable_ && isa != kRuntimeQuickCodeISA) {
     LOG(WARNING) << "OatFileAssistant: Load executable specified, "
-                 << "but isa is not kRuntimeISA. Will not attempt to load executable.";
+                 << "but isa is not kRuntimeQuickCodeISA. Will not attempt to load executable.";
     load_executable_ = false;
   }
 
@@ -643,7 +642,7 @@ bool OatFileAssistant::DexLocationToOdexFilename(const std::string& location,
   pos = file.rfind('.');
   std::string base = pos != std::string::npos ? file.substr(0, pos) : file;
 
-  *odex_filename = dir + "/" + base + ".odex";
+  *odex_filename = dir + "/" + base + kOdexExtension;
   return true;
 }
 
@@ -946,12 +945,11 @@ OatFileAssistant::OatFileInfo& OatFileAssistant::GetBestInfo() {
 
 std::unique_ptr<gc::space::ImageSpace> OatFileAssistant::OpenImageSpace(const OatFile* oat_file) {
   DCHECK(oat_file != nullptr);
-  std::string art_file = ReplaceFileExtension(oat_file->GetLocation(), "art");
+  std::string art_file = ReplaceFileExtension(oat_file->GetLocation(), kArtExtension);
   if (art_file.empty()) {
     return nullptr;
   }
   std::string error_msg;
-  ScopedObjectAccess soa(Thread::Current());
   std::unique_ptr<gc::space::ImageSpace> ret =
       gc::space::ImageSpace::CreateFromAppImage(art_file.c_str(), oat_file, &error_msg);
   if (ret == nullptr && (VLOG_IS_ON(image) || OS::FileExists(art_file.c_str()))) {
@@ -1109,6 +1107,12 @@ const OatFile* OatFileAssistant::OatFileInfo::GetFile() {
       executable = LocationIsTrusted(filename_, /*trust_art_apex_data_files=*/true);
     }
     VLOG(oat) << "Loading " << filename_ << " with executable: " << executable;
+
+    if (gPageSize != kMinPageSize) {
+      LOG(WARNING) << "Loading odex files is only supported on devices with 4K page size";
+      return nullptr;
+    }
+
     if (use_fd_) {
       if (oat_fd_ >= 0 && vdex_fd_ >= 0) {
         ArrayRef<const std::string> dex_locations(&oat_file_assistant_->dex_location_,
@@ -1146,6 +1150,13 @@ bool OatFileAssistant::OatFileInfo::ShouldRecompileForFilter(CompilerFilter::Fil
                                                              const DexOptTrigger dexopt_trigger) {
   const OatFile* file = GetFile();
   DCHECK(file != nullptr);
+
+  if (CompilerFilter::IsBetter(target, CompilerFilter::kVerify) && gPageSize != kMinPageSize) {
+    // Prevent infinite recompilations during background dexopt on 16K page devices.
+    VLOG(oat) << "Adjusting target filter to 'verify' because loading odex files is only supported "
+                 "on devices with 4K page size";
+    target = CompilerFilter::kVerify;
+  }
 
   CompilerFilter::Filter current = file->GetCompilerFilter();
   if (dexopt_trigger.targetFilterIsBetter && CompilerFilter::IsBetter(target, current)) {

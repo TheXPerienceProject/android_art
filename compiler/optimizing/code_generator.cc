@@ -377,7 +377,7 @@ void CodeGenerator::Compile() {
     RecordCatchBlockInfo();
   }
 
-  // Finalize instructions in assember;
+  // Finalize instructions in the assembler.
   Finalize();
 
   GetStackMapStream()->EndMethod(GetAssembler()->CodeSize());
@@ -632,11 +632,8 @@ void CodeGenerator::CreateStringBuilderAppendLocations(HStringBuilderAppend* ins
     stack_offset += sizeof(uint32_t);
   }
   DCHECK_EQ(f, 0u);
-
-  size_t param_size = stack_offset - static_cast<size_t>(pointer_size);
-  DCHECK_ALIGNED(param_size, kVRegSize);
-  size_t num_vregs = param_size / kVRegSize;
-  graph_->UpdateMaximumNumberOfOutVRegs(num_vregs);
+  DCHECK_EQ(stack_offset,
+            static_cast<size_t>(pointer_size) + kVRegSize * instruction->GetNumberOfOutVRegs());
 }
 
 void CodeGenerator::CreateUnresolvedFieldLocationSummary(
@@ -913,8 +910,9 @@ void CodeGenerator::BlockIfInRegister(Location location, bool is_out) const {
 }
 
 void CodeGenerator::AllocateLocations(HInstruction* instruction) {
+  ArenaAllocator* allocator = GetGraph()->GetAllocator();
   for (HEnvironment* env = instruction->GetEnvironment(); env != nullptr; env = env->GetParent()) {
-    env->AllocateLocations();
+    env->AllocateLocations(allocator);
   }
   instruction->Accept(GetLocationBuilder());
   DCHECK(CheckTypeConsistency(instruction));

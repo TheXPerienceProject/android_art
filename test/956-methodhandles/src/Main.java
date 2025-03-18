@@ -185,6 +185,12 @@ public class Main {
         MethodType.methodType(void.class), D.class /* specialCaller */);
     mh3.invoke(dInstance);
 
+    try {
+      mh3.invokeExact((D) null);
+      fail("Expected NPE to be thrown");
+    } catch (NullPointerException expected) {
+    }
+
     // The private method shouldn't be accessible from any special caller except
     // itself...
     try {

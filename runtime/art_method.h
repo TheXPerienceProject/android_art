@@ -356,6 +356,14 @@ class EXPORT ArtMethod final {
   }
 
   static bool IsMemorySharedMethod(uint32_t access_flags) {
+    // There's an overlap with `kAccMemorySharedMethod` and `kAccIntrinsicBits` but that's OK as
+    // intrinsics are always in the boot image and therefore memory shared.
+    static_assert((kAccMemorySharedMethod & kAccIntrinsicBits) != 0,
+                  "kAccMemorySharedMethod deliberately overlaps intrinsic bits");
+    if (IsIntrinsic(access_flags)) {
+      return true;
+    }
+
     return (access_flags & kAccMemorySharedMethod) != 0;
   }
 
@@ -413,9 +421,13 @@ class EXPORT ArtMethod final {
   }
 
   static bool IsDefault(uint32_t access_flags) {
-    static_assert((kAccDefault & (kAccIntrinsic | kAccIntrinsicBits)) == 0,
-                  "kAccDefault conflicts with intrinsic modifier");
-    return (access_flags & kAccDefault) != 0;
+    // The intrinsic bits use `kAccDefault`. However, we don't generate intrinsics for default
+    // methods. Therefore, we check that both `kAccDefault` is set and `kAccIntrinsic` unset.
+    static_assert((kAccDefault & kAccIntrinsicBits) != 0,
+                  "kAccDefault deliberately overlaps intrinsic bits");
+    static constexpr uint32_t kMask = kAccIntrinsic | kAccDefault;
+    static constexpr uint32_t kValue = kAccDefault;
+    return (access_flags & kMask) == kValue;
   }
 
   // Returns true if the method is obsolete.

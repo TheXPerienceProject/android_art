@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-559-bce-ssa-expected-stdout",
         ":art-run-test-559-bce-ssa-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

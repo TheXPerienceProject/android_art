@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-1338-gc-no-los-expected-stdout",
         ":art-run-test-1338-gc-no-los-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

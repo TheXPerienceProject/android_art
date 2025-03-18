@@ -254,6 +254,7 @@ void InsertFpToIntegralIntrinsic(HInvokeStaticOrDirect* invoke, size_t input_ind
   HInvokeStaticOrDirect* new_input = new (allocator) HInvokeStaticOrDirect(
       allocator,
       /*number_of_arguments=*/ 1u,
+      /*number_of_out_vregs=*/ is_double ? 2u : 1u,
       converted_type,
       invoke->GetDexPc(),
       /*method_reference=*/ MethodReference(nullptr, dex::kDexNoIndex),

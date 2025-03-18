@@ -103,9 +103,7 @@ class ReflectionTest : public CommonRuntimeTest {
       MakeInterpreted(class_linker_->FindSystemClass(self, "Ljava/lang/Object;"));
     }
 
-    ObjPtr<mirror::Class> c = class_linker_->FindClass(self,
-                                                       DotToDescriptor(class_name).c_str(),
-                                                       class_loader);
+    ObjPtr<mirror::Class> c = FindClass(DotToDescriptor(class_name).c_str(), class_loader);
     CHECK(c != nullptr);
     MakeInterpreted(c);
 

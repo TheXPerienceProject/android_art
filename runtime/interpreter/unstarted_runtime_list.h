@@ -46,6 +46,7 @@
   V(SystemGetSecurityManager, "Ljava/lang/System;", "getSecurityManager", "()Ljava/lang/SecurityManager;") \
   V(SystemGetProperty, "Ljava/lang/System;", "getProperty", "(Ljava/lang/String;)Ljava/lang/String;") \
   V(SystemGetPropertyWithDefault, "Ljava/lang/System;", "getProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") \
+  V(SystemNanoTime, "Ljava/lang/System;", "nanoTime", "()J") \
   V(ThreadLocalGet, "Ljava/lang/ThreadLocal;", "get", "()Ljava/lang/Object;") \
   V(MathCeil, "Ljava/lang/Math;", "ceil", "(D)D") \
   V(MathFloor, "Ljava/lang/Math;", "floor", "(D)D") \
@@ -101,6 +102,7 @@
   V(AtomicLongVMSupportsCS8, "Ljava/util/concurrent/atomic/AtomicLong;", "VMSupportsCS8", "()Z") \
   V(ClassGetNameNative, "Ljava/lang/Class;", "getNameNative", "()Ljava/lang/String;") \
   V(DoubleLongBitsToDouble, "Ljava/lang/Double;", "longBitsToDouble", "(J)D") \
+  V(ExecutableGetParameterTypesInternal, "Ljava/lang/reflect/Executable;", "getParameterTypesInternal", "()[Ljava/lang/Class;") \
   V(FloatFloatToRawIntBits, "Ljava/lang/Float;", "floatToRawIntBits", "(F)I") \
   V(FloatIntBitsToFloat, "Ljava/lang/Float;", "intBitsToFloat", "(I)F") \
   V(ObjectInternalClone, "Ljava/lang/Object;", "internalClone", "()Ljava/lang/Object;") \

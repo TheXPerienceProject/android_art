@@ -615,7 +615,7 @@ class Trace final : public instrumentation::InstrumentationListener, public Clas
                            uint64_t timestamp_counter) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Singleton instance of the Trace or null when no method tracing is active.
-  static Trace* volatile the_trace_ GUARDED_BY(Locks::trace_lock_);
+  static Trace* the_trace_ GUARDED_BY(Locks::trace_lock_);
 
   // The default profiler clock source.
   static TraceClockSource default_clock_source_;

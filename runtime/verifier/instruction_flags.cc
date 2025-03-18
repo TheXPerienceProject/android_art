@@ -22,17 +22,16 @@ namespace art HIDDEN {
 namespace verifier {
 
 std::string InstructionFlags::ToString() const {
-  char encoding[8];
+  char encoding[7];
   if (!IsOpcode()) {
-    strncpy(encoding, "XXXXXXX", sizeof(encoding));
+    strncpy(encoding, "XXXXXX", sizeof(encoding));
   } else {
-    strncpy(encoding, "-------", sizeof(encoding));
+    strncpy(encoding, "------", sizeof(encoding));
     if (IsVisited())               encoding[kVisited] = 'V';
     if (IsChanged())               encoding[kChanged] = 'C';
     if (IsOpcode())                encoding[kOpcode] = 'O';
     if (IsInTry())                 encoding[kInTry] = 'T';
     if (IsBranchTarget())          encoding[kBranchTarget] = 'B';
-    if (IsCompileTimeInfoPoint())  encoding[kCompileTimeInfoPoint] = 'G';
     if (IsReturn())                encoding[kReturn] = 'R';
   }
   return encoding;

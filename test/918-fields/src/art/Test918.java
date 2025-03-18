@@ -64,7 +64,15 @@ public class Test918 {
     private static native int getFieldModifiers(Field f);
     private static native boolean isFieldSynthetic(Field f);
 
-    private class Foo {}
+    private class Foo {
+        public void inc() {
+            // Touch a field in the outer class. Needed to avoid a javac optimization which removes
+            // the synthetic field that refers to the instance of the outer class (this$0).
+            fooVal++;
+        }
+    }
+
+    private int fooVal = 0;
 
     private static interface Bar {
         public static int VAL = 1;

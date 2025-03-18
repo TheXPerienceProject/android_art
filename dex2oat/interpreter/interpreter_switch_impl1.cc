@@ -186,6 +186,15 @@ class InactiveInstrumentationHandler {
     UNREACHABLE();
   }
 
+  static bool ExceptionHandledEvent(
+      [[maybe_unused]] Thread* self,
+      [[maybe_unused]] bool is_move_exception,
+      [[maybe_unused]] const instrumentation::Instrumentation* instrumentation)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    LOG(FATAL) << "UNREACHABLE";
+    UNREACHABLE();
+  }
+
   static bool DoDexPcMoveEvent(
       [[maybe_unused]] Thread* self,
       [[maybe_unused]] const CodeItemDataAccessor& accessor,

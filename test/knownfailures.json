@@ -1,19 +1,7 @@
 [
     {
-        "tests": "153-reference-stress",
-        "description": ["Disable 153-reference-stress temporarily until a fix",
-                        "arrives."],
-        "bug": "http://b/33389022"
-    },
-    {
         "tests": "626-checker-arm64-scratch-register",
         "description": ["Disable 626-checker until we assses whether to keep it"]
-    },
-    {
-        "tests": "304-method-tracing",
-        "description": ["Disable 304-method-tracing temporarily until a fix",
-                        "arrives."],
-        "bug": "http://b/203253172"
     },
     {
         "tests": "132-daemon-locks-shutdown",
@@ -1259,7 +1247,8 @@
     },
     {
         "tests": ["990-field-trace",
-                  "991-field-trace-2"],
+                  "991-field-trace-2",
+                  "710-varhandle-creation"],
         "variant": "gcstress & debug & target",
         "description": ["Test can time out on gcstress with debug"]
     },
@@ -1298,6 +1287,16 @@
         "variant": "gcstress",
         "bug": "b/68792448",
         "description": ["Timing margins are too tight for gcstress"]
+    },
+    {
+        "tests": ["153-reference-stress"],
+        "variant": "gcstress | debuggable",
+        "description": ["Timing out."]
+    },
+    {
+        "tests": ["153-reference-stress"],
+        "env_vars": {"SANITIZE_HOST": "address"},
+        "description": ["Timing out for ASAN."]
     },
     {
         "tests": ["021-string2"],

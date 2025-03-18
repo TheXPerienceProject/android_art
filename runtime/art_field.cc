@@ -39,7 +39,7 @@ void ArtField::SetOffset(MemberOffset num_bytes) {
   offset_ = num_bytes.Uint32Value();
 }
 
-ObjPtr<mirror::Class> ArtField::ProxyFindSystemClass(const char* descriptor) {
+ObjPtr<mirror::Class> ArtField::ProxyFindSystemClass(std::string_view descriptor) {
   DCHECK(IsProxyField());
   ObjPtr<mirror::Class> klass = Runtime::Current()->GetClassLinker()->LookupClass(
       Thread::Current(), descriptor, /* class_loader= */ nullptr);

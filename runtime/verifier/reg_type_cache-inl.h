@@ -18,8 +18,8 @@
 #define ART_RUNTIME_VERIFIER_REG_TYPE_CACHE_INL_H_
 
 #include "base/bit_vector-inl.h"
-#include "class_linker.h"
 #include "class_root-inl.h"
+#include "dex/dex_file.h"
 #include "mirror/class-inl.h"
 #include "mirror/method_handle_impl.h"
 #include "mirror/method_type.h"
@@ -38,143 +38,191 @@ inline const art::verifier::RegType& RegTypeCache::GetFromId(uint16_t id) const 
   return *result;
 }
 
-inline const ConstantType& RegTypeCache::FromCat1Const(int32_t value, bool precise) {
-  // We only expect 0 to be a precise constant.
-  DCHECK_IMPLIES(value == 0, precise);
-  if (precise && (value >= kMinSmallConstant) && (value <= kMaxSmallConstant)) {
-    return *down_cast<const ConstantType*>(entries_[value - kMinSmallConstant]);
+namespace detail {
+
+struct RegKindToCacheId : RegTypeCache {
+  // Inherit fixed cache ids from `RegTypeCache` and add fake non-fixed cache ids so that
+  // we can use `FOR_EACH_CONCRETE_REG_TYPE` to check the fixed cache ids.
+#define DEFINE_FAKE_CACHE_ID(name)                                    \
+  static_assert(RegType::Kind::k##name >= kNumberOfRegKindCacheIds);  \
+  static constexpr uint32_t k##name##CacheId = RegType::Kind::k##name;
+  DEFINE_FAKE_CACHE_ID(UnresolvedReference)
+  DEFINE_FAKE_CACHE_ID(UninitializedReference)
+  DEFINE_FAKE_CACHE_ID(UninitializedThisReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedUninitializedReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedUninitializedThisReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedMergedReference)
+  DEFINE_FAKE_CACHE_ID(Reference)
+#undef DEFINE_FAKE_CACHE_ID
+
+#define ASSERT_CACHE_ID_EQUALS_KIND(name) \
+  static_assert(k##name##CacheId == RegType::Kind::k##name);
+  FOR_EACH_CONCRETE_REG_TYPE(ASSERT_CACHE_ID_EQUALS_KIND);
+#undef ASSERT_CACHE_ID_EQUALS_KIND
+
+  static constexpr uint16_t Translate(RegType::Kind kind) {
+    DCHECK_LT(kind, kNumberOfRegKindCacheIds);
+    return kind;
   }
-  return FromCat1NonSmallConstant(value, precise);
+};
+
+}  // namespace detail
+
+constexpr uint16_t RegTypeCache::IdForRegKind(RegType::Kind kind) {
+  return detail::RegKindToCacheId::Translate(kind);
 }
 
-inline const BooleanType& RegTypeCache::Boolean() {
+constexpr RegType::Kind RegTypeCache::RegKindForId(uint16_t id) {
+  DCHECK_LT(id, NumberOfRegKindCacheIds());
+  RegType::Kind kind = enum_cast<RegType::Kind>(id);
+  DCHECK_EQ(id, IdForRegKind(kind));
+  return kind;
+}
+
+inline const RegType& RegTypeCache::GetFromRegKind(RegType::Kind kind) const {
+  return GetFromId(IdForRegKind(kind));
+}
+
+inline const RegType& RegTypeCache::FromTypeIndex(dex::TypeIndex type_index) {
+  DCHECK_LT(type_index.index_, dex_file_->NumTypeIds());
+  if (ids_for_type_index_[type_index.index_] != kNoIdForTypeIndex) {
+    return GetFromId(ids_for_type_index_[type_index.index_]);
+  }
+  return FromTypeIndexUncached(type_index);
+}
+
+inline const BooleanType& RegTypeCache::Boolean() const {
   return *down_cast<const BooleanType*>(entries_[kBooleanCacheId]);
 }
-inline const ByteType& RegTypeCache::Byte() {
+
+inline const ByteType& RegTypeCache::Byte() const {
   return *down_cast<const ByteType*>(entries_[kByteCacheId]);
 }
-inline const CharType& RegTypeCache::Char() {
+
+inline const CharType& RegTypeCache::Char() const {
   return *down_cast<const CharType*>(entries_[kCharCacheId]);
 }
-inline const ShortType& RegTypeCache::Short() {
+
+inline const ShortType& RegTypeCache::Short() const {
   return *down_cast<const ShortType*>(entries_[kShortCacheId]);
 }
-inline const IntegerType& RegTypeCache::Integer() {
-  return *down_cast<const IntegerType*>(entries_[kIntCacheId]);
+
+inline const IntegerType& RegTypeCache::Integer() const {
+  return *down_cast<const IntegerType*>(entries_[kIntegerCacheId]);
 }
-inline const FloatType& RegTypeCache::Float() {
+
+inline const FloatType& RegTypeCache::Float() const {
   return *down_cast<const FloatType*>(entries_[kFloatCacheId]);
 }
-inline const LongLoType& RegTypeCache::LongLo() {
+
+inline const LongLoType& RegTypeCache::LongLo() const {
   return *down_cast<const LongLoType*>(entries_[kLongLoCacheId]);
 }
-inline const LongHiType& RegTypeCache::LongHi() {
+
+inline const LongHiType& RegTypeCache::LongHi() const {
   return *down_cast<const LongHiType*>(entries_[kLongHiCacheId]);
 }
-inline const DoubleLoType& RegTypeCache::DoubleLo() {
+
+inline const DoubleLoType& RegTypeCache::DoubleLo() const {
   return *down_cast<const DoubleLoType*>(entries_[kDoubleLoCacheId]);
 }
-inline const DoubleHiType& RegTypeCache::DoubleHi() {
+
+inline const DoubleHiType& RegTypeCache::DoubleHi() const {
   return *down_cast<const DoubleHiType*>(entries_[kDoubleHiCacheId]);
 }
-inline const UndefinedType& RegTypeCache::Undefined() {
+
+inline const UndefinedType& RegTypeCache::Undefined() const {
   return *down_cast<const UndefinedType*>(entries_[kUndefinedCacheId]);
 }
-inline const ConflictType& RegTypeCache::Conflict() {
+
+inline const ConflictType& RegTypeCache::Conflict() const {
   return *down_cast<const ConflictType*>(entries_[kConflictCacheId]);
 }
-inline const NullType& RegTypeCache::Null() {
+
+inline const NullType& RegTypeCache::Null() const {
   return *down_cast<const NullType*>(entries_[kNullCacheId]);
 }
 
-inline const ImpreciseConstType& RegTypeCache::ByteConstant() {
-  const ConstantType& result = FromCat1Const(std::numeric_limits<jbyte>::min(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+inline const ZeroType& RegTypeCache::Zero() const {
+  return *down_cast<const ZeroType*>(entries_[kZeroCacheId]);
 }
 
-inline const ImpreciseConstType& RegTypeCache::CharConstant() {
-  int32_t jchar_max = static_cast<int32_t>(std::numeric_limits<jchar>::max());
-  const ConstantType& result =  FromCat1Const(jchar_max, false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+inline const BooleanConstantType& RegTypeCache::BooleanConstant() const {
+  return *down_cast<const BooleanConstantType*>(entries_[kBooleanConstantCacheId]);
 }
 
-inline const ImpreciseConstType& RegTypeCache::ShortConstant() {
-  const ConstantType& result =  FromCat1Const(std::numeric_limits<jshort>::min(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+inline const ByteConstantType& RegTypeCache::ByteConstant() const {
+  return *down_cast<const ByteConstantType*>(entries_[kByteConstantCacheId]);
 }
 
-inline const ImpreciseConstType& RegTypeCache::IntConstant() {
-  const ConstantType& result = FromCat1Const(std::numeric_limits<jint>::max(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+inline const CharConstantType& RegTypeCache::CharConstant() const {
+  return *down_cast<const CharConstantType*>(entries_[kCharConstantCacheId]);
 }
 
-inline const ImpreciseConstType& RegTypeCache::PosByteConstant() {
-  const ConstantType& result = FromCat1Const(std::numeric_limits<jbyte>::max(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+inline const ShortConstantType& RegTypeCache::ShortConstant() const {
+  return *down_cast<const ShortConstantType*>(entries_[kShortConstantCacheId]);
 }
 
-inline const ImpreciseConstType& RegTypeCache::PosShortConstant() {
-  const ConstantType& result =  FromCat1Const(std::numeric_limits<jshort>::max(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+inline const IntegerConstantType& RegTypeCache::IntegerConstant() const {
+  return *down_cast<const IntegerConstantType*>(entries_[kIntegerConstantCacheId]);
 }
 
-inline const PreciseReferenceType& RegTypeCache::JavaLangClass() {
-  const RegType* result = &FromClass("Ljava/lang/Class;",
-                                     GetClassRoot<mirror::Class>(),
-                                     /* precise= */ true);
-  DCHECK(result->IsPreciseReference());
-  return *down_cast<const PreciseReferenceType*>(result);
+inline const PositiveByteConstantType& RegTypeCache::PositiveByteConstant() const {
+  return *down_cast<const PositiveByteConstantType*>(entries_[kPositiveByteConstantCacheId]);
 }
 
-inline const PreciseReferenceType& RegTypeCache::JavaLangString() {
-  // String is final and therefore always precise.
-  const RegType* result = &FromClass("Ljava/lang/String;",
-                                     GetClassRoot<mirror::String>(),
-                                     /* precise= */ true);
-  DCHECK(result->IsPreciseReference());
-  return *down_cast<const PreciseReferenceType*>(result);
+inline const PositiveShortConstantType& RegTypeCache::PositiveShortConstant() const {
+  return *down_cast<const PositiveShortConstantType*>(entries_[kPositiveShortConstantCacheId]);
 }
 
-inline const PreciseReferenceType& RegTypeCache::JavaLangInvokeMethodHandle() {
-  const RegType* result = &FromClass("Ljava/lang/invoke/MethodHandle;",
-                                     GetClassRoot<mirror::MethodHandle>(),
-                                     /* precise= */ true);
-  DCHECK(result->IsPreciseReference());
-  return *down_cast<const PreciseReferenceType*>(result);
+inline const ConstantLoType& RegTypeCache::ConstantLo() const {
+  return *down_cast<const ConstantLoType*>(entries_[kConstantLoCacheId]);
 }
 
-inline const PreciseReferenceType& RegTypeCache::JavaLangInvokeMethodType() {
-  const RegType* result = &FromClass("Ljava/lang/invoke/MethodType;",
-                                     GetClassRoot<mirror::MethodType>(),
-                                     /* precise= */ true);
-  DCHECK(result->IsPreciseReference());
-  return *down_cast<const PreciseReferenceType*>(result);
+inline const ConstantHiType& RegTypeCache::ConstantHi() const {
+  return *down_cast<const ConstantHiType*>(entries_[kConstantHiCacheId]);
 }
 
-inline const RegType& RegTypeCache::JavaLangThrowable() {
-  const RegType* result = &FromClass("Ljava/lang/Throwable;",
-                                     GetClassRoot<mirror::Throwable>(),
-                                     /* precise= */ false);
+inline const ReferenceType& RegTypeCache::JavaLangClass() {
+  const RegType* result = &FromClass(GetClassRoot<mirror::Class>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/Class;"));
   DCHECK(result->IsReference());
-  DCHECK(!result->IsPreciseReference());
   return *down_cast<const ReferenceType*>(result);
 }
 
-inline const RegType& RegTypeCache::JavaLangObject(bool precise) {
-  const RegType* result = &FromClass("Ljava/lang/Object;", GetClassRoot<mirror::Object>(), precise);
-  if (precise) {
-    DCHECK(result->IsPreciseReference());
-    return *down_cast<const PreciseReferenceType*>(result);
-  } else {
-    DCHECK(result->IsReference());
-    return *down_cast<const ReferenceType*>(result);
-  }
+inline const ReferenceType& RegTypeCache::JavaLangString() {
+  const RegType* result = &FromClass(GetClassRoot<mirror::String>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/String;"));
+  DCHECK(result->IsReference());
+  return *down_cast<const ReferenceType*>(result);
+}
+
+inline const ReferenceType& RegTypeCache::JavaLangInvokeMethodHandle() {
+  const RegType* result = &FromClass(GetClassRoot<mirror::MethodHandle>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/invoke/MethodHandle;"));
+  DCHECK(result->IsReference());
+  return *down_cast<const ReferenceType*>(result);
+}
+
+inline const ReferenceType& RegTypeCache::JavaLangInvokeMethodType() {
+  const RegType* result = &FromClass(GetClassRoot<mirror::MethodType>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/invoke/MethodType;"));
+  DCHECK(result->IsReference());
+  return *down_cast<const ReferenceType*>(result);
+}
+
+inline const ReferenceType& RegTypeCache::JavaLangThrowable() {
+  const RegType* result = &FromClass(GetClassRoot<mirror::Throwable>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/Throwable;"));
+  DCHECK(result->IsReference());
+  return *down_cast<const ReferenceType*>(result);
+}
+
+inline const JavaLangObjectType& RegTypeCache::JavaLangObject() {
+  const RegType& result = GetFromId(kJavaLangObjectCacheId);
+  DCHECK_EQ(result.GetDescriptor(), "Ljava/lang/Object;");
+  DCHECK(result.IsJavaLangObject());
+  return down_cast<const JavaLangObjectType&>(result);
 }
 
 template <class RegTypeType>

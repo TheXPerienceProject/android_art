@@ -285,7 +285,7 @@ class ProfileAssistantTest : public CommonRuntimeTest, public ProfileTestHelper 
     StackHandleScope<1> hs(soa.Self());
     Handle<mirror::ClassLoader> h_loader(hs.NewHandle(
         ObjPtr<mirror::ClassLoader>::DownCast(soa.Self()->DecodeJObject(class_loader))));
-    return class_linker->FindClass(soa.Self(), clazz.c_str(), h_loader);
+    return FindClass(clazz.c_str(), h_loader);
   }
 
   ArtMethod* GetVirtualMethod(jobject class_loader,

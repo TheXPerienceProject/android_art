@@ -626,8 +626,8 @@ TEST_F(HiddenApiTest, CheckMemberSignatureForProxyClass) {
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader_)));
 
   // Find interface we will create a proxy for.
-  Handle<mirror::Class> h_iface(hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "Lmypackage/packagea/Interface;", class_loader)));
+  Handle<mirror::Class> h_iface =
+      hs.NewHandle(FindClass("Lmypackage/packagea/Interface;", class_loader));
   ASSERT_TRUE(h_iface != nullptr);
 
   // Create the proxy class.

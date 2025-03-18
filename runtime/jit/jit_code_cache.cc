@@ -366,12 +366,12 @@ bool JitCodeCache::WaitForPotentialCollectionToComplete(Thread* self) {
 }
 
 static uintptr_t FromCodeToAllocation(const void* code) {
-  size_t alignment = GetInstructionSetCodeAlignment(kRuntimeISA);
+  size_t alignment = GetInstructionSetCodeAlignment(kRuntimeQuickCodeISA);
   return reinterpret_cast<uintptr_t>(code) - RoundUp(sizeof(OatQuickMethodHeader), alignment);
 }
 
 static const void* FromAllocationToCode(const uint8_t* alloc) {
-  size_t alignment = GetInstructionSetCodeAlignment(kRuntimeISA);
+  size_t alignment = GetInstructionSetCodeAlignment(kRuntimeQuickCodeISA);
   return reinterpret_cast<const void*>(alloc + RoundUp(sizeof(OatQuickMethodHeader), alignment));
 }
 
@@ -530,7 +530,8 @@ void JitCodeCache::FreeAllMethodHeaders(
       }
     });
     ForEachNativeDebugSymbol([&](const void* addr, size_t, const char* name) {
-      addr = AlignDown(addr, GetInstructionSetInstructionAlignment(kRuntimeISA));  // Thumb-bit.
+      addr = AlignDown(addr,
+                       GetInstructionSetInstructionAlignment(kRuntimeQuickCodeISA));  // Thumb-bit.
       bool res = debug_info.emplace(addr).second;
       CHECK(res) << "Duplicate debug info: " << addr << " " << name;
       CHECK_EQ(compiled_methods.count(addr), 1u) << "Extra debug info: " << addr << " " << name;
@@ -805,6 +806,9 @@ bool JitCodeCache::Commit(Thread* self,
 
             DCHECK(std::find(code_ptrs.begin(), code_ptrs.end(), code_ptr) == code_ptrs.end());
             it->second.emplace_back(code_ptr);
+
+            // `MethodType`s are strong GC roots and need write barrier.
+            WriteBarrier::ForEveryFieldWrite(method->GetDeclaringClass<kWithoutReadBarrier>());
             break;
           }
         }
@@ -891,10 +895,11 @@ bool JitCodeCache::RemoveMethodLocked(ArtMethod* method, bool release_memory) {
           FreeCodeAndData(it->second.GetCode());
         }
         jni_stubs_map_.erase(it);
-        zombie_jni_code_.erase(method);
       } else {
         it->first.UpdateShorty(it->second.GetMethods().front());
       }
+      zombie_jni_code_.erase(method);
+      processed_zombie_jni_code_.erase(method);
     }
   } else {
     for (auto it = method_code_map_.begin(); it != method_code_map_.end();) {
@@ -1195,19 +1200,11 @@ void JitCodeCache::RemoveUnmarkedCode(Thread* self) {
     WriterMutexLock mu2(self, *Locks::jit_mutator_lock_);
     ArtMethod* method = *it;
     auto stub = jni_stubs_map_.find(JniStubKey(method));
-    if (stub == jni_stubs_map_.end()) {
-      it = processed_zombie_jni_code_.erase(it);
-      continue;
-    }
+    DCHECK(stub != jni_stubs_map_.end()) << method->PrettyMethod();
     JniStubData& data = stub->second;
-    if (!data.IsCompiled() || !ContainsElement(data.GetMethods(), method)) {
-      it = processed_zombie_jni_code_.erase(it);
-    } else if (method->GetEntryPointFromQuickCompiledCode() ==
-            OatQuickMethodHeader::FromCodePointer(data.GetCode())->GetEntryPoint()) {
-      // The stub got reused for this method, remove ourselves from the zombie
-      // list.
-      it = processed_zombie_jni_code_.erase(it);
-    } else if (!GetLiveBitmap()->Test(FromCodeToAllocation(data.GetCode()))) {
+    DCHECK(data.IsCompiled());
+    DCHECK(ContainsElement(data.GetMethods(), method));
+    if (!GetLiveBitmap()->Test(FromCodeToAllocation(data.GetCode()))) {
       data.RemoveMethod(method);
       if (data.GetMethods().empty()) {
         OatQuickMethodHeader* header = OatQuickMethodHeader::FromCodePointer(data.GetCode());
@@ -1257,6 +1254,13 @@ void JitCodeCache::AddZombieCode(ArtMethod* method, const void* entry_point) {
 
 void JitCodeCache::AddZombieCodeInternal(ArtMethod* method, const void* code_ptr) {
   if (method->IsNative()) {
+    if (kIsDebugBuild) {
+      auto it = jni_stubs_map_.find(JniStubKey(method));
+      CHECK(it != jni_stubs_map_.end()) << method->PrettyMethod();
+      CHECK(it->second.IsCompiled()) << method->PrettyMethod();
+      CHECK_EQ(it->second.GetCode(), code_ptr) << method->PrettyMethod();
+      CHECK(ContainsElement(it->second.GetMethods(), method)) << method->PrettyMethod();
+    }
     zombie_jni_code_.insert(method);
   } else {
     CHECK(!ContainsElement(zombie_code_, code_ptr));
@@ -1370,7 +1374,7 @@ void JitCodeCache::DoCollection(Thread* self) {
 }
 
 OatQuickMethodHeader* JitCodeCache::LookupMethodHeader(uintptr_t pc, ArtMethod* method) {
-  static_assert(kRuntimeISA != InstructionSet::kThumb2, "kThumb2 cannot be a runtime ISA");
+  static_assert(kRuntimeQuickCodeISA != InstructionSet::kThumb2, "kThumb2 cannot be a runtime ISA");
   const void* pc_ptr = reinterpret_cast<const void*>(pc);
   if (!ContainsPc(pc_ptr)) {
     return nullptr;
@@ -1683,6 +1687,7 @@ bool JitCodeCache::NotifyCompilationOf(ArtMethod* method,
 
   if (UNLIKELY(method->IsNative())) {
     JniStubKey key(method);
+    MutexLock mu2(self, *Locks::jit_lock_);
     WriterMutexLock mu(self, *Locks::jit_mutator_lock_);
     auto it = jni_stubs_map_.find(key);
     bool new_compilation = false;
@@ -1701,6 +1706,10 @@ bool JitCodeCache::NotifyCompilationOf(ArtMethod* method,
       // changed these entrypoints to GenericJNI in preparation for a full GC, we may
       // as well change them back as this stub shall not be collected anyway and this
       // can avoid a few expensive GenericJNI calls.
+      for (ArtMethod* m : it->second.GetMethods()) {
+        zombie_jni_code_.erase(m);
+        processed_zombie_jni_code_.erase(m);
+      }
       data->UpdateEntryPoints(entrypoint);
     }
     return new_compilation;

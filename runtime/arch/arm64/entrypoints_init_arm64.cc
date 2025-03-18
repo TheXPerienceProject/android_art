@@ -22,20 +22,17 @@
 #include "com_android_art_flags.h"
 #include "entrypoints/entrypoint_utils.h"
 #include "entrypoints/jni/jni_entrypoints.h"
-#include "entrypoints/math_entrypoints.h"
 #include "entrypoints/quick/quick_alloc_entrypoints.h"
 #include "entrypoints/quick/quick_default_externs.h"
 #include "entrypoints/quick/quick_default_init_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints.h"
+#include "entrypoints/quick/runtime_entrypoints_list.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "interpreter/interpreter.h"
 
 namespace art_flags = com::android::art::flags;
 
 namespace art HIDDEN {
-
-// Cast entrypoints.
-extern "C" size_t artInstanceOfFromCode(mirror::Object* obj, mirror::Class* ref_class);
 
 // Read barrier entrypoints.
 // art_quick_read_barrier_mark_regX uses an non-standard calling
@@ -81,6 +78,14 @@ extern "C" mirror::Object* art_quick_read_barrier_mark_introspection_gc_roots(mi
 
 extern "C" void art_quick_record_entry_trace_event();
 extern "C" void art_quick_record_exit_trace_event();
+
+extern "C" void art_quick_nop_record_entry_trace_event() {
+  return;
+}
+
+extern "C" void art_quick_nop_record_exit_trace_event() {
+  return;
+}
 
 void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active) {
   // ARM64 is the architecture with the largest number of core
@@ -190,6 +195,11 @@ void InitEntryPoints(JniEntryPoints* jpoints,
 
   // Intrinsics
   qpoints->SetIndexOf(art_quick_indexof);
+
+  // Invoke.
+  qpoints->SetInvokePolymorphicWithHiddenReceiver(
+      art_quick_invoke_polymorphic_with_hidden_receiver);
+
   // The ARM64 StringCompareTo intrinsic does not call the runtime.
   qpoints->SetStringCompareTo(nullptr);
   qpoints->SetMemcpy(memcpy);
@@ -205,6 +215,16 @@ void InitEntryPoints(JniEntryPoints* jpoints,
     // devices.
     qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
     qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+  }
+}
+
+void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, bool enable) {
+  if (enable) {
+    qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
+    qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+  } else {
+    qpoints->SetRecordEntryTraceEvent(art_quick_nop_record_entry_trace_event);
+    qpoints->SetRecordExitTraceEvent(art_quick_nop_record_exit_trace_event);
   }
 }
 

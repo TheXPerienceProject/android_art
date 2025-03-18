@@ -20,6 +20,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.Set;
 
 abstract class BaseTraceParser {
     public static final int MAGIC_NUMBER = 0x574f4c53;
@@ -31,12 +32,15 @@ abstract class BaseTraceParser {
     public static final String METHODS_SECTION_ID = "*methods";
     public static final String THREADS_SECTION_ID = "*threads";
     public static final String END_SECTION_ID = "*end";
+    public static final Set<String> ignoredMethods = Set.of(
+        "java.lang.ref.ReferenceQueue add (Ljava/lang/ref/Reference;)V ReferenceQueue.java");
 
     public void InitializeParser(File file) throws IOException {
         dataStream = new DataInputStream(new FileInputStream(file));
         methodIdMap = new HashMap<Integer, String>();
         threadIdMap = new HashMap<Integer, String>();
         nestingLevelMap = new HashMap<Integer, Integer>();
+        ignoredMethodNestingLevelMap = new HashMap<Integer, Integer>();
         threadEventsMap = new HashMap<String, String>();
         threadTimestamp1Map = new HashMap<Integer, Integer>();
         threadTimestamp2Map = new HashMap<Integer, Integer>();
@@ -200,8 +204,36 @@ abstract class BaseTraceParser {
         int methodId = methodAndEvent & ~0x3;
         int eventType = methodAndEvent & 0x3;
 
+        String methodName = methodIdMap.get(methodId);
+        int currNestingLevel = 0;
+        if (nestingLevelMap.containsKey(threadId)) {
+          currNestingLevel = nestingLevelMap.get(threadId);
+        }
+        boolean recordMethodEvent = true;
+        if (!ignoredMethodNestingLevelMap.containsKey(threadId)) {
+          if (ignoredMethods.contains(methodName)) {
+            // This should be an entry event.
+            if (eventType != 0) {
+              throw new Exception("Seeing an exit for an ignored event without an entry");
+            }
+            ignoredMethodNestingLevelMap.put(threadId, currNestingLevel);
+            recordMethodEvent = false;
+          }
+        } else {
+          // We need to ignore all calls until the ignored method exits.
+          int ignoredMethodDepth = ignoredMethodNestingLevelMap.get(threadId);
+          // If this is a method exit and we are at the right depth remove the entry so we start
+          // recording from the next event.
+          if (ignoredMethodDepth == currNestingLevel - 1 && eventType != 0) {
+            ignoredMethodNestingLevelMap.remove(threadId);
+            if (!ignoredMethods.contains(methodName)) {
+              throw new Exception("Unexpected method on exit. Mismatch on method entry and exit");
+            }
+          }
+          recordMethodEvent = false;
+        }
         String str = eventTypeToString(eventType, threadId) + " " + threadIdMap.get(threadId)
-                + " " + methodIdMap.get(methodId);
+                + " " + methodName;
         // Depending on the version skip either one or two timestamps.
         int timestamp1 = readNumber(4);
         CheckTimestamp(timestamp1, threadId, threadTimestamp1Map);
@@ -210,7 +242,7 @@ abstract class BaseTraceParser {
             int timestamp2 = readNumber(4);
             CheckTimestamp(timestamp2, threadId, threadTimestamp2Map);
         }
-        return str;
+        return recordMethodEvent? str : null;
     }
 
     public void UpdateThreadEvents(int threadId, String entry) {
@@ -229,6 +261,7 @@ abstract class BaseTraceParser {
     HashMap<Integer, String> methodIdMap;
     HashMap<Integer, String> threadIdMap;
     HashMap<Integer, Integer> nestingLevelMap;
+    HashMap<Integer, Integer> ignoredMethodNestingLevelMap;
     HashMap<String, String> threadEventsMap;
     HashMap<Integer, Integer> threadTimestamp1Map;
     HashMap<Integer, Integer> threadTimestamp2Map;

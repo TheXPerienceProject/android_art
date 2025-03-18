@@ -823,11 +823,13 @@ bool ProfileCompilationInfo::Load(const std::string& filename, bool clear_if_inv
   return false;
 }
 
-bool ProfileCompilationInfo::Save(const std::string& filename, uint64_t* bytes_written) {
+bool ProfileCompilationInfo::Save(const std::string& filename,
+                                  uint64_t* bytes_written,
+                                  bool flush) {
   ScopedTrace trace(__PRETTY_FUNCTION__);
 
 #ifndef ART_TARGET_ANDROID
-  return SaveFallback(filename, bytes_written);
+  return SaveFallback(filename, bytes_written, flush);
 #else
   // Prior to U, SELinux policy doesn't allow apps to create profile files.
   // Additionally, when installd is being used for dexopt, it acquires a flock when working on a
@@ -836,7 +838,7 @@ bool ProfileCompilationInfo::Save(const std::string& filename, uint64_t* bytes_w
   // partners. Therefore, we fall back to using a flock as well just to be safe.
   if (!android::modules::sdklevel::IsAtLeastU() ||
       !android::base::GetBoolProperty("dalvik.vm.useartservice", /*default_value=*/false)) {
-    return SaveFallback(filename, bytes_written);
+    return SaveFallback(filename, bytes_written, flush);
   }
 
   std::string tmp_filename = filename + ".XXXXXX.tmp";
@@ -855,7 +857,7 @@ bool ProfileCompilationInfo::Save(const std::string& filename, uint64_t* bytes_w
     }
   });
 
-  bool result = Save(fd.get());
+  bool result = Save(fd.get(), flush);
   if (!result) {
     VLOG(profiler) << "Failed to save profile info to temp profile file " << tmp_filename;
     return false;
@@ -870,6 +872,14 @@ bool ProfileCompilationInfo::Save(const std::string& filename, uint64_t* bytes_w
   }
 
   remove_tmp_file.Disable();
+
+  if (flush) {
+    std::string dirname = android::base::Dirname(filename);
+    std::unique_ptr<File> dir(OS::OpenFileForReading(dirname.c_str()));
+    if (dir == nullptr || dir->Flush(/*flush_metadata=*/true) != 0) {
+      PLOG(WARNING) << "Failed to flush directory " << dirname;
+    }
+  }
 
   int64_t size = OS::GetFileSizeBytes(filename.c_str());
   if (size != -1) {
@@ -886,7 +896,9 @@ bool ProfileCompilationInfo::Save(const std::string& filename, uint64_t* bytes_w
 #endif
 }
 
-bool ProfileCompilationInfo::SaveFallback(const std::string& filename, uint64_t* bytes_written) {
+bool ProfileCompilationInfo::SaveFallback(const std::string& filename,
+                                          uint64_t* bytes_written,
+                                          bool flush) {
   std::string error;
 #ifdef _WIN32
   int flags = O_WRONLY | O_CREAT;
@@ -913,7 +925,16 @@ bool ProfileCompilationInfo::SaveFallback(const std::string& filename, uint64_t*
 
   // This doesn't need locking because we are trying to lock the file for exclusive
   // access and fail immediately if we can't.
-  bool result = Save(fd);
+  bool result = Save(fd, flush);
+
+  if (flush) {
+    std::string dirname = android::base::Dirname(filename);
+    std::unique_ptr<File> dir(OS::OpenFileForReading(dirname.c_str()));
+    if (dir == nullptr || dir->Flush(/*flush_metadata=*/true) != 0) {
+      PLOG(WARNING) << "Failed to flush directory " << dirname;
+    }
+  }
+
   if (result) {
     int64_t size = OS::GetFileSizeBytes(filename.c_str());
     if (size != -1) {
@@ -1002,7 +1023,7 @@ static bool WriteBuffer(int fd, const void* buffer, size_t byte_count) {
  * where `M` stands for special encodings indicating missing types (kIsMissingTypesEncoding)
  * or memamorphic call (kIsMegamorphicEncoding) which both imply `dex_map_size == 0`.
  **/
-bool ProfileCompilationInfo::Save(int fd) {
+bool ProfileCompilationInfo::Save(int fd, bool flush) {
   uint64_t start = NanoTime();
   ScopedTrace trace(__PRETTY_FUNCTION__);
   DCHECK_GE(fd, 0);
@@ -1178,6 +1199,16 @@ bool ProfileCompilationInfo::Save(int fd) {
   }
   if (!WriteBuffer(fd, &header, sizeof(FileHeader))) {
     return false;
+  }
+
+  if (flush) {
+    // We do not flush for non-Linux because `flush` is only used by the runtime and the runtime
+    // only supports Linux.
+#ifdef __linux__
+    if (fsync(fd) != 0) {
+      PLOG(WARNING) << "Failed to flush profile data";
+    }
+#endif
   }
 
   uint64_t total_time = NanoTime() - start;

@@ -260,6 +260,26 @@ public class Main {
           "Unsafe.getObjectVolatile(Object, long)");
   }
 
+  private static void testGetAndPutAbsoluteAddress(Unsafe unsafe) throws NoSuchFieldException {
+    long address = 0;
+    try {
+        address = unsafe.allocateMemory(8);
+
+        unsafe.putByte(address, (byte) 17);
+        check(unsafe.getByte(address), (byte) 17, "Unsafe.getByte(long)");
+
+        unsafe.putInt(address, 0xDEADBEEF);
+        check(unsafe.getInt(address), 0xDEADBEEF, "Unsafe.getInt(long)");
+
+        unsafe.putLong(address, 0xFEEDFACEDECAFBADL);
+        check(unsafe.getInt(address), 0xFEEDFACEDECAFBADL, "Unsafe.getLong(long)");
+    } finally {
+        if (address != 0) {
+            unsafe.freeMemory(address);
+        }
+    }
+  }
+
   // Regression test for "copyMemory" operations hitting a DCHECK() for float/double arrays.
   private static void testCopyMemoryPrimitiveArrays(Unsafe unsafe) {
     int size = 4 * 1024;

@@ -172,6 +172,7 @@ public class ArtFlags {
             case ReasonMapping.REASON_BOOT_AFTER_MAINLINE_UPDATE:
                 return FLAG_FOR_PRIMARY_DEX | FLAG_SHOULD_INCLUDE_DEPENDENCIES;
             case ReasonMapping.REASON_BG_DEXOPT:
+            case ReasonMapping.REASON_PRE_REBOOT_DEXOPT:
                 return FLAG_FOR_PRIMARY_DEX | FLAG_FOR_SECONDARY_DEX
                         | FLAG_SHOULD_INCLUDE_DEPENDENCIES | FLAG_SKIP_IF_STORAGE_LOW;
             case ReasonMapping.REASON_CMDLINE:

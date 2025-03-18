@@ -57,7 +57,6 @@ const char* const ArenaAllocatorStatsImpl<kCount>::kAllocNames[] = {
   "TryCatchInf  ",
   "UseListNode  ",
   "Environment  ",
-  "EnvVRegs     ",
   "EnvLocations ",
   "LocSummary   ",
   "SsaBuilder   ",

@@ -43,7 +43,7 @@ inline mirror::Object* Runtime::GetClearedJniWeakGlobal() {
 
 inline QuickMethodFrameInfo Runtime::GetRuntimeMethodFrameInfo(ArtMethod* method) {
   DCHECK(method != nullptr);
-  DCHECK_EQ(instruction_set_, kRuntimeISA);
+  DCHECK_EQ(instruction_set_, kRuntimeQuickCodeISA);
   // Cannot be imt-conflict-method or resolution-method.
   DCHECK_NE(method, GetImtConflictMethod());
   DCHECK_NE(method, GetResolutionMethod());

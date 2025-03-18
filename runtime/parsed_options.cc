@@ -169,12 +169,6 @@ std::unique_ptr<RuntimeParser> ParsedOptions::MakeParser(bool ignore_unrecognize
           .IntoKey(M::ForegroundHeapGrowthMultiplier)
       .Define("-XX:LowMemoryMode")
           .IntoKey(M::LowMemoryMode)
-      .Define("-Xprofile:_")
-          .WithType<TraceClockSource>()
-          .WithValueMap({{"threadcpuclock", TraceClockSource::kThreadCpu},
-                         {"wallclock",      TraceClockSource::kWall},
-                         {"dualclock",      TraceClockSource::kDual}})
-          .IntoKey(M::ProfileClock)
       .Define("-Xjitthreshold:_")
           .WithType<unsigned int>()
           .IntoKey(M::JITOptimizeThreshold)
@@ -516,7 +510,8 @@ std::unique_ptr<RuntimeParser> ParsedOptions::MakeParser(bool ignore_unrecognize
                 "-Xjitprofile",
                 "-Xjitdisableopt",
                 "-Xjitsuspendpoll",
-                "-XX:mainThreadStackSize=_"})
+                "-XX:mainThreadStackSize=_",
+                "-Xprofile:_"})
       .IgnoreUnrecognized(ignore_unrecognized)
       .OrderCategories({"standard", "extended", "Dalvik", "ART"});
 
@@ -729,9 +724,6 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
   MaybeOverrideVerbosity();
 
   SetRuntimeDebugFlagsEnabled(args.GetOrDefault(M::SlowDebug));
-
-  // -Xprofile:
-  Trace::SetDefaultClockSource(args.GetOrDefault(M::ProfileClock));
 
   if (!ProcessSpecialOptions(options, &args, nullptr)) {
       return false;

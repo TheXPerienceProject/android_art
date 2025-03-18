@@ -207,8 +207,10 @@ class VerifierDeps {
   dex::StringIndex GetIdFromString(const DexFile& dex_file, const std::string& str)
       REQUIRES(!Locks::verifier_deps_lock_);
 
-  // Returns the string represented by `id`.
-  std::string GetStringFromId(const DexFile& dex_file, dex::StringIndex string_id) const;
+  // Returns the string represented by `string_idx`.
+  const char* GetStringFromIndex(const DexFile& dex_file,
+                                 dex::StringIndex string_idx,
+                                 /*out*/ size_t* utf8_length = nullptr) const;
 
   // Returns a string ID of the descriptor of the class.
   dex::StringIndex GetClassDescriptorStringId(const DexFile& dex_file, ObjPtr<mirror::Class> klass)

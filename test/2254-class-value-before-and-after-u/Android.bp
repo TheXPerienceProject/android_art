@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-2254-class-value-before-and-after-u-expected-stdout",
         ":art-run-test-2254-class-value-before-and-after-u-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

@@ -31,6 +31,9 @@ java_test {
         ":art-run-test-024-illegal-access-expected-stdout",
         ":art-run-test-024-illegal-access-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

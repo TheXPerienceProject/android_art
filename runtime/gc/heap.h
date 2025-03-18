@@ -1455,16 +1455,16 @@ class Heap {
   // matter.
 
   // Collector type of the running GC.
-  volatile CollectorType collector_type_running_ GUARDED_BY(gc_complete_lock_);
+  CollectorType collector_type_running_ GUARDED_BY(gc_complete_lock_);
 
   // Cause of the last running or attempted GC or GC-like action.
-  volatile GcCause last_gc_cause_ GUARDED_BY(gc_complete_lock_);
+  GcCause last_gc_cause_ GUARDED_BY(gc_complete_lock_);
 
   // The thread currently running the GC.
-  volatile Thread* thread_running_gc_ GUARDED_BY(gc_complete_lock_);
+  Thread* thread_running_gc_ GUARDED_BY(gc_complete_lock_);
 
   // Last Gc type we ran. Used by WaitForConcurrentGc to know which Gc was waited on.
-  volatile collector::GcType last_gc_type_ GUARDED_BY(gc_complete_lock_);
+  collector::GcType last_gc_type_ GUARDED_BY(gc_complete_lock_);
   collector::GcType next_gc_type_;
 
   // Maximum size that the heap can reach.

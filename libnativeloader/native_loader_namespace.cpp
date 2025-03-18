@@ -69,10 +69,14 @@ Result<NativeLoaderNamespace> NativeLoaderNamespace::GetExportedNamespace(const 
 // "system" for those in the Runtime APEX. Try "system" first since
 // "default" always exists.
 Result<NativeLoaderNamespace> NativeLoaderNamespace::GetSystemNamespace(bool is_bridged) {
-  Result<NativeLoaderNamespace> ns = GetExportedNamespace(kSystemNamespaceName, is_bridged);
-  if (ns.ok()) return ns;
-  ns = GetExportedNamespace(kDefaultNamespaceName, is_bridged);
-  if (ns.ok()) return ns;
+  if (Result<NativeLoaderNamespace> ns = GetExportedNamespace(kSystemNamespaceName, is_bridged);
+      ns.ok()) {
+    return ns;
+  }
+  if (Result<NativeLoaderNamespace> ns = GetExportedNamespace(kDefaultNamespaceName, is_bridged);
+      ns.ok()) {
+    return ns;
+  }
 
   // If nothing is found, return NativeLoaderNamespace constructed from nullptr.
   // nullptr also means default namespace to the linker.

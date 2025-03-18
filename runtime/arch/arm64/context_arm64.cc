@@ -48,18 +48,19 @@ void Arm64Context::Reset() {
 }
 
 void Arm64Context::FillCalleeSaves(uint8_t* frame, const QuickMethodFrameInfo& frame_info) {
+  const size_t frame_size = frame_info.FrameSizeInBytes();
   int spill_pos = 0;
 
   // Core registers come first, from the highest down to the lowest.
   for (uint32_t core_reg : HighToLowBits(frame_info.CoreSpillMask())) {
-    gprs_[core_reg] = CalleeSaveAddress(frame, spill_pos, frame_info.FrameSizeInBytes());
+    gprs_[core_reg] = CalleeSaveAddress<InstructionSet::kArm64>(frame, spill_pos, frame_size);
     ++spill_pos;
   }
   DCHECK_EQ(spill_pos, POPCOUNT(frame_info.CoreSpillMask()));
 
   // FP registers come second, from the highest down to the lowest.
   for (uint32_t fp_reg : HighToLowBits(frame_info.FpSpillMask())) {
-    fprs_[fp_reg] = CalleeSaveAddress(frame, spill_pos, frame_info.FrameSizeInBytes());
+    fprs_[fp_reg] = CalleeSaveAddress<InstructionSet::kArm64>(frame, spill_pos, frame_size);
     ++spill_pos;
   }
   DCHECK_EQ(spill_pos, POPCOUNT(frame_info.CoreSpillMask()) + POPCOUNT(frame_info.FpSpillMask()));

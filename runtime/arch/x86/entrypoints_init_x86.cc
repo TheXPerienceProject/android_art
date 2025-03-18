@@ -128,4 +128,9 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   qpoints->SetReadBarrierForRootSlow(art_quick_read_barrier_for_root_slow);
 }
 
+void UpdateLowOverheadTraceEntrypoints([[maybe_unused]] QuickEntryPoints* qpoints,
+                                       [[maybe_unused]] bool enable) {
+  // This is a nop on this architecture. Low overhead tracing is only implemented for ARM64.
+}
+
 }  // namespace art

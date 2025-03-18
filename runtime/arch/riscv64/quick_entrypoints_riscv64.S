@@ -21,26 +21,6 @@
 #include "arch/quick_field_entrypoints.S"
 
 
-// Wrap ExecuteSwitchImpl in assembly method which specifies DEX PC for unwinding.
-//  Argument 0: a0: The context pointer for ExecuteSwitchImpl.
-//  Argument 1: a1: Pointer to the templated ExecuteSwitchImpl to call.
-//  Argument 2: a2: The value of DEX PC (memory address of the methods bytecode).
-ENTRY ExecuteSwitchImplAsm
-    INCREASE_FRAME 16
-    SAVE_GPR s1, 0
-    SAVE_GPR ra, 8
-
-    mv s1, a2   // s1 = DEX PC
-    CFI_DEFINE_DEX_PC_WITH_OFFSET(0 /* a0 */, 9 /* s1, a.k.a. x9 */, 0)
-    jalr a1     // Call the wrapped method.
-
-    RESTORE_GPR s1, 0
-    RESTORE_GPR ra, 8
-    DECREASE_FRAME 16
-    ret
-END ExecuteSwitchImplAsm
-
-
 .macro INVOKE_STUB_CREATE_FRAME
     // Save RA, FP, xSELF (current thread), A4, A5 (they will be needed in the invoke stub return).
     INCREASE_FRAME 48

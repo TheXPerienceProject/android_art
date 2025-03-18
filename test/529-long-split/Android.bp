@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-529-long-split-expected-stdout",
         ":art-run-test-529-long-split-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

@@ -67,6 +67,12 @@ void JitPatchesARM64::EmitJitRootPatches(
     uint64_t index_in_table = code_generation_data.GetJitClassRootIndex(type_reference);
     PatchJitRootUse(code, roots_data, table_entry_literal, index_in_table);
   }
+  for (const auto& entry : jit_method_type_patches_) {
+    const ProtoReference& proto_reference = entry.first;
+    vixl::aarch64::Literal<uint32_t>* table_entry_literal = entry.second;
+    uint64_t index_in_table = code_generation_data.GetJitMethodTypeRootIndex(proto_reference);
+    PatchJitRootUse(code, roots_data, table_entry_literal, index_in_table);
+  }
 }
 
 vixl::aarch64::Literal<uint32_t>* JitPatchesARM64::DeduplicateBootImageAddressLiteral(
@@ -95,6 +101,19 @@ vixl::aarch64::Literal<uint32_t>* JitPatchesARM64::DeduplicateJitClassLiteral(
   code_generation_data->ReserveJitClassRoot(TypeReference(&dex_file, type_index), handle);
   return jit_class_patches_.GetOrCreate(
       TypeReference(&dex_file, type_index),
+      [this]() {
+        return GetVIXLAssembler()->CreateLiteralDestroyedWithPool<uint32_t>(/* value= */ 0u);
+      });
+}
+
+vixl::aarch64::Literal<uint32_t>* JitPatchesARM64::DeduplicateJitMethodTypeLiteral(
+    const DexFile& dex_file,
+    dex::ProtoIndex proto_index,
+    Handle<mirror::MethodType> handle,
+    CodeGenerationData* code_generation_data) {
+  code_generation_data->ReserveJitMethodTypeRoot(ProtoReference(&dex_file, proto_index), handle);
+  return jit_method_type_patches_.GetOrCreate(
+      ProtoReference(&dex_file, proto_index),
       [this]() {
         return GetVIXLAssembler()->CreateLiteralDestroyedWithPool<uint32_t>(/* value= */ 0u);
       });

@@ -47,7 +47,6 @@ struct NativeLoaderNamespace {
 
   NativeLoaderNamespace(NativeLoaderNamespace&&) = default;
   NativeLoaderNamespace(const NativeLoaderNamespace&) = default;
-  NativeLoaderNamespace& operator=(const NativeLoaderNamespace&) = default;
 
   android_namespace_t* ToRawAndroidNamespace() const { return std::get<0>(raw_); }
   native_bridge_namespace_t* ToRawNativeBridgeNamespace() const { return std::get<1>(raw_); }
@@ -72,8 +71,8 @@ struct NativeLoaderNamespace {
   explicit NativeLoaderNamespace(const std::string& name, native_bridge_namespace_t* ns)
       : name_(name), raw_(ns) {}
 
-  std::string name_;
-  std::variant<android_namespace_t*, native_bridge_namespace_t*> raw_;
+  const std::string name_;
+  const std::variant<android_namespace_t*, native_bridge_namespace_t*> raw_;
 };
 
 }  // namespace android

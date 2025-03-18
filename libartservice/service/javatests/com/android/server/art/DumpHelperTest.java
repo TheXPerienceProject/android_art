@@ -24,12 +24,19 @@ import static com.android.server.art.model.DexoptStatus.DexContainerFileDexoptSt
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.argThat;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import android.annotation.NonNull;
+import android.annotation.SuppressLint;
+import android.content.pm.SigningInfo;
+import android.content.pm.SigningInfoException;
 import android.os.SystemProperties;
 
 import androidx.test.filters.SmallTest;
@@ -70,6 +77,8 @@ public class DumpHelperTest {
     @Mock private ArtManagerLocal mArtManagerLocal;
     @Mock private DexUseManagerLocal mDexUseManagerLocal;
     @Mock private PackageManagerLocal.FilteredSnapshot mSnapshot;
+    @Mock private SigningInfo mSigningInfoA;
+    @Mock private SigningInfo mSigningInfoB;
 
     private DumpHelper mDumpHelper;
 
@@ -99,6 +108,11 @@ public class DumpHelperTest {
         setUpForBar();
         setUpForSdk();
 
+        lenient().when(mSigningInfoA.signersMatchExactly(mSigningInfoA)).thenReturn(true);
+        lenient().when(mSigningInfoA.signersMatchExactly(mSigningInfoB)).thenReturn(false);
+        lenient().when(mSigningInfoB.signersMatchExactly(mSigningInfoB)).thenReturn(true);
+        lenient().when(mSigningInfoB.signersMatchExactly(mSigningInfoA)).thenReturn(false);
+
         mDumpHelper = new DumpHelper(mInjector);
     }
 
@@ -123,7 +137,8 @@ public class DumpHelperTest {
                 + "      class loader context: =VaryingClassLoaderContexts=\n"
                 + "        com.example1.foo (isolated): CLC1\n"
                 + "        com.example3.baz: CLC2\n"
-                + "      used by other apps: [com.example1.foo (isolated) (isa=arm64), com.example3.baz (removed)]\n"
+                + "      used by other apps: [com.example1.foo (isolated) (isa=arm64), "
+                  + "com.example3.baz (removed)]\n"
                 + "    /data/user_de/0/foo/2.apk (public)\n"
                 + "      arm64: [status=speed-profile] [reason=bg-dexopt] [primary-abi]\n"
                 + "        [location is /data/user_de/0/foo/oat/arm64/2.odex]\n"
@@ -146,8 +161,82 @@ public class DumpHelperTest {
                 + "Current GC: CollectorTypeCMC\n";
 
         var stringWriter = new StringWriter();
-        mDumpHelper.dump(new PrintWriter(stringWriter), mSnapshot);
+        mDumpHelper.dump(new PrintWriter(stringWriter), mSnapshot, false /* verifySdmSignatures */);
         assertThat(stringWriter.toString()).isEqualTo(expected);
+    }
+
+    @Test
+    public void testDumpSdmStatusNotFound() throws Exception {
+        when(mInjector.fileExists(any())).thenReturn(false);
+
+        var stringWriter = new StringWriter();
+        mDumpHelper.dumpPackage(new PrintWriter(stringWriter), mSnapshot,
+                getPackageState(PKG_NAME_BAR), true /* verifySdmSignatures */);
+        assertThat(stringWriter.toString()).doesNotContain("sdm:");
+    }
+
+    @Test
+    public void testDumpSdmStatusInvalidSdmSignature() throws Exception {
+        when(mInjector.fileExists("/somewhere/app/bar/base.sdm")).thenReturn(true);
+        when(mInjector.getVerifiedSigningInfo(eq("/somewhere/app/bar/base.sdm"), anyInt()))
+                .thenThrow(SigningInfoException.class);
+
+        var stringWriter = new StringWriter();
+        mDumpHelper.dumpPackage(new PrintWriter(stringWriter), mSnapshot,
+                getPackageState(PKG_NAME_BAR), true /* verifySdmSignatures */);
+        assertThat(stringWriter.toString())
+                .contains("sdm: [sdm-status=pending] [sdm-signature=invalid-sdm-signature]");
+    }
+
+    @Test
+    public void testDumpSdmStatusInvalidApkSignature() throws Exception {
+        when(mInjector.fileExists("/somewhere/app/bar/base.sdm")).thenReturn(true);
+        doReturn(mSigningInfoA)
+                .when(mInjector)
+                .getVerifiedSigningInfo(eq("/somewhere/app/bar/base.sdm"), anyInt());
+        doThrow(SigningInfoException.class)
+                .when(mInjector)
+                .getVerifiedSigningInfo(eq("/somewhere/app/bar/base.apk"), anyInt());
+
+        var stringWriter = new StringWriter();
+        mDumpHelper.dumpPackage(new PrintWriter(stringWriter), mSnapshot,
+                getPackageState(PKG_NAME_BAR), true /* verifySdmSignatures */);
+        assertThat(stringWriter.toString())
+                .contains("sdm: [sdm-status=pending] [sdm-signature=invalid-apk-signature]");
+    }
+
+    @Test
+    public void testDumpSdmStatusSignersNotMatch() throws Exception {
+        when(mInjector.fileExists("/somewhere/app/bar/base.sdm")).thenReturn(true);
+        doReturn(mSigningInfoA)
+                .when(mInjector)
+                .getVerifiedSigningInfo(eq("/somewhere/app/bar/base.sdm"), anyInt());
+        doReturn(mSigningInfoB)
+                .when(mInjector)
+                .getVerifiedSigningInfo(eq("/somewhere/app/bar/base.apk"), anyInt());
+
+        var stringWriter = new StringWriter();
+        mDumpHelper.dumpPackage(new PrintWriter(stringWriter), mSnapshot,
+                getPackageState(PKG_NAME_BAR), true /* verifySdmSignatures */);
+        assertThat(stringWriter.toString())
+                .contains("sdm: [sdm-status=pending] [sdm-signature=mismatched-signers]");
+    }
+
+    @Test
+    public void testDumpSdmStatusVerified() throws Exception {
+        when(mInjector.fileExists("/somewhere/app/bar/base.sdm")).thenReturn(true);
+        doReturn(mSigningInfoA)
+                .when(mInjector)
+                .getVerifiedSigningInfo(eq("/somewhere/app/bar/base.sdm"), anyInt());
+        doReturn(mSigningInfoA)
+                .when(mInjector)
+                .getVerifiedSigningInfo(eq("/somewhere/app/bar/base.apk"), anyInt());
+
+        var stringWriter = new StringWriter();
+        mDumpHelper.dumpPackage(new PrintWriter(stringWriter), mSnapshot,
+                getPackageState(PKG_NAME_BAR), true /* verifySdmSignatures */);
+        assertThat(stringWriter.toString())
+                .contains("sdm: [sdm-status=pending] [sdm-signature=verified]");
     }
 
     private PackageState createPackageState(@NonNull String packageName, int appId, boolean isApex,
@@ -316,5 +405,10 @@ public class DumpHelperTest {
                 .when(mDexUseManagerLocal.getPrimaryDexLoaders(
                         PKG_NAME_SDK, "/somewhere/app/sdk/base.apk"))
                 .thenReturn(Set.of());
+    }
+
+    @SuppressLint("DirectInvocationOnMock")
+    private PackageState getPackageState(String packageName) {
+        return mSnapshot.getPackageState(packageName);
     }
 }

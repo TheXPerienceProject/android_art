@@ -72,6 +72,17 @@ cc_library_headers {
     ],
 }
 
+cc_library_headers {
+    name: "libarttools_testing",
+    defaults: ["art_defaults"],
+    host_supported: true,
+    export_include_dirs: ["include_testing"],
+    apex_available: [
+        "com.android.art",
+        "com.android.art.debug",
+    ],
+}
+
 art_cc_defaults {
     name: "art_libarttools_tests_defaults",
     srcs: [
@@ -79,6 +90,9 @@ art_cc_defaults {
         "cmdline_builder_test.cc",
         "system_properties_test.cc",
         "tools_test.cc",
+    ],
+    header_libs: [
+        "libarttools_testing",
     ],
     shared_libs: [
         "liblog", // libbase dependency

@@ -20,7 +20,7 @@
 #include <iosfwd>
 #include <string>
 
-#include <base/file_utils.h>
+#include "base/file_utils.h"
 
 namespace art {
 namespace odrefresh {
@@ -29,11 +29,11 @@ namespace odrefresh {
 class OdrArtifacts {
  public:
   static OdrArtifacts ForBootImage(const std::string& image_path) {
-    return OdrArtifacts(image_path, /*image_kind=*/"image", /*aot_extension=*/"oat");
+    return OdrArtifacts(image_path, /*image_kind=*/"image", /*aot_extension=*/kOatExtension);
   }
 
   static OdrArtifacts ForSystemServer(const std::string& image_path) {
-    return OdrArtifacts(image_path, /*image_kind=*/"app-image", /*aot_extension=*/"odex");
+    return OdrArtifacts(image_path, /*image_kind=*/"app-image", /*aot_extension=*/kOdexExtension);
   }
 
   const std::string& ImagePath() const { return image_path_; }
@@ -46,7 +46,7 @@ class OdrArtifacts {
       : image_path_{image_path},
         image_kind_{image_kind},
         oat_path_{ReplaceFileExtension(image_path, aot_extension)},
-        vdex_path_{ReplaceFileExtension(image_path, "vdex")} {}
+        vdex_path_{ReplaceFileExtension(image_path, kVdexExtension)} {}
 
   OdrArtifacts() = delete;
   OdrArtifacts(const OdrArtifacts&) = delete;

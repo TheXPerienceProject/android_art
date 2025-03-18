@@ -234,14 +234,19 @@ public class BackgroundDexoptJob implements ArtServiceJobInterface {
             dexoptResultByPass = mInjector.getArtManagerLocal().dexoptPackages(snapshot,
                     ReasonMapping.REASON_BG_DEXOPT, cancellationSignal, Runnable::run,
                     progressCallbacks);
+        }
 
-            // For simplicity, we don't support cancelling the following operation in the middle.
-            // This is fine because it typically takes only a few seconds.
-            if (!cancellationSignal.isCanceled()) {
-                // We do the cleanup after dexopt so that it doesn't affect the `getSizeBeforeBytes`
-                // field in the result that we send to callbacks. Admittedly, this will cause us to
-                // lose some chance to dexopt when the storage is very low, but it's fine because we
-                // can still dexopt in the next run.
+        // For simplicity, we don't support cancelling the following operation in the middle.
+        // This is fine because it typically takes only a few seconds.
+        if (!cancellationSignal.isCanceled()) {
+            // We do the cleanup after dexopt so that it doesn't affect the `getSizeBeforeBytes`
+            // field in the result that we send to callbacks. Admittedly, this will cause us to
+            // lose some chance to dexopt when the storage is very low, but it's fine because we
+            // can still dexopt in the next run.
+            //
+            // Take a new snapshot since the one used for dexoptPackages above is old by now and
+            // new packages may have been installed.
+            try (var snapshot = mInjector.getPackageManagerLocal().withFilteredSnapshot()) {
                 long freedBytes = mInjector.getArtManagerLocal().cleanup(snapshot);
                 AsLog.i(String.format("Freed %d bytes", freedBytes));
             }

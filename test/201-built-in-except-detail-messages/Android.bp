@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-201-built-in-except-detail-messages-expected-stdout",
         ":art-run-test-201-built-in-except-detail-messages-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

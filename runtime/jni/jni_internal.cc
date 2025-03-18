@@ -535,7 +535,7 @@ ArtField* FindFieldJNI(const ScopedObjectAccess& soa,
     DCHECK(field == nullptr);
   } else if (sig[1] != '\0') {
     Handle<mirror::ClassLoader> class_loader(hs.NewHandle(c->GetClassLoader()));
-    field_type = class_linker->FindClass(soa.Self(), sig, class_loader);
+    field_type = class_linker->FindClass(soa.Self(), sig, strlen(sig), class_loader);
   } else {
     field_type = class_linker->FindPrimitiveClass(*sig);
   }
@@ -675,14 +675,11 @@ class JNI {
     ClassLinker* class_linker = runtime->GetClassLinker();
     std::string descriptor(NormalizeJniClassDescriptor(name));
     ScopedObjectAccess soa(env);
-    ObjPtr<mirror::Class> c = nullptr;
-    if (runtime->IsStarted()) {
-      StackHandleScope<1> hs(soa.Self());
-      Handle<mirror::ClassLoader> class_loader(hs.NewHandle(GetClassLoader<kEnableIndexIds>(soa)));
-      c = class_linker->FindClass(soa.Self(), descriptor.c_str(), class_loader);
-    } else {
-      c = class_linker->FindSystemClass(soa.Self(), descriptor.c_str());
-    }
+    StackHandleScope<1> hs(soa.Self());
+    Handle<mirror::ClassLoader> class_loader = hs.NewHandle(
+        runtime->IsStarted() ? GetClassLoader<kEnableIndexIds>(soa) : nullptr);
+    ObjPtr<mirror::Class> c = class_linker->FindClass(
+        soa.Self(), descriptor.c_str(), descriptor.length(), class_loader);
     return soa.AddLocalReference<jclass>(c);
   }
 

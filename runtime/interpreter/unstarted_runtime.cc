@@ -142,7 +142,8 @@ static void UnstartedRuntimeFindClass(Thread* self,
   std::string descriptor(DotToDescriptor(className->ToModifiedUtf8().c_str()));
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
 
-  ObjPtr<mirror::Class> found = class_linker->FindClass(self, descriptor.c_str(), class_loader);
+  ObjPtr<mirror::Class> found =
+      class_linker->FindClass(self, descriptor.c_str(), descriptor.length(), class_loader);
   if (found != nullptr && !found->CheckIsVisibleWithTargetSdk(self)) {
     CHECK(self->IsExceptionPending());
     return;
@@ -626,9 +627,7 @@ static void GetResourceAsStream(Thread* self,
 
   // Create a ByteArrayInputStream.
   Handle<mirror::Class> h_class(hs.NewHandle(
-      runtime->GetClassLinker()->FindClass(self,
-                                           "Ljava/io/ByteArrayInputStream;",
-                                           ScopedNullHandle<mirror::ClassLoader>())));
+      runtime->GetClassLinker()->FindSystemClass(self, "Ljava/io/ByteArrayInputStream;")));
   if (h_class == nullptr) {
     AbortTransactionOrFail(self, "Could not find ByteArrayInputStream class");
     return;
@@ -753,6 +752,47 @@ void UnstartedRuntime::UnstartedConstructorNewInstance0(
   } else {
     result->SetL(receiver.Get());
   }
+}
+
+void UnstartedRuntime::UnstartedJNIExecutableGetParameterTypesInternal(
+    Thread* self, ArtMethod*, mirror::Object* receiver, uint32_t*, JValue* result) {
+  StackHandleScope<3> hs(self);
+  ScopedObjectAccessUnchecked soa(self);
+  Handle<mirror::Executable> executable(hs.NewHandle(
+      reinterpret_cast<mirror::Executable*>(receiver)));
+  if (executable == nullptr) {
+    AbortTransactionOrFail(self, "Receiver can't be null in GetParameterTypesInternal");
+  }
+
+  ArtMethod* method = executable->GetArtMethod();
+  const dex::TypeList* params = method->GetParameterTypeList();
+  if (params == nullptr) {
+    result->SetL(nullptr);
+    return;
+  }
+
+  const uint32_t num_params = params->Size();
+
+  ObjPtr<mirror::Class> class_array_class = GetClassRoot<mirror::ObjectArray<mirror::Class>>();
+  Handle<mirror::ObjectArray<mirror::Class>> ptypes = hs.NewHandle(
+      mirror::ObjectArray<mirror::Class>::Alloc(soa.Self(), class_array_class, num_params));
+  if (ptypes.IsNull()) {
+    AbortTransactionOrFail(self, "Could not allocate array of mirror::Class");
+    return;
+  }
+
+  MutableHandle<mirror::Class> param(hs.NewHandle<mirror::Class>(nullptr));
+  for (uint32_t i = 0; i < num_params; ++i) {
+    const dex::TypeIndex type_idx = params->GetTypeItem(i).type_idx_;
+    param.Assign(Runtime::Current()->GetClassLinker()->ResolveType(type_idx, method));
+    if (param.Get() == nullptr) {
+      AbortTransactionOrFail(self, "Could not resolve type");
+      return;
+    }
+    ptypes->SetWithoutChecks<false>(i, param.Get());
+  }
+
+  result->SetL(ptypes.Get());
 }
 
 void UnstartedRuntime::UnstartedVmClassLoaderFindLoadedClass(
@@ -974,9 +1014,7 @@ static void GetSystemProperty(Thread* self,
   // Get the storage class.
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   Handle<mirror::Class> h_props_class(hs.NewHandle(
-      class_linker->FindClass(self,
-                              "Ljava/lang/AndroidHardcodedSystemProperties;",
-                              ScopedNullHandle<mirror::ClassLoader>())));
+      class_linker->FindSystemClass(self, "Ljava/lang/AndroidHardcodedSystemProperties;")));
   if (h_props_class == nullptr) {
     AbortTransactionOrFail(self, "Could not find AndroidHardcodedSystemProperties");
     return;
@@ -1046,6 +1084,13 @@ void UnstartedRuntime::UnstartedSystemGetPropertyWithDefault(
   GetSystemProperty(self, shadow_frame, result, arg_offset, true);
 }
 
+void UnstartedRuntime::UnstartedSystemNanoTime(Thread* self, ShadowFrame*, JValue*, size_t) {
+  // We don't want `System.nanoTime` to be called at compile time because `java.util.Random`'s
+  // default constructor uses `nanoTime` to initialize seed and having it set during compile time
+  // makes that `java.util.Random` instance deterministic for given system image.
+  AbortTransactionOrFail(self, "Should not be called by UnstartedRuntime");
+}
+
 static std::string GetImmediateCaller(ShadowFrame* shadow_frame)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   if (shadow_frame->GetLink() == nullptr) {
@@ -1076,8 +1121,7 @@ static ObjPtr<mirror::Object> CreateInstanceOf(Thread* self, const char* class_d
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Find the requested class.
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  ObjPtr<mirror::Class> klass =
-      class_linker->FindClass(self, class_descriptor, ScopedNullHandle<mirror::ClassLoader>());
+  ObjPtr<mirror::Class> klass = class_linker->FindSystemClass(self, class_descriptor);
   if (klass == nullptr) {
     AbortTransactionOrFail(self, "Could not load class %s", class_descriptor);
     return nullptr;
@@ -1108,8 +1152,9 @@ void UnstartedRuntime::UnstartedThreadLocalGet(Thread* self,
                                                ShadowFrame* shadow_frame,
                                                JValue* result,
                                                [[maybe_unused]] size_t arg_offset) {
-  if (CheckCallers(shadow_frame, { "jdk.internal.math.FloatingDecimal$BinaryToASCIIBuffer "
-                                       "jdk.internal.math.FloatingDecimal.getBinaryToASCIIBuffer()" })) {
+  if (CheckCallers(shadow_frame,
+                   { "jdk.internal.math.FloatingDecimal$BinaryToASCIIBuffer "
+                         "jdk.internal.math.FloatingDecimal.getBinaryToASCIIBuffer()" })) {
     result->SetL(CreateInstanceOf(self, "Ljdk/internal/math/FloatingDecimal$BinaryToASCIIBuffer;"));
   } else {
     AbortTransactionOrFail(self,

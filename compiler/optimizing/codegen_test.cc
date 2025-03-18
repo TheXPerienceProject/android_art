@@ -56,7 +56,7 @@ static ::std::vector<CodegenTargetConfig> GetTargetConfigs() {
   };
 
   for (const CodegenTargetConfig& test_config : test_config_candidates) {
-    if (CanExecute(test_config.GetInstructionSet())) {
+    if (CanExecuteISA(test_config.GetInstructionSet())) {
       v.push_back(test_config);
     }
   }
@@ -73,6 +73,12 @@ class CodegenTest : public CommonCompilerTest, public OptimizingUnitTestHelper {
                       int64_t j,
                       DataType::Type type,
                       const CodegenTargetConfig target_config);
+  void TestPackedSwitch(const CodegenTargetConfig target_config);
+  void TestVectorComparison(IfCondition condition,
+                            int64_t lhs_value,
+                            int64_t rhs_value,
+                            DataType::Type type,
+                            CodeGenerator* codegen);
 };
 
 void CodegenTest::TestCode(const std::vector<uint16_t>& data, bool has_result, int32_t expected) {
@@ -593,6 +599,35 @@ TEST_F(CodegenTest, ReturnDivInt2Addr) {
   TestCode(data, true, 2);
 }
 
+static bool GetExpectedResultFromComparison(IfCondition condition, int64_t lhs, int64_t rhs) {
+  const uint64_t unsigned_lhs = lhs;
+  const uint64_t unsigned_rhs = rhs;
+  switch (condition) {
+    case kCondEQ:
+      return lhs == rhs;
+    case kCondNE:
+      return lhs != rhs;
+    case kCondLT:
+      return lhs < rhs;
+    case kCondLE:
+      return lhs <= rhs;
+    case kCondGT:
+      return lhs > rhs;
+    case kCondGE:
+      return lhs >= rhs;
+    case kCondB:
+      return unsigned_lhs < unsigned_rhs;
+    case kCondBE:
+      return unsigned_lhs <= unsigned_rhs;
+    case kCondA:
+      return unsigned_lhs > unsigned_rhs;
+    case kCondAE:
+      return unsigned_lhs >= unsigned_rhs;
+  }
+  LOG(FATAL) << "Condition '" << enum_cast<uint32_t>(condition) << "' not supported: ";
+  UNREACHABLE();
+}
+
 // Helper method.
 void CodegenTest::TestComparison(IfCondition condition,
                                  int64_t i,
@@ -612,47 +647,13 @@ void CodegenTest::TestComparison(IfCondition condition,
     op2 = graph_->GetLongConstant(j);
   }
 
-  bool expected_result = false;
-  const uint64_t x = i;
-  const uint64_t y = j;
-  switch (condition) {
-    case kCondEQ:
-      expected_result = (i == j);
-      break;
-    case kCondNE:
-      expected_result = (i != j);
-      break;
-    case kCondLT:
-      expected_result = (i < j);
-      break;
-    case kCondLE:
-      expected_result = (i <= j);
-      break;
-    case kCondGT:
-      expected_result = (i > j);
-      break;
-    case kCondGE:
-      expected_result = (i >= j);
-      break;
-    case kCondB:
-      expected_result = (x < y);
-      break;
-    case kCondBE:
-      expected_result = (x <= y);
-      break;
-    case kCondA:
-      expected_result = (x > y);
-      break;
-    case kCondAE:
-      expected_result = (x >= y);
-      break;
-  }
   HInstruction* comparison = MakeCondition(block, condition, op1, op2);
   MakeReturn(block, comparison);
 
   graph_->BuildDominatorTree();
   std::unique_ptr<CompilerOptions> compiler_options =
       CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
+  bool expected_result = GetExpectedResultFromComparison(condition, i, j);
   RunCode(target_config, *compiler_options, graph_, [](HGraph*) {}, true, expected_result);
 }
 
@@ -679,6 +680,72 @@ TEST_F(CodegenTest, ComparisonsLong) {
         }
       }
     }
+  }
+}
+
+// Tests a PackedSwitch in a very large HGraph; validates that the switch jump table is in
+// range for the PC-relative load in the codegen visitor.
+void CodegenTest::TestPackedSwitch(const CodegenTargetConfig target_config) {
+  HBasicBlock* return_block = InitEntryMainExitGraph();
+  constexpr DataType::Type data_type = DataType::Type::kInt32;
+
+  // A number of entries - we are interested to test jump table implementation.
+  constexpr size_t kNumSwitchEntries = 10;
+
+  // Number of jump targets (including a 'default' case).
+  constexpr size_t kNumBB = kNumSwitchEntries + 1;
+  // Some arbitrary value to be used as input.
+  constexpr int kInputValue = kNumBB - 4;
+
+  HInstruction* input = graph_->GetIntConstant(kInputValue);
+  HIntConstant* constant_1 = graph_->GetIntConstant(1);
+
+  HBasicBlock* switch_block = AddNewBlock();
+  entry_block_->ReplaceSuccessor(return_block, switch_block);
+
+  HPackedSwitch* hswitch = new (GetAllocator()) HPackedSwitch(0, kNumSwitchEntries, input);
+  switch_block->AddInstruction(hswitch);
+
+  std::vector<HInstruction*> phi_inputs {};
+
+  // Add switch jump target blocks.
+  for (int i = 0; i < kNumBB; i++) {
+    HBasicBlock* case_block = AddNewBlock();
+    case_block->AddPredecessor(switch_block);
+    case_block->AddSuccessor(return_block);
+
+    HIntConstant* case_value = graph_->GetIntConstant(i);
+    HAdd* add = MakeBinOp<HAdd>(case_block, data_type, input, case_value);
+    phi_inputs.emplace_back(add);
+
+    MakeGoto(case_block);
+  }
+
+  HPhi* phi = MakePhi(return_block, phi_inputs);
+  HInstruction* return_val = phi;
+
+  // Emit a huge number of HAdds - to simulate a very large HGraph.
+  constexpr int kNumOfAdds = 2 * 1024 * 1024;
+  for (int i = 0; i < kNumOfAdds; i++) {
+    return_val = MakeBinOp<HAdd>(return_block, data_type, return_val, constant_1);
+  }
+
+  MakeReturn(return_block, return_val);
+
+  graph_->BuildDominatorTree();
+  EXPECT_TRUE(CheckGraph());
+
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
+  RunCode(target_config,
+          *compiler_options,
+          graph_,
+          [](HGraph*) {}, true, kNumOfAdds + 2 * kInputValue);
+}
+
+TEST_F(CodegenTest, PackedSwitchInHugeMethod) {
+  for (CodegenTargetConfig target_config : GetTargetConfigs()) {
+    TestPackedSwitch(target_config);
   }
 }
 
@@ -864,6 +931,123 @@ TEST_F(CodegenTest, ARM64FrameSizeNoSIMD) {
 
   EXPECT_EQ(codegen.GetFpuSpillSize(), kExpectedFPSpillSize);
 }
+
+// This test checks that the result of the VecPredToBoolean instruction doesn't depend on
+// conditional flags that can be updated by other instructions. For example:
+//
+//   VecPredWhile p0, opa, opb
+//   Below opb, opa
+//   VecPredToBoolean p0
+//
+// where Below updates conditions flags after VecPredWhile.
+TEST_F(CodegenTest, ARM64SvePredicateToBoolean) {
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "default", "sve");
+  for (int i = 0; i < 2; i++) {
+    for (int j = 0; j < 2; j++) {
+      HBasicBlock* block = InitEntryMainExitGraph();
+      TestCodeGeneratorARM64 codegen(graph_, *compiler_options);
+      if (!codegen.SupportsPredicatedSIMD()) {
+        GTEST_SKIP() << "Predicated SIMD is not supported.";
+      }
+
+      HInstruction *opa = graph_->GetIntConstant(i);
+      HInstruction *opb = graph_->GetIntConstant(j);
+      HVecPredWhile *pred_while = MakeVecPredWhile(block,
+                                                  opa,
+                                                  opb,
+                                                  HVecPredWhile::CondKind::kLO,
+                                                  DataType::Type::kInt32);
+      // Update condition flags by using Below instruction.
+      MakeCondition(block, IfCondition::kCondB, opb, opa);
+      HVecPredToBoolean *boolean = MakeVecPredToBoolean(block,
+                                                        pred_while,
+                                                        HVecPredToBoolean::PCondKind::kNFirst,
+                                                        DataType::Type::kInt32);
+      MakeReturn(block, boolean);
+
+      graph_->SetHasPredicatedSIMD(true);
+      graph_->BuildDominatorTree();
+
+      if (CanExecute(codegen)) {
+        RunCode(&codegen, graph_, [](HGraph*) {}, true, i >= j);
+      }
+    }
+  }
+}
+
+void CodegenTest::TestVectorComparison(IfCondition condition,
+                                       int64_t lhs_value,
+                                       int64_t rhs_value,
+                                       DataType::Type type,
+                                       CodeGenerator* codegen) {
+  HBasicBlock* block = entry_block_->GetSingleSuccessor();
+
+  size_t vector_size_in_bytes = codegen->GetSIMDRegisterWidth();
+
+  HVecPredSetAll* predicate = MakeVecPredSetAll(block,
+                                                graph_->GetIntConstant(1),
+                                                type,
+                                                vector_size_in_bytes);
+  HVecReplicateScalar* op1 = MakeVecReplicateScalar(block,
+                                                    graph_->GetConstant(type, lhs_value),
+                                                    type,
+                                                    vector_size_in_bytes,
+                                                    predicate);
+  HVecReplicateScalar* op2 = MakeVecReplicateScalar(block,
+                                                    graph_->GetConstant(type, rhs_value),
+                                                    type,
+                                                    vector_size_in_bytes,
+                                                    predicate);
+  HVecCondition* comparison = MakeVecCondition(block,
+                                               condition,
+                                               op1,
+                                               op2,
+                                               type,
+                                               vector_size_in_bytes,
+                                               predicate);
+  HInstruction* boolean_return = MakeVecPredToBoolean(block,
+                                                      comparison,
+                                                      HVecPredToBoolean::PCondKind::kFirst,
+                                                      type,
+                                                      vector_size_in_bytes);
+  MakeReturn(block, boolean_return);
+
+  graph_->SetHasPredicatedSIMD(true);
+  graph_->BuildDominatorTree();
+
+  if (CanExecute(*codegen)) {
+    bool expected_result = GetExpectedResultFromComparison(condition, lhs_value, rhs_value);
+    RunCode(codegen, graph_, [](HGraph*) {}, true, expected_result);
+  }
+}
+
+// Define tests ensuring that all types of conditions can be generated correctly and return the
+// expected result.
+#define DEFINE_CONDITION_TESTS(CondType)                                                         \
+TEST_F(CodegenTest, ComparisonsVector##CondType) {                                               \
+  std::unique_ptr<CompilerOptions> compiler_options =                                            \
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "default", "sve");       \
+  for (int64_t i = -1; i <= 1; i++) {                                                            \
+    for (int64_t j = -1; j <= 1; j++) {                                                          \
+      for (int cond = kCondFirst; cond <= kCondLast; cond++) {                                   \
+        InitEntryMainExitGraph();                                                                \
+        TestCodeGeneratorARM64 codegen(graph_, *compiler_options);                               \
+        if (!codegen.SupportsPredicatedSIMD()) {                                                 \
+          GTEST_SKIP() << "Predicated SIMD is not supported.";                                   \
+        }                                                                                        \
+        TestVectorComparison(                                                                    \
+            static_cast<IfCondition>(cond), i, j, DataType::Type::k##CondType, &codegen);        \
+      }                                                                                          \
+    }                                                                                            \
+  }                                                                                              \
+}
+DEFINE_CONDITION_TESTS(Uint8)
+DEFINE_CONDITION_TESTS(Int8)
+DEFINE_CONDITION_TESTS(Uint16)
+DEFINE_CONDITION_TESTS(Int16)
+DEFINE_CONDITION_TESTS(Int32)
+#undef DEFINE_CONDITION_TESTS
 
 #endif
 

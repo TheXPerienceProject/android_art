@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-168-vmstack-annotated-expected-stdout",
         ":art-run-test-168-vmstack-annotated-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

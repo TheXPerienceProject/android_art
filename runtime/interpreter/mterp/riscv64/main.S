@@ -249,9 +249,12 @@ END \name
 //   - xSELF
 // Clobbers: t0
 .macro CHECK_AND_UPDATE_SHARED_MEMORY_METHOD if_hot, if_not_hot
+    // TODO(solanes): Figure out if there's a way to load t0 only once.
     lwu t0, ART_METHOD_ACCESS_FLAGS_OFFSET(a0)
     BRANCH_IF_BIT_CLEAR t0, t0, ART_METHOD_IS_MEMORY_SHARED_FLAG_BIT, \if_hot
-
+    lwu t0, ART_METHOD_ACCESS_FLAGS_OFFSET(a0)
+    // Intrinsics are always in the boot image and considered hot.
+    BRANCH_IF_BIT_SET t0, t0, ART_METHOD_IS_INTRINSIC_FLAG_BIT, \if_hot
     lwu t0, THREAD_SHARED_METHOD_HOTNESS_OFFSET(xSELF)  // t0 := hotness
     beqz t0, \if_hot
 

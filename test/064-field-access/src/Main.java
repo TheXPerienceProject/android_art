@@ -53,6 +53,26 @@ public class Main {
       System.out.println("Got unexpected failure " + e);
     }
 
+    try {
+      new GetInstanceFieldOnUninitializedThis();
+      // We actually allow this for app compat.
+      // System.out.println("Unexpectedly constructed GetInstanceFieldOnUninitializedThis");
+      System.out.println("GetInstanceFieldOnUninitializedThis allowed for app compat");
+    } catch (VerifyError expected) {
+      System.out.println("Got the correct but unexpected failure (should allow for app compat)");
+    } catch (Exception e) {
+      System.out.println("Got unexpected failure " + e);
+    }
+
+    try {
+      new PutInstanceFieldOnUninitializedThisViaSubClass();
+      System.out.println("Unexpectedly constructed PutInstanceFieldOnUninitializedThisViaSubClass");
+    } catch (VerifyError expected) {
+      System.out.println("Got expected failure");
+    } catch (Exception e) {
+      System.out.println("Got unexpected failure " + e);
+    }
+
     OOMEOnNullAccess.main(args);
   }
 

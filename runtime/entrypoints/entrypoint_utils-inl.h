@@ -387,16 +387,15 @@ inline ArtField* ResolveFieldWithAccessChecks(Thread* self,
   }
 
   caller = caller->GetInterfaceMethodIfProxy(class_linker->GetImagePointerSize());
-
-  StackHandleScope<2> hs(self);
-  Handle<mirror::DexCache> h_dex_cache(hs.NewHandle(caller->GetDexCache()));
-  Handle<mirror::ClassLoader> h_class_loader(hs.NewHandle(caller->GetClassLoader()));
-
-  ArtField* resolved_field = class_linker->ResolveFieldJLS(field_index,
-                                                           h_dex_cache,
-                                                           h_class_loader);
+  ArtField* resolved_field = caller->GetDexCache()->GetResolvedField(field_index);
   if (resolved_field == nullptr) {
-    return nullptr;
+    StackHandleScope<2> hs(self);
+    Handle<mirror::DexCache> h_dex_cache(hs.NewHandle(caller->GetDexCache()));
+    Handle<mirror::ClassLoader> h_class_loader(hs.NewHandle(caller->GetClassLoader()));
+    resolved_field = class_linker->ResolveFieldJLS(field_index, h_dex_cache, h_class_loader);
+    if (resolved_field == nullptr) {
+      return nullptr;
+    }
   }
 
   ObjPtr<mirror::Class> fields_class = resolved_field->GetDeclaringClass();

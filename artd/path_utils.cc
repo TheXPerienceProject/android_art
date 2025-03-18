@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "aidl/com/android/server/art/ArtConstants.h"
 #include "aidl/com/android/server/art/BnArtd.h"
 #include "android-base/errors.h"
 #include "android-base/result.h"
@@ -37,6 +38,7 @@ namespace artd {
 
 namespace {
 
+using ::aidl::com::android::server::art::ArtConstants;
 using ::aidl::com::android::server::art::ArtifactsPath;
 using ::aidl::com::android::server::art::DexMetadataPath;
 using ::aidl::com::android::server::art::OutputArtifacts;
@@ -112,10 +114,10 @@ std::vector<std::string> ListManagedFiles(const std::string& android_data,
       // we use more granular patterns to avoid accidentally deleting apps' files.
       std::string secondary_oat_dir = data_dir + "/**/oat";
       for (const char* suffix : {"", ".*.tmp", kPreRebootSuffix}) {
-        patterns.push_back(secondary_oat_dir + "/*.prof" + suffix);
-        patterns.push_back(secondary_oat_dir + "/*/*.odex" + suffix);
-        patterns.push_back(secondary_oat_dir + "/*/*.vdex" + suffix);
-        patterns.push_back(secondary_oat_dir + "/*/*.art" + suffix);
+        patterns.push_back(secondary_oat_dir + "/*" + ArtConstants::PROFILE_FILE_EXT + suffix);
+        patterns.push_back(secondary_oat_dir + "/*/*" + kOdexExtension + suffix);
+        patterns.push_back(secondary_oat_dir + "/*/*" + kVdexExtension + suffix);
+        patterns.push_back(secondary_oat_dir + "/*/*" + kArtExtension + suffix);
       }
       // Runtime image files.
       patterns.push_back(RuntimeImage::GetRuntimeImageDir(data_dir) + "**");
@@ -183,8 +185,8 @@ Result<RawArtifactsPath> BuildArtifactsPath(const ArtifactsPath& artifacts_path)
     }
   }
 
-  path.vdex_path = ReplaceFileExtension(path.oat_path, "vdex");
-  path.art_path = ReplaceFileExtension(path.oat_path, "art");
+  path.vdex_path = ReplaceFileExtension(path.oat_path, kVdexExtension);
+  path.art_path = ReplaceFileExtension(path.oat_path, kArtExtension);
 
   if (artifacts_path.isPreReboot) {
     path.oat_path += kPreRebootSuffix;
@@ -199,36 +201,39 @@ Result<std::string> BuildPrimaryRefProfilePath(
     const PrimaryRefProfilePath& primary_ref_profile_path) {
   OR_RETURN(ValidatePathElement(primary_ref_profile_path.packageName, "packageName"));
   OR_RETURN(ValidatePathElementSubstring(primary_ref_profile_path.profileName, "profileName"));
-  return ART_FORMAT("{}/misc/profiles/ref/{}/{}.prof{}",
+  return ART_FORMAT("{}/misc/profiles/ref/{}/{}{}{}",
                     OR_RETURN(GetAndroidDataOrError()),
                     primary_ref_profile_path.packageName,
                     primary_ref_profile_path.profileName,
+                    ArtConstants::PROFILE_FILE_EXT,
                     primary_ref_profile_path.isPreReboot ? kPreRebootSuffix : "");
 }
 
 Result<std::string> BuildPrebuiltProfilePath(const PrebuiltProfilePath& prebuilt_profile_path) {
   OR_RETURN(ValidateDexPath(prebuilt_profile_path.dexPath));
-  return prebuilt_profile_path.dexPath + ".prof";
+  return prebuilt_profile_path.dexPath + ArtConstants::PROFILE_FILE_EXT;
 }
 
 Result<std::string> BuildPrimaryCurProfilePath(
     const PrimaryCurProfilePath& primary_cur_profile_path) {
   OR_RETURN(ValidatePathElement(primary_cur_profile_path.packageName, "packageName"));
   OR_RETURN(ValidatePathElementSubstring(primary_cur_profile_path.profileName, "profileName"));
-  return ART_FORMAT("{}/misc/profiles/cur/{}/{}/{}.prof",
+  return ART_FORMAT("{}/misc/profiles/cur/{}/{}/{}{}",
                     OR_RETURN(GetAndroidDataOrError()),
                     primary_cur_profile_path.userId,
                     primary_cur_profile_path.packageName,
-                    primary_cur_profile_path.profileName);
+                    primary_cur_profile_path.profileName,
+                    ArtConstants::PROFILE_FILE_EXT);
 }
 
 Result<std::string> BuildSecondaryRefProfilePath(
     const SecondaryRefProfilePath& secondary_ref_profile_path) {
   OR_RETURN(ValidateDexPath(secondary_ref_profile_path.dexPath));
   std::filesystem::path dex_path(secondary_ref_profile_path.dexPath);
-  return ART_FORMAT("{}/oat/{}.prof{}",
+  return ART_FORMAT("{}/oat/{}{}{}",
                     dex_path.parent_path().string(),
                     dex_path.filename().string(),
+                    ArtConstants::PROFILE_FILE_EXT,
                     secondary_ref_profile_path.isPreReboot ? kPreRebootSuffix : "");
 }
 
@@ -236,8 +241,10 @@ Result<std::string> BuildSecondaryCurProfilePath(
     const SecondaryCurProfilePath& secondary_cur_profile_path) {
   OR_RETURN(ValidateDexPath(secondary_cur_profile_path.dexPath));
   std::filesystem::path dex_path(secondary_cur_profile_path.dexPath);
-  return ART_FORMAT(
-      "{}/oat/{}.cur.prof", dex_path.parent_path().string(), dex_path.filename().string());
+  return ART_FORMAT("{}/oat/{}.cur{}",
+                    dex_path.parent_path().string(),
+                    dex_path.filename().string(),
+                    ArtConstants::PROFILE_FILE_EXT);
 }
 
 Result<std::string> BuildWritableProfilePath(const WritableProfilePath& profile_path) {
@@ -265,7 +272,7 @@ Result<std::string> BuildTmpProfilePath(const TmpProfilePath& tmp_profile_path) 
 
 Result<std::string> BuildDexMetadataPath(const DexMetadataPath& dex_metadata_path) {
   OR_RETURN(ValidateDexPath(dex_metadata_path.dexPath));
-  return ReplaceFileExtension(dex_metadata_path.dexPath, "dm");
+  return ReplaceFileExtension(dex_metadata_path.dexPath, kDmExtension);
 }
 
 Result<std::string> BuildProfileOrDmPath(const ProfilePath& profile_path) {

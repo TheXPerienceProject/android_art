@@ -370,7 +370,6 @@ static void CompileMethodHarness(
     CompilerDriver* driver,
     const dex::CodeItem* code_item,
     uint32_t access_flags,
-    InvokeType invoke_type,
     uint16_t class_def_idx,
     uint32_t method_idx,
     Handle<mirror::ClassLoader> class_loader,
@@ -386,7 +385,6 @@ static void CompileMethodHarness(
                                driver,
                                code_item,
                                access_flags,
-                               invoke_type,
                                class_def_idx,
                                method_idx,
                                class_loader,
@@ -456,7 +454,6 @@ static void CompileMethodQuick(
     CompilerDriver* driver,
     const dex::CodeItem* code_item,
     uint32_t access_flags,
-    InvokeType invoke_type,
     uint16_t class_def_idx,
     uint32_t method_idx,
     Handle<mirror::ClassLoader> class_loader,
@@ -467,7 +464,6 @@ static void CompileMethodQuick(
                                   CompilerDriver* driver,
                                   const dex::CodeItem* code_item,
                                   uint32_t access_flags,
-                                  InvokeType invoke_type,
                                   uint16_t class_def_idx,
                                   uint32_t method_idx,
                                   Handle<mirror::ClassLoader> class_loader,
@@ -523,7 +519,6 @@ static void CompileMethodQuick(
         // NOTE: if compiler declines to compile this method, it will return null.
         compiled_method = driver->GetCompiler()->Compile(code_item,
                                                          access_flags,
-                                                         invoke_type,
                                                          class_def_idx,
                                                          method_idx,
                                                          class_loader,
@@ -559,7 +554,6 @@ static void CompileMethodQuick(
                        driver,
                        code_item,
                        access_flags,
-                       invoke_type,
                        class_def_idx,
                        method_idx,
                        class_loader,
@@ -756,7 +750,8 @@ static void EnsureVerifiedOrVerifyAtRuntime(jobject jclass_loader,
 
   for (const DexFile* dex_file : dex_files) {
     for (ClassAccessor accessor : dex_file->GetClasses()) {
-      cls.Assign(class_linker->FindClass(soa.Self(), accessor.GetDescriptor(), class_loader));
+      cls.Assign(
+          class_linker->FindClass(soa.Self(), *dex_file, accessor.GetClassIdx(), class_loader));
       if (cls == nullptr) {
         soa.Self()->ClearException();
       } else if (&cls->GetDexFile() == dex_file) {
@@ -1259,7 +1254,8 @@ void CompilerDriver::LoadImageClasses(TimingLogger* timings,
   CHECK(image_classes != nullptr);
   for (auto it = image_classes->begin(), end = image_classes->end(); it != end;) {
     const std::string& descriptor(*it);
-    ObjPtr<mirror::Class> klass = class_linker->FindClass(self, descriptor.c_str(), loader);
+    ObjPtr<mirror::Class> klass =
+        class_linker->FindClass(self, descriptor.c_str(), descriptor.length(), loader);
     if (klass == nullptr) {
       VLOG(compiler) << "Failed to find class " << descriptor;
       it = image_classes->erase(it);  // May cause some descriptors to be revisited.
@@ -1745,9 +1741,7 @@ class ResolveTypeVisitor : public CompilationVisitor {
         }
         // Check that the current class is not a subclass of java.lang.ClassLoader.
         if (!hklass->IsInterface() &&
-            hklass->IsSubClass(class_linker->FindClass(soa.Self(),
-                                                       "Ljava/lang/ClassLoader;",
-                                                       defining_class_loader))) {
+            hklass->IsSubClass(GetClassRoot<mirror::ClassLoader>(class_linker))) {
           // Subclassing of java.lang.ClassLoader.
           // This OptStat stuff is to enable logging from the APK scanner.
           if (is_fatal) {
@@ -1812,16 +1806,15 @@ static void LoadAndUpdateStatus(const ClassAccessor& accessor,
                                 Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   StackHandleScope<1> hs(self);
-  const char* descriptor = accessor.GetDescriptor();
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   Handle<mirror::Class> cls(hs.NewHandle<mirror::Class>(
-      class_linker->FindClass(self, descriptor, class_loader)));
+      class_linker->FindClass(self, accessor.GetDexFile(), accessor.GetClassIdx(), class_loader)));
   if (cls != nullptr) {
     // Check that the class is resolved with the current dex file. We might get
     // a boot image class, or a class in a different dex file for multidex, and
     // we should not update the status in that case.
     if (&cls->GetDexFile() == &accessor.GetDexFile()) {
-      VLOG(compiler) << "Updating class status of " << std::string(descriptor) << " to " << status;
+      VLOG(compiler) << "Updating class status of " << accessor.GetDescriptor() << " to " << status;
       ObjectLock<mirror::Class> lock(self, cls);
       mirror::Class::SetStatus(cls, status, self);
     }
@@ -1977,14 +1970,13 @@ class VerifyClassVisitor : public CompilationVisitor {
     ScopedObjectAccess soa(Thread::Current());
     const DexFile& dex_file = *manager_->GetDexFile();
     const dex::ClassDef& class_def = dex_file.GetClassDef(class_def_index);
-    const char* descriptor = dex_file.GetClassDescriptor(class_def);
     ClassLinker* class_linker = manager_->GetClassLinker();
     jobject jclass_loader = manager_->GetClassLoader();
     StackHandleScope<3> hs(soa.Self());
     Handle<mirror::ClassLoader> class_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
-    Handle<mirror::Class> klass(
-        hs.NewHandle(class_linker->FindClass(soa.Self(), descriptor, class_loader)));
+    Handle<mirror::Class> klass = hs.NewHandle(
+        class_linker->FindClass(soa.Self(), dex_file, class_def.class_idx_, class_loader));
     ClassReference ref(manager_->GetDexFile(), class_def_index);
     verifier::FailureKind failure_kind;
     if (klass == nullptr) {
@@ -2141,14 +2133,13 @@ class SetVerifiedClassVisitor : public CompilationVisitor {
     ScopedObjectAccess soa(Thread::Current());
     const DexFile& dex_file = *manager_->GetDexFile();
     const dex::ClassDef& class_def = dex_file.GetClassDef(class_def_index);
-    const char* descriptor = dex_file.GetClassDescriptor(class_def);
     ClassLinker* class_linker = manager_->GetClassLinker();
     jobject jclass_loader = manager_->GetClassLoader();
     StackHandleScope<3> hs(soa.Self());
     Handle<mirror::ClassLoader> class_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
-    Handle<mirror::Class> klass(
-        hs.NewHandle(class_linker->FindClass(soa.Self(), descriptor, class_loader)));
+    Handle<mirror::Class> klass = hs.NewHandle(
+        class_linker->FindClass(soa.Self(), dex_file, class_def.class_idx_, class_loader));
     // Class might have failed resolution. Then don't set it to verified.
     if (klass != nullptr) {
       // Only do this if the class is resolved. If even resolution fails, quickening will go very,
@@ -2203,15 +2194,13 @@ class InitializeClassVisitor : public CompilationVisitor {
     jobject jclass_loader = manager_->GetClassLoader();
     const DexFile& dex_file = *manager_->GetDexFile();
     const dex::ClassDef& class_def = dex_file.GetClassDef(class_def_index);
-    const dex::TypeId& class_type_id = dex_file.GetTypeId(class_def.class_idx_);
-    const char* descriptor = dex_file.GetStringData(class_type_id.descriptor_idx_);
 
     ScopedObjectAccess soa(Thread::Current());
     StackHandleScope<3> hs(soa.Self());
     Handle<mirror::ClassLoader> class_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
-    Handle<mirror::Class> klass(
-        hs.NewHandle(manager_->GetClassLinker()->FindClass(soa.Self(), descriptor, class_loader)));
+    Handle<mirror::Class> klass = hs.NewHandle(manager_->GetClassLinker()->FindClass(
+        soa.Self(), dex_file, class_def.class_idx_, class_loader));
 
     if (klass != nullptr) {
       if (!SkipClass(manager_->GetClassLoader(), dex_file, klass.Get())) {
@@ -2335,8 +2324,8 @@ class InitializeClassVisitor : public CompilationVisitor {
             // the transaction aborts and cannot resolve the type.
             // TransactionAbortError is not initialized ant not in boot image, needed only by
             // compiler and will be pruned by ImageWriter.
-            Handle<mirror::Class> exception_class = hs.NewHandle(
-                class_linker->FindClass(self, kTransactionAbortErrorDescriptor, class_loader));
+            Handle<mirror::Class> exception_class =
+                hs.NewHandle(class_linker->FindSystemClass(self, kTransactionAbortErrorDescriptor));
             bool exception_initialized =
                 class_linker->EnsureInitialized(self, exception_class, true, true);
             DCHECK(exception_initialized);
@@ -2701,8 +2690,8 @@ static void CompileDexFile(CompilerDriver* driver,
     StackHandleScope<3> hs(soa.Self());
     Handle<mirror::ClassLoader> class_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
-    Handle<mirror::Class> klass(
-        hs.NewHandle(class_linker->FindClass(soa.Self(), accessor.GetDescriptor(), class_loader)));
+    Handle<mirror::Class> klass = hs.NewHandle(
+        class_linker->FindClass(soa.Self(), dex_file, class_def.class_idx_, class_loader));
     Handle<mirror::DexCache> dex_cache;
     if (klass == nullptr) {
       soa.Self()->AssertPendingException();
@@ -2737,7 +2726,6 @@ static void CompileDexFile(CompilerDriver* driver,
                  driver,
                  method.GetCodeItem(),
                  method.GetAccessFlags(),
-                 method.GetInvokeType(class_def.access_flags_),
                  class_def_index,
                  method_idx,
                  class_loader,

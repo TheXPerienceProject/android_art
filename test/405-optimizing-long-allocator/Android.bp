@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-405-optimizing-long-allocator-expected-stdout",
         ":art-run-test-405-optimizing-long-allocator-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

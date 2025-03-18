@@ -108,6 +108,9 @@ At a high level, ART Service dexopts apps in the following scenarios:
     `inactive`)
 -   requested through commandline (Compilation reason: `cmdline`)
 
+Warning: The execution or scheduling of dexopt operations by ART Service is
+**not** triggered by an app's running or launch status.
+
 Warning: The sections below describe the default behavior in each scenario. Note
 that the list of apps to dexopt and the compiler filter, as well as other
 options, can be customized by partners through system properties, APIs, etc.
@@ -176,9 +179,9 @@ Note: There is no secondary dex file present during installation.
 ### When the device is idle and charging
 
 ART Service has a job called *background dexopt job* managed by Job Scheduler.
-It is triggered when the device is idle and charging. During the job execution,
-it dexopts primary dex files and secondary dex files of all apps with the
-"speed-profile" compiler filter.
+It is triggered daily when the device is idle and charging. During the job
+execution, it dexopts primary dex files and secondary dex files of all apps with
+the "speed-profile" compiler filter.
 
 If `pm.dexopt.downgrade_after_inactive_days` is set, ART Service only dexopts
 apps used within the last given number of days, and it downgrades other apps

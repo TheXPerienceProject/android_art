@@ -65,7 +65,7 @@ HOST_BOOT_IMAGE_JARS += $(HOST_OUT)/apex/com.android.i18n/javalib/core-icu4j.jar
 $(HOST_OUT)/apex/com.android.i18n/javalib/core-icu4j.jar : $(HOST_OUT_JAVA_LIBRARIES)/core-icu4j-hostdex.jar
 	$(copy-file-to-target)
 
-HOST_CORE_IMG_OUTS += $(HOST_BOOT_IMAGE_JARS) $(HOST_BOOT_IMAGE) $(2ND_HOST_BOOT_IMAGE)
+HOST_CORE_IMG_OUTS += $(HOST_BOOT_IMAGE_JARS)
 
 HOST_TEST_CORE_JARS := $(addsuffix -hostdex,$(CORE_IMG_JARS) core-icu4j conscrypt)
 ART_HOST_DEX_DEPENDENCIES := $(foreach jar,$(HOST_TEST_CORE_JARS),$(HOST_OUT_JAVA_LIBRARIES)/$(jar).jar)

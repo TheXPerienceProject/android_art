@@ -155,13 +155,13 @@ class ImageSpace : public MemMapSpace {
   EXPORT static std::unique_ptr<ImageSpace> CreateFromAppImage(const char* image,
                                                                const OatFile* oat_file,
                                                                std::string* error_msg)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+      REQUIRES(!Locks::mutator_lock_);
   // Try to open an existing app image space for an the oat file and given boot image spaces.
   static std::unique_ptr<ImageSpace> CreateFromAppImage(
       const char* image,
       const OatFile* oat_file,
       ArrayRef<ImageSpace* const> boot_image_spaces,
-      std::string* error_msg) REQUIRES_SHARED(Locks::mutator_lock_);
+      std::string* error_msg) REQUIRES(!Locks::mutator_lock_);
 
   // Checks whether we have a primary boot image on the disk.
   static bool IsBootClassPathOnDisk(InstructionSet image_isa);

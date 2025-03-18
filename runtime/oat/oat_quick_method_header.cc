@@ -74,7 +74,8 @@ uintptr_t OatQuickMethodHeader::ToNativeQuickPc(ArtMethod* method,
 
   StackMap stack_map = code_info.GetStackMapForDexPc(dex_pc);
   if (stack_map.IsValid()) {
-    return reinterpret_cast<uintptr_t>(entry_point) + stack_map.GetNativePcOffset(kRuntimeISA);
+    return reinterpret_cast<uintptr_t>(entry_point) +
+        stack_map.GetNativePcOffset(kRuntimeQuickCodeISA);
   }
   if (abort_on_failure) {
     ScopedObjectAccess soa(Thread::Current());
@@ -102,7 +103,7 @@ uintptr_t OatQuickMethodHeader::ToNativeQuickPcForCatchHandlers(
   *stack_map_row = stack_map.Row();
   if (stack_map.IsValid()) {
     return reinterpret_cast<uintptr_t>(entry_point) +
-           stack_map.GetNativePcOffset(kRuntimeISA);
+           stack_map.GetNativePcOffset(kRuntimeQuickCodeISA);
   }
   if (abort_on_failure) {
     std::stringstream ss;

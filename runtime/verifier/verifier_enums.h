@@ -75,14 +75,15 @@ enum VerifyError : uint32_t {
   VERIFY_ERROR_NO_CLASS =          1 << 1,   // NoClassDefFoundError.
   VERIFY_ERROR_UNRESOLVED_TYPE_CHECK = 1 << 2,   // Missing class for doing a type check
   VERIFY_ERROR_NO_METHOD =         1 << 3,   // NoSuchMethodError.
-  VERIFY_ERROR_ACCESS_CLASS =      1 << 4,   // IllegalAccessError.
-  VERIFY_ERROR_ACCESS_FIELD =      1 << 5,   // IllegalAccessError.
-  VERIFY_ERROR_ACCESS_METHOD =     1 << 6,   // IllegalAccessError.
-  VERIFY_ERROR_CLASS_CHANGE =      1 << 7,   // IncompatibleClassChangeError.
-  VERIFY_ERROR_INSTANTIATION =     1 << 8,   // InstantiationError.
-  VERIFY_ERROR_LOCKING =           1 << 9,  // Could not guarantee balanced locking. This should be
-                                             // punted to the interpreter with access checks.
-  VERIFY_ERROR_RUNTIME_THROW =     1 << 10,  // The interpreter found an instruction that will
+  VERIFY_ERROR_NO_FIELD =          1 << 4,   // NoSuchFieldError.
+  VERIFY_ERROR_ACCESS_CLASS =      1 << 5,   // IllegalAccessError.
+  VERIFY_ERROR_ACCESS_FIELD =      1 << 6,   // IllegalAccessError.
+  VERIFY_ERROR_ACCESS_METHOD =     1 << 7,   // IllegalAccessError.
+  VERIFY_ERROR_CLASS_CHANGE =      1 << 8,   // IncompatibleClassChangeError.
+  VERIFY_ERROR_INSTANTIATION =     1 << 9,   // InstantiationError.
+  VERIFY_ERROR_LOCKING =           1 << 10,  // Could not guarantee balanced locking. This should
+                                             // be punted to the interpreter with access checks.
+  VERIFY_ERROR_RUNTIME_THROW =     1 << 11,  // The interpreter found an instruction that will
                                              // throw. Used for app compatibility for apps < T.
 };
 std::ostream& operator<<(std::ostream& os, VerifyError rhs);

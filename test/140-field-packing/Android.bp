@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-140-field-packing-expected-stdout",
         ":art-run-test-140-field-packing-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

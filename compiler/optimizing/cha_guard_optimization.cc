@@ -30,7 +30,7 @@ namespace art HIDDEN {
 // As a consequence, we decided not to rely on other passes to remove them
 // (such as GVN or instruction simplifier).
 
-class CHAGuardVisitor : HGraphVisitor {
+class CHAGuardVisitor final : public HGraphVisitor {
  public:
   explicit CHAGuardVisitor(HGraph* graph)
       : HGraphVisitor(graph),

@@ -36,6 +36,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -56,15 +57,20 @@
 #include "base/array_ref.h"
 #include "base/common_art_test.h"
 #include "base/macros.h"
+#include "base/pidfd.h"
 #include "exec_utils.h"
+#include "file_utils.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oat/oat_file.h"
 #include "path_utils.h"
+#include "profile/profile_compilation_info.cc"
 #include "profman/profman_result.h"
 #include "testing.h"
 #include "tools/binder_utils.h"
 #include "tools/system_properties.h"
+#include "tools/testing.h"
+#include "vdex_file.h"
 #include "ziparchive/zip_writer.h"
 
 extern char** environ;
@@ -82,6 +88,7 @@ using ::aidl::com::android::server::art::DexoptOptions;
 using ::aidl::com::android::server::art::FileVisibility;
 using ::aidl::com::android::server::art::FsPermission;
 using ::aidl::com::android::server::art::IArtdCancellationSignal;
+using ::aidl::com::android::server::art::IArtdNotification;
 using ::aidl::com::android::server::art::OutputArtifacts;
 using ::aidl::com::android::server::art::OutputProfile;
 using ::aidl::com::android::server::art::PriorityClass;
@@ -89,6 +96,7 @@ using ::aidl::com::android::server::art::ProfilePath;
 using ::aidl::com::android::server::art::RuntimeArtifactsPath;
 using ::aidl::com::android::server::art::VdexPath;
 using ::android::base::Append;
+using ::android::base::Dirname;
 using ::android::base::Error;
 using ::android::base::make_scope_guard;
 using ::android::base::ParseInt;
@@ -100,6 +108,8 @@ using ::android::base::Split;
 using ::android::base::WriteStringToFd;
 using ::android::base::WriteStringToFile;
 using ::android::base::testing::HasValue;
+using ::art::tools::GetBin;
+using ::art::tools::ScopedExec;
 using ::testing::_;
 using ::testing::AllOf;
 using ::testing::AnyNumber;
@@ -339,7 +349,8 @@ class ArtdTest : public CommonArtTest {
                                            std::move(mock_props),
                                            std::move(mock_exec_utils),
                                            mock_kill_.AsStdFunction(),
-                                           mock_fstat_.AsStdFunction());
+                                           mock_fstat_.AsStdFunction(),
+                                           mock_poll_.AsStdFunction());
     scratch_dir_ = std::make_unique<ScratchDir>();
     scratch_path_ = scratch_dir_->GetPath();
     // Remove the trailing '/';
@@ -529,8 +540,9 @@ class ArtdTest : public CommonArtTest {
       ScopedUnsetEnvironmentVariable("ANDROID_EXPAND");
   MockSystemProperties* mock_props_;
   MockExecUtils* mock_exec_utils_;
-  MockFunction<int(pid_t, int)> mock_kill_;
-  MockFunction<int(int, struct stat*)> mock_fstat_;
+  MockFunction<KillFn> mock_kill_;
+  MockFunction<FstatFn> mock_fstat_;
+  MockFunction<PollFn> mock_poll_;
 
   std::string dex_file_;
   std::string isa_;
@@ -582,7 +594,14 @@ class ArtdTest : public CommonArtTest {
   }
 };
 
-TEST_F(ArtdTest, ConstantsAreInSync) { EXPECT_STREQ(ArtConstants::REASON_VDEX, kReasonVdex); }
+TEST_F(ArtdTest, ConstantsAreInSync) {
+  EXPECT_STREQ(ArtConstants::REASON_VDEX, kReasonVdex);
+  EXPECT_STREQ(ArtConstants::DEX_METADATA_FILE_EXT, kDmExtension);
+  EXPECT_STREQ(ArtConstants::SECURE_DEX_METADATA_FILE_EXT, kSdmExtension);
+  EXPECT_STREQ(ArtConstants::DEX_METADATA_PROFILE_ENTRY,
+               ProfileCompilationInfo::kDexMetadataProfileEntry);
+  EXPECT_STREQ(ArtConstants::DEX_METADATA_VDEX_ENTRY, VdexFile::kVdexNameInDmFile);
+}
 
 TEST_F(ArtdTest, isAlive) {
   bool result = false;
@@ -2526,6 +2545,118 @@ TEST_F(ArtdTest, getProfileSize) {
   EXPECT_EQ(aidl_return, 1);
 }
 
+class ArtdProfileSaveNotificationTest : public ArtdTest {
+ protected:
+  void SetUp() override {
+    ArtdTest::SetUp();
+
+    std::vector<std::string> args{GetBin("sleep"), "10"};
+    std::tie(pid_, scope_guard_) = ScopedExec(args, /*wait=*/false);
+    notification_file_ = OR_FAIL(BuildPrimaryCurProfilePath(profile_path_));
+    std::filesystem::create_directories(Dirname(notification_file_));
+  }
+
+  const PrimaryCurProfilePath profile_path_{
+      .userId = 0,
+      .packageName = "com.android.foo",
+      .profileName = "primary",
+  };
+  std::string notification_file_;
+  int pid_;
+  std::unique_ptr<ScopeGuard<std::function<void()>>> scope_guard_;
+};
+
+TEST_F(ArtdProfileSaveNotificationTest, initAndWaitSuccess) {
+  // Use a condvar to sequence the NewFile::CommitOrAbandon calls.
+  constexpr std::chrono::duration<int> kTimeout = std::chrono::seconds(1);
+  std::condition_variable wait_started_cv;
+  std::mutex mu;
+
+  EXPECT_CALL(mock_poll_, Call)
+      .Times(2)
+      .WillRepeatedly(DoAll(
+          [&](auto, auto, auto) {
+            // Step 3, 5.
+            std::unique_lock<std::mutex> lock(mu);
+            wait_started_cv.notify_one();
+          },
+          poll));
+
+  std::shared_ptr<IArtdNotification> notification;
+  ASSERT_STATUS_OK(artd_->initProfileSaveNotification(profile_path_, pid_, &notification));
+
+  std::unique_lock<std::mutex> lock(mu);
+
+  // Step 1.
+  std::thread t([&] {
+    // Step 2.
+    bool aidl_return;
+    ASSERT_STATUS_OK(notification->wait(/*in_timeoutMs=*/1000, &aidl_return));
+    // Step 7.
+    EXPECT_TRUE(aidl_return);
+  });
+  wait_started_cv.wait_for(lock, kTimeout);
+
+  // Step 4.
+  std::unique_ptr<NewFile> unrelated_file = OR_FAIL(NewFile::Create(
+      Dirname(notification_file_) + "/unrelated.prof", FsPermission{.uid = -1, .gid = -1}));
+  OR_FAIL(unrelated_file->CommitOrAbandon());
+  wait_started_cv.wait_for(lock, kTimeout);
+
+  // Step 6.
+  std::unique_ptr<NewFile> file =
+      OR_FAIL(NewFile::Create(notification_file_, FsPermission{.uid = -1, .gid = -1}));
+  OR_FAIL(file->CommitOrAbandon());
+
+  t.join();
+}
+
+TEST_F(ArtdProfileSaveNotificationTest, initAndWaitProcessGone) {
+  EXPECT_CALL(mock_poll_, Call).WillOnce(poll);
+
+  std::shared_ptr<IArtdNotification> notification;
+  ASSERT_STATUS_OK(artd_->initProfileSaveNotification(profile_path_, pid_, &notification));
+
+  std::thread t([&] {
+    bool aidl_return;
+    ASSERT_STATUS_OK(notification->wait(/*in_timeoutMs=*/1000, &aidl_return));
+    EXPECT_TRUE(aidl_return);
+  });
+
+  kill(pid_, SIGKILL);
+
+  t.join();
+}
+
+TEST_F(ArtdProfileSaveNotificationTest, initAndWaitTimeout) {
+  EXPECT_CALL(mock_poll_, Call).WillOnce(poll).WillOnce(Return(0));
+
+  std::shared_ptr<IArtdNotification> notification;
+  ASSERT_STATUS_OK(artd_->initProfileSaveNotification(profile_path_, pid_, &notification));
+
+  std::unique_ptr<NewFile> unrelated_file = OR_FAIL(NewFile::Create(
+      Dirname(notification_file_) + "/unrelated.prof", FsPermission{.uid = -1, .gid = -1}));
+  OR_FAIL(unrelated_file->CommitOrAbandon());
+
+  bool aidl_return;
+  ASSERT_STATUS_OK(notification->wait(/*in_timeoutMs=*/1000, &aidl_return));
+  EXPECT_FALSE(aidl_return);
+}
+
+TEST_F(ArtdProfileSaveNotificationTest, initProcessGone) {
+  // Kill the process before pidfd_open.
+  scope_guard_.reset();
+
+  EXPECT_CALL(mock_poll_, Call).Times(0);
+
+  std::shared_ptr<IArtdNotification> notification;
+  ASSERT_STATUS_OK(artd_->initProfileSaveNotification(profile_path_, pid_, &notification));
+
+  bool aidl_return;
+  ASSERT_STATUS_OK(notification->wait(/*in_timeoutMs=*/1000, &aidl_return));
+  EXPECT_TRUE(aidl_return);
+}
+
 TEST_F(ArtdTest, commitPreRebootStagedFiles) {
   CreateFile(android_data_ + "/dalvik-cache/arm64/system@app@Foo@Foo.apk@classes.dex.staged",
              "new_odex_1");
@@ -2694,6 +2825,7 @@ class ArtdPreRebootTest : public ArtdTest {
                                            std::move(mock_exec_utils),
                                            mock_kill_.AsStdFunction(),
                                            mock_fstat_.AsStdFunction(),
+                                           mock_poll_.AsStdFunction(),
                                            mock_mount_.AsStdFunction(),
                                            mock_restorecon_.AsStdFunction(),
                                            pre_reboot_tmp_dir_,

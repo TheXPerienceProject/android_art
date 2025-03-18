@@ -42,7 +42,7 @@ class HRiscv64ShiftAdd final : public HBinaryOperation {
 
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
     const int64_t value = y->GetValue() + (x->GetValue() << GetDistance());
-    return GetBlock()->GetGraph()->GetLongConstant(value, GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(value);
   }
 
   DECLARE_INSTRUCTION(Riscv64ShiftAdd);

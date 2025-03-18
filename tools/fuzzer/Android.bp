@@ -78,7 +78,7 @@ cc_defaults {
         },
     },
 
-    data: [
+    device_common_data: [
         ":core-oj",
         ":core-libart",
         ":okhttp",
@@ -96,7 +96,7 @@ cc_fuzz {
         "libart_static_defaults",
     ],
     // Can not be in defaults due to soong limitations.
-    corpus: [
+    device_common_corpus: [
         ":art_runtest_corpus",
         "dex-verifier-corpus/*",
     ],
@@ -109,7 +109,7 @@ cc_fuzz {
         "libartd_static_defaults",
     ],
     // Can not be in defaults due to soong limitations.
-    corpus: [
+    device_common_corpus: [
         ":art_runtest_corpus",
         "dex-verifier-corpus/*",
     ],
@@ -123,7 +123,7 @@ cc_fuzz {
         "libart_static_defaults",
     ],
     // Can not be in defaults due to soong limitations.
-    corpus: [
+    device_common_corpus: [
         ":art_runtest_corpus",
         "class-verifier-corpus/*",
     ],
@@ -134,7 +134,7 @@ cc_fuzz {
 // If test is modified or removed, remove the corresponding dex entry.
 // It is not strictly necessary to add new entries for new tests.
 // TODO(b/171429704): Remove this genrule and use the zip directly.
-genrule {
+java_genrule {
     name: "art_runtest_corpus",
     tool_files: ["create_corpus.py"],
     cmd: "$(location) $(genDir) $(in)",

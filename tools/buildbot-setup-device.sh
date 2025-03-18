@@ -35,6 +35,7 @@ if [[ -n "$ART_TEST_ON_VM" ]]; then
     mkdir $ART_TEST_CHROOT/apex
     mkdir $ART_TEST_CHROOT/bin
     mkdir -p $ART_TEST_CHROOT/data/local/tmp
+    mkdir -p $ART_TEST_CHROOT/data/misc/trace
     mkdir $ART_TEST_CHROOT/dev
     mkdir $ART_TEST_CHROOT/etc
     mkdir $ART_TEST_CHROOT/lib

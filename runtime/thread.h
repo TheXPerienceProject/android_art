@@ -198,9 +198,48 @@ enum class WeakRefAccessState : int32_t {
   kDisabled
 };
 
+// ART uses two types of ABI/code: quick and native.
+//
+// Quick code includes:
+// - The code that ART compiles to, e.g: Java/dex code compiled to Arm64.
+// - Quick assembly entrypoints.
+//
+// Native code includes:
+// - Interpreter.
+// - GC.
+// - JNI.
+// - Runtime methods, i.e.: all ART C++ code.
+//
+// In regular (non-simulator) mode, both native and quick code are of the same ISA and will operate
+// on the hardware stack. The hardware stack is allocated by the kernel to ART and grows down in
+// memory.
+//
+// In simulator mode, native and quick code use different ISA's and will use different stacks.
+// Native code will use the hardware stack while quick code will use the simulated stack. The
+// simulated stack is a simple buffer in the native heap owned by the Simulator class.
+//
+// The StackType enum reflects the underlying type of stack in use by any given function while two
+// constexpr StackTypes (kNativeStackType and kQuickStackType) indicate which type of stack is used
+// for native and quick code. Whenever possible kNativeStackType and kQuickStackType should be used
+// instead of using the StackType directly.
+enum class StackType {
+  kHardware,
+  kSimulated
+};
+
+// The type of stack used when executing native code, i.e.: runtime helpers, interpreter, JNI, etc.
+// This stack is the native machine's call stack and so should be used when comparing against
+// values returned from builtin functions such as __builtin_frame_address.
+static constexpr StackType kNativeStackType = StackType::kHardware;
+
+// The type of stack used when executing quick code, i.e.: compiled dex code and quick entrypoints.
+// For simulator builds this is the kSimulated stack and for non-simulator builds this is the
+// kHardware stack.
+static constexpr StackType kQuickStackType = StackType::kHardware;
+
 // See Thread.tlsPtr_.active_suspend1_barriers below for explanation.
 struct WrappedSuspend1Barrier {
-  // TODO(b/23668816): At least weaken CHECKs to DCHECKs once the bug is fixed.
+  // TODO(b/323668816): At least weaken CHECKs to DCHECKs once the bug is fixed.
   static constexpr int kMagic = 0xba8;
   WrappedSuspend1Barrier() : magic_(kMagic), barrier_(1), next_(nullptr) {}
   int magic_;
@@ -1109,24 +1148,29 @@ class EXPORT Thread {
   }
 
   // Size of stack less any space reserved for stack overflow
-  size_t GetStackSize() const {
-    return tlsPtr_.stack_size - (tlsPtr_.stack_end - tlsPtr_.stack_begin);
+  template <StackType stack_type>
+  size_t GetUsableStackSize() const {
+    return GetStackSize<stack_type>() - static_cast<size_t>(
+        GetStackEnd<stack_type>() - GetStackBegin<stack_type>());
   }
+
+  template <StackType stack_type>
+  ALWAYS_INLINE uint8_t* GetStackEnd() const;
 
   ALWAYS_INLINE uint8_t* GetStackEndForInterpreter(bool implicit_overflow_check) const;
 
-  uint8_t* GetStackEnd() const {
-    return tlsPtr_.stack_end;
-  }
-
   // Set the stack end to that to be used during a stack overflow
-  void SetStackEndForStackOverflow() REQUIRES_SHARED(Locks::mutator_lock_);
+  template <StackType stack_type>
+  ALWAYS_INLINE void SetStackEndForStackOverflow()
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Set the stack end to that to be used during regular execution
+  template <StackType stack_type>
   ALWAYS_INLINE void ResetDefaultStackEnd();
 
+  template <StackType stack_type>
   bool IsHandlingStackOverflow() const {
-    return tlsPtr_.stack_end == tlsPtr_.stack_begin;
+    return GetStackEnd<stack_type>() == GetStackBegin<stack_type>();
   }
 
   template<PointerSize pointer_size>
@@ -1169,6 +1213,9 @@ class EXPORT Thread {
         OFFSETOF_MEMBER(tls_ptr_sized_values, managed_stack) +
         ManagedStack::TopShadowFrameOffset());
   }
+
+  // Is the given object on the quick stack?
+  bool IsRawObjOnQuickStack(uint8_t* raw_obj) const;
 
   // Is the given obj in one of this thread's JNI transition frames?
   bool IsJniTransitionReference(jobject obj) const REQUIRES_SHARED(Locks::mutator_lock_);
@@ -1379,6 +1426,8 @@ class EXPORT Thread {
     }
   }
 
+  void UpdateTlsLowOverheadTraceEntrypoints(bool enable);
+
   uint64_t GetTraceClockBase() const {
     return tls64_.trace_clock_base;
   }
@@ -1499,7 +1548,9 @@ class EXPORT Thread {
     tlsPtr_.rosalloc_runs[index] = run;
   }
 
+  template <StackType stack_type>
   bool ProtectStack(bool fatal_on_error = true);
+  template <StackType stack_type>
   bool UnprotectStack();
 
   uint32_t DecrementForceInterpreterCount() REQUIRES(Locks::thread_list_lock_) {
@@ -1762,7 +1813,8 @@ class EXPORT Thread {
   void InitTlsEntryPoints();
   void InitTid();
   void InitPthreadKeySelf();
-  bool InitStackHwm();
+  template <StackType stack_type>
+  bool InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t read_guard_size);
 
   void SetUpAlternateSignalStack();
   void TearDownAlternateSignalStack();
@@ -1825,7 +1877,12 @@ class EXPORT Thread {
       REQUIRES_SHARED(Locks::mutator_lock_);
   void RunEmptyCheckpoint();
 
+  // Return the nearest page-aligned address below the current stack top.
+  template <StackType>
+  NO_INLINE uint8_t* FindStackTop();
+
   // Install the protected region for implicit stack checks.
+  template <StackType>
   void InstallImplicitProtection();
 
   template <bool kPrecise>
@@ -1834,6 +1891,22 @@ class EXPORT Thread {
   static bool IsAotCompiler();
 
   void SetCachedThreadName(const char* name);
+
+  // Helper functions to get/set the tls stack pointer variables.
+  template <StackType stack_type>
+  ALWAYS_INLINE void SetStackEnd(uint8_t* new_stack_end);
+
+  template <StackType stack_type>
+  ALWAYS_INLINE uint8_t* GetStackBegin() const;
+
+  template <StackType stack_type>
+  ALWAYS_INLINE void SetStackBegin(uint8_t* new_stack_begin);
+
+  template <StackType stack_type>
+  ALWAYS_INLINE size_t GetStackSize() const;
+
+  template <StackType stack_type>
+  ALWAYS_INLINE void SetStackSize(size_t new_stack_size);
 
   // Helper class for manipulating the 32 bits of atomically changed state and flags.
   class StateAndFlags {
@@ -2173,6 +2246,7 @@ class EXPORT Thread {
 
     // The end of this thread's stack. This is the lowest safely-addressable address on the stack.
     // We leave extra space so there's room for the code that throws StackOverflowError.
+    // Note: do not use directly, instead use GetStackEnd/SetStackEnd template function instead.
     uint8_t* stack_end;
 
     // The top of the managed stack often manipulated directly by compiler generated code.
@@ -2204,9 +2278,11 @@ class EXPORT Thread {
     jobject jpeer;
 
     // The "lowest addressable byte" of the stack.
+    // Note: do not use directly, instead use GetStackBegin/SetStackBegin template function instead.
     uint8_t* stack_begin;
 
     // Size of the stack.
+    // Note: do not use directly, instead use GetStackSize/SetStackSize template function instead.
     size_t stack_size;
 
     // Sampling profiler and AOT verification cannot happen on the same run, so we share

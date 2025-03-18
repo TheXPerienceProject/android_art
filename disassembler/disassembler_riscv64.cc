@@ -779,13 +779,13 @@ void DisassemblerRiscv64::Printer::Print32BinOp(uint32_t insn32) {
   DCHECK_EQ(insn32 & 0x77u, 0x33u);  // Note: Bit 0x8 selects narrow binop.
   bool narrow = (insn32 & 0x8u) != 0u;
   uint32_t funct3 = (insn32 >> 12) & 7u;
+  uint32_t funct7 = (insn32 >> 25) & 0x7Fu;
   uint32_t rd = GetRd(insn32);
   uint32_t rs1 = GetRs1(insn32);
   uint32_t rs2 = GetRs2(insn32);
-  uint32_t high_bits = insn32 & 0xfe000000u;
 
   // Print shorter macro instruction notation if available.
-  if (high_bits == 0x40000000u && funct3 == /*SUB*/ 0u && rs1 == Zero) {
+  if (funct7 == 0x20u && funct3 == /*SUB*/ 0u && rs1 == Zero) {
     os_ << (narrow ? "negw " : "neg ") << XRegName(rd) << ", " << XRegName(rs2);
   } else if (!narrow && funct3 == /*SLT*/ 2u && rs2 == Zero) {
     os_ << "sltz " << XRegName(rd) << ", " << XRegName(rs1);
@@ -793,47 +793,47 @@ void DisassemblerRiscv64::Printer::Print32BinOp(uint32_t insn32) {
     os_ << "sgtz " << XRegName(rd) << ", " << XRegName(rs2);
   } else if (!narrow && funct3 == /*SLTU*/ 3u && rs1 == Zero) {
     os_ << "snez " << XRegName(rd) << ", " << XRegName(rs2);
-  } else if (narrow && high_bits == 0x08000000u && funct3 == /*ADD.UW*/ 0u && rs2 == Zero) {
+  } else if (narrow && funct7 == 4u && funct3 == /*ADD.UW*/ 0u && rs2 == Zero) {
     os_ << "zext.w " << XRegName(rd) << ", " << XRegName(rs1);
-  } else if (!narrow && high_bits == 0x48000000u &&
+  } else if (!narrow && funct7 == 0x24u &&
              (funct3 == /*BCLR*/ 1u || funct3 == /*BEXT*/ 5u)) {
     os_ << ((funct3 == /*BCLR*/ 1u) ? "bclr" : "bext");
-  } else if (!narrow && high_bits == 0x68000000u && funct3 == /*BINV*/ 1u) {
+  } else if (!narrow && funct7 == 0x34u && funct3 == /*BINV*/ 1u) {
     os_ << "binv";
-  } else if (!narrow && high_bits == 0x28000000u && funct3 == /*BSET*/ 1u) {
+  } else if (!narrow && funct7 == 0x14u && funct3 == /*BSET*/ 1u) {
     os_ << "bset";
   } else {
     bool bad_high_bits = false;
-    if (high_bits == 0x40000000u && (funct3 == /*SUB*/ 0u || funct3 == /*SRA*/ 5u)) {
+    if (funct7 == 0x20u && (funct3 == /*SUB*/ 0u || funct3 == /*SRA*/ 5u)) {
       os_ << ((funct3 == /*SUB*/ 0u) ? "sub" : "sra");
-    } else if (high_bits == 0x02000000u &&
+    } else if (funct7 == 1u &&
                (!narrow || (funct3 == /*MUL*/ 0u || funct3 >= /*DIV/DIVU/REM/REMU*/ 4u))) {
       static const char* const kOpcodes[] = {
           "mul", "mulh", "mulhsu", "mulhu", "div", "divu", "rem", "remu"
       };
       os_ << kOpcodes[funct3];
-    } else if (high_bits == 0x08000000u && narrow && funct3 == /*ADD.UW*/ 0u) {
+    } else if (funct7 == 4u && narrow && funct3 == /*ADD.UW*/ 0u) {
       os_ << "add.u";  // "w" is added below.
-    } else if (high_bits == 0x20000000u && (funct3 & 1u) == 0u && funct3 != 0u) {
+    } else if (funct7 == 0x10u && (funct3 & 1u) == 0u && funct3 != 0u) {
       static const char* const kZbaOpcodes[] = { nullptr, "sh1add", "sh2add", "sh3add" };
       DCHECK(kZbaOpcodes[funct3 >> 1] != nullptr);
       os_ << kZbaOpcodes[funct3 >> 1] << (narrow ? ".u" /* "w" is added below. */ : "");
-    } else if (high_bits == 0x40000000u && !narrow && funct3 >= 4u && funct3 != 5u) {
+    } else if (funct7 == 0x20u && !narrow && funct3 >= 4u && funct3 != 5u) {
       static const char* const kZbbNegOpcodes[] = { "xnor", nullptr, "orn", "andn" };
       DCHECK(kZbbNegOpcodes[funct3 - 4u] != nullptr);
       os_ << kZbbNegOpcodes[funct3 - 4u];
-    } else if (high_bits == 0x0a000000u && !narrow && funct3 >= 4u) {
+    } else if (funct7 == 0x5u && !narrow && funct3 >= 4u) {
       static const char* const kZbbMinMaxOpcodes[] = { "min", "minu", "max", "maxu" };
       DCHECK(kZbbMinMaxOpcodes[funct3 - 4u] != nullptr);
       os_ << kZbbMinMaxOpcodes[funct3 - 4u];
-    } else if (high_bits == 0x60000000u && (funct3 == /*ROL*/ 1u || funct3 == /*ROL*/ 5u)) {
+    } else if (funct7 == 0x30u && (funct3 == /*ROL*/ 1u || funct3 == /*ROL*/ 5u)) {
       os_ << (funct3 == /*ROL*/ 1u ? "rol" : "ror");
     } else if (!narrow || (funct3 == /*ADD*/ 0u || funct3 == /*SLL*/ 1u || funct3 == /*SRL*/ 5u)) {
       static const char* const kOpcodes[] = {
           "add", "sll", "slt", "sltu", "xor", "srl", "or", "and"
       };
       os_ << kOpcodes[funct3];
-      bad_high_bits = (high_bits != 0u);
+      bad_high_bits = funct7 != 0u;
     } else {
       DCHECK(narrow);
       os_ << "<unknown32>";  // Some of the above instructions do not have a narrow version.

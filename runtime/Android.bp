@@ -182,9 +182,9 @@ cc_defaults {
         "liblog",
         "liblz4",
         "liblzma", // libelffile(d) dependency; must be repeated here since it's a static lib.
-        "libnativebridge",
-        "libnativeloader",
-        "libsigchain",
+        "libnativebridge#impl",
+        "libnativeloader#impl",
+        "libsigchain#impl",
         "libunwindstack",
     ],
     static_libs: ["libodrstatslog"],
@@ -198,11 +198,11 @@ cc_defaults {
     ],
     shared_libs: [
         "libartbase",
-        "libdexfile",
+        "libdexfile#impl",
         "libprofile",
     ],
     export_shared_lib_headers: [
-        "libdexfile",
+        "libdexfile#impl",
     ],
 }
 
@@ -214,11 +214,11 @@ cc_defaults {
     ],
     shared_libs: [
         "libartbased",
-        "libdexfiled",
+        "libdexfiled#impl",
         "libprofiled",
     ],
     export_shared_lib_headers: [
-        "libdexfiled",
+        "libdexfiled#impl",
     ],
 }
 
@@ -247,8 +247,17 @@ cc_defaults {
     },
     runtime_libs: [
         // Libraries loaded at runtime. Exceptions:
-        // - libart(d)-compiler.so and libopenjdk(d).so cannot be listed here
-        //   due to cyclic dependency.
+        //
+        // - Libraries that cannot be listed here due to cyclic dependency:
+        //   - libopenjdk(d)
+        //   - libadbconnection(d)
+        //   - libopenjdkjvmti(d)
+        //     - This one is not loaded programmatically with dlopen, but the
+        //       user needs to specify it with -Xplugin.
+        //   - libperfetto_hprof(d)
+        //   All libraries above needs to be explicitly added to the ART APEX
+        //   (cf. art/build/apex/Android.bp).
+        //
         // - libicu_jni.so is only loaded to handle dependency order in VM
         //   startup (see Runtime::InitNativeMethods), but its API is internal
         //   to com.android.i18n and not used by ART/libcore. Therefore it's not
@@ -501,6 +510,7 @@ cc_defaults {
                 "arch/arm/jni_entrypoints_arm.S",
                 "arch/arm/memcmp16_arm.S",
                 "arch/arm/quick_entrypoints_arm.S",
+                "arch/arm/native_entrypoints_arm.S",
                 "arch/arm/quick_entrypoints_cc_arm.cc",
                 "arch/arm/thread_arm.cc",
                 "arch/arm/fault_handler_arm.cc",
@@ -515,6 +525,7 @@ cc_defaults {
                 "arch/arm64/jni_entrypoints_arm64.S",
                 "arch/arm64/memcmp16_arm64.S",
                 "arch/arm64/quick_entrypoints_arm64.S",
+                "arch/arm64/native_entrypoints_arm64.S",
                 "arch/arm64/thread_arm64.cc",
                 "monitor_pool.cc",
                 "arch/arm64/fault_handler_arm64.cc",
@@ -528,6 +539,7 @@ cc_defaults {
                 "arch/riscv64/fault_handler_riscv64.cc",
                 "arch/riscv64/jni_entrypoints_riscv64.S",
                 "arch/riscv64/quick_entrypoints_riscv64.S",
+                "arch/riscv64/native_entrypoints_riscv64.S",
                 "arch/riscv64/thread_riscv64.cc",
                 "interpreter/mterp/nterp.cc",
                 "monitor_pool.cc",
@@ -542,6 +554,7 @@ cc_defaults {
                 "arch/x86/jni_entrypoints_x86.S",
                 "arch/x86/memcmp16_x86.S",
                 "arch/x86/quick_entrypoints_x86.S",
+                "arch/x86/native_entrypoints_x86.S",
                 "arch/x86/thread_x86.cc",
                 "arch/x86/fault_handler_x86.cc",
             ],
@@ -563,6 +576,7 @@ cc_defaults {
                 "arch/x86_64/jni_entrypoints_x86_64.S",
                 "arch/x86_64/memcmp16_x86_64.S",
                 "arch/x86_64/quick_entrypoints_x86_64.S",
+                "arch/x86_64/native_entrypoints_x86_64.S",
                 "arch/x86_64/thread_x86_64.cc",
                 "monitor_pool.cc",
                 "arch/x86/fault_handler_x86.cc",
@@ -860,10 +874,6 @@ art_cc_library_static {
     defaults: ["libartd-runtime_defaults"],
     apex_available: [
         "com.android.art.debug",
-        // TODO(b/183882457): This lib doesn't go into com.android.art, but
-        // apex_available lists need to be the same for internal libs to avoid
-        // stubs, and this depends on libsigchain.
-        "com.android.art",
     ],
 }
 
@@ -950,11 +960,6 @@ art_cc_library {
     ],
     apex_available: [
         "com.android.art.debug",
-        // TODO(b/183882457): This lib doesn't go into com.android.art, but
-        // apex_available lists need to be the same for internal libs to avoid
-        // stubs, and this depends on libsigchain.
-        "com.android.art",
-        "test_broken_com.android.art",
     ],
 }
 
@@ -1012,7 +1017,7 @@ art_cc_defaults {
             ],
         },
     },
-    data: [
+    device_common_data: [
         ":art-gtest-jars-AllFields",
         ":art-gtest-jars-DexVerificationFuzzerFolder",
         ":art-gtest-jars-ClassVerificationFuzzerFolder",
@@ -1151,6 +1156,7 @@ art_cc_defaults {
         "vdex_file_test.cc",
         "verifier/method_verifier_test.cc",
         "verifier/reg_type_test.cc",
+        "verifier/register_line_test.cc",
     ],
     static_libs: [
         "libgmock",
@@ -1170,7 +1176,10 @@ art_cc_test {
     ],
     target: {
         host: {
-            required: ["dex2oatd"],
+            required: [
+                "dex2oatd",
+                "art_boot_images",
+            ],
         },
     },
 }

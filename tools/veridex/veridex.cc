@@ -21,6 +21,7 @@
 
 #include <cstdlib>
 #include <sstream>
+#include <string_view>
 
 #include "base/mem_map.h"
 #include "dex/dex_file.h"
@@ -89,30 +90,27 @@ static const char* Substr(const char* str, int index) {
   return str + index;
 }
 
-static bool StartsWith(const char* str, const char* val) {
-  return strlen(str) >= strlen(val) && memcmp(str, val, strlen(val)) == 0;
-}
-
 static void ParseArgs(VeridexOptions* options, int argc, char** argv) {
   // Skip over the command name.
   argv++;
   argc--;
 
   for (int i = 0; i < argc; ++i) {
-    if (StartsWith(argv[i], kDexFileOption)) {
+    std::string_view arg(argv[i]);
+    if (arg.starts_with(kDexFileOption)) {
       options->dex_file = Substr(argv[i], strlen(kDexFileOption));
-    } else if (StartsWith(argv[i], kStubsOption)) {
+    } else if (arg.starts_with(kStubsOption)) {
       options->core_stubs = Substr(argv[i], strlen(kStubsOption));
-    } else if (StartsWith(argv[i], kFlagsOption)) {
+    } else if (arg.starts_with(kFlagsOption)) {
       options->flags_file = Substr(argv[i], strlen(kFlagsOption));
     } else if (strcmp(argv[i], kImprecise) == 0) {
       options->precise = false;
-    } else if (StartsWith(argv[i], kTargetSdkVersion)) {
+    } else if (arg.starts_with(kTargetSdkVersion)) {
       options->target_sdk_version = atoi(Substr(argv[i], strlen(kTargetSdkVersion)));
-    } else if (StartsWith(argv[i], kAppClassFilter)) {
+    } else if (arg.starts_with(kAppClassFilter)) {
       options->app_class_name_filter = android::base::Split(
           Substr(argv[i], strlen(kAppClassFilter)), ",");
-    } else if (StartsWith(argv[i], kExcludeApiListsOption)) {
+    } else if (arg.starts_with(kExcludeApiListsOption)) {
       options->exclude_api_lists = android::base::Split(
           Substr(argv[i], strlen(kExcludeApiListsOption)), ",");
     } else {

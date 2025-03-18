@@ -88,8 +88,7 @@ class JniStubHashMapTest : public CommonCompilerTest {
     Handle<mirror::ClassLoader> class_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
     pointer_size_ = class_linker_->GetImagePointerSize();
-    ObjPtr<mirror::Class> klass =
-        class_linker_->FindClass(soa.Self(), "LMyClassNatives;", class_loader);
+    ObjPtr<mirror::Class> klass = FindClass("LMyClassNatives;", class_loader);
     ASSERT_TRUE(klass != nullptr);
     jklass_ = soa.AddLocalReference<jclass>(klass);
   }

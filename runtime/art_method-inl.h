@@ -150,18 +150,14 @@ constexpr size_t NumberOfVRegs() {
   return sum;
 }
 
-template <char... ArgType>
-inline ALWAYS_INLINE void FillVRegs([[maybe_unused]] uint32_t* vregs,
-                                    [[maybe_unused]] typename ShortyTraits<ArgType>::Type... args)
-    REQUIRES_SHARED(Locks::mutator_lock_) {}
-
 template <char FirstArgType, char... ArgType>
 inline ALWAYS_INLINE void FillVRegs(uint32_t* vregs,
                                     typename ShortyTraits<FirstArgType>::Type first_arg,
                                     typename ShortyTraits<ArgType>::Type... args)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ShortyTraits<FirstArgType>::Set(vregs, first_arg);
-  FillVRegs<ArgType...>(vregs + ShortyTraits<FirstArgType>::kVRegCount, args...);
+  if constexpr (sizeof...(args) > 0)
+    FillVRegs<ArgType...>(vregs + ShortyTraits<FirstArgType>::kVRegCount, args...);
 }
 
 template <char... ArgType>
@@ -169,7 +165,8 @@ inline ALWAYS_INLINE auto MaterializeVRegs(typename ShortyTraits<ArgType>::Type.
     REQUIRES_SHARED(Locks::mutator_lock_) {
   constexpr size_t kNumVRegs = NumberOfVRegs<ArgType...>();
   std::array<uint32_t, kNumVRegs> vregs;
-  FillVRegs<ArgType...>(vregs.data(), args...);
+  if constexpr (sizeof...(args) > 0)
+    FillVRegs<ArgType...>(vregs.data(), args...);
   return vregs;
 }
 

@@ -238,7 +238,6 @@ known_failing_tests = frozenset([
 # removing them from this set (in order to promote them to
 # presubmits).
 postsubmit_only_tests = frozenset([
-    "057-math-intrinsics",
 ])
 
 known_failing_on_hwasan_tests = frozenset([
@@ -268,6 +267,7 @@ art_gtest_user_module_names = [
     "art_standalone_odrefresh_tests",
     "art_standalone_runtime_tests",
     "art_standalone_sigchain_tests",
+    "libnativebridge-lazy-tests",
     "libnativebridge-tests",
     "libnativeloader_test",
 ]
@@ -288,7 +288,6 @@ art_gtest_module_names = sorted(art_gtest_user_module_names + art_gtest_eng_only
 # removing them from this set (in order to promote them to
 # presubmits).
 art_gtest_postsubmit_only_module_names = [
-    "art_standalone_dex2oat_cts_tests",
 ]
 
 # ART gtests not supported in MTS.
@@ -503,9 +502,9 @@ class Generator:
       return True
     return False
 
-  # Is building `run_test` supported?
+  # Can `run_test` be built with Soong?
   # TODO(b/147814778): Add build support for more tests.
-  def is_buildable(self, run_test):
+  def is_soong_buildable(self, run_test):
     run_test_path = os.path.join(self.art_test_dir, run_test)
 
     # Skip tests with non-default build rules, unless these build
@@ -610,9 +609,9 @@ class Generator:
           srcs: ["{src_dir}/**/*.java"],{extra_props}
       }}"""
 
-  # Is (successfully) running `run_test` supported?
+  # Can `run_test` be succesfully run with TradeFed?
   # TODO(b/147812905): Add run-time support for more tests.
-  def is_runnable(self, run_test):
+  def is_tradefed_runnable(self, run_test):
     run_test_path = os.path.join(self.art_test_dir, run_test)
 
     # Skip tests with non-default run rules, unless these run rules
@@ -660,10 +659,14 @@ class Generator:
                     f"`test_suites` contains `{present}` but not `{absent}`")
       sys.exit(1)
 
+    # Do not package non-runnable ART run-tests in ART MTS (see b/363075236).
+    if self.is_tradefed_runnable(run_test):
+      test_suites.append("mts-art")
+
     run_test_module_name = ART_RUN_TEST_MODULE_NAME_PREFIX + run_test
 
     # Set the test configuration template.
-    if self.is_runnable(run_test):
+    if self.is_tradefed_runnable(run_test):
       if is_cts_test:
         test_config_template = "art-run-test-target-cts-template"
       elif self.is_slow(run_test):
@@ -1097,14 +1100,15 @@ class Generator:
 
     # Create a list of the tests that can currently be built, and for
     # which a Blueprint file is to be generated.
-    buildable_tests = list(filter(self.is_buildable, run_tests))
+    buildable_tests = list(filter(self.is_soong_buildable, run_tests))
 
     # Create a list of the tests that can be built and run
     # (successfully). These tests are to be added to ART's
     # `TEST_MAPPING` file and also tagged as part of TradeFed's
     # `art-target-run-test` test suite via the `test-suite-tag` option
     # in their configuration file.
-    expected_succeeding_tests = list(filter(self.is_runnable, buildable_tests))
+    expected_succeeding_tests = list(filter(self.is_tradefed_runnable,
+                                            buildable_tests))
 
     # Regenerate Blueprint files.
     # ---------------------------
@@ -1163,7 +1167,7 @@ class Generator:
         (num_mainline_presubmit_gtests, "ART gtests", mainline_presubmit_gtests_percentage,
          "mainline-presubmit"),
         (num_presubmit_gtests, "ART gtests", presubmit_gtests_percentage, "presubmit"),
-        (num_postsubmit_gtests, "ART gtests", postsubmit_gtests_percentage, "presubmit"),
+        (num_postsubmit_gtests, "ART gtests", postsubmit_gtests_percentage, "postsubmit"),
     ]:
       print(
           f"  {num_tests:3d} {test_kind} ({tests_percentage}%) in `{test_group_name}` test group.")

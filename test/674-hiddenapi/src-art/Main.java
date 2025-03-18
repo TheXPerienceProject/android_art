@@ -156,6 +156,7 @@ public class Main {
         (addAllApisToSdk ? "1" : "0"));
     File tempFile = new File(System.getenv("DEX_LOCATION"), tempFileName);
     Files.copy(new File(nativeLibFileName).toPath(), tempFile.toPath());
+    tempFile.setWritable(false);
     return tempFile.getAbsolutePath();
   }
 

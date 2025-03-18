@@ -432,10 +432,10 @@ Result<NativeLoaderNamespace*> LibraryNamespaces::Create(JNIEnv* env,
   const std::string product_libs =
       filter_public_libraries(target_sdk_version, uses_libraries, product_public_libraries());
   if (!product_libs.empty()) {
-    Result<NativeLoaderNamespace> target_ns = system_ns;
-    if (is_product_treblelized()) {
-      target_ns = NativeLoaderNamespace::GetExportedNamespace(kProductNamespaceName, is_bridged);
-    }
+    Result<NativeLoaderNamespace> target_ns =
+        is_product_treblelized()
+            ? NativeLoaderNamespace::GetExportedNamespace(kProductNamespaceName, is_bridged)
+            : system_ns;
     if (target_ns.ok()) {
       linked = app_ns->Link(&target_ns.value(), product_libs);
       if (!linked.ok()) {

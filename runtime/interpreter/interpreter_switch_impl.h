@@ -40,7 +40,6 @@ struct SwitchImplContext {
   const CodeItemDataAccessor& accessor;
   ShadowFrame& shadow_frame;
   JValue& result_register;
-  bool interpret_one_instruction;
   JValue result;
 };
 
@@ -60,7 +59,6 @@ ALWAYS_INLINE inline JValue ExecuteSwitchImpl(Thread* self,
                                               const CodeItemDataAccessor& accessor,
                                               ShadowFrame& shadow_frame,
                                               JValue result_register,
-                                              bool interpret_one_instruction,
                                               const void* switch_impl_cpp)
   REQUIRES_SHARED(Locks::mutator_lock_) {
   SwitchImplContext ctx {
@@ -68,7 +66,6 @@ ALWAYS_INLINE inline JValue ExecuteSwitchImpl(Thread* self,
     .accessor = accessor,
     .shadow_frame = shadow_frame,
     .result_register = result_register,
-    .interpret_one_instruction = interpret_one_instruction,
     .result = JValue(),
   };
   const uint16_t* dex_pc = ctx.accessor.Insns();

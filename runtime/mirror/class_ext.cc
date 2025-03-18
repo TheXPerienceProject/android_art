@@ -84,9 +84,7 @@ bool ClassExt::ExtendObsoleteArrays(Handle<ClassExt> h_this, Thread* self, uint3
   }
   Handle<ObjectArray<DexCache>> new_dex_caches(hs.NewHandle<ObjectArray<DexCache>>(
       ObjectArray<DexCache>::Alloc(self,
-                                   cl->FindClass(self,
-                                                 "[Ljava/lang/DexCache;",
-                                                 ScopedNullHandle<ClassLoader>()),
+                                   cl->FindSystemClass(self, "[Ljava/lang/DexCache;"),
                                    new_len)));
   if (new_dex_caches.IsNull()) {
     // Fail.

@@ -442,6 +442,20 @@ void SetupCallbackForDeviceStatus() {
       statsd::ART_DEVICE_STATUS, /*metadata=*/nullptr, DeviceStatusCallback, /*cookie=*/nullptr);
 }
 
+void ReportDeviceMetrics() {
+  Runtime* runtime = Runtime::Current();
+  int32_t boot_image_status;
+  if (runtime->GetHeap()->HasBootImageSpace() && !runtime->HasImageWithProfile()) {
+    boot_image_status = statsd::ART_DEVICE_DATUM_REPORTED__BOOT_IMAGE_STATUS__STATUS_FULL;
+  } else if (runtime->GetHeap()->HasBootImageSpace() &&
+             runtime->GetHeap()->GetBootImageSpaces()[0]->GetProfileFiles().empty()) {
+    boot_image_status = statsd::ART_DEVICE_DATUM_REPORTED__BOOT_IMAGE_STATUS__STATUS_MINIMAL;
+  } else {
+    boot_image_status = statsd::ART_DEVICE_DATUM_REPORTED__BOOT_IMAGE_STATUS__STATUS_NONE;
+  }
+  statsd::stats_write(statsd::ART_DEVICE_DATUM_REPORTED, boot_image_status);
+}
+
 }  // namespace metrics
 }  // namespace art
 

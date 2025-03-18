@@ -24,6 +24,7 @@
 #include "android-base/stringprintf.h"
 
 #include "dex_file-inl.h"
+#include "dex_instruction_list.h"
 #include "utf.h"
 
 namespace art {
@@ -32,46 +33,11 @@ using android::base::StringPrintf;
 
 const char* const Instruction::kInstructionNames[] = {
 #define INSTRUCTION_NAME(o, c, pname, f, i, a, e, v) pname,
-#include "dex_instruction_list.h"
   DEX_INSTRUCTION_LIST(INSTRUCTION_NAME)
-#undef DEX_INSTRUCTION_LIST
 #undef INSTRUCTION_NAME
 };
 
 static_assert(sizeof(Instruction::InstructionDescriptor) == 8u, "Unexpected descriptor size");
-
-static constexpr int8_t InstructionSizeInCodeUnitsByOpcode(Instruction::Code opcode,
-                                                           Instruction::Format format) {
-  if (opcode == Instruction::Code::NOP) {
-    return -1;
-  } else if ((format >= Instruction::Format::k10x) && (format <= Instruction::Format::k10t)) {
-    return 1;
-  } else if ((format >= Instruction::Format::k20t) && (format <= Instruction::Format::k22c)) {
-    return 2;
-  } else if ((format >= Instruction::Format::k32x) && (format <= Instruction::Format::k3rc)) {
-    return 3;
-  } else if ((format >= Instruction::Format::k45cc) && (format <= Instruction::Format::k4rcc)) {
-    return 4;
-  } else if (format == Instruction::Format::k51l) {
-    return 5;
-  } else {
-    return -1;
-  }
-}
-
-Instruction::InstructionDescriptor const Instruction::kInstructionDescriptors[] = {
-#define INSTRUCTION_DESCR(opcode, c, p, format, index, flags, eflags, vflags) \
-    { vflags, \
-      format, \
-      index, \
-      flags, \
-      InstructionSizeInCodeUnitsByOpcode((c), (format)), \
-    },
-#include "dex_instruction_list.h"
-  DEX_INSTRUCTION_LIST(INSTRUCTION_DESCR)
-#undef DEX_INSTRUCTION_LIST
-#undef INSTRUCTION_DESCR
-};
 
 int32_t Instruction::GetTargetOffset() const {
   switch (FormatOf(Opcode())) {
@@ -490,26 +456,20 @@ struct InstructionStaticAsserts : private Instruction {
     static_assert(IMPLIES((f) == k35c || (f) == k45cc, \
                           ((v) & (kVerifyVarArg | kVerifyVarArgNonZero)) != 0), \
                   "Missing var-arg verification");
-  #include "dex_instruction_list.h"
     DEX_INSTRUCTION_LIST(VAR_ARGS_CHECK)
-  #undef DEX_INSTRUCTION_LIST
   #undef VAR_ARGS_CHECK
 
   #define VAR_ARGS_RANGE_CHECK(o, c, pname, f, i, a, e, v) \
     static_assert(IMPLIES((f) == k3rc || (f) == k4rcc, \
                           ((v) & (kVerifyVarArgRange | kVerifyVarArgRangeNonZero)) != 0), \
                   "Missing var-arg verification");
-  #include "dex_instruction_list.h"
     DEX_INSTRUCTION_LIST(VAR_ARGS_RANGE_CHECK)
-  #undef DEX_INSTRUCTION_LIST
   #undef VAR_ARGS_RANGE_CHECK
 
   #define EXPERIMENTAL_CHECK(o, c, pname, f, i, a, e, v) \
     static_assert(kHaveExperimentalInstructions || (((a) & kExperimental) == 0), \
                   "Unexpected experimental instruction.");
-    #include "dex_instruction_list.h"
   DEX_INSTRUCTION_LIST(EXPERIMENTAL_CHECK)
-  #undef DEX_INSTRUCTION_LIST
   #undef EXPERIMENTAL_CHECK
 };
 

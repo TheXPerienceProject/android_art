@@ -303,6 +303,12 @@ void BumpPointerSpace::SetBlockSizes(Thread* self,
   end_.store(Begin() + size, std::memory_order_relaxed);
 }
 
+void BumpPointerSpace::SetBlackDenseRegionSize(size_t size) {
+  DCHECK_ALIGNED_PARAM(size, gPageSize);
+  MutexLock mu(Thread::Current(), lock_);
+  black_dense_region_size_ = size;
+}
+
 }  // namespace space
 }  // namespace gc
 }  // namespace art

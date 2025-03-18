@@ -186,7 +186,9 @@ class CommonCompilerTestImpl::OneCompiledMethodStorage final : public CompiledCo
 };
 
 std::unique_ptr<CompilerOptions> CommonCompilerTestImpl::CreateCompilerOptions(
-    InstructionSet instruction_set, const std::string& variant) {
+    InstructionSet instruction_set,
+    const std::string& variant,
+    const std::optional<std::string>& extra_features) {
   std::unique_ptr<CompilerOptions> compiler_options = std::make_unique<CompilerOptions>();
   compiler_options->emit_read_barrier_ = gUseReadBarrier;
   compiler_options->instruction_set_ = instruction_set;
@@ -194,6 +196,12 @@ std::unique_ptr<CompilerOptions> CommonCompilerTestImpl::CreateCompilerOptions(
   compiler_options->instruction_set_features_ =
       InstructionSetFeatures::FromVariant(instruction_set, variant, &error_msg);
   CHECK(compiler_options->instruction_set_features_ != nullptr) << error_msg;
+  if (extra_features) {
+    compiler_options->instruction_set_features_ =
+        compiler_options->instruction_set_features_->AddFeaturesFromString(*extra_features,
+                                                                           &error_msg);
+    CHECK_NE(compiler_options->instruction_set_features_, nullptr) << error_msg;
+  }
   return compiler_options;
 }
 
@@ -283,7 +291,6 @@ void CommonCompilerTestImpl::CompileMethod(ArtMethod* method) {
     } else {
       compiled_method = compiler->Compile(method->GetCodeItem(),
                                           method->GetAccessFlags(),
-                                          method->GetInvokeType(),
                                           method->GetClassDefIndex(),
                                           method->GetDexMethodIndex(),
                                           class_loader,

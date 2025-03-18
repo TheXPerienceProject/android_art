@@ -463,6 +463,7 @@ void Mutex::ExclusiveLock(Thread* self) {
         done = state_and_contenders_.CompareAndSetWeakAcquire(cur_state, cur_state | kHeldMask);
       } else {
         // Failed to acquire, hang up.
+        // We don't hold the mutex: GetExclusiveOwnerTid() is usually, but not always, correct.
         ScopedContentionRecorder scr(this, SafeGetTid(self), GetExclusiveOwnerTid());
         // Empirically, it appears important to spin again each time through the loop; if we
         // bother to go to sleep and wake up, we should be fairly persistent in trying for the

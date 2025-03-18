@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#include "math_entrypoints.h"
-
 #include "entrypoint_utils-inl.h"
 
 namespace art HIDDEN {

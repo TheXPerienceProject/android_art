@@ -113,8 +113,8 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
     // stats, should only be done when there is no job running and the `this` lock is held, or by
     // the job itself.
 
-    public PreRebootDexoptJob(@NonNull Context context) {
-        this(new Injector(context));
+    public PreRebootDexoptJob(@NonNull Context context, @NonNull ArtManagerLocal artManagerLocal) {
+        this(new Injector(context, artManagerLocal));
     }
 
     @VisibleForTesting
@@ -514,9 +514,11 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
     @VisibleForTesting
     public static class Injector {
         @NonNull private final Context mContext;
+        @NonNull private final ArtManagerLocal mArtManagerLocal;
 
-        Injector(@NonNull Context context) {
+        Injector(@NonNull Context context, @NonNull ArtManagerLocal artManagerLocal) {
             mContext = context;
+            mArtManagerLocal = artManagerLocal;
         }
 
         @NonNull
@@ -526,7 +528,7 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
 
         @NonNull
         public PreRebootDriver getPreRebootDriver() {
-            return new PreRebootDriver(mContext);
+            return new PreRebootDriver(mContext, mArtManagerLocal);
         }
 
         @NonNull

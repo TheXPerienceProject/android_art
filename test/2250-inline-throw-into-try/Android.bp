@@ -21,6 +21,9 @@ java_test {
         ":art-run-test-2250-inline-throw-into-try-expected-stdout",
         ":art-run-test-2250-inline-throw-into-try-expected-stderr",
     ],
+    test_suites: [
+        "mts-art",
+    ],
 }
 
 // Test's expected standard output.

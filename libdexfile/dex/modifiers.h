@@ -74,7 +74,8 @@ static constexpr uint32_t kAccCopied =                0x01000000;  // method (ru
 static constexpr uint32_t kAccDefault =               0x00400000;  // method (runtime)
 // Native method flags are set when linking the methods based on the presence of the
 // @dalvik.annotation.optimization.{Fast,Critical}Native annotations with build visibility.
-// Reuse the values of kAccSkipAccessChecks and kAccMiranda which are not used for native methods.
+// Reuse the values of kAccSkipAccessChecks and kAccNterpEntryPointFastPathFlag which are not used
+// for native methods.
 static constexpr uint32_t kAccFastNative =            0x00080000;  // method (runtime; native only)
 static constexpr uint32_t kAccCriticalNative =        0x00100000;  // method (runtime; native only)
 
@@ -128,7 +129,7 @@ static constexpr uint32_t kAccHiddenapiBits = kAccPublicApi | kAccCorePlatformAp
 // which overlap are not valid when kAccIntrinsic is set.
 static constexpr uint32_t kAccIntrinsicBits = kAccHiddenapiBits |
     kAccSingleImplementation | kAccMustCountLocks | kAccCompileDontBother | kAccCopied |
-    kAccPreviouslyWarm | kAccMemorySharedMethod;
+    kAccPreviouslyWarm | kAccMemorySharedMethod | kAccDefault;
 
 // Valid (meaningful) bits for a field.
 static constexpr uint32_t kAccValidFieldFlags = kAccPublic | kAccPrivate | kAccProtected |

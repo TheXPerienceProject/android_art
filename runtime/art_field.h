@@ -256,7 +256,7 @@ class EXPORT ArtField final {
  private:
   bool IsProxyField() REQUIRES_SHARED(Locks::mutator_lock_);
 
-  ObjPtr<mirror::Class> ProxyFindSystemClass(const char* descriptor)
+  ObjPtr<mirror::Class> ProxyFindSystemClass(std::string_view descriptor)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   GcRoot<mirror::Class> declaring_class_;

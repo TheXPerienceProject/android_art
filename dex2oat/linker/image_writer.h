@@ -128,6 +128,10 @@ class ImageWriter final {
     }
   }
 
+  uint32_t GetGlobalImageOffset(ArtMethod* method) const REQUIRES_SHARED(Locks::mutator_lock_) {
+    return reinterpret_cast<uint8_t*>(GetImageMethodAddress(method)) - global_image_begin_;
+  }
+
   uint32_t GetGlobalImageOffset(mirror::Object* object) const REQUIRES_SHARED(Locks::mutator_lock_) {
     DCHECK(object != nullptr);
     DCHECK(!IsInBootImage(object));
@@ -137,7 +141,7 @@ class ImageWriter final {
         image_info.image_begin_ + GetImageOffset(object, oat_index) - global_image_begin_);
   }
 
-  ArtMethod* GetImageMethodAddress(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_);
+  ArtMethod* GetImageMethodAddress(ArtMethod* method) const REQUIRES_SHARED(Locks::mutator_lock_);
   const void* GetIntrinsicReferenceAddress(uint32_t intrinsic_data)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -552,7 +556,7 @@ class ImageWriter final {
     uintptr_t offset;
   };
 
-  NativeObjectRelocation GetNativeRelocation(void* obj) REQUIRES_SHARED(Locks::mutator_lock_);
+  NativeObjectRelocation GetNativeRelocation(void* obj) const REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Location of where the object will be when the image is loaded at runtime.
   template <typename T>
