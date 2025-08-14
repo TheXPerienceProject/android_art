@@ -573,6 +573,8 @@ class Heap {
 
   bool GetUseGenerational() const { return use_generational_gc_; }
 
+  void SetHasPendingMemoryRelease(bool pending) { has_pending_memory_release_ = pending; }
+
   // Returns the number of objects currently allocated.
   size_t GetObjectsAllocated() const
       REQUIRES(!Locks::heap_bitmap_lock_);
@@ -1752,6 +1754,9 @@ class Heap {
   // emit region info before and after each GC cycle.
   bool dump_region_info_before_gc_;
   bool dump_region_info_after_gc_;
+
+  // True if there is free memory that has not yet been released back to the OS.
+  bool has_pending_memory_release_;
 
   // Boot image spaces.
   std::vector<space::ImageSpace*> boot_image_spaces_;
