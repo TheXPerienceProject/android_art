@@ -427,6 +427,7 @@ Heap::Heap(size_t initial_size,
       gc_disabled_for_shutdown_(false),
       dump_region_info_before_gc_(dump_region_info_before_gc),
       dump_region_info_after_gc_(dump_region_info_after_gc),
+      has_pending_memory_release_(false),
       boot_image_spaces_(),
       boot_images_start_address_(0u),
       boot_images_size_(0u),
@@ -1564,7 +1565,8 @@ void Heap::ThrowOutOfMemoryError(Thread* self, size_t byte_count, AllocatorType 
 void Heap::DoPendingCollectorTransition() {
   CollectorType desired_collector_type = desired_collector_type_;
 
-  if (collector_type_ == kCollectorTypeCC || collector_type_ == kCollectorTypeCMC) {
+  if (!has_pending_memory_release_ &&
+      (collector_type_ == kCollectorTypeCC || collector_type_ == kCollectorTypeCMC)) {
     // App's allocations (since last GC) more than the threshold then do TransitionGC
     // when the app was in background. If not then don't do TransitionGC.
     // num_bytes_allocated_since_gc should always be positive even if initially

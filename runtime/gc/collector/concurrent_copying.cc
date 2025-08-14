@@ -2720,6 +2720,8 @@ void ConcurrentCopying::ReclaimPhase() {
       region_space_->ReleaseFreeRegions();
     }
 
+    heap_->SetHasPendingMemoryRelease(!should_eagerly_release_memory);
+
     // freed_bytes could conceivably be negative if we fall back to nonmoving space and have to
     // pad to a larger size.
     int64_t freed_bytes = (int64_t)cleared_bytes - (int64_t)to_bytes;
