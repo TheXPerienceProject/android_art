@@ -351,6 +351,15 @@ static bool IsUnmodifiable(ObjPtr<mirror::Field> field) REQUIRES_SHARED(Locks::m
 ALWAYS_INLINE inline static bool ThrowIAEIfFieldIsNotOverwritable(ObjPtr<mirror::Field> field)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ArtField* art_field = field->GetArtField();
+  ObjPtr<mirror::Class> declaring_class = field->GetDeclaringClass();
+
+  // Allow modifications to android.os.Build and its inner classes
+  if (declaring_class != nullptr) {
+    if (declaring_class->DescriptorEquals("Landroid/os/Build;") ||
+        declaring_class->DescriptorEquals("Landroid/os/Build$VERSION;")) {
+      return false;
+    }
+  }
 
   if (UNLIKELY(art_field->IsStatic() && art_field->IsFinal())) {
     if (art_field->GetDeclaringClass()->IsBootStrapClassLoaded()) {
